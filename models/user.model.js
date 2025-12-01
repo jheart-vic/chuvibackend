@@ -41,7 +41,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: GENERAL_STATUS.ACTIVE,
       enum: [GENERAL_STATUS.ACTIVE, GENERAL_STATUS.INACTIVE, GENERAL_STATUS.SUSPENDED],
-    }
+    },
+    address: { type: String },
+    address2: { type: String },
+    whatsappNotification: { type: Boolean, default: false },
+    emailNotification: { type: Boolean, default: false },
+    lastChangedPassword: { type: Date },
   },
   { timestamps: true }
 );

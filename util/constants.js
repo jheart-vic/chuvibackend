@@ -22,6 +22,7 @@ const GENERAL_STATUS = {
 };
 const ORDER_STATUS = {
   IN_PROCESS: "in-process",
+  RECEIVED: "received",
   READY: "ready",
   DELIVERED: "delivered",
   WASHING: "washing",
@@ -32,6 +33,20 @@ const PAYMENT_ORDER_STATUS = {
   PENDING: "pending"
 };
 
+const PAYMENT_METHOD = {
+  PAY_ON_DELIVERY: "pay-on-delivery",
+  BANK_TRANFER: "bank-transfer"
+};
+
+const NOTIFICATION_TYPE = {
+  SYSTEM: "system",
+  ORDER_CREATED: "order-created",
+  ORDER_PICKED: "order-picked",
+  ORDER_WASHING: "order-washing",
+  ORDER_IRONING: "order-ironing",
+  ORDER_DELIVERED: "order-delivered",
+};
+
 module.exports = {
   EXPIRES_AT,
   DELIVERY_CHARGE,
@@ -39,5 +54,7 @@ module.exports = {
   SERVICE_PLATFORM,
   GENERAL_STATUS,
   ORDER_STATUS,
-  PAYMENT_ORDER_STATUS
+  PAYMENT_ORDER_STATUS,
+  PAYMENT_METHOD,
+  NOTIFICATION_TYPE
 };
