@@ -7,6 +7,7 @@ const supplySchema = new mongoose.Schema(
     unit: { type: String, required: true },
     hub: { type: mongoose.Schema.Types.ObjectId, ref: "Hub", required: true },
     reorderLevel: { type: Number, required: true },
+    hasAlerted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
