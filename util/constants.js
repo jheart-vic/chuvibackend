@@ -7,6 +7,7 @@ const ROLE = {
   ADMIN: "admin",
   STAFF: "staff",
   FRONT_DESK: "front_desk",
+  USER: "user"
 };
 const SERVICE_PLATFORM = {
   GOOGLE: "google",
