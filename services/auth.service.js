@@ -16,68 +16,77 @@ const { EXPIRES_AT } = require("../util/constants");
 
 
 class AuthService extends BaseService {
-  async createUser(req, res) {
-    try {
-      const post = req.body;
+async createUser(req, res) {
+  try {
+    const post = req.body;
 
-      const validateRule = {
-        email: "email|required",
-        password: "string|required",
-        userType: "string|required",
-      };
+    const validateRule = {
+      email: "email|required",
+      password: "string|required",
+      fullName: "string|required",
+      phoneNumber: "string|required",
+      userType: "string|required",
+    };
 
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
+    const validateMessage = {
+      required: ":attribute is required",
+      "email.email": "Please provide a valid :attribute.",
+    };
 
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const userExists = await UserModel.findOne({ email: post.email });
-      if (!empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: "User exist. Please login",
-        });
-      }
-
-      const newUser = new UserModel({ ...post, servicePlatform: "local" });
-      await newUser.save();
-
-      // userExists.markModified("password");
-      // await userExists.save();
-
-      const otp = generateOTP();
-
-      const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-      newUser.otp = otp;
-      newUser.otpExpiresAt = expiresAt;
-      await newUser.save();
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Verify Your Email</h1>
-      <p>Hi <strong>${post.email}</strong>,</p>
-      <p>Here is your One-Time Password: <b>${otp}</b> to complete the verification:</p>
-      `;
-      await sendEmail({
-        subject: "Verify Your email",
-        to: post.email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Registration Successful",
-      });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({ error });
+    const validateResult = validateData(post, validateRule, validateMessage);
+    if (!validateResult.success) {
+      return BaseService.sendFailedResponse({ error: validateResult.data });
     }
+
+    const userExists = await UserModel.findOne({ email: post.email });
+    if (userExists) {
+      return BaseService.sendFailedResponse({
+        error: "User exists. Please login",
+      });
+    }
+
+    // Create the user
+    const newUser = new UserModel({
+      email: post.email,
+      password: post.password,
+      fullName: post.fullName,
+      phoneNumber: post.phoneNumber,
+      userType: post.userType || "user",
+      servicePlatform: "local",
+    });
+
+    await newUser.save();
+
+    // Add OTP
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + EXPIRES_AT);
+
+    newUser.otp = otp;
+    newUser.otpExpiresAt = expiresAt;
+    await newUser.save();
+
+    // Send OTP Email
+    await sendEmail({
+      subject: "Verify Your Email",
+      to: newUser.email,
+      html: `
+        <h1>Verify Your Email</h1>
+        <p>Hello <strong>${newUser.fullName}</strong>,</p>
+        <p>Your OTP is <b>${otp}</b></p>
+      `,
+    });
+
+    return BaseService.sendSuccessResponse({
+      message: "Registration successful. Please verify your email.",
+      user: newUser,
+    });
+
+  } catch (error) {
+    console.log(error);
+    return BaseService.sendFailedResponse({ error });
   }
+}
+
   async googleSignup(req, res) {
     try {
       const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -197,34 +206,34 @@ class AuthService extends BaseService {
         idToken,          // The id_token from Apple (used to extract user info)
         userType,          // The type of user (e.g., admin, regular)
       } = req.body;
-  
+
       // Replace with your Apple OAuth credentials
       const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID; // Your Apple Service ID (client ID)
       const APPLE_CLIENT_SECRET = process.env.APPLE_CLIENT_SECRET; // Your Apple Client Secret (generated from Apple Developer Console)
       const APPLE_TEAM_ID = process.env.APPLE_TEAM_ID; // Your Apple Team ID (from Apple Developer Console)
       const APPLE_KEY_ID = process.env.APPLE_KEY_ID; // Your Key ID from Apple (from the private key you uploaded in Apple Developer Console)
-      
+
       // 1. Validate the incoming data (similar to Google signup validation)
       const validateRule = {
         authorizationCode: 'string|required',
         idToken: 'string|required',
         userType: 'string|required',
       };
-  
+
       const validateMessage = {
         required: ':attribute is required',
       };
-  
+
       const validateResult = validateData(req.body, validateRule, validateMessage);
-  
+
       if (!validateResult.success) {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
-  
+
       // 2. Decode the ID Token (optional but useful for debugging)
       const decodedToken = jwt.decode(idToken, { complete: true });
       console.log('Decoded Apple ID Token:', decodedToken);
-  
+
       // 3. Exchange authorization code for access and refresh tokens
       const tokenResponse = await axios.post('https://appleid.apple.com/auth/token', null, {
         params: {
@@ -235,37 +244,37 @@ class AuthService extends BaseService {
           redirect_uri: 'https://yourdomain.com/auth/apple/callback', // Replace with your actual redirect URI
         }
       });
-  
+
       const { access_token, refresh_token, id_token: newIdToken } = tokenResponse.data;
-  
+
       // 4. Decode the new ID token to get user information
       const payload = jwt.decode(newIdToken);
       const { sub: appleId, email, given_name, family_name, name, picture } = payload;
-  
+
       // 5. Generate a username based on email or name
       const username = email ? email.split('@')[0] : name.replace(/\s+/g, '').toLowerCase();
-  
+
       // 6. Extract first and last names
       const firstName = given_name || name.split(' ')[0];
       const lastName = family_name || name.split(' ').slice(1).join(' ');
-  
+
       // 7. Check if the user already exists in the database
       const userWithAppleId = await UserModel.findOne({
         $or: [{ appleId }, { email }],
       });
-  
+
       if (userWithAppleId) {
         // If the user already exists, generate JWT tokens
         const accessToken = await userWithAppleId.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || '');
         const refreshToken = await userWithAppleId.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || '');
-  
+
         return BaseService.sendSuccessResponse({
           message: accessToken,
           user: userWithAppleId,
           refreshToken,
         });
       }
-  
+
       // 8. Create a new user if the user doesn't exist
       const userObject = {
         appleId,
@@ -278,16 +287,16 @@ class AuthService extends BaseService {
         servicePlatform: 'apple', // Mark this user as using the "Apple" service for signup
         userType, // You can pass userType from the frontend (e.g., "admin", "regular")
       };
-  
+
       // 9. Create a new user in the database
       const newUser = new UserModel(userObject);
-  
+
       await newUser.save();
-  
+
       // 10. Generate JWT tokens for the newly created user
       const accessToken = await newUser.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || '');
       const refreshToken = await newUser.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || '');
-  
+
       // 11. Send a welcome email or confirmation email to the user
       const emailHtml = `
         <h1>Registration successful</h1>
@@ -299,14 +308,14 @@ class AuthService extends BaseService {
         to: newUser.email,
         html: emailHtml,
       });
-  
+
       // 12. Send the success response with the access token, user info, and refresh token
       return BaseService.sendSuccessResponse({
         message: accessToken,
         user: newUser,
         refreshToken,
       });
-  
+
     } catch (error) {
       console.error('Apple Sign-Up Error:', error);
       return BaseService.sendFailedResponse({
