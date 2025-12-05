@@ -51,7 +51,7 @@ async createUser(req, res) {
       password: post.password,
       fullName: post.fullName,
       phoneNumber: post.phoneNumber,
-      userType: post.userType || "user",
+      userType: post.userType || ROLE.USER,
       servicePlatform: "local",
     });
 

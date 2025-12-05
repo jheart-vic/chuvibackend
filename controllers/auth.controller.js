@@ -1,5 +1,5 @@
 const BaseController = require("./base.controller");
-const UserService = require("../services/user.service");
+const UserService = require("../services/auth.service");
 
 class UserController extends BaseController {
 
@@ -94,4 +94,5 @@ class UserController extends BaseController {
   }
 }
 
-module.exports = new UserController();
+module.exports = UserController;
+
