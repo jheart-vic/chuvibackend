@@ -1,13 +1,25 @@
-const UserController = require('../controllers/user.controller')
-const { ROUTE_REGISTER, ROUTE_LOGIN, ROUTE_FORGOT_PASSWORD, ROUTE_RESET_PASSWORD, ROUTE_SEND_OTP, ROUTE_VERIFY_OTP, ROUTE_VERIFY_EMAIL, ROUTE_VERIFY_PASSWORD_OTP, ROUTE_REFRESH_TOKEN, ROUTE_GOOGLE_SIGNUP, ROUTE_APPLE_SIGNUP } = require('../util/page-route')
+const UserController = require ('../controllers/auth.controller');
+const {
+  ROUTE_REGISTER,
+  ROUTE_LOGIN,
+  ROUTE_FORGOT_PASSWORD,
+  ROUTE_RESET_PASSWORD,
+  ROUTE_SEND_OTP,
+  ROUTE_VERIFY_OTP,
+  ROUTE_VERIFY_EMAIL,
+  ROUTE_VERIFY_PASSWORD_OTP,
+  ROUTE_REFRESH_TOKEN,
+  ROUTE_GOOGLE_SIGNUP,
+  ROUTE_APPLE_SIGNUP,
+} = require ('../util/page-route');
 
-const router = require('express').Router()
+const router = require ('express').Router ();
 
 /**
  * @swagger
  * /auth/register:
  *   post:
- *     summary: Register new user
+ *     summary: Register a new user
  *     tags:
  *       - Auth
  *     requestBody:
@@ -18,6 +30,10 @@ const router = require('express').Router()
  *             type: object
  *             required:
  *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *               - userType
  *             properties:
  *               email:
  *                 type: string
@@ -27,13 +43,20 @@ const router = require('express').Router()
  *                 type: string
  *                 format: password
  *                 example: gRDERIdiidfjii@
+ *               fullName:
+ *                 type: string
+ *                 example: John Doe
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+1234567890"
  *               userType:
  *                 type: string
- *                 format: password
- *                 example: (user | coach)
+ *                 enum: [manager, admin, staff, front_desk, user]
+ *                 example: user
+
  *     responses:
  *       200:
- *         description: Registration successful
+ *         description: Registration successful, OTP sent for email verification
  *         content:
  *           application/json:
  *             schema:
@@ -41,17 +64,51 @@ const router = require('express').Router()
  *               properties:
  *                 message:
  *                   type: string
- *                   example: Registration successful
+ *                   example: Registration successful. Please verify your email.
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     phoneNumber:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                     servicePlatform:
+ *                       type: string
+ *                     otp:
+ *                       type: string
+ *                     otpExpiresAt:
+ *                       type: string
+ *                       format: date-time
  *       400:
- *         description: Missing or invalid email
+ *         description: Missing or invalid fields, or user already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: User exists. Please login
  *       500:
- *         description: Server error
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Server error
  */
 
-router.post(ROUTE_REGISTER, (req, res)=>{
-    const userController = new UserController()
-    return userController.createUser(req, res)
-})
+router.post (ROUTE_REGISTER, (req, res) => {
+  const userController = new UserController ();
+  return userController.createUser (req, res);
+});
 
 /**
  * @swagger
@@ -76,7 +133,7 @@ router.post(ROUTE_REGISTER, (req, res)=>{
  *               userType:
  *                 type: string
  *                 format: text
- *                 example: (user | coach)
+ *                 example: (manager, admin, staff, front_desk, user)
  *     responses:
  *       200:
  *         description: Registration successful
@@ -93,10 +150,10 @@ router.post(ROUTE_REGISTER, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_GOOGLE_SIGNUP, (req, res)=>{
-    const userController = new UserController()
-    return userController.googleSignup(req, res)
-})
+router.post (ROUTE_GOOGLE_SIGNUP, (req, res) => {
+  const userController = new UserController ();
+  return userController.googleSignup (req, res);
+});
 
 /**
  * @swagger
@@ -121,7 +178,7 @@ router.post(ROUTE_GOOGLE_SIGNUP, (req, res)=>{
  *               userType:
  *                 type: string
  *                 format: text
- *                 example: (user | coach)
+ *                 example: (manager, admin, staff, front_desk, user)
  *               authorizationCode:
  *                 type: string
  *                 format: text
@@ -142,10 +199,10 @@ router.post(ROUTE_GOOGLE_SIGNUP, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_APPLE_SIGNUP, (req, res)=>{
-    const userController = new UserController()
-    return userController.appleSignup(req, res)
-})
+router.post (ROUTE_APPLE_SIGNUP, (req, res) => {
+  const userController = new UserController ();
+  return userController.appleSignup (req, res);
+});
 
 /**
  * @swagger
@@ -214,10 +271,10 @@ router.post(ROUTE_APPLE_SIGNUP, (req, res)=>{
  *                   type: string
  *                   example: Invalid email or password
  */
-router.post(ROUTE_LOGIN, (req, res)=>{
-    const userController = new UserController()
-    return userController.loginUser(req, res)
-})
+router.post (ROUTE_LOGIN, (req, res) => {
+  const userController = new UserController ();
+  return userController.loginUser (req, res);
+});
 /**
  * @swagger
  * /auth/forgot-password:
@@ -254,10 +311,10 @@ router.post(ROUTE_LOGIN, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_FORGOT_PASSWORD, (req, res)=>{
-    const userController = new UserController()
-    return userController.forgotPassword(req, res)
-})
+router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
+  const userController = new UserController ();
+  return userController.forgotPassword (req, res);
+});
 /**
  * @swagger
  * /auth/reset-password:
@@ -298,10 +355,10 @@ router.post(ROUTE_FORGOT_PASSWORD, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_RESET_PASSWORD, (req, res)=>{
-    const userController = new UserController()
-    return userController.resetPassword(req, res)
-})
+router.post (ROUTE_RESET_PASSWORD, (req, res) => {
+  const userController = new UserController ();
+  return userController.resetPassword (req, res);
+});
 /**
  * @swagger
  * /auth/send-otp:
@@ -338,10 +395,10 @@ router.post(ROUTE_RESET_PASSWORD, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_SEND_OTP, (req, res)=>{
-    const userController = new UserController()
-    return userController.sendOTP(req, res)
-})
+router.post (ROUTE_SEND_OTP, (req, res) => {
+  const userController = new UserController ();
+  return userController.sendOTP (req, res);
+});
 /**
  * @swagger
  * /auth/verify-otp:
@@ -382,10 +439,10 @@ router.post(ROUTE_SEND_OTP, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_VERIFY_OTP, (req, res)=>{
-    const userController = new UserController()
-    return userController.verifyOTP(req, res)
-})
+router.post (ROUTE_VERIFY_OTP, (req, res) => {
+  const userController = new UserController ();
+  return userController.verifyOTP (req, res);
+});
 /**
  * @swagger
  * /auth/verify-email:
@@ -422,10 +479,10 @@ router.post(ROUTE_VERIFY_OTP, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_VERIFY_EMAIL, (req, res)=>{
-    const userController = new UserController()
-    return userController.verifyEmail(req, res)
-})
+router.post (ROUTE_VERIFY_EMAIL, (req, res) => {
+  const userController = new UserController ();
+  return userController.verifyEmail (req, res);
+});
 /**
  * @swagger
  * /auth/verify-password-otp:
@@ -466,10 +523,10 @@ router.post(ROUTE_VERIFY_EMAIL, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_VERIFY_PASSWORD_OTP, (req, res)=>{
-    const userController = new UserController()
-    return userController.verifyPasswordOTP(req, res)
-})
+router.post (ROUTE_VERIFY_PASSWORD_OTP, (req, res) => {
+  const userController = new UserController ();
+  return userController.verifyPasswordOTP (req, res);
+});
 /**
  * @swagger
  * /auth/refresh-token:
@@ -524,9 +581,9 @@ router.post(ROUTE_VERIFY_PASSWORD_OTP, (req, res)=>{
  *                   example: Invalid or expired refresh token
  */
 
-router.post(ROUTE_REFRESH_TOKEN, (req, res)=>{
-    const userController = new UserController()
-    return userController.refreshToken(req, res)
-})
+router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
+  const userController = new UserController ();
+  return userController.refreshToken (req, res);
+});
 
-module.exports = router
+module.exports = router;

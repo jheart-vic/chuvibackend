@@ -6,9 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon server.js",
-    "start": "node server.js"  
+    "start": "node server.js"
   },
-    "repository": {
+  "repository": {
     "type": "git",
     "url": "git+https://github.com/jheart-vic/chuvibackend.git"
   },
@@ -17,7 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.7.9",
-    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.3",
     "body-parser": "^2.2.0",
     "cloudinary": "^1.21.0",
     "cookie-parser": "^1.4.7",
