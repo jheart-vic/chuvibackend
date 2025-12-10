@@ -23,6 +23,8 @@ class AuthService extends BaseService {
       const validateRule = {
         email: "email|required",
         password: "string|required",
+        fullName: "string|required",
+        phoneNumber: "string|required",
         userType: "string|required",
       };
 
@@ -32,47 +34,53 @@ class AuthService extends BaseService {
       };
 
       const validateResult = validateData(post, validateRule, validateMessage);
-
       if (!validateResult.success) {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
       const userExists = await UserModel.findOne({ email: post.email });
-      if (!empty(userExists)) {
+      if (userExists) {
         return BaseService.sendFailedResponse({
-          error: "User exist. Please login",
+          error: "User exists. Please login",
         });
       }
 
-      const newUser = new UserModel({ ...post, servicePlatform: "local" });
+      // Create the user
+      const newUser = new UserModel({
+        email: post.email,
+        password: post.password,
+        fullName: post.fullName,
+        phoneNumber: post.phoneNumber,
+        userType: post.userType || ROLE.USER,
+        servicePlatform: "local",
+      });
+
       await newUser.save();
 
-      // userExists.markModified("password");
-      // await userExists.save();
-
+      // Add OTP
       const otp = generateOTP();
-
       const expiresAt = new Date(Date.now() + EXPIRES_AT);
 
       newUser.otp = otp;
       newUser.otpExpiresAt = expiresAt;
       await newUser.save();
 
-      // Send OTP email
-      const emailHtml = `
-         <h1>Verify Your Email</h1>
-      <p>Hi <strong>${post.email}</strong>,</p>
-      <p>Here is your One-Time Password: <b>${otp}</b> to complete the verification:</p>
-      `;
+      // Send OTP Email
       await sendEmail({
-        subject: "Verify Your email",
-        to: post.email,
-        html: emailHtml,
+        subject: "Verify Your Email",
+        to: newUser.email,
+        html: `
+          <h1>Verify Your Email</h1>
+          <p>Hello <strong>${newUser.fullName}</strong>,</p>
+          <p>Your OTP is <b>${otp}, it expires in 10 minutes </b></p>
+        `,
       });
 
       return BaseService.sendSuccessResponse({
-        message: "Registration Successful",
+        message: "Registration successful. Please verify your email.",
+        user: newUser,
       });
+
     } catch (error) {
       console.log(error);
       return BaseService.sendFailedResponse({ error });
@@ -197,34 +205,34 @@ class AuthService extends BaseService {
         idToken,          // The id_token from Apple (used to extract user info)
         userType,          // The type of user (e.g., admin, regular)
       } = req.body;
-  
+
       // Replace with your Apple OAuth credentials
       const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID; // Your Apple Service ID (client ID)
       const APPLE_CLIENT_SECRET = process.env.APPLE_CLIENT_SECRET; // Your Apple Client Secret (generated from Apple Developer Console)
       const APPLE_TEAM_ID = process.env.APPLE_TEAM_ID; // Your Apple Team ID (from Apple Developer Console)
       const APPLE_KEY_ID = process.env.APPLE_KEY_ID; // Your Key ID from Apple (from the private key you uploaded in Apple Developer Console)
-      
+
       // 1. Validate the incoming data (similar to Google signup validation)
       const validateRule = {
         authorizationCode: 'string|required',
         idToken: 'string|required',
         userType: 'string|required',
       };
-  
+
       const validateMessage = {
         required: ':attribute is required',
       };
-  
+
       const validateResult = validateData(req.body, validateRule, validateMessage);
-  
+
       if (!validateResult.success) {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
-  
+
       // 2. Decode the ID Token (optional but useful for debugging)
       const decodedToken = jwt.decode(idToken, { complete: true });
       console.log('Decoded Apple ID Token:', decodedToken);
-  
+
       // 3. Exchange authorization code for access and refresh tokens
       const tokenResponse = await axios.post('https://appleid.apple.com/auth/token', null, {
         params: {
@@ -235,37 +243,37 @@ class AuthService extends BaseService {
           redirect_uri: 'https://yourdomain.com/auth/apple/callback', // Replace with your actual redirect URI
         }
       });
-  
+
       const { access_token, refresh_token, id_token: newIdToken } = tokenResponse.data;
-  
+
       // 4. Decode the new ID token to get user information
       const payload = jwt.decode(newIdToken);
       const { sub: appleId, email, given_name, family_name, name, picture } = payload;
-  
+
       // 5. Generate a username based on email or name
       const username = email ? email.split('@')[0] : name.replace(/\s+/g, '').toLowerCase();
-  
+
       // 6. Extract first and last names
       const firstName = given_name || name.split(' ')[0];
       const lastName = family_name || name.split(' ').slice(1).join(' ');
-  
+
       // 7. Check if the user already exists in the database
       const userWithAppleId = await UserModel.findOne({
         $or: [{ appleId }, { email }],
       });
-  
+
       if (userWithAppleId) {
         // If the user already exists, generate JWT tokens
         const accessToken = await userWithAppleId.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || '');
         const refreshToken = await userWithAppleId.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || '');
-  
+
         return BaseService.sendSuccessResponse({
           message: accessToken,
           user: userWithAppleId,
           refreshToken,
         });
       }
-  
+
       // 8. Create a new user if the user doesn't exist
       const userObject = {
         appleId,
@@ -278,16 +286,16 @@ class AuthService extends BaseService {
         servicePlatform: 'apple', // Mark this user as using the "Apple" service for signup
         userType, // You can pass userType from the frontend (e.g., "admin", "regular")
       };
-  
+
       // 9. Create a new user in the database
       const newUser = new UserModel(userObject);
-  
+
       await newUser.save();
-  
+
       // 10. Generate JWT tokens for the newly created user
       const accessToken = await newUser.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || '');
       const refreshToken = await newUser.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || '');
-  
+
       // 11. Send a welcome email or confirmation email to the user
       const emailHtml = `
         <h1>Registration successful</h1>
@@ -299,14 +307,14 @@ class AuthService extends BaseService {
         to: newUser.email,
         html: emailHtml,
       });
-  
+
       // 12. Send the success response with the access token, user info, and refresh token
       return BaseService.sendSuccessResponse({
         message: accessToken,
         user: newUser,
         refreshToken,
       });
-  
+
     } catch (error) {
       console.error('Apple Sign-Up Error:', error);
       return BaseService.sendFailedResponse({
@@ -347,12 +355,14 @@ class AuthService extends BaseService {
         return BaseService.sendFailedResponse({ error: "OTP not found" });
       }
 
-      if (userExists.otp !== otp) {
-        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
-      }
       if (userExists.otpExpiresAt < new Date()) {
         return BaseService.sendFailedResponse({ error: "OTP expired" });
       }
+
+      if (userExists.otp !== otp) {
+        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
+      }
+
 
       userExists.isVerified = true;
       userExists.otp = "";
@@ -369,7 +379,7 @@ class AuthService extends BaseService {
       // Send OTP email
       const emailHtml = `
           <h1>Your email has been verified</h1>
-          <p>Hi <strong>${email}</strong>,</p>
+          <p>Hi <strong>${userExists.fullName ||email}</strong>,</p>
           <p>You have successfully verified your account</p>
       `;
       await sendEmail({
@@ -520,14 +530,16 @@ class AuthService extends BaseService {
       }
       // Generate OTP
       const otp = generateOTP();
-      userExists.otp = otp;
-      userExists.otp_expiry = Date.now() + 10 * 60 * 1000; // OTP valid for 10 minutes
+    userExists.otp = otp;
+    const expiresAt = new Date(Date.now() + EXPIRES_AT);
+    userExists.otpExpiresAt = expiresAt
+
       await userExists.save();
       // Send OTP email
       const emailHtml = `
       <h1>Password Reset Request</h1>
-       <p>Hi <strong>${email}</strong>,</p>
-       <p>Your password reset code is ${otp}</p>
+      <p>Hi <strong>${userExists.fullName || email}</strong>,</p>
+      <p>Your password reset code is <b>${otp}</b>. It will expire in 10 minutes.</p>
     `;
       await sendEmail({
         subject: "Password Reset Request",
@@ -539,7 +551,7 @@ class AuthService extends BaseService {
         message: "Password Reset Request Successful",
       });
     } catch (error) {
-      return BaseService.sendFailedResponse({ error });
+      return BaseService.sendFailedResponse({ error: error.message || "Something went wrong" });
     }
   }
   async resetPassword(req, res) {
@@ -549,178 +561,6 @@ class AuthService extends BaseService {
       const validateRule = {
         email: "email|required",
         password: "string|required",
-      };
-
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { email, password } = post;
-
-      const userExists = await UserModel.findOne({ email });
-      if (empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: "User not found. Please try again later",
-        });
-      }
-
-      if (await userExists.comparePassword(password)) {
-        return BaseService.sendFailedResponse({
-          error: "New password cannot be the same as the old password",
-        });
-      }
-
-      userExists.password = password;
-      userExists.markModified("password");
-      await userExists.save();
-
-      // Send OTP email
-      const emailHtml = `
-          <h1>Password Reset</h1>
-          <p>Hi <strong>${email}</strong>,</p>
-          <p>Your Password has been reset successfully</p>
-      `;
-      await sendEmail({
-        subject: "Password Reset Confirmation",
-        to: email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Password reset successfullly",
-      });
-    } catch (error) {
-      return BaseService.sendFailedResponse({ error });
-    }
-  }
-  async sendOTP(req) {
-    try {
-      const post = req.body;
-
-      const validateRule = {
-        email: "email|required",
-      };
-
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { email } = post;
-
-      const userExists = await UserModel.findOne({ email });
-      if (empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: "User does not exist, Please try again later",
-        });
-      }
-      const otp = generateOTP();
-
-      const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-      userExists.otp = otp;
-      userExists.otpExpiresAt = expiresAt;
-      await userExists.save();
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Verify Your Email</h1>
-      <p>Hi <strong>${email}</strong>,</p>
-      <p>Here is your One-Time Password: <b>${otp}</b> to complete the verification:</p>
-      `;
-      await sendEmail({
-        subject: "Verify Your email",
-        to: email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Email sent. Please verify your email",
-      });
-    } catch (error) {
-      return BaseService.sendFailedResponse({ error });
-    }
-  }
-  async verifyEmail(req) {
-    try {
-      const post = req.body;
-
-      const validateRule = {
-        email: "email|required",
-      };
-
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { email } = post;
-
-      const userExists = await UserModel.findOne({ email });
-      if (!empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: { message: "Email registered already", user: userExists },
-        });
-      }
-
-      const newPost = new UserModel({
-        email,
-      });
-
-      const otp = generateOTP();
-
-      const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-      newPost.otp = otp;
-      newPost.otpExpiresAt = expiresAt;
-      await newPost.save();
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Verify Your Email</h1>
-      <p>Hi <strong>${email}</strong>,</p>
-      <p>Here is your One-Time Password: <b>${otp}</b> to complete the verification:</p>
-      `;
-      await sendEmail({
-        subject: "Verify Your email",
-        to: email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Registration Successful. Please verify your email",
-        token: "",
-      });
-    } catch (error) {
-      console.log(error, "the error");
-      return BaseService.sendFailedResponse({ error });
-    }
-  }
-  async verifyPasswordOTP(req) {
-    try {
-      const post = req.body;
-
-      const validateRule = {
-        email: "email|required",
         otp: "string|required",
       };
 
@@ -732,50 +572,61 @@ class AuthService extends BaseService {
       const validateResult = validateData(post, validateRule, validateMessage);
 
       if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
+        return BaseService.sendFailedResponse( { error: validateResult.data });
       }
 
-      const { email, otp } = post;
+      const { email, password } = post;
 
       const userExists = await UserModel.findOne({ email });
-      if (empty(userExists)) {
-        return BaseService.sendFailedResponse({
+      if (!userExists) {
+        return BaseService.sendFailedResponse( {
           error: "User not found. Please try again later",
         });
       }
 
-      if (empty(userExists.otp)) {
-        return BaseService.sendFailedResponse({ error: "OTP not found" });
+      if (Date.now() > userExists.otpExpiresAt) {
+        return BaseService.sendFailedResponse( { error: "OTP expired" });
       }
 
-      if (userExists.otp !== otp) {
-        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
-      }
-      if (userExists.otpExpiresAt < new Date()) {
-        return BaseService.sendFailedResponse({ error: "OTP expired" });
+      // Prevent same password reuse
+      const isSamePassword = await userExists.comparePassword(password);
+      if (isSamePassword) {
+        return BaseService.sendFailedResponse( {
+          error: "New password cannot be the same as the old password",
+        });
       }
 
-      userExists.otp = "";
+      // Update password (ensure your model hashes this!)
+      userExists.password = password;
+
+      // Clear OTP
+      userExists.otp = null;
       userExists.otpExpiresAt = null;
+
       await userExists.save();
 
-      // Send OTP email
+      // Send confirmation email
       const emailHtml = `
-          <h1>Your password OTP has been verified</h1>
-          <p>Hi <strong>${email}</strong>,</p>
-          <p>Please reset your password</p>
+        <h1>Password Reset</h1>
+        <p>Hi <strong>${userExists?.fullName || email}</strong>,</p>
+        <p>Your password has been reset successfully.</p>
       `;
+
       await sendEmail({
-        subject: "Password Reset Verification",
+        subject: "Password Reset Confirmation",
         to: email,
         html: emailHtml,
       });
 
-      return BaseService.sendSuccessResponse({
-        message: "OTP verified successfullly",
+      return BaseService.sendSuccessResponse( {
+        message: "Password reset successful",
       });
+
     } catch (error) {
-      return BaseService.sendFailedResponse({ error });
+        console.error(error);
+  return BaseService.sendFailedResponse( {
+    error: error.message || "Something went wrong"
+  });
     }
   }
   async refreshToken(req, res) {
