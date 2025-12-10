@@ -20,14 +20,14 @@ class BaseService {
 //     try {
 //       const baseService = new BaseService();
 //       const payconnectHeader = baseService.pay_connect_header;
-  
+
 //       const config = {
 //         method: action,
 //         url: 'https://mypayconnect.com/api/' + url,
 //         headers: payconnectHeader,
 //         data: data,
 //       };
-  
+
 //       const res = await axios(config);
 //       console.log({ res: res.data });
 //       return res.data;
@@ -51,14 +51,23 @@ class BaseService {
     }
   }
 
-  static sendFailedResponse(data, statusCode = 400) {
-    const returnData = { success: false };
-    if (!empty(data) || data === "0" || data === 0 || data === "") {
-      returnData.data = data;
-      returnData.data.statusCode = statusCode;
-    }
+static sendFailedResponse(data, statusCode = 400) {
+  const returnData = { success: false };
+
+  // ALWAYS convert error objects to plain objects
+  if (data?.error instanceof Error) {
+    returnData.data = {
+      error: data.error.message,
+      stack: process.env.NODE_ENV === "development" ? data.error.stack : undefined,
+      statusCode,
+    };
     return returnData;
   }
+
+  returnData.data = { ...data, statusCode };
+  return returnData;
+}
+
 
   static sendSuccessResponse(data) {
     const returnData = { success: true };

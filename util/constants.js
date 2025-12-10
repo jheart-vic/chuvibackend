@@ -1,4 +1,4 @@
-const EXPIRES_AT = 8 * 60 * 1000;
+const EXPIRES_AT = 10 * 60 * 1000;
 const DELIVERY_CHARGE = 1000;
 
 // enum: ["manager", "admin", "staff", "front-desk"],

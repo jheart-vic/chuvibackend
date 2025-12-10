@@ -16,77 +16,76 @@ const { EXPIRES_AT } = require("../util/constants");
 
 
 class AuthService extends BaseService {
-async createUser(req, res) {
-  try {
-    const post = req.body;
+  async createUser(req, res) {
+    try {
+      const post = req.body;
 
-    const validateRule = {
-      email: "email|required",
-      password: "string|required",
-      fullName: "string|required",
-      phoneNumber: "string|required",
-      userType: "string|required",
-    };
+      const validateRule = {
+        email: "email|required",
+        password: "string|required",
+        fullName: "string|required",
+        phoneNumber: "string|required",
+        userType: "string|required",
+      };
 
-    const validateMessage = {
-      required: ":attribute is required",
-      "email.email": "Please provide a valid :attribute.",
-    };
+      const validateMessage = {
+        required: ":attribute is required",
+        "email.email": "Please provide a valid :attribute.",
+      };
 
-    const validateResult = validateData(post, validateRule, validateMessage);
-    if (!validateResult.success) {
-      return BaseService.sendFailedResponse({ error: validateResult.data });
-    }
+      const validateResult = validateData(post, validateRule, validateMessage);
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
 
-    const userExists = await UserModel.findOne({ email: post.email });
-    if (userExists) {
-      return BaseService.sendFailedResponse({
-        error: "User exists. Please login",
+      const userExists = await UserModel.findOne({ email: post.email });
+      if (userExists) {
+        return BaseService.sendFailedResponse({
+          error: "User exists. Please login",
+        });
+      }
+
+      // Create the user
+      const newUser = new UserModel({
+        email: post.email,
+        password: post.password,
+        fullName: post.fullName,
+        phoneNumber: post.phoneNumber,
+        userType: post.userType || ROLE.USER,
+        servicePlatform: "local",
       });
+
+      await newUser.save();
+
+      // Add OTP
+      const otp = generateOTP();
+      const expiresAt = new Date(Date.now() + EXPIRES_AT);
+
+      newUser.otp = otp;
+      newUser.otpExpiresAt = expiresAt;
+      await newUser.save();
+
+      // Send OTP Email
+      await sendEmail({
+        subject: "Verify Your Email",
+        to: newUser.email,
+        html: `
+          <h1>Verify Your Email</h1>
+          <p>Hello <strong>${newUser.fullName}</strong>,</p>
+          <p>Your OTP is <b>${otp}, it expires in 10 minutes </b></p>
+        `,
+      });
+
+      return BaseService.sendSuccessResponse({
+        message: "Registration successful. Please verify your email.",
+        user: newUser,
+      });
+
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({ error });
     }
-
-    // Create the user
-    const newUser = new UserModel({
-      email: post.email,
-      password: post.password,
-      fullName: post.fullName,
-      phoneNumber: post.phoneNumber,
-      userType: post.userType || ROLE.USER,
-      servicePlatform: "local",
-    });
-
-    await newUser.save();
-
-    // Add OTP
-    const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-    newUser.otp = otp;
-    newUser.otpExpiresAt = expiresAt;
-    await newUser.save();
-
-    // Send OTP Email
-    await sendEmail({
-      subject: "Verify Your Email",
-      to: newUser.email,
-      html: `
-        <h1>Verify Your Email</h1>
-        <p>Hello <strong>${newUser.fullName}</strong>,</p>
-        <p>Your OTP is <b>${otp}</b></p>
-      `,
-    });
-
-    return BaseService.sendSuccessResponse({
-      message: "Registration successful. Please verify your email.",
-      user: newUser,
-    });
-
-  } catch (error) {
-    console.log(error);
-    return BaseService.sendFailedResponse({ error });
   }
-}
-
   async googleSignup(req, res) {
     try {
       const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -356,12 +355,14 @@ async createUser(req, res) {
         return BaseService.sendFailedResponse({ error: "OTP not found" });
       }
 
-      if (userExists.otp !== otp) {
-        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
-      }
       if (userExists.otpExpiresAt < new Date()) {
         return BaseService.sendFailedResponse({ error: "OTP expired" });
       }
+
+      if (userExists.otp !== otp) {
+        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
+      }
+
 
       userExists.isVerified = true;
       userExists.otp = "";
@@ -378,7 +379,7 @@ async createUser(req, res) {
       // Send OTP email
       const emailHtml = `
           <h1>Your email has been verified</h1>
-          <p>Hi <strong>${email}</strong>,</p>
+          <p>Hi <strong>${userExists.fullName ||email}</strong>,</p>
           <p>You have successfully verified your account</p>
       `;
       await sendEmail({
@@ -529,14 +530,16 @@ async createUser(req, res) {
       }
       // Generate OTP
       const otp = generateOTP();
-      userExists.otp = otp;
-      userExists.otp_expiry = Date.now() + 10 * 60 * 1000; // OTP valid for 10 minutes
+    userExists.otp = otp;
+    const expiresAt = new Date(Date.now() + EXPIRES_AT);
+    userExists.otpExpiresAt = expiresAt
+
       await userExists.save();
       // Send OTP email
       const emailHtml = `
       <h1>Password Reset Request</h1>
-       <p>Hi <strong>${email}</strong>,</p>
-       <p>Your password reset code is ${otp}</p>
+      <p>Hi <strong>${userExists.fullName || email}</strong>,</p>
+      <p>Your password reset code is <b>${otp}</b>. It will expire in 10 minutes.</p>
     `;
       await sendEmail({
         subject: "Password Reset Request",
@@ -548,7 +551,7 @@ async createUser(req, res) {
         message: "Password Reset Request Successful",
       });
     } catch (error) {
-      return BaseService.sendFailedResponse({ error });
+      return BaseService.sendFailedResponse({ error: error.message || "Something went wrong" });
     }
   }
   async resetPassword(req, res) {
@@ -558,178 +561,6 @@ async createUser(req, res) {
       const validateRule = {
         email: "email|required",
         password: "string|required",
-      };
-
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { email, password } = post;
-
-      const userExists = await UserModel.findOne({ email });
-      if (empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: "User not found. Please try again later",
-        });
-      }
-
-      if (await userExists.comparePassword(password)) {
-        return BaseService.sendFailedResponse({
-          error: "New password cannot be the same as the old password",
-        });
-      }
-
-      userExists.password = password;
-      userExists.markModified("password");
-      await userExists.save();
-
-      // Send OTP email
-      const emailHtml = `
-          <h1>Password Reset</h1>
-          <p>Hi <strong>${email}</strong>,</p>
-          <p>Your Password has been reset successfully</p>
-      `;
-      await sendEmail({
-        subject: "Password Reset Confirmation",
-        to: email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Password reset successfullly",
-      });
-    } catch (error) {
-      return BaseService.sendFailedResponse({ error });
-    }
-  }
-  async sendOTP(req) {
-    try {
-      const post = req.body;
-
-      const validateRule = {
-        email: "email|required",
-      };
-
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { email } = post;
-
-      const userExists = await UserModel.findOne({ email });
-      if (empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: "User does not exist, Please try again later",
-        });
-      }
-      const otp = generateOTP();
-
-      const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-      userExists.otp = otp;
-      userExists.otpExpiresAt = expiresAt;
-      await userExists.save();
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Verify Your Email</h1>
-      <p>Hi <strong>${email}</strong>,</p>
-      <p>Here is your One-Time Password: <b>${otp}</b> to complete the verification:</p>
-      `;
-      await sendEmail({
-        subject: "Verify Your email",
-        to: email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Email sent. Please verify your email",
-      });
-    } catch (error) {
-      return BaseService.sendFailedResponse({ error });
-    }
-  }
-  async verifyEmail(req) {
-    try {
-      const post = req.body;
-
-      const validateRule = {
-        email: "email|required",
-      };
-
-      const validateMessage = {
-        required: ":attribute is required",
-        "email.email": "Please provide a valid :attribute.",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { email } = post;
-
-      const userExists = await UserModel.findOne({ email });
-      if (!empty(userExists)) {
-        return BaseService.sendFailedResponse({
-          error: { message: "Email registered already", user: userExists },
-        });
-      }
-
-      const newPost = new UserModel({
-        email,
-      });
-
-      const otp = generateOTP();
-
-      const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-      newPost.otp = otp;
-      newPost.otpExpiresAt = expiresAt;
-      await newPost.save();
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Verify Your Email</h1>
-      <p>Hi <strong>${email}</strong>,</p>
-      <p>Here is your One-Time Password: <b>${otp}</b> to complete the verification:</p>
-      `;
-      await sendEmail({
-        subject: "Verify Your email",
-        to: email,
-        html: emailHtml,
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: "Registration Successful. Please verify your email",
-        token: "",
-      });
-    } catch (error) {
-      console.log(error, "the error");
-      return BaseService.sendFailedResponse({ error });
-    }
-  }
-  async verifyPasswordOTP(req) {
-    try {
-      const post = req.body;
-
-      const validateRule = {
-        email: "email|required",
         otp: "string|required",
       };
 
@@ -741,50 +572,61 @@ async createUser(req, res) {
       const validateResult = validateData(post, validateRule, validateMessage);
 
       if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
+        return BaseService.sendFailedResponse( { error: validateResult.data });
       }
 
-      const { email, otp } = post;
+      const { email, password } = post;
 
       const userExists = await UserModel.findOne({ email });
-      if (empty(userExists)) {
-        return BaseService.sendFailedResponse({
+      if (!userExists) {
+        return BaseService.sendFailedResponse( {
           error: "User not found. Please try again later",
         });
       }
 
-      if (empty(userExists.otp)) {
-        return BaseService.sendFailedResponse({ error: "OTP not found" });
+      if (Date.now() > userExists.otpExpiresAt) {
+        return BaseService.sendFailedResponse( { error: "OTP expired" });
       }
 
-      if (userExists.otp !== otp) {
-        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
-      }
-      if (userExists.otpExpiresAt < new Date()) {
-        return BaseService.sendFailedResponse({ error: "OTP expired" });
+      // Prevent same password reuse
+      const isSamePassword = await userExists.comparePassword(password);
+      if (isSamePassword) {
+        return BaseService.sendFailedResponse( {
+          error: "New password cannot be the same as the old password",
+        });
       }
 
-      userExists.otp = "";
+      // Update password (ensure your model hashes this!)
+      userExists.password = password;
+
+      // Clear OTP
+      userExists.otp = null;
       userExists.otpExpiresAt = null;
+
       await userExists.save();
 
-      // Send OTP email
+      // Send confirmation email
       const emailHtml = `
-          <h1>Your password OTP has been verified</h1>
-          <p>Hi <strong>${email}</strong>,</p>
-          <p>Please reset your password</p>
+        <h1>Password Reset</h1>
+        <p>Hi <strong>${userExists?.fullName || email}</strong>,</p>
+        <p>Your password has been reset successfully.</p>
       `;
+
       await sendEmail({
-        subject: "Password Reset Verification",
+        subject: "Password Reset Confirmation",
         to: email,
         html: emailHtml,
       });
 
-      return BaseService.sendSuccessResponse({
-        message: "OTP verified successfullly",
+      return BaseService.sendSuccessResponse( {
+        message: "Password reset successful",
       });
+
     } catch (error) {
-      return BaseService.sendFailedResponse({ error });
+        console.error(error);
+  return BaseService.sendFailedResponse( {
+    error: error.message || "Something went wrong"
+  });
     }
   }
   async refreshToken(req, res) {
