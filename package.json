@@ -1,0 +1,55 @@
+{
+  "name": "chuvibackend",
+  "version": "1.0.0",
+  "description": "A System For Chuvi Laundry",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jheart-vic/chuvibackend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^2.2.0",
+    "cloudinary": "^1.21.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2",
+    "moment": "^2.30.1",
+    "moment-timezone": "^0.5.48",
+    "mongoose": "^8.4.0",
+    "mongoose-to-swagger": "^1.5.1",
+    "multer": "^1.4.5-lts.1",
+    "multer-storage-cloudinary": "^4.0.0",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^7.0.10",
+    "socket.io": "^4.8.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "uuid": "^13.0.0",
+    "validatorjs": "^3.22.1",
+    "winston": "^3.17.0"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jheart-vic/chuvibackend/issues"
+  },
+  "homepage": "https://github.com/jheart-vic/chuvibackend#readme",
+  "engines": {
+    "node": "20.x",
+    "npm": ">=7"
+  }
+}
