@@ -2,7 +2,7 @@ const axios = require("axios");
 const TERMII_API_KEY = process.env.TERMII_API_KEY;
 const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID;
 
-const sendOTP = async (phoneNumber, code) => {
+const sendSmsOtp = async (phoneNumber, code) => {
   try {
     const phoneNo = formatPhoneNumber(phoneNumber);
     // console.log({phoneNo, code})
@@ -41,4 +41,4 @@ function formatPhoneNumber(phoneNumber) {
   return digits; // fallback (already international format)
 }
 
-module.exports = sendOTP;
+module.exports = sendSmsOtp;
