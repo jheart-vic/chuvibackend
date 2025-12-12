@@ -1,6 +1,6 @@
 // models/Post.ts
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { ROLE, SERVICE_PLATFORM, GENERAL_STATUS } = require("../util/constants");
 
