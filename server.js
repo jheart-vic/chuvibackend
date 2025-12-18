@@ -12,7 +12,7 @@ const setupSwagger = require("./swagger.js");
 const limiter = require("./middlewares/rateLimiter.js");
 const corsMiddleware = require('./config/cors.js');
 const setupApp = require("./config/setup.js");
-
+require("./util/emailService.js");
 
 const port = process.env.PORT || 5000;
 const mongoURL = process.env.MONGODB_URL;
