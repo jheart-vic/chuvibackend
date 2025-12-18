@@ -11,6 +11,7 @@ const {
   ROUTE_REFRESH_TOKEN,
   ROUTE_GOOGLE_SIGNUP,
   ROUTE_APPLE_SIGNUP,
+  ROUTE_RESEND_OTP,
 } = require ('../util/page-route');
 
 const router = require ('express').Router ();
@@ -443,6 +444,53 @@ router.post (ROUTE_VERIFY_OTP, (req, res) => {
   const userController = new UserController ();
   return userController.verifyOTP (req, res);
 });
+
+/**
+ * @swagger
+ * /auth/resend-otp:
+ *   post:
+ *     summary: Resend OTP to user email/phone
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: OTP resent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP resent to email successfully.
+ *       400:
+ *         description: Missing or invalid email
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Email already verified
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_RESEND_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.resendOtp(req, res);
+});
+
+
 /**
  * @swagger
  * /auth/verify-email:
