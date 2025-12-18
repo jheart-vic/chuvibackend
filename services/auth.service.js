@@ -454,6 +454,70 @@ class AuthService extends BaseService {
       return BaseService.sendFailedResponse({ error })
     }
   }
+  async resendOtp(req, res) {
+    try {
+      const { email } = req.body;
+
+      // validate email
+      if (!email) {
+        return BaseService.sendFailedResponse({
+          error: "Email is required",
+        });
+      }
+
+      // find user
+      const userExists = await UserModel.findOne({ email });
+      if (!userExists) {
+        return BaseService.sendFailedResponse({
+          error: "User not found",
+        });
+      }
+
+      // if already verified
+      if (userExists.isVerified) {
+        return BaseService.sendFailedResponse({
+          error: "Account already verified",
+        });
+      }
+
+      // generate OTP
+      const otp = generateOTP();
+      const expiresAt = new Date(Date.now() + EXPIRES_AT);
+
+      // assign otp
+      userExists.otp = otp;
+      userExists.otpExpiresAt = expiresAt;
+      await userExists.save();
+
+      // Send Email
+      await sendEmail({
+        subject: "Chuvi Laundry — Email Verification",
+        to: userExists.email,
+        html: `
+            <div style="font-family: Arial; padding:15px;">
+              <h2>Your Chuvi Laundry Verification Code</h2>
+              <p>Hello <strong>${userExists.fullName || email}</strong>,</p>
+              <p>Here is your new One-Time-Passcode:</p>
+              <h1 style="font-size:36px;">${otp}</h1>
+              <p>This code expires in 10 minutes.</p>
+            </div>
+        `,
+      });
+
+      // send sms
+      await sendSmsOtp(userExists.phoneNumber, `${otp}`);
+
+      return BaseService.sendSuccessResponse({
+        message: "OTP sent again. Please verify your account.",
+      });
+
+    } catch (error) {
+      console.log("Resend OTP Error:", error);
+      return BaseService.sendFailedResponse({
+        error: "Failed to resend OTP",
+      });
+    }
+  }
   async loginUser (req, res) {
     try {
       const post = req.body
