@@ -210,7 +210,7 @@ class AuthService extends BaseService {
       <p>You have successfully sign up:</p>
       `
       await sendEmail({
-        subject: 'Welcome to Muta App',
+        subject: 'Welcome to Chuvi Laundry',
         to: newUser.email,
         html: emailHtml
       })
