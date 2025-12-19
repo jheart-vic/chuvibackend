@@ -494,12 +494,12 @@ class AuthService extends BaseService {
         subject: "Chuvi Laundry — Email Verification",
         to: userExists.email,
         html: `
-            <div style="font-family: Arial; padding:15px;">
-              <h2>Your Chuvi Laundry Verification Code</h2>
-              <p>Hello <strong>${userExists.fullName || email}</strong>,</p>
+            <div style="font-family: Arial; padding:15px;" >
+              <h2 style="font-family: Arial; padding:15px; color: #1A73E8;">Your Chuvi Laundry Verification Code</h2>
+              <p>Hello <strong style="font-family: Arial; padding:15px; color: #1A73E8;">${userExists.fullName || email}</strong>,</p>
               <p>Here is your new One-Time-Passcode:</p>
-              <h1 style="font-size:36px;">${otp}</h1>
-              <p>This code expires in 10 minutes.</p>
+              <h1 style="font-size:36px; color: #1A73E8;">${otp}</h1>
+              <p>This code expires in <strong>10 minutes.</strong></p>
             </div>
         `,
       });
