@@ -9,8 +9,6 @@ const {
   generateOTP,
   verifyRefreshToken,
   signAccessToken,
-  formatNotificationTime,
-  getWeightImprovementTipsByWeight,
 } = require("../util/helper");
 const { EXPIRES_AT } = require("../util/constants");
 
@@ -64,6 +62,7 @@ class AuthService extends BaseService {
       newUser.otp = otp;
       newUser.otpExpiresAt = expiresAt;
       await newUser.save();
+      newUser.password = undefined;
 
       // Send OTP Email
       await sendEmail({
@@ -343,8 +342,8 @@ class AuthService extends BaseService {
       }
 
       const { email, otp } = post;
-
-      const userExists = await UserModel.findOne({ email });
+      
+      const userExists = await UserModel.findOne({ email }).select('otp otpExpiresAt');
       if (empty(userExists)) {
         return BaseService.sendFailedResponse({
           error: "User not found. Please try again later",
@@ -418,7 +417,7 @@ class AuthService extends BaseService {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const userExists = await UserModel.findOne({ email });
+      const userExists = await UserModel.findOne({ email }).select("+password");
 
       if (empty(userExists)) {
         return BaseService.sendFailedResponse({
@@ -483,6 +482,8 @@ class AuthService extends BaseService {
 
       // res.header("Authorization", `Bearer ${accessToken}`);
       // res.header("refresh_token", `Bearer ${refreshToken}`);
+
+      userExists.password = undefined
 
       return BaseService.sendSuccessResponse({
         message: accessToken,

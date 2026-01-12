@@ -1,3 +1,4 @@
+const AdminOrderDetailsModel = require("../models/adminOrderDetails.model");
 const AdminSettingModel = require("../models/adminSetting.model");
 
 
@@ -14,6 +15,20 @@ const init = async () => {
       dryCleanPerPiece: 8000,
     }
     await AdminSettingModel.create(defaultSetting)
+
+  } catch (error) {
+    console.error("App init failed:", error);
+  }
+};
+
+const createAdminOrderDetails = async () => {
+  try {
+    const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
+    if (adminOrderDetails) {
+      return;
+    }
+    await AdminOrderDetailsModel.create({})
+
   } catch (error) {
     console.error("App init failed:", error);
   }
@@ -22,6 +37,7 @@ const init = async () => {
 
 async function setupApp() {
   init();
+  createAdminOrderDetails();
   console.log("App init successful");
 }
 

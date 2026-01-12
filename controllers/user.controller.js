@@ -1,3 +1,4 @@
+const PaystackService = require("../services/paystack.service");
 const UserService = require("../services/user.service");
 const  BaseController = require("./base.controller");
 
@@ -17,6 +18,14 @@ class UserController extends BaseController{
             return BaseController.sendFailedResponse(res, updateUserProfile.data)
         }
         return BaseController.sendSuccessResponse(res, updateUserProfile.data)
+    }
+    async initializePayment(req, res){
+        const paystackService = new PaystackService()
+        const initializePayment = await paystackService.initializePayment(req)
+        if(!initializePayment.success){
+            return BaseController.sendFailedResponse(res, initializePayment.data)
+        }
+        return BaseController.sendSuccessResponse(res, initializePayment.data)
     }
 }
 

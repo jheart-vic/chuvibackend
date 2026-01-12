@@ -30,13 +30,18 @@ const ORDER_STATUS = {
   IRONING: "ironing"
 };
 const PAYMENT_ORDER_STATUS = {
-  PAID: "paid",
-  PENDING: "pending"
+  SUCCESS: "success",
+  PENDING: "pending",
+  FAILED: "failed"
 };
 
 const PAYMENT_METHOD = {
-  PAY_ON_DELIVERY: "pay-on-delivery",
-  BANK_TRANFER: "bank-transfer"
+  // PAY_ON_DELIVERY: "pay-on-delivery",
+  BANK_TRANFER: "bank-transfer",
+  PAYPAL: "paypal",
+  PAYSTACK: "paystack",
+  WALLET: "wallet",
+  CARD: "card",
 };
 
 const NOTIFICATION_TYPE = {
@@ -48,6 +53,35 @@ const NOTIFICATION_TYPE = {
   ORDER_DELIVERED: "order-delivered",
 };
 
+const ORDER_SERVICE_TYPE = {
+  WASHING_ONLY: "washing-only",
+  IRONING_ONLY: "ironing-only",
+  WASH_AND_IRON: "wash-and-iron",
+};
+
+const BILLING_TYPE = {
+  PAY_PER_ITEM: "pay-per-item",
+  PAY_FROM_SUBSCRIPTION: "pay-from-subscription",
+};
+
+const SERVICE_TIERS = {
+  STUDENT: "student",
+  STANDARD: "standard",
+  PREMIUM: "premium",
+  VIP: "vip",
+};
+
+const DELIVERY_SPEED = {
+  STANDARD: "standard",
+  EXPRESS: "express",
+  VIP: "vip",
+};
+
+const PICK_UP_TIME = {
+  MORNING_TIME: "10am-12pm",
+  EVENING_TIME: "4pm-6pm",
+};
+
 module.exports = {
   EXPIRES_AT,
   DELIVERY_CHARGE,
@@ -57,5 +91,10 @@ module.exports = {
   ORDER_STATUS,
   PAYMENT_ORDER_STATUS,
   PAYMENT_METHOD,
-  NOTIFICATION_TYPE
+  NOTIFICATION_TYPE,
+  ORDER_SERVICE_TYPE,
+  BILLING_TYPE,
+  SERVICE_TIERS,
+  DELIVERY_SPEED,
+  PICK_UP_TIME
 };

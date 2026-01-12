@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, trim: true, unique: true },
     fullName: { type: String, trim: true },
-    password: { type: String },
+    password: { type: String, select: false },
     phoneNumber: { type: String },
     userType: {
       type: String,
@@ -27,10 +27,10 @@ const userSchema = new mongoose.Schema(
       },
       required: true,
     },
-    otp: { type: String },
+    otp: { type: String, select: false },
     customerCode: { type: String },
     emailToken: { type: String },
-    otpExpiresAt: { type: Date },
+    otpExpiresAt: { type: Date, select: false },
     isVerified: { type: Boolean, default: false },
     servicePlatform: {
       type: String,

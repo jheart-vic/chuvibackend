@@ -12,6 +12,7 @@ const setupSwagger = require("./swagger.js");
 const limiter = require("./middlewares/rateLimiter.js");
 const corsMiddleware = require('./config/cors.js');
 const setupApp = require("./config/setup.js");
+const webhookFunction = require("./util/webhook.js");
 
 
 const port = process.env.PORT || 5000;
@@ -23,7 +24,7 @@ const httpServer = http.createServer(app);
 // Use CORS with the specified options
 app.use(corsMiddleware);
 
-// app.post("/webhook", express.raw({ type: "application/json" }), webhookFunction);
+app.post("/webhook", express.raw({ type: "application/json" }), webhookFunction);
 
 
 app.use(express.json());
