@@ -12,6 +12,15 @@ class UserController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
+  async resendOtp(req, res) {
+    const service = new UserService();
+    const result = await service.resendOtp(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+
   async loginUser(req, res) {
     const service = new UserService();
     const result = await service.loginUser(req, res);
