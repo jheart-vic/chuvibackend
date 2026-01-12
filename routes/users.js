@@ -51,6 +51,7 @@ const {
   ROUTE_GET_UNREAD_NOTIFICATIONS_COUNT,
   ROUTE_DELETE_USER,
   ROUTE_CUSTOMER_SUPPORT,
+  ROUTE_INITIALIZE_PAYMENT,
 } = require("../util/page-route");
 
 const router = require("express").Router();
@@ -218,6 +219,102 @@ router.get(ROUTE_GET_ACCOUNT, [auth], (req, res) => {
 router.put(ROUTE_UPDATE_USER, [auth], (req, res) => {
   const userController = new UserController();
   return userController.updateUserProfile(req, res);
+});
+
+/**
+ * @swagger
+ * /users/initialize-payment:
+ *   post:
+ *     summary: Initialize a Paystack payment
+ *     description: Initializes a Paystack transaction for a user subscribing to a fitness plan. Returns an authorization URL that the user can use to complete payment.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - amount
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "chiemelapromise30@gmail.com"
+ *                 description: The user's email address
+ *               type:
+ *                 type: string
+ *                 example: "order | subscription"
+ *                 description: The type of payment made
+ *               orderId:
+ *                 type: string
+ *                 example: "696537bdf4cd2de9186cb729"
+ *                 description: The order Id
+ *               amount:
+ *                 type: string
+ *                 example: "4500000"
+ *                 description: Amount in kobo (₦1 = 100 kobo)
+ *     responses:
+ *       200:
+ *         description: Payment initialized successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Payment initialized successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     authorization_url:
+ *                       type: string
+ *                       example: "https://checkout.paystack.com/2v4t6w4s8s"
+ *                     access_code:
+ *                       type: string
+ *                       example: "ACCESS_23s5z3m0ha"
+ *                     reference:
+ *                       type: string
+ *                       example: "T513406671019712"
+ *       400:
+ *         description: Validation error — missing or invalid fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: object
+ *                   example:
+ *                     email: ["email is required"]
+ *                     amount: ["amount is required"]
+ *       500:
+ *         description: Server error during payment initialization
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "An internal server error occurred. Please try again later."
+ */
+router.post(ROUTE_INITIALIZE_PAYMENT, auth, (req, res) => {
+  const userController = new UserController();
+  return userController.initializePayment(req, res);
 });
 
 module.exports = router;

@@ -85,11 +85,11 @@ function createMulterInstance(
   });
 }
 
-const image_uploader = createMulterInstance("muta-images", [
+const image_uploader = createMulterInstance("chuvi-images", [
   { width: 500, height: 500, crop: "limit" },
 ]);
-const video_uploader = createMulterInstance("muta-videos", [], "video");
-const document_uploader = createMulterInstance("muta-documents", [], "raw");
+const video_uploader = createMulterInstance("chuvi-videos", [], "video");
+const document_uploader = createMulterInstance("chuvi-documents", [], "raw");
 
 module.exports = {
   image_uploader,

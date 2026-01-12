@@ -10,10 +10,9 @@ const {
   generateOTP,
   verifyRefreshToken,
   signAccessToken,
-  formatNotificationTime,
-  getWeightImprovementTipsByWeight
-} = require('../util/helper')
-const { EXPIRES_AT } = require('../util/constants')
+} = require("../util/helper");
+const { EXPIRES_AT } = require("../util/constants");
+
 
 class AuthService extends BaseService {
   async createUser (req, res) {
@@ -61,9 +60,10 @@ class AuthService extends BaseService {
       const otp = generateOTP()
       const expiresAt = new Date(Date.now() + EXPIRES_AT)
 
-      newUser.otp = otp
-      newUser.otpExpiresAt = expiresAt
-      await newUser.save()
+      newUser.otp = otp;
+      newUser.otpExpiresAt = expiresAt;
+      await newUser.save();
+      newUser.password = undefined;
 
       // Send OTP Email
       await sendEmail({
@@ -388,20 +388,9 @@ class AuthService extends BaseService {
         otp: 'string|required'
       }
 
-      const validateMessage = {
-        required: ':attribute is required',
-        'email.email': 'Please provide a valid :attribute.'
-      }
-
-      const validateResult = validateData(post, validateRule, validateMessage)
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
-      }
-
-      const { email, otp } = post
-
-      const userExists = await UserModel.findOne({ email })
+      const { email, otp } = post;
+      
+      const userExists = await UserModel.findOne({ email }).select('otp otpExpiresAt');
       if (empty(userExists)) {
         return BaseService.sendFailedResponse({
           error: 'User not found. Please try again later'
@@ -465,80 +454,7 @@ class AuthService extends BaseService {
         });
       }
 
-      // find user
-      const userExists = await UserModel.findOne({ email });
-      if (!userExists) {
-        return BaseService.sendFailedResponse({
-          error: "User not found",
-        });
-      }
-
-      // if already verified
-      if (userExists.isVerified) {
-        return BaseService.sendFailedResponse({
-          error: "Account already verified",
-        });
-      }
-
-      // generate OTP
-      const otp = generateOTP();
-      const expiresAt = new Date(Date.now() + EXPIRES_AT);
-
-      // assign otp
-      userExists.otp = otp;
-      userExists.otpExpiresAt = expiresAt;
-      await userExists.save();
-
-      // Send Email
-      await sendEmail({
-        subject: "Chuvi Laundry — Email Verification",
-        to: userExists.email,
-        html: `
-            <div style="font-family: Arial; padding:15px;" >
-              <h2 style="font-family: Arial; padding:15px; color: #1A73E8;">Your Chuvi Laundry Verification Code</h2>
-              <p>Hello <strong style="font-family: Arial; padding:15px; color: #1A73E8;">${userExists.fullName || email}</strong>,</p>
-              <p>Here is your new One-Time-Passcode:</p>
-              <h1 style="font-size:36px; color: #1A73E8;">${otp}</h1>
-              <p>This code expires in <strong>10 minutes.</strong></p>
-            </div>
-        `,
-      });
-
-      // send sms
-      await sendSmsOtp(userExists.phoneNumber, `${otp}`);
-
-      return BaseService.sendSuccessResponse({
-        message: "OTP sent again. Please verify your account.",
-      });
-
-    } catch (error) {
-      console.log("Resend OTP Error:", error);
-      return BaseService.sendFailedResponse({
-        error: "Failed to resend OTP",
-      });
-    }
-  }
-  async loginUser (req, res) {
-    try {
-      const post = req.body
-      const { email, password } = post
-
-      const validateRule = {
-        email: 'email|required',
-        password: 'string|required'
-      }
-      const validateMessage = {
-        required: ':attribute is required',
-        string: ':attribute must be a string',
-        'email.email': 'Please provide a valid :attribute.'
-      }
-
-      const validateResult = validateData(post, validateRule, validateMessage)
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
-      }
-
-      const userExists = await UserModel.findOne({ email })
+      const userExists = await UserModel.findOne({ email }).select("+password");
 
       if (empty(userExists)) {
         return BaseService.sendFailedResponse({
@@ -603,6 +519,8 @@ class AuthService extends BaseService {
 
       // res.header("Authorization", `Bearer ${accessToken}`);
       // res.header("refresh_token", `Bearer ${refreshToken}`);
+
+      userExists.password = undefined
 
       return BaseService.sendSuccessResponse({
         message: accessToken,
