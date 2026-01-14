@@ -11,7 +11,7 @@ const {
   verifyRefreshToken,
   signAccessToken,
 } = require("../util/helper");
-const { EXPIRES_AT } = require("../util/constants");
+const { EXPIRES_AT, SERVICE_PLATFORM } = require("../util/constants");
 
 
 class AuthService extends BaseService {
@@ -389,7 +389,7 @@ class AuthService extends BaseService {
       }
 
       const { email, otp } = post;
-      
+
       const userExists = await UserModel.findOne({ email }).select('otp otpExpiresAt');
       if (empty(userExists)) {
         return BaseService.sendFailedResponse({
@@ -737,6 +737,93 @@ class AuthService extends BaseService {
       })
     }
   }
+  async loginUser (req, res) {
+    try {
+      const post = req.body
+      const { email, password } = post
+
+      const validateRule = {
+        email: 'email|required',
+        password: 'string|required'
+      }
+      const validateMessage = {
+        required: ':attribute is required',
+        string: ':attribute must be a string',
+        'email.email': 'Please provide a valid :attribute.'
+      }
+
+      const validateResult = validateData(post, validateRule, validateMessage)
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data })
+      }
+
+      const userExists = await UserModel.findOne({ email }).select('+password')
+
+      if (empty(userExists)) {
+        return BaseService.sendFailedResponse({
+          error: 'User not found. Please register as a new user'
+        })
+      }
+
+      if (!userExists.isVerified) {
+        return BaseService.sendFailedResponse(
+          {
+            error: 'Email is not verified. Please verifiy your email'
+          },
+          405
+        )
+      }
+
+      if (userExists.servicePlatform === 'google') {
+        // If the user signed up via Google, prevent local login attempt
+        if (password) {
+          return BaseService.sendFailedResponse({
+            error:
+              'This account was created using Google. Please log in using Google.'
+          })
+        }
+      }
+
+      if (userExists.servicePlatform !== SERVICE_PLATFORM.LOCAL) {
+        return BaseService.sendFailedResponse({
+          error: `This account was created using ${userExists.servicePlatform}. Please log in using that platform.`
+        })
+      }
+
+      if (!(await userExists.comparePassword(password))) {
+        return BaseService.sendFailedResponse({
+          error: 'Wrong email or password'
+        })
+      }
+
+      const accessToken = await userExists.generateAccessToken(
+        process.env.ACCESS_TOKEN_SECRET || ''
+      )
+      const refreshToken = await userExists.generateRefreshToken(
+        process.env.REFRESH_TOKEN_SECRET || ''
+      )
+      // res.cookie("growe_refresh_token", refreshToken, {
+      //   httpOnly: true,
+      //   secure: process.env.NODE_ENV === "production",
+      //   path: "/",
+      //   maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      //   sameSite: "strict",
+      // });
+
+      // res.header("Authorization", `Bearer ${accessToken}`);
+      // res.header("refresh_token", `Bearer ${refreshToken}`);
+
+      return BaseService.sendSuccessResponse({
+        message: accessToken,
+        user: userExists,
+        refreshToken
+      })
+    } catch (error) {
+      console.log(error, 'the error')
+      return BaseService.sendFailedResponse({ error })
+    }
+  }
+
 }
 
 module.exports = AuthService

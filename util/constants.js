@@ -82,6 +82,9 @@ const PICK_UP_TIME = {
   EVENING_TIME: "4pm-6pm",
 };
 
+const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5MB
+const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
+
 module.exports = {
   EXPIRES_AT,
   DELIVERY_CHARGE,
@@ -96,5 +99,7 @@ module.exports = {
   BILLING_TYPE,
   SERVICE_TIERS,
   DELIVERY_SPEED,
-  PICK_UP_TIME
+  PICK_UP_TIME,
+  MAX_FILE_BYTES,
+  ALLOWED_MIMES,
 };
