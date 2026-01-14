@@ -27,6 +27,14 @@ class UserController extends BaseController{
         }
         return BaseController.sendSuccessResponse(res, initializePayment.data)
     }
+    async getUserNotifications(req, res){
+        const userService = new UserService()
+        const getUserNotifications = await userService.getUserNotifications(req, res)
+        if(!getUserNotifications.success){
+            return BaseController.sendFailedResponse(res, getUserNotifications.data)
+        }
+        return BaseController.sendSuccessResponse(res, getUserNotifications.data)
+    }
 }
 
 module.exports = UserController

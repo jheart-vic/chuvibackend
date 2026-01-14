@@ -4,18 +4,19 @@ const UserModel = require("../models/user.model");
 const validateData = require("../util/validate");
 const BaseService = require("./base.service");
 const axios = require("axios");
+const paystackAxios = require("./paystack.client.service");
 
 class PaystackService extends BaseService {
-  constructor() {
-    super();
-    this.axiosInstance = axios.create({
-      baseURL: "https://api.paystack.co",
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
-    });
-  }
+//   constructor() {
+//     super();
+//     this.axiosInstance = axios.create({
+//       baseURL: "https://api.paystack.co",
+//       headers: {
+//         Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+//         "Content-Type": "application/json",
+//       },
+//     });
+//   }
 
   async initializePayment(req) {
     try {
@@ -25,7 +26,7 @@ class PaystackService extends BaseService {
       const validateRule = {
         email: "string|required",
         amount: "integer|required",
-        type: "string|required",
+        // type: "string|required",
         orderId: "string|required",
       };
 
@@ -53,14 +54,14 @@ class PaystackService extends BaseService {
       //     return BaseService.sendFailedResponse({error: 'You are already subscribed to this plan'})
       //   }
 
-      const response = await this.axiosInstance.post(
+      const response = await paystackAxios.post(
         "/transaction/initialize",
         {
           email,
           amount, // e.g. 4500000 for ₦45,000.00
           metadata: {
             userId,
-            type: post.type,
+            type: "order_payment",
             orderId: post.orderId,
             paymentMethod,
           }, // VERY helpful for mapping webhooks -> user
@@ -110,7 +111,7 @@ class PaystackService extends BaseService {
     }
   }
   async disableSubscription(paystackSubscriptionId, token) {
-    const resp = await this.axiosInstance.post(
+    const resp = await paystackAxios.post(
       "/subscription/disable",
       {
         code: paystackSubscriptionId,
