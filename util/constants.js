@@ -24,8 +24,10 @@ const GENERAL_STATUS = {
 const ORDER_STATUS = {
   IN_PROCESS: "in-process",
   RECEIVED: "received",
+  PICKED_UP: "picked-up",
   READY: "ready",
   DELIVERED: "delivered",
+  OUT_FOR_DELIVERY: "out-for-delivery",
   WASHING: "washing",
   IRONING: "ironing"
 };
@@ -51,6 +53,7 @@ const NOTIFICATION_TYPE = {
   ORDER_WASHING: "order-washing",
   ORDER_IRONING: "order-ironing",
   ORDER_DELIVERED: "order-delivered",
+  PAYMENT_APPROVED: "payment-approved",
 };
 
 const ORDER_SERVICE_TYPE = {

@@ -13,6 +13,7 @@ const {
   getWeightImprovementTipsByWeight,
 } = require("../util/helper");
 const { EXPIRES_AT } = require("../util/constants");
+const NotificationModel = require("../models/notification.model");
 
 
 class UserService extends BaseService {
@@ -331,6 +332,22 @@ async deleteUser(req, res) {
     });
   }
 }
+  async getUserNotifications(req) {
+    try {
+      const userId = req.user.id
+
+      const notifications = await NotificationModel.find({userId}).sort({createdAt: -1})
+
+      return BaseService.sendSuccessResponse({
+        message: notifications,
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({
+        error: this.server_error_message,
+      });
+    }
+  }
 }
 
 module.exports = UserService;

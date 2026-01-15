@@ -5,7 +5,7 @@ const notificationSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     body: { type: String, required: true },
-    subBody: { type: String, required: true },
+    subBody: { type: String },
     type: {
       type: String,
       required: true,
@@ -16,6 +16,7 @@ const notificationSchema = new mongoose.Schema(
         NOTIFICATION_TYPE.ORDER_IRONING,
         NOTIFICATION_TYPE.ORDER_WASHING,
         NOTIFICATION_TYPE.ORDER_PICKED,
+        NOTIFICATION_TYPE.PAYMENT_APPROVED,
     ],
       default: NOTIFICATION_TYPE.SYSTEM,
     },

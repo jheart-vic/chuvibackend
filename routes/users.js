@@ -57,6 +57,8 @@ const {
   ROUTE_UPDATE_ADDRESS,
   ROUTE_GET_ADDRESS,
   ROUTE_NOTITICATION_PREFERENCE
+  ROUTE_GET_USER_NOTIFICATIONS,
+  ROUTE_INITIALIZE_ORDER_PAYMENT,
 } = require("../util/page-route");
 const { image_uploader } = require("../util/imageUpload");
 const router = require("express").Router();
@@ -390,9 +392,10 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
 /**
  * @swagger
  * /users/initialize-payment:
+ * /users/initialize-order-payment:
  *   post:
- *     summary: Initialize a Paystack payment
- *     description: Initializes a Paystack transaction for a user subscribing to a fitness plan. Returns an authorization URL that the user can use to complete payment.
+ *     summary: Initialize an order payment with Paystack
+ *     description: Initializes a Paystack transaction for order.
  *     tags:
  *       - Users
  *     security:
@@ -411,10 +414,6 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                 type: string
  *                 example: "chiemelapromise30@gmail.com"
  *                 description: The user's email address
- *               type:
- *                 type: string
- *                 example: "order | subscription"
- *                 description: The type of payment made
  *               orderId:
  *                 type: string
  *                 example: "696537bdf4cd2de9186cb729"
@@ -478,7 +477,7 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                   type: string
  *                   example: "An internal server error occurred. Please try again later."
  */
-router.post(ROUTE_INITIALIZE_PAYMENT, auth, (req, res) => {
+router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
   const userController = new UserController();
   return userController.initializePayment(req, res);
 });
@@ -509,6 +508,14 @@ router.post(ROUTE_INITIALIZE_PAYMENT, auth, (req, res) => {
  *     responses:
  *       200:
  *         description: Notification preference updated successfully
+ * /users/get-user-notifications:
+ *   get:
+ *     summary: Get all notifications for a user
+ *     tags:
+ *       - Users
+ *     responses:
+ *       200:
+ *         description: List of user notifications
  *         content:
  *           application/json:
  *             schema:
@@ -566,6 +573,49 @@ router.patch(
 router.delete(ROUTE_DELETE_USER, [auth], (req, res) => {
   const userController = new UserController();
   return userController.deleteUser(req, res);
+ /**                 message:
+ *                   type: array
+ *                   description: Array of notification objects for the user
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                         description: Unique identifier for the notification
+ *                         example: 64d3c9c0f1b2a8e9d0f12345
+ *                       title:
+ *                         type: string
+ *                         description: Notification title
+ *                         example: "Order Delivered"
+ *                       body:
+ *                         type: string
+ *                         description: Main content of the notification
+ *                         example: "Your order #OSC123456 has been delivered."
+ *                       subBody:
+ *                         type: string
+ *                         description: Additional information for the notification
+ *                         example: "Delivered by driver John"
+ *                       type:
+ *                         type: string
+ *                         description: Type of the notification
+ *                         enum: [system, order_created, order_delivered, order_ironing, order_washing, order_picked, payment_approved]
+ *                         example: "order_delivered"
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Date and time when the notification was created
+ *                         example: "2026-01-13T12:34:56.789Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Date and time when the notification was last updated
+ *                         example: "2026-01-13T13:00:00.123Z"
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_USER_NOTIFICATIONS, auth, (req, res) => {
+  const userController = new UserController();
+  return userController.getUserNotifications(req, res);
 });
 
 module.exports = router;

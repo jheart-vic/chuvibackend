@@ -82,8 +82,9 @@ const bookOrderSchema = new mongoose.Schema(
         type: String,
         required: true,
         enum: [
-          ORDER_STATUS.RECEIVED,
+          ORDER_STATUS.PICKED_UP,
           ORDER_STATUS.DELIVERED,
+          ORDER_STATUS.OUT_FOR_DELIVERY,
           ORDER_STATUS.IN_PROCESS,
           ORDER_STATUS.READY,
           ORDER_STATUS.WASHING,
