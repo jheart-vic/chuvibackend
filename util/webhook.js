@@ -2,6 +2,8 @@ const crypto = require("crypto");
 const UserModel = require("../models/user.model.js");
 const axios = require("axios");
 const PaymentModel = require("../models/payment.model.js");
+const WalletTransactionModel = require("../models/walletTransaction.model.js");
+const WalletModel = require("../models/wallet.model.js");
 
 
 const webhookFunction = async (req, res) => {
@@ -39,7 +41,8 @@ const webhookFunction = async (req, res) => {
       if (!user) {
         return res.status(404).send("User not found");
       }
-      if (metadata.type === "order") {
+
+      if (metadata.type === "order_payment") {
         const orderId = metadata.orderId;
 
         if (!orderId) {
@@ -77,6 +80,42 @@ const webhookFunction = async (req, res) => {
         console.log(`Order ${order._id} marked as paid.`);
 
         return res.status(200).send("Order payment processed.");
+      }
+
+      if(metadata.type === "wallet_topup"){
+        const user = await UserModel.findOne({ email: userEmail });
+        if (!user) {
+          return res.status(404).send("User not found");
+        }
+        await PaymentModel.create({
+          user: user._id,
+          amount: data.amount / 100, // Paystack amount is in kobo
+          reference: data.reference,
+          status: "success",
+          type: "wallet_topup",
+          metadata,
+          channel: data.channel,
+          paidAt: new Date(data.paid_at),
+        });
+
+        await WalletModel.findOneAndUpdate(
+            { userId: user._id },
+            { $inc: { balance: data.amount / 100 } },
+            { new: true, upsert: true }
+        );
+
+        await WalletTransactionModel.create({
+            walletId: user._id,
+            type: "credit",
+            amount: data.amount / 100,
+            reference: data.reference,
+            status: "success",
+            description: "Wallet Top-Up",
+        });
+
+        console.log(`Wallet top-up recorded for user ${user._id}.`);
+
+        return res.status(200).send("Wallet top-up processed.");
       }
 
       if (

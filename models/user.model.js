@@ -4,6 +4,11 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { ROLE, SERVICE_PLATFORM, GENERAL_STATUS } = require("../util/constants");
 
+const AddressSchema = new mongoose.Schema({
+  label: { type: String, required: true },
+  address: { type: String, required: true }
+});
+
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, trim: true, unique: true },
@@ -42,8 +47,8 @@ const userSchema = new mongoose.Schema(
       default: GENERAL_STATUS.ACTIVE,
       enum: [GENERAL_STATUS.ACTIVE, GENERAL_STATUS.INACTIVE, GENERAL_STATUS.SUSPENDED],
     },
-    address: { type: String },
-    address2: { type: String },
+    addresses: [AddressSchema],
+    // address2: { type: String },
     whatsappNotification: { type: Boolean, default: false },
     emailNotification: { type: Boolean, default: false },
     lastChangedPassword: { type: Date },
@@ -67,6 +72,13 @@ userSchema.pre("save", async function (next) {
   } catch (error) {
     return next(error);
   }
+});
+
+userSchema.pre("save", function (next) {
+  if (this.isNew && this.isVerified) {
+    this.emailNotification = true;
+  }
+  next();
 });
 
 userSchema.methods.comparePassword = async function (password) {
