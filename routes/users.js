@@ -44,10 +44,23 @@ const {
   ROUTE_MARK_ALL_NOTIFICATIONS_AS_READ,
   ROUTE_GET_VERIFIED_COACHES,
   ROUTE_UPDATE_USER,
+  ROUTE_CANCEL_PLAN,
+  ROUTE_VERIFY_PHONE_NUMBER,
+  ROUTE_UPDATE_PHONE_NUMBER,
+  ROUTE_COACH_DASHBOARD,
+  ROUTE_GET_UNREAD_NOTIFICATIONS_COUNT,
+  ROUTE_DELETE_USER,
+  ROUTE_CUSTOMER_SUPPORT,
+  ROUTE_INITIALIZE_PAYMENT,
+  ROUTE_DELETE_ADDRESS,
+  ROUTE_ADD_ADDRESS,
+  ROUTE_UPDATE_ADDRESS,
+  ROUTE_GET_ADDRESS,
+  ROUTE_NOTITICATION_PREFERENCE
   ROUTE_GET_USER_NOTIFICATIONS,
   ROUTE_INITIALIZE_ORDER_PAYMENT,
 } = require("../util/page-route");
-
+const { image_uploader } = require("../util/imageUpload");
 const router = require("express").Router();
 
 /**
@@ -217,6 +230,168 @@ router.put(ROUTE_UPDATE_USER, [auth], (req, res) => {
 
 /**
  * @swagger
+ * /users/profile-image-upload:
+ *   post:
+ *     summary: Upload or update user profile image
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *                 description: Profile image file
+ *     responses:
+ *       200:
+ *         description: Profile image uploaded successfully
+ *       400:
+ *         description: Invalid file or missing image
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_PROFILE_IMAGE_UPLOAD, [auth], image_uploader.single("image"), (req, res) => {
+  const userController = new UserController();
+  return userController.uploadProfileImage(req, res);
+});
+
+/**
+ * @swagger
+ * /users/add-address:
+ *   post:
+ *     summary: Add a new address to the user's address list
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               label:
+ *                 type: string
+ *                 example: "Home"
+ *                 description: Label for the address
+ *               address:
+ *                 type: string
+ *                 example: "123 Main Street, Anytown, USA"
+ *                 description: Full address details
+ *     responses:
+ *       200:
+ *         description: Address added successfully
+ *       400:
+ *         description: Invalid input data
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_ADD_ADDRESS, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.addAddress(req, res);
+});
+
+/**
+ * @swagger
+ * /users/delete-address:
+ *   delete:
+ *     summary: Delete an address from the user's address list
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Address deleted successfully
+ *       400:
+ *         description: Deleting address failed
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.delete(ROUTE_DELETE_ADDRESS, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.deleteAddress(req, res);
+});
+
+/**
+ * @swagger
+ * /users/get-address:
+ *   get:
+ *     summary: Get user's address list
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Address added successfully
+ *       400:
+ *         description: Invalid input data
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_ADDRESS, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.getAddress(req, res);
+});
+
+/**
+ * @swagger
+ * /users/update-address:
+ *   post:
+ *     summary: Update an existing address in the user's address list
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               label:
+ *                 type: string
+ *                 example: "Home"
+ *                 description: Label for the address
+ *               address:
+ *                 type: string
+ *                 example: "123 Main Street, Anytown, USA"
+ *                 description: Full address details
+ *     responses:
+ *       200:
+ *         description: Address updated successfully
+ *       400:
+ *         description:Failing to update address
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.updateAddress(req, res);
+});
+
+/**
+ * @swagger
+ * /users/initialize-payment:
  * /users/initialize-order-payment:
  *   post:
  *     summary: Initialize an order payment with Paystack
@@ -309,6 +484,30 @@ router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
 
 /**
  * @swagger
+ * /users/notification-preference:
+ *   patch:
+ *     tags:
+ *       - User
+ *     summary: Update user notification preferences
+ *     description: Enable or disable email and WhatsApp notifications for the authenticated user.
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               whatsappNotification:
+ *                 type: boolean
+ *                 example: true
+ *               emailNotification:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: Notification preference updated successfully
  * /users/get-user-notifications:
  *   get:
  *     summary: Get all notifications for a user
@@ -322,7 +521,59 @@ router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
+ *                   type: string
+ *                   example: Notification preference updated
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     whatsappNotification:
+ *                       type: boolean
+ *                       example: true
+ *                     emailNotification:
+ *                       type: boolean
+ *                       example: false
+ *       400:
+ *         description: Invalid request body
+ *       401:
+ *         description: Unauthorized (missing or invalid token)
+ *       500:
+ *         description: Internal server error
+ */
+router.patch(
+  ROUTE_NOTITICATION_PREFERENCE,
+  [auth],(req, res) => {
+  const userController = new UserController();
+  return userController.notificationPreference(req, res);
+});
+
+
+/**
+ * @swagger
+ * /users/delete-user:
+ *   delete:
+ *     summary: Delete an user from the system
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       400:
+ *         description: Deleting user failed
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.delete(ROUTE_DELETE_USER, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.deleteUser(req, res);
+ /**                 message:
  *                   type: array
  *                   description: Array of notification objects for the user
  *                   items:
