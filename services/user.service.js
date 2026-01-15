@@ -97,7 +97,7 @@ class UserService extends BaseService {
   }
  }
 
- async profileImageUpload(req) {
+async profileImageUpload(req) {
   try {
     if (!req.file) {
       return BaseService.sendFailedResponse({
@@ -114,13 +114,16 @@ class UserService extends BaseService {
 
     // Delete old image if exists
     if (user.image?.publicId) {
-      await deleteImage(user.image.publicId);
+      await deleteImage(user.image.publicId, "image");
     }
 
-    // Save new image from Cloudinary (multer already uploaded it)
+    // Upload new image to Cloudinary
+    const result = await uploadImage(req.file);
+
+    // Save new image details
     user.image = {
-      imageUrl: req.file.path,      // Cloudinary secure URL
-      publicId: req.file.public_id, // Cloudinary public ID
+      imageUrl: result.secure_url,
+      publicId: result.public_id,
     };
 
     await user.save();
@@ -135,7 +138,8 @@ class UserService extends BaseService {
       error: "Something went wrong. Please try again later.",
     });
   }
- }
+}
+
 
  async addAddress(req) {
     try {
