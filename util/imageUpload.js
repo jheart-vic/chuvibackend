@@ -1,23 +1,29 @@
 require("dotenv").config();
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
-const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const streamifier = require("streamifier");
 
-// configure cloudinary
+/**
+ * ===============================
+ * Cloudinary Configuration
+ * ===============================
+ */
 cloudinary.config({
-  // secure: true,
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+/**
+ * ===============================
+ * Helpers
+ * ===============================
+ */
 function getPublicIdFromUrl(imageUrl) {
-  const splittedUrls = imageUrl.split("/");
-  const res = splittedUrls[splittedUrls.length - 1].split(".")[0];
-  if (res) {
-    return res;
-  }
-  return null;
+  if (!imageUrl) return null;
+  const parts = imageUrl.split("/");
+  const filename = parts[parts.length - 1];
+  return filename?.split(".")[0] || null;
 }
 
 async function deleteImage(publicId, resourceType = "image") {
@@ -26,27 +32,22 @@ async function deleteImage(publicId, resourceType = "image") {
       resource_type: resourceType,
     });
     console.log(result, "deleted successfully");
+    return result;
   } catch (err) {
-    console.log(err);
+    console.error(err);
+    throw err;
   }
 }
 
-function createMulterInstance(
-  folder,
-  transformation = [],
-  resourceType = "image"
-) {
-  const storage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-      folder: folder,
-      resource_type: resourceType,
-      transformation: transformation,
-    },
-  });
-
+/**
+ * ===============================
+ * Multer (Memory Storage)
+ * ===============================
+ */
+function createMulterUploader(resourceType = "image") {
   return multer({
-    storage: storage,
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
     fileFilter: (req, file, cb) => {
       const imageTypes = [
         "image/jpeg",
@@ -61,23 +62,17 @@ function createMulterInstance(
         "application/pdf",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ];
+      ];
 
       if (resourceType === "image" && imageTypes.includes(file.mimetype)) {
         cb(null, true);
-      } else if (
-        resourceType === "video" &&
-        videoTypes.includes(file.mimetype)
-      ) {
+      } else if (resourceType === "video" && videoTypes.includes(file.mimetype)) {
         cb(null, true);
       } else if (resourceType === "raw" && rawTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        console.log({resourceType, mimetype: file.mimetype});
         cb(
-          new Error(
-            "Invalid file format. Only supported formats are allowed."
-          ),
+          new Error("Invalid file format. Only supported formats are allowed."),
           false
         );
       }
@@ -85,16 +80,68 @@ function createMulterInstance(
   });
 }
 
-const image_uploader = createMulterInstance("chuvi-images", [
-  { width: 500, height: 500, crop: "limit" },
-]);
-const video_uploader = createMulterInstance("chuvi-videos", [], "video");
-const document_uploader = createMulterInstance("chuvi-documents", [], "raw");
+/**
+ * ===============================
+ * Cloudinary Upload Stream
+ * ===============================
+ */
+function uploadToCloudinary(buffer, options = {}) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      options,
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    streamifier.createReadStream(buffer).pipe(stream);
+  });
+}
+
+/**
+ * ===============================
+ * Preconfigured Uploaders
+ * ===============================
+ */
+const image_uploader = createMulterUploader("image");
+const video_uploader = createMulterUploader("video");
+const document_uploader = createMulterUploader("raw");
+
+/**
+ * ===============================
+ * Exported Upload Functions
+ * ===============================
+ */
+async function uploadImage(file) {
+  return uploadToCloudinary(file.buffer, {
+    folder: "chuvi-images",
+    resource_type: "image",
+    transformation: [{ width: 500, height: 500, crop: "limit" }],
+  });
+}
+
+async function uploadVideo(file) {
+  return uploadToCloudinary(file.buffer, {
+    folder: "chuvi-videos",
+    resource_type: "video",
+  });
+}
+
+async function uploadDocument(file) {
+  return uploadToCloudinary(file.buffer, {
+    folder: "chuvi-documents",
+    resource_type: "raw",
+  });
+}
 
 module.exports = {
   image_uploader,
+  video_uploader,
+  document_uploader,
+  uploadImage,
+  uploadVideo,
+  uploadDocument,
   getPublicIdFromUrl,
   deleteImage,
-  video_uploader,
-  document_uploader
 };
