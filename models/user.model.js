@@ -74,6 +74,13 @@ userSchema.pre("save", async function (next) {
   }
 });
 
+userSchema.pre("save", function (next) {
+  if (this.isNew && this.isVerified) {
+    this.emailNotification = true;
+  }
+  next();
+});
+
 userSchema.methods.comparePassword = async function (password) {
   const user = this;
   // console.log({password, userPassword: user.password})

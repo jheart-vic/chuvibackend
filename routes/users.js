@@ -56,7 +56,7 @@ const {
   ROUTE_ADD_ADDRESS,
   ROUTE_UPDATE_ADDRESS,
   ROUTE_GET_ADDRESS,
-  ROUTE_NOTITICATION_PREFERENCE
+  ROUTE_NOTITICATION_PREFERENCE,
   ROUTE_GET_USER_NOTIFICATIONS,
   ROUTE_INITIALIZE_ORDER_PAYMENT,
 } = require("../util/page-route");
@@ -572,7 +572,7 @@ router.patch(
  */
 router.delete(ROUTE_DELETE_USER, [auth], (req, res) => {
   const userController = new UserController();
-  return userController.deleteUser(req, res);
+  return userController.deleteUser(req, res);});
  /**                 message:
  *                   type: array
  *                   description: Array of notification objects for the user
