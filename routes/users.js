@@ -243,16 +243,18 @@ router.put(ROUTE_UPDATE_USER, [auth], (req, res) => {
  *         multipart/form-data:
  *           schema:
  *             type: object
+ *             required:
+ *               - image
  *             properties:
  *               image:
  *                 type: string
  *                 format: binary
- *                 description: Profile image file
+ *                 description: Profile image file (jpg, png, webp, gif)
  *     responses:
  *       200:
  *         description: Profile image uploaded successfully
  *       400:
- *         description: Invalid file or missing image
+ *         description: Invalid file format or missing image
  *       401:
  *         description: Unauthorized
  *       500:
