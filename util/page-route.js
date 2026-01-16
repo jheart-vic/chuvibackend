@@ -41,6 +41,15 @@ exports.ROUTE_PAY_WITH_WALLET = "/pay-with-wallet"
 exports.ROUTE_FETCH_USER_TRANSACTIONS = "/fetch-user-transactions"
 exports.ROUTE_WALLET_BALANCE = "/wallet-balance"
 
+//subscription
+exports.ROUTE_CREATE_PLAN = '/create-plan'
+exports.ROUTE_GET_PLANS = '/get-plans'
+exports.ROUTE_GET_PLAN = '/get-plan'
+exports.ROUTE_UPDATE_PLAN = '/update-plan'
+exports.ROUTE_DELETE_PLAN = '/delete-plan'
+exports.ROUTE_SUBSCRIBE_PLAN = '/subscribe-plan'
+exports.ROUTE_CANCEL_SUBSCRIPTION = '/cancel-subscription'
+
 
 //seeding
 exports.ROUTE_SEED = '/seed'

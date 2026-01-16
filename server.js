@@ -7,7 +7,7 @@ const connectToMongoDB = require("./config/db.js");
 
 const errorController = require("./controllers/error.controller.js");
 const AppError = require("./util/appError.js");
-const setupSwagger = require("./swagger.js");
+const setupSwagger = require("./swagger/swagger.js");
 // const setupSocket = require("./config/socket.js");
 const limiter = require("./middlewares/rateLimiter.js");
 const corsMiddleware = require('./config/cors.js');

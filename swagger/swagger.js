@@ -14,7 +14,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: "to_be_updated/api",
+        url: "https://chuvibackend.onrender.com/api",
       },
     ],
     components: {
@@ -32,7 +32,7 @@ const swaggerOptions = {
       },
     ],
   },
-  apis: ["./routes/*.js"],
+  apis: ["./routes/**/*.js", "./swagger/**/*.js"]
 };
 
 
