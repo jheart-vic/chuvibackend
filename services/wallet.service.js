@@ -190,6 +190,24 @@ class WalletService extends BaseService {
       return BaseService.sendFailedResponse({ error: "Error fetching transactions"});
     }
   }
+  async getWalletBalance(req) {
+    try {
+      const userId = req.user.id;
+
+      const wallet = await WalletModel.findOne({ userId });
+      if (!wallet) {
+        return BaseService.sendFailedResponse({ error: "Wallet not found" });
+      }
+      return BaseService.sendSuccessResponse({
+        message: {
+          balance: wallet.balance
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching transactions:", error);
+      return BaseService.sendFailedResponse({ error: "Error fetching transactions"});
+    }
+  }
 }
 
 module.exports = WalletService;
