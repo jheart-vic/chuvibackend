@@ -125,10 +125,12 @@ router.get(ROUTE_GET_ACCOUNT, [auth], (req, res) => {
  * @swagger
  * /users/update-user:
  *   put:
- *     summary: Update user profile information
+ *     summary: Update user profile
  *     tags:
  *       - Users
- *     description: Allows an authenticated user to update their profile details such as name, gender, age, fitness level, location, etc.
+ *     description: Allows an authenticated user to update their profile information. At least one field must be provided.
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -136,70 +138,20 @@ router.get(ROUTE_GET_ACCOUNT, [auth], (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               firstName:
+ *               fullName:
  *                 type: string
- *                 description: First name of the user
- *                 example: Sarah
- *               lastName:
+ *                 description: Full name of the user
+ *                 example: Sarah James
+ *               email:
  *                 type: string
- *                 description: Last name of the user
- *                 example: James
- *               gender:
+ *                 format: email
+ *                 description: User email address (must be unique)
+ *                 example: sarah.james@example.com
+ *               phoneNumber:
  *                 type: string
- *                 enum: [male, female, other]
- *                 description: Gender of the user
- *                 example: female
- *               age:
- *                 type: integer
- *                 description: Age of the user
- *                 example: 28
- *               focusArea:
- *                 type: array
- *                 description: Optional list of fitness focus areas
- *                 items:
- *                   type: string
- *                 example: ["weight loss", "muscle gain"]
- *               specialty:
- *                 type: array
- *                 description: Optional list of specialty areas (for coaches)
- *                 items:
- *                   type: string
- *                 example: ["yoga", "HIIT"]
- *               fitnessLevel:
- *                 type: string
- *                 enum: [beginner, intermediate, advanced]
- *                 description: Optional fitness level
- *                 example: intermediate
- *               weight:
- *                 type: object
- *                 description: Optional weight of the user
- *                 properties:
- *                   value:
- *                     type: number
- *                     example: 72.5
- *                   unit:
- *                     type: string
- *                     enum: [kg, lbs]
- *                     example: kg
- *               height:
- *                 type: object
- *                 description: Optional height of the user
- *                 properties:
- *                   value:
- *                     type: number
- *                     example: 180
- *                   unit:
- *                     type: string
- *                     enum: [cm, ft]
- *                     example: cm
- *               location:
- *                 type: string
- *                 description: Optional location of the user
- *                 example: "Awka, NG"
- *               yearsOfExperience:
- *                 type: integer
- *                 description: Optional years of experience (for coaches)
- *                 example: 5
+ *                 description: User phone number
+ *                 example: "+2348012345678"
+ *             minProperties: 1
  *     responses:
  *       200:
  *         description: User profile updated successfully
@@ -217,11 +169,22 @@ router.get(ROUTE_GET_ACCOUNT, [auth], (req, res) => {
  *                 data:
  *                   $ref: '#/components/schemas/User'
  *       400:
- *         description: Bad request, such as missing or invalid fields
+ *         description: Bad request (nothing to update or email already in use)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Nothing to update
  *       401:
- *         description: Unauthorized, user not authenticated
+ *         description: Unauthorized – invalid or missing access token
  *       500:
- *         description: Server error
+ *         description: Internal server error
  */
 router.put(ROUTE_UPDATE_USER, [auth], (req, res) => {
   const userController = new UserController();
@@ -280,18 +243,40 @@ router.post(ROUTE_PROFILE_IMAGE_UPLOAD, [auth], image_uploader.single("image"), 
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - label
+ *               - address
  *             properties:
  *               label:
  *                 type: string
- *                 example: "Home"
- *                 description: Label for the address
+ *                 example: Home
  *               address:
  *                 type: string
  *                 example: "123 Main Street, Anytown, USA"
- *                 description: Full address details
  *     responses:
- *       200:
+ *       201:
  *         description: Address added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Address added successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: 64fbc91d7e9a8c0012ab3456
+ *                     label:
+ *                       type: string
+ *                     address:
+ *                       type: string
  *       400:
  *         description: Invalid input data
  *       401:
@@ -306,20 +291,38 @@ router.post(ROUTE_ADD_ADDRESS, [auth], (req, res) => {
 
 /**
  * @swagger
- * /users/delete-address:
+ * /users/delete-address/{addressId}:
  *   delete:
  *     summary: Delete an address from the user's address list
  *     tags:
  *       - Users
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: addressId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID of the address to delete
  *     responses:
  *       200:
  *         description: Address deleted successfully
- *       400:
- *         description: Deleting address failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Address deleted successfully
  *       401:
  *         description: Unauthorized
+ *       404:
+ *         description: Address not found
  *       500:
  *         description: Server error
  */
@@ -339,9 +342,29 @@ router.delete(ROUTE_DELETE_ADDRESS, [auth], (req, res) => {
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Address added successfully
- *       400:
- *         description: Invalid input data
+ *         description: Address list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                         example: 64fbc91d7e9a8c0012ab3456
+ *                       label:
+ *                         type: string
+ *                         example: Home
+ *                       address:
+ *                         type: string
+ *                         example: "123 Main Street, Anytown, USA"
  *       401:
  *         description: Unauthorized
  *       500:
@@ -354,13 +377,20 @@ router.get(ROUTE_GET_ADDRESS, [auth], (req, res) => {
 
 /**
  * @swagger
- * /users/update-address:
- *   post:
- *     summary: Update an existing address in the user's address list
+ * /users/update-address/{addressId}:
+ *   put:
+ *     summary: Update an existing address
  *     tags:
  *       - Users
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: addressId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID of the address to update
  *     requestBody:
  *       required: true
  *       content:
@@ -370,22 +400,24 @@ router.get(ROUTE_GET_ADDRESS, [auth], (req, res) => {
  *             properties:
  *               label:
  *                 type: string
- *                 example: "Home"
- *                 description: Label for the address
+ *                 example: Home
  *               address:
  *                 type: string
  *                 example: "123 Main Street, Anytown, USA"
- *                 description: Full address details
+ *             minProperties: 1
  *     responses:
  *       200:
  *         description: Address updated successfully
  *       400:
- *         description:Failing to update address
+ *         description: Invalid request or nothing to update
  *       401:
  *         description: Unauthorized
+ *       404:
+ *         description: Address not found
  *       500:
  *         description: Server error
  */
+
 router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
   const userController = new UserController();
   return userController.updateAddress(req, res);
@@ -393,7 +425,6 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
 
 /**
  * @swagger
- * /users/initialize-payment:
  * /users/initialize-order-payment:
  *   post:
  *     summary: Initialize an order payment with Paystack
@@ -489,17 +520,18 @@ router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
  * /users/notification-preference:
  *   patch:
  *     tags:
- *       - User
+ *       - Users
  *     summary: Update user notification preferences
  *     description: Enable or disable email and WhatsApp notifications for the authenticated user.
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             minProperties: 1
  *             properties:
  *               whatsappNotification:
  *                 type: boolean
@@ -510,14 +542,6 @@ router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
  *     responses:
  *       200:
  *         description: Notification preference updated successfully
- * /users/get-user-notifications:
- *   get:
- *     summary: Get all notifications for a user
- *     tags:
- *       - Users
- *     responses:
- *       200:
- *         description: List of user notifications
  *         content:
  *           application/json:
  *             schema:
@@ -528,23 +552,22 @@ router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Notification preference updated
+ *                   example: Notification preference updated successfully
  *                 data:
  *                   type: object
  *                   properties:
  *                     whatsappNotification:
  *                       type: boolean
- *                       example: true
  *                     emailNotification:
  *                       type: boolean
- *                       example: false
  *       400:
  *         description: Invalid request body
  *       401:
- *         description: Unauthorized (missing or invalid token)
+ *         description: Unauthorized
  *       500:
  *         description: Internal server error
  */
+
 router.patch(
   ROUTE_NOTITICATION_PREFERENCE,
   [auth],(req, res) => {
@@ -557,7 +580,7 @@ router.patch(
  * @swagger
  * /users/delete-user:
  *   delete:
- *     summary: Delete an user from the system
+ *     summary: Delete the authenticated user account
  *     tags:
  *       - Users
  *     security:
@@ -565,53 +588,88 @@ router.patch(
  *     responses:
  *       200:
  *         description: User deleted successfully
- *       400:
- *         description: Deleting user failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: User account deleted successfully
  *       401:
  *         description: Unauthorized
+ *       404:
+ *         description: User not found
  *       500:
  *         description: Server error
  */
 router.delete(ROUTE_DELETE_USER, [auth], (req, res) => {
   const userController = new UserController();
-  return userController.deleteUser(req, res);});
- /**                 message:
+  return userController.deleteUser(req, res);
+});
+
+/**
+ * @swagger
+ * /users/get-user-notifications:
+ *   get:
+ *     summary: Get notifications for the authenticated user
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
  *                   type: array
- *                   description: Array of notification objects for the user
+ *                   description: List of user notifications
  *                   items:
  *                     type: object
  *                     properties:
  *                       _id:
  *                         type: string
- *                         description: Unique identifier for the notification
  *                         example: 64d3c9c0f1b2a8e9d0f12345
  *                       title:
  *                         type: string
- *                         description: Notification title
- *                         example: "Order Delivered"
+ *                         example: Order Delivered
  *                       body:
  *                         type: string
- *                         description: Main content of the notification
  *                         example: "Your order #OSC123456 has been delivered."
  *                       subBody:
  *                         type: string
- *                         description: Additional information for the notification
- *                         example: "Delivered by driver John"
+ *                         example: Delivered by driver John
  *                       type:
  *                         type: string
- *                         description: Type of the notification
- *                         enum: [system, order_created, order_delivered, order_ironing, order_washing, order_picked, payment_approved]
- *                         example: "order_delivered"
+ *                         enum:
+ *                           - system
+ *                           - order_created
+ *                           - order_delivered
+ *                           - order_ironing
+ *                           - order_washing
+ *                           - order_picked
+ *                           - payment_approved
+ *                         example: order_delivered
  *                       createdAt:
  *                         type: string
  *                         format: date-time
- *                         description: Date and time when the notification was created
  *                         example: "2026-01-13T12:34:56.789Z"
  *                       updatedAt:
  *                         type: string
  *                         format: date-time
- *                         description: Date and time when the notification was last updated
  *                         example: "2026-01-13T13:00:00.123Z"
+ *       401:
+ *         description: Unauthorized
  *       500:
  *         description: Server error
  */
@@ -619,5 +677,6 @@ router.get(ROUTE_GET_USER_NOTIFICATIONS, auth, (req, res) => {
   const userController = new UserController();
   return userController.getUserNotifications(req, res);
 });
+
 
 module.exports = router;

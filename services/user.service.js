@@ -344,7 +344,7 @@ async deleteUser(req, res) {
       const notifications = await NotificationModel.find({userId}).sort({createdAt: -1})
 
       return BaseService.sendSuccessResponse({
-        message: notifications,
+        data: notifications,
       });
     } catch (error) {
       console.log(error);
