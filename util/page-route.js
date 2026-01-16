@@ -39,6 +39,7 @@ exports.ROUTE_BOOK_ORDER_HISTORY = '/book-order-history'
 exports.ROUTE_WALLET_TOP_UP = "/wallet-top-up"
 exports.ROUTE_PAY_WITH_WALLET = "/pay-with-wallet"
 exports.ROUTE_FETCH_USER_TRANSACTIONS = "/fetch-user-transactions"
+exports.ROUTE_WALLET_BALANCE = "/wallet-balance"
 
 
 //seeding
