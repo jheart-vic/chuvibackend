@@ -27,6 +27,14 @@ class WalletController extends BaseController {
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);
     }
+    async getWalletBalance(req, res) {
+      const walletService = new WalletService();
+      const result = await walletService.getWalletBalance(req);
+  
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
   }
 
 module.exports = WalletController;

@@ -5,6 +5,7 @@ const {
   ROUTE_WALLET_TOP_UP,
   ROUTE_FETCH_USER_TRANSACTIONS,
   ROUTE_PAY_WITH_WALLET,
+  ROUTE_WALLET_BALANCE,
 } = require("../util/page-route");
 
 /**
@@ -267,6 +268,64 @@ router.post(ROUTE_PAY_WITH_WALLET, [auth], (req, res) => {
 router.get(ROUTE_FETCH_USER_TRANSACTIONS, [auth], (req, res) => {
   const walletController = new WalletController();
   return walletController.fetchUserTransactions(req, res);
+});
+
+/**
+ * @swagger
+ * /wallet/wallet-balance:
+ *   get:
+ *     summary: Get the wallet balance of the authenticated user
+ *     tags:
+ *       - Wallet
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Wallet balance retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     balance:
+ *                       type: number
+ *                       example: 1500.75
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Wallet not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ */
+router.get(ROUTE_WALLET_BALANCE, [auth], (req, res) => {
+  const walletController = new WalletController();
+  return walletController.getWalletBalance(req, res);
 });
 
 module.exports = router;
