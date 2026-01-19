@@ -169,6 +169,26 @@ class SubscriptionService extends BaseService {
       });
     }
   }
+  async getCurrentSubscription(req) {
+    try {
+      const userId = req.user.id
+
+      const userSubscription = await SubscriptionModel.findOne({ userId, status: "active" });
+
+      if (!userSubscription) {
+        return BaseService.sendFailedResponse({ error: "No active subscription found" });
+      }
+
+
+
+      return BaseService.sendSuccessResponse({ message: userSubscription });
+    } catch (error) {
+      console.log("Error in:", error);
+      return BaseService.sendFailedResponse({
+        error: this.server_error_message,
+      });
+    }
+  }
 }
 
 module.exports = SubscriptionService;
