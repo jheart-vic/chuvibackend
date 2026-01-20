@@ -115,7 +115,7 @@ class AuthService extends BaseService {
       return BaseService.sendFailedResponse({ error })
     }
   }
-async googleSignup(req, res) {
+ async googleSignup(req, res) {
   try {
     const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
     const client = new OAuth2Client(GOOGLE_CLIENT_ID);
@@ -223,7 +223,7 @@ async googleSignup(req, res) {
       error: this.server_error_message,
     });
   }
-}
+ }
 
   async appleSignup (req, res) {
     try {
@@ -643,13 +643,17 @@ async googleSignup(req, res) {
         return BaseService.sendFailedResponse({ error: validateResult.data })
       }
 
-      const { email, password } = post
+      const { email, password, otp } = post
 
       const userExists = await UserModel.findOne({ email })
       if (!userExists) {
         return BaseService.sendFailedResponse({
           error: 'User not found. Please try again later'
         })
+      }
+
+      if (userExists.otp !== otp) {
+        return BaseService.sendFailedResponse({ error: 'Invalid OTP' })
       }
 
       if (Date.now() > userExists.otpExpiresAt) {
@@ -735,92 +739,157 @@ async googleSignup(req, res) {
       })
     }
   }
-  async loginUser (req, res) {
+
+    async registerAdmin(req, res) {
     try {
-      const post = req.body
-      const { email, password } = post
+      const post = req.body;
 
       const validateRule = {
-        email: 'email|required',
-        password: 'string|required'
-      }
-      const validateMessage = {
-        required: ':attribute is required',
-        string: ':attribute must be a string',
-        'email.email': 'Please provide a valid :attribute.'
-      }
+        email: "email|required",
+        password: "string|required",
+        fullName: "string|required",
+        phoneNumber: "string|required",
+        userType: 'string|required'
+      };
 
-      const validateResult = validateData(post, validateRule, validateMessage)
+      const validateResult = validateData(post, validateRule);
       if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
+        return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const userExists = await UserModel.findOne({ email }).select('+password')
-
-      if (empty(userExists)) {
+      const userExists = await UserModel.findOne({ email: post.email });
+      if (userExists) {
         return BaseService.sendFailedResponse({
-          error: 'User not found. Please register as a new user'
-        })
+          error: "Admin already exists",
+        });
       }
 
-      if (!userExists.isVerified) {
-        return BaseService.sendFailedResponse(
-          {
-            error: 'Email is not verified. Please verifiy your email'
-          },
-          405
-        )
-      }
+      const admin = new UserModel({
+        email: post.email,
+        password: post.password,
+        fullName: post.fullName,
+        phoneNumber: post.phoneNumber,
+        userType: post.userType || ROLE.ADMIN,
+        servicePlatform: "local",
+        isVerified: true,
+      });
 
-      if (userExists.servicePlatform === 'google') {
-        // If the user signed up via Google, prevent local login attempt
-        if (password) {
-          return BaseService.sendFailedResponse({
-            error:
-              'This account was created using Google. Please log in using Google.'
-          })
-        }
-      }
-
-      if (userExists.servicePlatform !== SERVICE_PLATFORM.LOCAL) {
-        return BaseService.sendFailedResponse({
-          error: `This account was created using ${userExists.servicePlatform}. Please log in using that platform.`
-        })
-      }
-
-      if (!(await userExists.comparePassword(password))) {
-        return BaseService.sendFailedResponse({
-          error: 'Wrong email or password'
-        })
-      }
-
-      const accessToken = await userExists.generateAccessToken(
-        process.env.ACCESS_TOKEN_SECRET || ''
-      )
-      const refreshToken = await userExists.generateRefreshToken(
-        process.env.REFRESH_TOKEN_SECRET || ''
-      )
-      // res.cookie("growe_refresh_token", refreshToken, {
-      //   httpOnly: true,
-      //   secure: process.env.NODE_ENV === "production",
-      //   path: "/",
-      //   maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-      //   sameSite: "strict",
-      // });
-
-      // res.header("Authorization", `Bearer ${accessToken}`);
-      // res.header("refresh_token", `Bearer ${refreshToken}`);
+      await admin.save();
+      admin.password = undefined;
 
       return BaseService.sendSuccessResponse({
-        message: accessToken,
-        user: userExists,
-        refreshToken
-      })
+        message: "Admin account created successfully",
+        user: admin,
+      });
     } catch (error) {
-      console.log(error, 'the error')
-      return BaseService.sendFailedResponse({ error })
+      console.error(error);
+      return BaseService.sendFailedResponse({ error });
     }
   }
+
+ async _handleLogin({ email, password, allowGoogle = false }) {
+  const user = await UserModel.findOne({ email }).select("+password");
+
+  if (!user) {
+    throw new Error("User not found. Please register as a new user");
+  }
+
+  if (!user.isVerified) {
+    throw new Error("Email is not verified. Please verify your email");
+  }
+
+  // 🔐 Google account protection
+  if (user.servicePlatform === "google") {
+    if (!allowGoogle) {
+      throw new Error(
+        "This account was created using Google. Please log in using Google."
+      );
+    }
+  }
+
+  // 🔐 Other providers (facebook, apple, etc.)
+  if (user.servicePlatform !== SERVICE_PLATFORM.LOCAL && !allowGoogle) {
+    throw new Error(
+      `This account was created using ${user.servicePlatform}. Please log in using that platform.`
+    );
+  }
+
+  // 🔑 Password check (LOCAL only)
+  if (user.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+    if (!password) {
+      throw new Error("Password is required");
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      throw new Error("Wrong email or password");
+    }
+  }
+
+  const accessToken = await user.generateAccessToken(
+    process.env.ACCESS_TOKEN_SECRET || ""
+  );
+
+  const refreshToken = await user.generateRefreshToken(
+    process.env.REFRESH_TOKEN_SECRET || ""
+  );
+
+  user.password = undefined;
+
+  return { user, accessToken, refreshToken };
+}
+
+ async loginUser(req, res) {
+  try {
+    const post = req.body;
+    const { email, password } = post;
+
+    const validateRule = {
+      email: "email|required",
+      password: "string|required",
+    };
+
+    const validateResult = validateData(post, validateRule);
+    if (!validateResult.success) {
+      return BaseService.sendFailedResponse({ error: validateResult.data });
+    }
+
+    const { user, accessToken, refreshToken } =
+      await this._handleLogin({ email, password });
+
+    return BaseService.sendSuccessResponse({
+      message: accessToken,
+      user,
+      refreshToken,
+    });
+  } catch (error) {
+    return BaseService.sendFailedResponse({ error: error.message });
+  }
+}
+
+async adminLogin(req, res) {
+  try {
+    const { email, password } = req.body;
+
+    const { user, accessToken, refreshToken } =
+      await this._handleLogin({ email, password });
+
+    if (user.userType !== "admin") {
+      return BaseService.sendFailedResponse({
+        error: "Access denied. Admins only",
+      });
+    }
+
+    return BaseService.sendSuccessResponse({
+      message: accessToken,
+      user,
+      refreshToken,
+    });
+  } catch (error) {
+    return BaseService.sendFailedResponse({ error: error.message });
+  }
+}
+
 
 }
 
