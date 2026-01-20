@@ -101,6 +101,23 @@ class UserController extends BaseController {
       ? BaseController.sendSuccessResponse(res, result.data)
       : BaseController.sendFailedResponse(res, result.data);
   }
+
+  async adminLogin(req, res) {
+    const service = new UserService();
+    const result = await service.adminLogin(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async registerAdmin(req, res) {
+    const service = new UserService();
+    const result = await service.registerAdmin(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
 }
 
 module.exports = UserController;

@@ -1,6 +1,8 @@
 
 //users
 exports.ROUTE_REGISTER = '/register'
+exports.ROUTE_ADMIN_REGISTER = '/admin/register'
+exports.ROUTE_ADMIN_LOGIN = '/admin/login'
 exports.ROUTE_APPLE_SIGNUP = '/apple-signup'
 exports.ROUTE_GOOGLE_SIGNUP = '/google-signup'
 exports.ROUTE_LOGIN = '/login'
