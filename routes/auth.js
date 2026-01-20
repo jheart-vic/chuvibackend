@@ -333,6 +333,8 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *             type: object
  *             required:
  *               - email
+ *               - password
+ *               - otp
  *             properties:
  *               email:
  *                 type: string
@@ -342,6 +344,10 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *                 type: string
  *                 format: string
  *                 example: Word1234.
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *
  *     responses:
  *       200:
  *         description: Password reset successfully
@@ -352,9 +358,9 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *               properties:
  *                 message:
  *                   type: string
- *                   example: OTP verified successfully
+ *                   example: Password reset successful
  *       400:
- *         description: Missing or invalid email or OTP
+ *         description: Missing or invalid email, password, or OTP
  *       500:
  *         description: Server error
  */
