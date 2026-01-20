@@ -12,6 +12,8 @@ const {
   ROUTE_GOOGLE_SIGNUP,
   ROUTE_APPLE_SIGNUP,
   ROUTE_RESEND_OTP,
+  ROUTE_ADMIN_LOGIN,
+  ROUTE_ADMIN_REGISTER,
 } = require ('../util/page-route');
 
 const router = require ('express').Router ();
@@ -632,6 +634,157 @@ router.post (ROUTE_VERIFY_EMAIL, (req, res) => {
 router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
   const userController = new UserController ();
   return userController.refreshToken (req, res);
+});
+
+/**
+ * @swagger
+ * /auth/admin/register:
+ *   post:
+ *     summary: Register a new admin (Restricted)
+ *     tags:
+ *       - Admin Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@chuvi.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: Admin@1234
+ *               fullName:
+ *                 type: string
+ *                 example: John Admin
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+2348012345678"
+ *               userType:
+ *                 type: string
+ *                 enum: [manager, admin, staff, front_desk, user]
+ *                 example: admin
+ *     responses:
+ *       200:
+ *         description: Admin registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Admin account created successfully
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     phoneNumber:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                     servicePlatform:
+ *                       type: string
+ *                       example: local
+ *       400:
+ *         description: Admin already exists or invalid fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Admin already exists
+ *       403:
+ *         description: Unauthorized access
+ *       500:
+ *         description: Internal server error
+ */
+router.post(ROUTE_ADMIN_REGISTER, (req, res) => {
+  const userController = new UserController();
+  return userController.registerAdmin(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/admin/login:
+ *   post:
+ *     summary: Login as admin
+ *     tags:
+ *       - Admin Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@chuvi.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: Admin@1234
+ *     responses:
+ *       200:
+ *         description: Admin logged in successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: JWT_ACCESS_TOKEN
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                 refreshToken:
+ *                   type: string
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Wrong email or password
+ *       403:
+ *         description: Access denied (Not an admin)
+ *       500:
+ *         description: Internal server error
+ */
+router.post(ROUTE_ADMIN_LOGIN, (req, res) => {
+  const userController = new UserController();
+  return userController.adminLogin(req, res);
 });
 
 module.exports = router;
