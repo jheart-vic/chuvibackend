@@ -645,7 +645,7 @@ async googleSignup(req, res) {
 
       const { email, password } = post
 
-      const userExists = await UserModel.findOne({ email })
+     const userExists = await UserModel.findOne({ email }).select("+password")
       if (!userExists) {
         return BaseService.sendFailedResponse({
           error: 'User not found. Please try again later'

@@ -678,5 +678,92 @@ router.get(ROUTE_GET_USER_NOTIFICATIONS, auth, (req, res) => {
   return userController.getUserNotifications(req, res);
 });
 
+/**
+ * @swagger
+ * /users/change-password:
+ *   patch:
+ *     summary: Change user password from profile page
+ *     description: Allows an authenticated user to change their password from the profile page by providing the current password and a new password.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *                 example: "OldPassword123!"
+ *                 description: The user's current password
+ *               newPassword:
+ *                 type: string
+ *                 example: "NewSecurePassword123!"
+ *                 description: The new password the user wants to set
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Password changed successfully
+ *       400:
+ *         description: Validation error or incorrect current password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Current password is incorrect
+ *       401:
+ *         description: Unauthorized — user not authenticated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Unauthorized access
+ *       500:
+ *         description: Server error while changing password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Failed to change password
+ */
+router.patch(ROUTE_CHANGE_PASSWORD, auth, (req, res) => {
+  const userController = new UserController()
+  return userController.resetPasswordInProfilePage(req, res)
+})
+
 
 module.exports = router;

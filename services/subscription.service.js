@@ -1,5 +1,6 @@
 const PlanModel = require("../models/plan.model");
 const SubscriptionModel = require("../models/subscription.model");
+const validateData = require("../util/validate");
 const BaseService = require("./base.service");
 const paystackAxios = require("./paystack.client.service");
 
@@ -12,14 +13,14 @@ class SubscriptionService extends BaseService {
         title: "string|required",
         description: "string|required",
         duration: "string|required",
-        itemPerMonth: "int|required",
-        price: "int|required",
+        itemPerMonth: "integer|required",
+        price: "integer|required",
         features: "array|required",
       };
 
       const validateMessage = {
         required: ":attribute is required",
-        int: ":attribute must be an integer.",
+        integer: ":attribute must be an integer.",
         array: ":attribute must be an array.",
       };
 
