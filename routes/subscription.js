@@ -1,5 +1,5 @@
 const SubscriptionController = require('../controllers/subscription.controller');
-const { ROUTE_GET_PLAN, ROUTE_GET_PLANS, ROUTE_UPDATE_PLAN, ROUTE_DELETE_PLAN, ROUTE_SUBSCRIBE_PLAN, ROUTE_CANCEL_SUBSCRIPTION, ROUTE_CREATE_PLAN } = require('../util/page-route');
+const { ROUTE_GET_PLAN, ROUTE_GET_PLANS, ROUTE_UPDATE_PLAN, ROUTE_DELETE_PLAN, ROUTE_SUBSCRIBE_PLAN, ROUTE_CANCEL_SUBSCRIPTION, ROUTE_CREATE_PLAN, ROUTE_CURRENT_SUBSCRIPTION } = require('../util/page-route');
 const adminAuth = require('../middlewares/adminAuth');
 const auth = require('../middlewares/auth');
 
@@ -296,6 +296,26 @@ router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
 router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
     const subscriptionController = new SubscriptionController()
     return subscriptionController.cancelSubscription(req, res)
+});
+
+/**
+ * @swagger
+ * /subscription/current-subscription:
+ *   get:
+ *     summary: Get the current active subscription of the user
+ *     tags:
+ *       - Subscription
+ *     responses:
+ *       200:
+ *         description: Current subscription fetched successfully
+ *       404:
+ *         description: No active subscription found
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_CURRENT_SUBSCRIPTION, [auth], async (req, res) => {
+    const subscriptionController = new SubscriptionController()
+    return subscriptionController.getCurrentSubscription(req, res)
 });
 
 module.exports = router;

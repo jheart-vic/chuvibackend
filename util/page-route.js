@@ -49,6 +49,7 @@ exports.ROUTE_UPDATE_PLAN = '/update-plan'
 exports.ROUTE_DELETE_PLAN = '/delete-plan'
 exports.ROUTE_SUBSCRIBE_PLAN = '/subscribe-plan'
 exports.ROUTE_CANCEL_SUBSCRIPTION = '/cancel-subscription'
+exports.ROUTE_CURRENT_SUBSCRIPTION = '/current-subscription'
 
 
 //seeding
