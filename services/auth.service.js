@@ -115,118 +115,116 @@ class AuthService extends BaseService {
       return BaseService.sendFailedResponse({ error })
     }
   }
-  async googleSignup (req, res) {
-    try {
-      const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
-      const client = new OAuth2Client(GOOGLE_CLIENT_ID)
+async googleSignup(req, res) {
+  try {
+    const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-      const post = req.body
+    const post = req.body;
 
-      const validateRule = {
-        idToken: 'string|required',
-        userType: 'string|required'
-      }
+    const validateRule = {
+      idToken: "string|required",
+      userType: "string|required",
+    };
 
-      const validateMessage = {
-        required: ':attribute is required'
-      }
+    const validateMessage = {
+      required: ":attribute is required",
+    };
 
-      const validateResult = validateData(post, validateRule, validateMessage)
+    const validateResult = validateData(post, validateRule, validateMessage);
 
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
-      }
+    if (!validateResult.success) {
+      return BaseService.sendFailedResponse({ error: validateResult.data });
+    }
 
-      const ticket = await client.verifyIdToken({
-        idToken: post.idToken,
-        audience: GOOGLE_CLIENT_ID
-      })
+    const ticket = await client.verifyIdToken({
+      idToken: post.idToken,
+      audience: GOOGLE_CLIENT_ID,
+    });
 
-      const payload = ticket.getPayload()
-      const {
-        sub: googleId,
-        email,
-        name,
-        picture,
-        given_name,
-        family_name
-      } = payload
+    const payload = ticket.getPayload();
 
-      const username = email
-        ? email.split('@')[0]
-        : name?.replace(/\s+/g, '').toLowerCase()
+    const {
+      sub: googleId,
+      email,
+      name,
+      picture,
+      given_name,
+      family_name,
+    } = payload;
 
-      const firstName = given_name || name?.split(' ')[0] || ''
-      const lastName = family_name || name?.split(' ').slice(1).join(' ') || ''
+    // ✅ Proper fullName mapping (schema-compatible)
+    const fullName =
+      name || [given_name, family_name].filter(Boolean).join(" ");
 
-      // Check if user exists in DB, otherwise create (pseudo code)
-      const userWithSub = await UserModel.findOne({
-        $or: [{ googleId }, { email }]
-      })
+    // Check if user exists
+    const userWithSub = await UserModel.findOne({
+      $or: [{ googleId }, { email }],
+    });
 
-      if (userWithSub) {
-        const accessToken = await userWithSub.generateAccessToken(
-          process.env.ACCESS_TOKEN_SECRET || ''
-        )
-        const refreshToken = await userWithSub.generateRefreshToken(
-          process.env.REFRESH_TOKEN_SECRET || ''
-        )
-        return BaseService.sendSuccessResponse({
-          message: accessToken,
-          user: userWithSub,
-          refreshToken
-        })
-      }
-
-      const userObject = {
-        googleId,
-        firstName,
-        lastName,
-        username,
-        email,
-        image: { imageUrl: picture, publicId: '' },
-        isVerified: true,
-        servicePlatform: 'google',
-        userType: post.userType
-      }
-
-      const newUser = new UserModel(userObject)
-
-      await newUser.save()
-
-      // Generate your own JWT/session token
-      const accessToken = await newUser.generateAccessToken(
-        process.env.ACCESS_TOKEN_SECRET || ''
-      )
-
-      const refreshToken = await newUser.generateRefreshToken(
-        process.env.REFRESH_TOKEN_SECRET || ''
-      )
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Registration successful</h1>
-      <p>Hi <strong>${newUser.email}</strong>,</p>
-      <p>You have successfully sign up:</p>
-      `
-      await sendEmail({
-        subject: 'Welcome to Chuvi Laundry',
-        to: newUser.email,
-        html: emailHtml
-      })
+    if (userWithSub) {
+      const accessToken = await userWithSub.generateAccessToken(
+        process.env.ACCESS_TOKEN_SECRET || ""
+      );
+      const refreshToken = await userWithSub.generateRefreshToken(
+        process.env.REFRESH_TOKEN_SECRET || ""
+      );
 
       return BaseService.sendSuccessResponse({
         message: accessToken,
-        user: newUser,
-        refreshToken
-      })
-    } catch (error) {
-      console.log(error)
-      return BaseService.sendFailedResponse({
-        error: this.server_error_message
-      })
+        user: userWithSub,
+        refreshToken,
+      });
     }
+
+    // ✅ Schema-aligned user object
+    const userObject = {
+      googleId,
+      email,
+      fullName,
+      image: { imageUrl: picture, publicId: "" },
+      isVerified: true,
+      servicePlatform: "google",
+      userType: post.userType,
+    };
+
+    const newUser = new UserModel(userObject);
+    await newUser.save();
+
+    const accessToken = await newUser.generateAccessToken(
+      process.env.ACCESS_TOKEN_SECRET || ""
+    );
+
+    const refreshToken = await newUser.generateRefreshToken(
+      process.env.REFRESH_TOKEN_SECRET || ""
+    );
+
+    // Welcome email
+    const emailHtml = `
+      <h1>Registration successful</h1>
+      <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+      <p>You have successfully signed up.</p>
+    `;
+
+    await sendEmail({
+      subject: "Welcome to Chuvi Laundry",
+      to: newUser.email,
+      html: emailHtml,
+    });
+
+    return BaseService.sendSuccessResponse({
+      message: accessToken,
+      user: newUser,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error(error);
+    return BaseService.sendFailedResponse({
+      error: this.server_error_message,
+    });
   }
+}
+
   async appleSignup (req, res) {
     try {
       const {
