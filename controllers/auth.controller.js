@@ -83,6 +83,14 @@ class UserController extends BaseController {
       ? BaseController.sendSuccessResponse(res, result.data)
       : BaseController.sendFailedResponse(res, result.data);
   }
+  async verifyResetPasswordOtp(req, res) {
+    const service = new UserService();
+    const result = await service.verifyResetPasswordOtp(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
 
   async sendOTP(req, res) {
     const service = new UserService();

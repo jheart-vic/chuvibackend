@@ -566,9 +566,9 @@ class AuthService extends BaseService {
       }
       // Generate OTP
       const otp = generateOTP()
-      userExists.otp = otp
+      userExists.resetPasswordOtp = otp
       const expiresAt = new Date(Date.now() + EXPIRES_AT)
-      userExists.otpExpiresAt = expiresAt
+      userExists.resetPasswordOtpExpiresAt = expiresAt
 
       await userExists.save()
       // Send OTP email
@@ -622,86 +622,113 @@ class AuthService extends BaseService {
       })
     }
   }
-  async resetPassword (req, res) {
+  async verifyResetPasswordOtp(req, res) {
     try {
-      const post = req.body
+      const { email, otp } = req.body
 
-      const validateRule = {
-        email: 'email|required',
-        password: 'string|required',
-        otp: 'string|required'
-      }
-
-      const validateMessage = {
-        required: ':attribute is required',
-        'email.email': 'Please provide a valid :attribute.'
-      }
-
-      const validateResult = validateData(post, validateRule, validateMessage)
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
-      }
-
-      const { email, password, otp } = post
-
-     const userExists = await UserModel.findOne({ email }).select("+password")
-      if (!userExists) {
+      if (!email || !otp) {
         return BaseService.sendFailedResponse({
-          error: 'User not found. Please try again later'
+          error: 'Email and OTP are required'
         })
       }
 
-      if (userExists.otp !== otp) {
-        return BaseService.sendFailedResponse({ error: 'Invalid OTP' })
-      }
+      const user = await UserModel
+      .findOne({ email })
+      .select('+resetPasswordOtp +resetPasswordOtpExpiresAt')
 
-      if (Date.now() > userExists.otpExpiresAt) {
-        return BaseService.sendFailedResponse({ error: 'OTP expired' })
-      }
 
-      // Prevent same password reuse
-      const isSamePassword = await userExists.comparePassword(password)
-      if (isSamePassword) {
+      if (!user) {
         return BaseService.sendFailedResponse({
-          error: 'New password cannot be the same as the old password'
+          error: 'User not found'
         })
       }
 
-      // Update password (ensure your model hashes this!)
-      userExists.password = password
+      if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiresAt) {
+        return BaseService.sendFailedResponse({
+          error: 'No active OTP found'
+        })
+      }
 
-      // Clear OTP
-      userExists.otp = null
-      userExists.otpExpiresAt = null
+      if (user.resetPasswordOtp !== otp) {
+        return BaseService.sendFailedResponse({
+          error: 'Invalid OTP'
+        })
+      }
 
-      await userExists.save()
+      if (Date.now() > user.resetPasswordOtpExpiresAt) {
+        return BaseService.sendFailedResponse({
+          error: 'OTP expired'
+        })
+      }
 
-      // Send confirmation email
-      const emailHtml = `
-        <h1>Password Reset</h1>
-        <p>Hi <strong>${userExists?.fullName || email}</strong>,</p>
-        <p>Your password has been reset successfully.</p>
-      `
+      // Issue short-lived reset token
+      const resetToken = jwt.sign(
+        { userId: user._id },
+        process.env.RESET_TOKEN_SECRET,
+        { expiresIn: '10m' }
+      )
 
-      await sendEmail({
-        subject: 'Password Reset Confirmation',
-        to: email,
-        html: emailHtml
-      })
-
-
+      // Clear OTP immediately (VERY IMPORTANT)
+      user.resetPasswordOtp = null
+      user.resetPasswordOtpExpiresAt = null
+      await user.save()
 
       return BaseService.sendSuccessResponse({
-        message: 'Password reset successful'
+        message: 'OTP verified successfully',
+        resetToken
       })
     } catch (error) {
-      console.error(error)
       return BaseService.sendFailedResponse({
         error: error.message || 'Something went wrong'
       })
     }
   }
+
+  async resetPassword(req, res) {
+    try {
+      const { resetToken, password } = req.body
+
+      if (!resetToken || !password) {
+        return BaseService.sendFailedResponse({
+          error: 'Reset token and new password are required'
+        })
+      }
+
+      const decoded = jwt.verify(
+        resetToken,
+        process.env.RESET_TOKEN_SECRET
+      )
+
+      const user = await UserModel
+        .findById(decoded.userId)
+        .select('+password')
+
+      if (!user) {
+        return BaseService.sendFailedResponse({
+          error: 'User not found'
+        })
+      }
+
+      const isSamePassword = await user.comparePassword(password)
+      if (isSamePassword) {
+        return BaseService.sendFailedResponse({
+          error: 'New password cannot be the same as old password'
+        })
+      }
+
+      user.password = password
+      await user.save()
+
+      return BaseService.sendSuccessResponse({
+        message: 'Password reset successful'
+      })
+    } catch (error) {
+      return BaseService.sendFailedResponse({
+        error: 'Reset token expired or invalid'
+      })
+    }
+  }
+
   async refreshToken (req, res) {
     try {
       const refreshToken = req.headers['x-refresh-token'] // better than Authorization

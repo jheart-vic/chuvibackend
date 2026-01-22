@@ -14,6 +14,7 @@ const {
   ROUTE_RESEND_OTP,
   ROUTE_ADMIN_LOGIN,
   ROUTE_ADMIN_REGISTER,
+  ROUTE_VERIFY_RESET_PASSWORD_OTP
 } = require ('../util/page-route');
 
 const router = require ('express').Router ();
@@ -318,11 +319,13 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
   const userController = new UserController ();
   return userController.forgotPassword (req, res);
 });
+
 /**
  * @swagger
- * /auth/reset-password:
+ * /auth/verify-reset-password-otp:
  *   post:
- *     summary: Change your password
+ *     summary: Verify OTP for password reset
+ *     description: Verifies the OTP sent to the user's email and returns a short-lived reset token.
  *     tags:
  *       - Auth
  *     requestBody:
@@ -333,21 +336,69 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *             type: object
  *             required:
  *               - email
- *               - password
  *               - otp
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *                 example: user@example.com
- *               password:
- *                 type: string
- *                 format: string
- *                 example: Word1234.
  *               otp:
  *                 type: string
- *                 example: "123456"
- *
+ *                 example: "482193"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified successfully
+ *                 resetToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       400:
+ *         description: Invalid or expired OTP
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyResetPasswordOtp(req, res);
+});
+
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset user password
+ *     description: Resets the user's password using a valid reset token obtained after OTP verification.
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *               - resetToken
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 example: StrongPassword123!
+ *               resetToken:
+ *                 type: string
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *     responses:
  *       200:
  *         description: Password reset successfully
@@ -356,18 +407,25 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: string
  *                   example: Password reset successful
  *       400:
- *         description: Missing or invalid email, password, or OTP
+ *         description: Invalid or expired reset token
+ *       404:
+ *         description: User not found
  *       500:
  *         description: Server error
  */
-router.post (ROUTE_RESET_PASSWORD, (req, res) => {
-  const userController = new UserController ();
-  return userController.resetPassword (req, res);
+router.post(ROUTE_RESET_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.resetPassword(req, res);
 });
+
+
 // /**
 //  * @swagger
 //  * /auth/send-otp:
