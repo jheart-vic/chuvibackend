@@ -778,7 +778,7 @@ router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.post(ROUTE_ADMIN_REGISTER, (req, res) => {
+router.get(ROUTE_ADMIN_REGISTER, (req, res) => {
   const userController = new UserController();
   return userController.registerAdmin(req, res);
 });
