@@ -18,30 +18,18 @@ class BookOrderService extends BaseService {
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
       }
-      // userId
-      // fullName
-      // phoneNumber
-      // pickupAddress
-      // pickupDate
-      // pickupTime
-      // serviceType
-      // serviceTier
-      // deliverySpeed
-      // amount
-      // oscNumber
-      // items
-      // extraNote
-      // paymentStatus
 
       const validateRule = {
         fullName: "string|required",
         phoneNumber: "string|required",
         pickupAddress: "string|required",
-        pickupDate: "date|required",
-        pickupTime: "string|required",
+        // pickupDate: "date|required",
+        // pickupTime: "string|required",
         serviceType: "string|required",
         serviceTier: "string|required",
-        deliverySpeed: "string|required",
+        // deliverySpeed: "string|required",
+        isPickUpOnly: "boolean|required",
+        isPickUpAndDelivery: "boolean|required",
         items: "array|required",
         "items.*.type": "string|required",
         "items.*.price": "integer|required",

@@ -26,12 +26,10 @@ const {
  *             required:
  *               - fullName
  *               - phoneNumber
- *               - pickupAddress
- *               - pickupDate
- *               - pickupTime
  *               - serviceType
  *               - serviceTier
- *               - deliverySpeed
+ *               - isPickUpOnly
+ *               - isPickUpAndDelivery
  *               - items
  *             properties:
  *               fullName:
@@ -50,6 +48,12 @@ const {
  *               pickupTime:
  *                 type: string
  *                 example: "10am-12pm | 4pm-6pm"
+ *               isPickUpOnly:
+ *                 type: boolean
+ *                 example: false
+ *               isPickUpAndDelivery:
+ *                 type: boolean
+ *                 example: false
  *               serviceType:
  *                 type: string
  *                 example: wash-and-iron

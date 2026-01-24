@@ -24,11 +24,13 @@ const bookOrderSchema = new mongoose.Schema(
     pickupTime: {
       type: String,
       required: true,
+      trim: true,
       enum: [PICK_UP_TIME.MORNING_TIME, PICK_UP_TIME.EVENING_TIME],
     },
     serviceType: {
       type: String,
       required: true,
+      trim: true,
       enum: [
         ORDER_SERVICE_TYPE.IRONING_ONLY,
         ORDER_SERVICE_TYPE.WASHING_ONLY,
@@ -38,6 +40,7 @@ const bookOrderSchema = new mongoose.Schema(
     serviceTier: {
       type: String,
       required: true,
+      trim: true,
       enum: [
         SERVICE_TIERS.PREMIUM,
         SERVICE_TIERS.STANDARD,
@@ -48,6 +51,7 @@ const bookOrderSchema = new mongoose.Schema(
     deliverySpeed: {
       type: String,
       required: true,
+      trim: true,
       enum: [
         DELIVERY_SPEED.EXPRESS,
         DELIVERY_SPEED.STANDARD,
@@ -59,6 +63,7 @@ const bookOrderSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       required: true,
+      trim: true,
       enum: [
         PAYMENT_METHOD.BANK_TRANFER,
         PAYMENT_METHOD.CARD,
@@ -81,6 +86,7 @@ const bookOrderSchema = new mongoose.Schema(
       status: {
         type: String,
         required: true,
+        trim: true,
         enum: [
           ORDER_STATUS.PICKED_UP,
           ORDER_STATUS.DELIVERED,
@@ -97,6 +103,7 @@ const bookOrderSchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       required: true,
+      trim: true,
       enum: [
         PAYMENT_ORDER_STATUS.SUCCESS,
         PAYMENT_ORDER_STATUS.PENDING,
@@ -104,6 +111,8 @@ const bookOrderSchema = new mongoose.Schema(
       ],
       default: PAYMENT_ORDER_STATUS.PENDING,
     },
+    isPickUpOnly: { type: Boolean, default: false },
+    isPickUpAndDelivery: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -66,15 +66,6 @@ class WalletService extends BaseService {
       //   });
       // }
 
-      // await WalletTransactionModel.create({
-      //   walletId: walletUpdate._id,
-      //   type: "credit",
-      //   amount,
-      //   reference,
-      //   status: "success",
-      //   description: "Wallet Top-up",
-      // });
-
       return BaseService.sendSuccessResponse({
         message: response.data,
       });
@@ -83,59 +74,67 @@ class WalletService extends BaseService {
       return BaseService.sendFailedResponse({ error });
     }
   }
-  async payWithWallet(req, res) {
+  async payWithWallet(req) {
     try {
-      const post = req.body;
-      const userId = req.user.id
-
+      const { bookOrderId, description = "Order Payment" } = req.body;
+      const userId = req.user.id;
+  
       const validateRule = {
-        // amount: "integer|required",
-        // userId: "string|required",
-        // reference: "string|required",
         bookOrderId: "string|required",
       };
-
-      const validateMessage = {
-        required: ":attribute is required",
-      };
-
-      const validateResult = validateData(post, validateRule, validateMessage);
+  
+      const validateResult = validateData(req.body, validateRule);
       if (!validateResult.success) {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
-
-      const description = req.body.description || "Order Payment";
-
+  
       const user = await UserModel.findById(userId);
-      const bookOrder = await BookOrderModel.findById(post.bookOrderId);
-
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
       }
+  
+      const bookOrder = await BookOrderModel.findById(bookOrderId);
       if (!bookOrder) {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
-
-      const wallet = await WalletModel.findOne({ userId });
-
-      if (!wallet) {
+  
+      if (bookOrder.paymentStatus === "success") {
         return BaseService.sendFailedResponse({
-          error: "Encountered error accessing your wallet",
+          error: "Order has already been paid for",
         });
       }
-
-      if(wallet.balance < bookOrder.amount){
-        return BaseService.sendFailedResponse({error: 'Opps! Insufficient balance.'})
+  
+      // Ensure wallet exists
+      await WalletModel.findOneAndUpdate(
+        { userId },
+        { $setOnInsert: { balance: 0 } },
+        { upsert: true }
+      );
+  
+      // 🔐 ATOMIC DEBIT (only succeeds if balance >= amount)
+      const wallet = await WalletModel.findOneAndUpdate(
+        {
+          userId,
+          balance: { $gte: bookOrder.amount },
+        },
+        {
+          $inc: { balance: -bookOrder.amount },
+        },
+        { new: true }
+      );
+  
+      if (!wallet) {
+        return BaseService.sendFailedResponse({
+          error: "Oops! Insufficient wallet balance.",
+        });
       }
-
-      wallet.balance -= bookOrder.amount;
-      bookOrder.paymentStatus = 'success'
-
-      await wallet.save()
-      bookOrder.save()
+  
+      // Update order status
+      bookOrder.paymentStatus = "success";
+      await bookOrder.save();
+  
       const reference = uuidv4();
-
-
+  
       await WalletTransactionModel.create({
         walletId: wallet._id,
         type: "debit",
@@ -144,15 +143,16 @@ class WalletService extends BaseService {
         status: "success",
         description,
       });
-
+  
       return BaseService.sendSuccessResponse({
         message: "Payment made successfully from wallet.",
       });
     } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({ error });
+      console.error(error);
+      return BaseService.sendFailedResponse({ error: error.message });
     }
   }
+  
 
   async fetchUserTransactions(req) {
     try {
