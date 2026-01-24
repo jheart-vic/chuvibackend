@@ -24,6 +24,7 @@ const bookOrderSchema = new mongoose.Schema(
     pickupTime: {
       type: String,
       required: true,
+      trim: true,
       enum: [PICK_UP_TIME.MORNING_TIME, PICK_UP_TIME.EVENING_TIME],
     },
     serviceType: {
@@ -104,6 +105,8 @@ const bookOrderSchema = new mongoose.Schema(
       ],
       default: PAYMENT_ORDER_STATUS.PENDING,
     },
+    isPickUpOnly: { type: Boolean, default: false },
+    isPickUpAndDelivery: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
