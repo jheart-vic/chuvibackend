@@ -192,22 +192,34 @@ class WalletService extends BaseService {
   }
   async getWalletBalance(req) {
     try {
-      const userId = req.user.id;
-
-      const wallet = await WalletModel.findOne({ userId });
-      if (!wallet) {
-        return BaseService.sendFailedResponse({ error: "Wallet not found" });
+      const userId = req?.user?.id;
+      if (!userId) {
+        return BaseService.sendFailedResponse({ error: "Invalid user" });
       }
+  
+      const wallet = await WalletModel.findOneAndUpdate(
+        { userId },
+        { $setOnInsert: { balance: 0 } }, // create wallet if missing
+        {
+          new: true,        // return updated / created doc
+          upsert: true,     // create if not exists
+          lean: true        // return plain JS object (safer & faster)
+        }
+      );
+  
       return BaseService.sendSuccessResponse({
         message: {
           balance: wallet.balance
         }
       });
+  
     } catch (error) {
-      console.error("Error fetching transactions:", error);
-      return BaseService.sendFailedResponse({ error: "Error fetching transactions"});
+      console.error("Error fetching wallet balance:", error);
+      return BaseService.sendFailedResponse({
+        error: "Unable to fetch wallet balance"
+      });
     }
-  }
+  }  
 }
 
 module.exports = WalletService;
