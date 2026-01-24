@@ -7,6 +7,7 @@ const {
   ORDER_SERVICE_TYPE,
   PICK_UP_TIME,
   PAYMENT_METHOD,
+  BILLING_TYPE,
 } = require("../util/constants");
 
 const bookOrderSchema = new mongoose.Schema(
@@ -60,6 +61,12 @@ const bookOrderSchema = new mongoose.Schema(
     },
     // noOfItems: { type: Number, required: true },
     amount: { type: Number, required: true },
+    billingType: {
+      type: String,
+      required: true,
+      trim: true,
+      enum: [BILLING_TYPE.PAY_FROM_SUBSCRIPTION, BILLING_TYPE.PAY_PER_ITEM],
+    },
     paymentMethod: {
       type: String,
       required: true,
