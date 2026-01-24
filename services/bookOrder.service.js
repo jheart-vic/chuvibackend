@@ -72,7 +72,7 @@ class BookOrderService extends BaseService {
       });
 
       return BaseService.sendSuccessResponse({
-        message: "Order booked successfully.",
+        message: newOrder,
       });
     } catch (error) {
       console.log(error);
@@ -266,6 +266,28 @@ class BookOrderService extends BaseService {
           totalPages: Math.ceil(total / limit),
           data: orders,
         },
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({ error });
+    }
+  }
+  async getBookOrder(req, res) {
+    try {
+      const bookOrderId = req.params.id
+
+      if(!bookOrderId){
+        return BaseService.sendFailedResponse({error: 'Please provide a valid book order id'})
+      }
+      const bookOrder = await BookOrderModel.findById(bookOrderId)
+
+      if(!bookOrder){
+        return BaseService.sendFailedResponse({error: 'Book order not found'})
+      }
+
+      // 5️⃣ Send response
+      return BaseService.sendSuccessResponse({
+        message: bookOrder
       });
     } catch (error) {
       console.log(error);

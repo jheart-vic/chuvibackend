@@ -8,6 +8,7 @@ const {
   ROUTE_UPDATE_BOOK_ORDER_PAYMENT_STATUS,
   ROUTE_UPDATE_BOOK_ORDER_STAGE,
   ROUTE_BOOK_ORDER_HISTORY,
+  ROUTE_BOOK_ORDER,
 } = require("../util/page-route");
 
 /**
@@ -85,19 +86,93 @@ const {
  *                       type: integer
  *                       example: 5
  *     responses:
- *       201:
- *         description: Order created successfully
+ *       200:
+ *         description: A single book order document
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
  *                 message:
- *                   type: string
- *                   example: Order created successfully
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: "64d3c9c0f1b2a8e9d0f12345"
+ *                     userId:
+ *                       type: string
+ *                       example: "64d3c9c0f1b2a8e9d0f54321"
+ *                     fullName:
+ *                       type: string
+ *                       example: "John Doe"
+ *                     phoneNumber:
+ *                       type: string
+ *                       example: "+1234567890"
+ *                     pickupAddress:
+ *                       type: string
+ *                       example: "123 Main Street"
+ *                     pickupDate:
+ *                       type: string
+ *                       format: date
+ *                       example: "2026-01-13"
+ *                     pickupTime:
+ *                       type: string
+ *                       example: "morning"
+ *                     serviceType:
+ *                       type: string
+ *                       example: "wash-and-iron"
+ *                     serviceTier:
+ *                       type: string
+ *                       example: "premium"
+ *                     deliverySpeed:
+ *                       type: string
+ *                       example: "express"
+ *                     amount:
+ *                       type: number
+ *                       example: 150
+ *                     paymentMethod:
+ *                       type: string
+ *                       example: "paystack"
+ *                     oscNumber:
+ *                       type: string
+ *                       example: "OSC123456"
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           type:
+ *                             type: string
+ *                             example: "shirt"
+ *                           price:
+ *                             type: number
+ *                             example: 50
+ *                           quantity:
+ *                             type: number
+ *                             example: 2
+ *                     extraNote:
+ *                       type: string
+ *                       example: "Handle with care"
+ *                     stage:
+ *                       type: object
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           example: "in-process"
+ *                         note:
+ *                           type: string
+ *                           example: "Picked up by driver"
+ *                     paymentStatus:
+ *                       type: string
+ *                       example: "pending"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-13T12:34:56.789Z"
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Validation error
  *       500:
@@ -445,6 +520,120 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
 router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.getBookOrderHistory(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/book-order/{orderId}:
+ *   get:
+ *     summary: Get a single book order by ID
+ *     tags:
+ *       - BookOrder
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the book order to retrieve
+ *     responses:
+ *       200:
+ *         description: A single book order document
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: "64d3c9c0f1b2a8e9d0f12345"
+ *                     userId:
+ *                       type: string
+ *                       example: "64d3c9c0f1b2a8e9d0f54321"
+ *                     fullName:
+ *                       type: string
+ *                       example: "John Doe"
+ *                     phoneNumber:
+ *                       type: string
+ *                       example: "+1234567890"
+ *                     pickupAddress:
+ *                       type: string
+ *                       example: "123 Main Street"
+ *                     pickupDate:
+ *                       type: string
+ *                       format: date
+ *                       example: "2026-01-13"
+ *                     pickupTime:
+ *                       type: string
+ *                       example: "morning"
+ *                     serviceType:
+ *                       type: string
+ *                       example: "wash-and-iron"
+ *                     serviceTier:
+ *                       type: string
+ *                       example: "premium"
+ *                     deliverySpeed:
+ *                       type: string
+ *                       example: "express"
+ *                     amount:
+ *                       type: number
+ *                       example: 150
+ *                     paymentMethod:
+ *                       type: string
+ *                       example: "paystack"
+ *                     oscNumber:
+ *                       type: string
+ *                       example: "OSC123456"
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           type:
+ *                             type: string
+ *                             example: "shirt"
+ *                           price:
+ *                             type: number
+ *                             example: 50
+ *                           quantity:
+ *                             type: number
+ *                             example: 2
+ *                     extraNote:
+ *                       type: string
+ *                       example: "Handle with care"
+ *                     stage:
+ *                       type: object
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           example: "in-process"
+ *                         note:
+ *                           type: string
+ *                           example: "Picked up by driver"
+ *                     paymentStatus:
+ *                       type: string
+ *                       example: "pending"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-13T12:34:56.789Z"
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-13T13:00:00.123Z"
+ *       400:
+ *         description: Invalid order ID
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_BOOK_ORDER+"/:id", [auth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.getBookOrder(req, res);
 });
 
 module.exports = router;

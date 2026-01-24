@@ -37,6 +37,7 @@ exports.ROUTE_ADMIN_ORDER_DETAILS = '/admin-order-details'
 exports.ROUTE_UPDATE_BOOK_ORDER_PAYMENT_STATUS = '/update-book-order-payment-status'
 exports.ROUTE_UPDATE_BOOK_ORDER_STAGE = '/'
 exports.ROUTE_BOOK_ORDER_HISTORY = '/book-order-history'
+exports.ROUTE_BOOK_ORDER = '/book-order'
 
 //wallet
 exports.ROUTE_WALLET_TOP_UP = "/wallet-top-up"
