@@ -27,6 +27,7 @@ class BookOrderService extends BaseService {
         // pickupTime: "string|required",
         serviceType: "string|required",
         serviceTier: "string|required",
+        billingType: "string|required",
         // deliverySpeed: "string|required",
         isPickUpOnly: "boolean|required",
         isPickUpAndDelivery: "boolean|required",
