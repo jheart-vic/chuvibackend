@@ -790,11 +790,9 @@ class AuthService extends BaseService {
   
       await admin.save();
   
-      console.log("🎉 Admin seeded successfully:", admin.email);
-      process.exit(0);
+      return BaseService.sendSuccessResponse({message: "🎉 Admin seeded successfully:"});
     } catch (error) {
-      console.error("❌ Admin seed failed:", error);
-      process.exit(1);
+      return BaseService.sendFailedResponse({ error });
     }
   }
 
