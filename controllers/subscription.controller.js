@@ -61,7 +61,7 @@ class SubscriptionController extends BaseController {
     }
     async getCurrentSubscription(req, res){
         const subscriptionService = new SubscriptionService();
-        const result = await subscriptionService.getCurrentubscription(req);
+        const result = await subscriptionService.getCurrentSubscription(req);
         if (!result.success) {
             return BaseController.sendFailedResponse(res, result.data);
         }
