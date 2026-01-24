@@ -703,68 +703,19 @@ router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
 /**
  * @swagger
  * /auth/admin/register:
- *   post:
- *     summary: Register a new admin (Restricted)
+ *   get:
+ *     summary: Seed register a new admin (Restricted)
  *     tags:
  *       - Admin Auth
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *               - fullName
- *               - phoneNumber
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: admin@chuvi.com
- *               password:
- *                 type: string
- *                 format: password
- *                 example: Admin@1234
- *               fullName:
- *                 type: string
- *                 example: John Admin
- *               phoneNumber:
- *                 type: string
- *                 example: "+2348012345678"
- *               userType:
- *                 type: string
- *                 enum: [manager, admin, staff, front_desk, user]
- *                 example: admin
  *     responses:
  *       200:
- *         description: Admin registration successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Admin account created successfully
- *                 user:
- *                   type: object
- *                   properties:
- *                     email:
- *                       type: string
- *                     fullName:
- *                       type: string
- *                     phoneNumber:
- *                       type: string
- *                     userType:
- *                       type: string
- *                       example: admin
- *                     servicePlatform:
- *                       type: string
- *                       example: local
+ *         description: Admin seed successful
  *       400:
- *         description: Admin already exists or invalid fields
+ *         description: Admin already exists or 
  *         content:
  *           application/json:
  *             schema:
