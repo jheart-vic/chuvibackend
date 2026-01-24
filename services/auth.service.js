@@ -115,118 +115,116 @@ class AuthService extends BaseService {
       return BaseService.sendFailedResponse({ error })
     }
   }
-  async googleSignup (req, res) {
-    try {
-      const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
-      const client = new OAuth2Client(GOOGLE_CLIENT_ID)
+ async googleSignup(req, res) {
+  try {
+    const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-      const post = req.body
+    const post = req.body;
 
-      const validateRule = {
-        idToken: 'string|required',
-        userType: 'string|required'
-      }
+    const validateRule = {
+      idToken: "string|required",
+      userType: "string|required",
+    };
 
-      const validateMessage = {
-        required: ':attribute is required'
-      }
+    const validateMessage = {
+      required: ":attribute is required",
+    };
 
-      const validateResult = validateData(post, validateRule, validateMessage)
+    const validateResult = validateData(post, validateRule, validateMessage);
 
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
-      }
+    if (!validateResult.success) {
+      return BaseService.sendFailedResponse({ error: validateResult.data });
+    }
 
-      const ticket = await client.verifyIdToken({
-        idToken: post.idToken,
-        audience: GOOGLE_CLIENT_ID
-      })
+    const ticket = await client.verifyIdToken({
+      idToken: post.idToken,
+      audience: GOOGLE_CLIENT_ID,
+    });
 
-      const payload = ticket.getPayload()
-      const {
-        sub: googleId,
-        email,
-        name,
-        picture,
-        given_name,
-        family_name
-      } = payload
+    const payload = ticket.getPayload();
 
-      const username = email
-        ? email.split('@')[0]
-        : name?.replace(/\s+/g, '').toLowerCase()
+    const {
+      sub: googleId,
+      email,
+      name,
+      picture,
+      given_name,
+      family_name,
+    } = payload;
 
-      const firstName = given_name || name?.split(' ')[0] || ''
-      const lastName = family_name || name?.split(' ').slice(1).join(' ') || ''
+    // ✅ Proper fullName mapping (schema-compatible)
+    const fullName =
+      name || [given_name, family_name].filter(Boolean).join(" ");
 
-      // Check if user exists in DB, otherwise create (pseudo code)
-      const userWithSub = await UserModel.findOne({
-        $or: [{ googleId }, { email }]
-      })
+    // Check if user exists
+    const userWithSub = await UserModel.findOne({
+      $or: [{ googleId }, { email }],
+    });
 
-      if (userWithSub) {
-        const accessToken = await userWithSub.generateAccessToken(
-          process.env.ACCESS_TOKEN_SECRET || ''
-        )
-        const refreshToken = await userWithSub.generateRefreshToken(
-          process.env.REFRESH_TOKEN_SECRET || ''
-        )
-        return BaseService.sendSuccessResponse({
-          message: accessToken,
-          user: userWithSub,
-          refreshToken
-        })
-      }
-
-      const userObject = {
-        googleId,
-        firstName,
-        lastName,
-        username,
-        email,
-        image: { imageUrl: picture, publicId: '' },
-        isVerified: true,
-        servicePlatform: 'google',
-        userType: post.userType
-      }
-
-      const newUser = new UserModel(userObject)
-
-      await newUser.save()
-
-      // Generate your own JWT/session token
-      const accessToken = await newUser.generateAccessToken(
-        process.env.ACCESS_TOKEN_SECRET || ''
-      )
-
-      const refreshToken = await newUser.generateRefreshToken(
-        process.env.REFRESH_TOKEN_SECRET || ''
-      )
-
-      // Send OTP email
-      const emailHtml = `
-         <h1>Registration successful</h1>
-      <p>Hi <strong>${newUser.email}</strong>,</p>
-      <p>You have successfully sign up:</p>
-      `
-      await sendEmail({
-        subject: 'Welcome to Chuvi Laundry',
-        to: newUser.email,
-        html: emailHtml
-      })
+    if (userWithSub) {
+      const accessToken = await userWithSub.generateAccessToken(
+        process.env.ACCESS_TOKEN_SECRET || ""
+      );
+      const refreshToken = await userWithSub.generateRefreshToken(
+        process.env.REFRESH_TOKEN_SECRET || ""
+      );
 
       return BaseService.sendSuccessResponse({
         message: accessToken,
-        user: newUser,
-        refreshToken
-      })
-    } catch (error) {
-      console.log(error)
-      return BaseService.sendFailedResponse({
-        error: this.server_error_message
-      })
+        user: userWithSub,
+        refreshToken,
+      });
     }
+
+    // ✅ Schema-aligned user object
+    const userObject = {
+      googleId,
+      email,
+      fullName,
+      image: { imageUrl: picture, publicId: "" },
+      isVerified: true,
+      servicePlatform: "google",
+      userType: post.userType,
+    };
+
+    const newUser = new UserModel(userObject);
+    await newUser.save();
+
+    const accessToken = await newUser.generateAccessToken(
+      process.env.ACCESS_TOKEN_SECRET || ""
+    );
+
+    const refreshToken = await newUser.generateRefreshToken(
+      process.env.REFRESH_TOKEN_SECRET || ""
+    );
+
+    // Welcome email
+    const emailHtml = `
+      <h1>Registration successful</h1>
+      <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+      <p>You have successfully signed up.</p>
+    `;
+
+    await sendEmail({
+      subject: "Welcome to Chuvi Laundry",
+      to: newUser.email,
+      html: emailHtml,
+    });
+
+    return BaseService.sendSuccessResponse({
+      message: accessToken,
+      user: newUser,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error(error);
+    return BaseService.sendFailedResponse({
+      error: this.server_error_message,
+    });
   }
+ }
+
   async appleSignup (req, res) {
     try {
       const {
@@ -568,9 +566,9 @@ class AuthService extends BaseService {
       }
       // Generate OTP
       const otp = generateOTP()
-      userExists.otp = otp
+      userExists.resetPasswordOtp = otp
       const expiresAt = new Date(Date.now() + EXPIRES_AT)
-      userExists.otpExpiresAt = expiresAt
+      userExists.resetPasswordOtpExpiresAt = expiresAt
 
       await userExists.save()
       // Send OTP email
@@ -624,82 +622,113 @@ class AuthService extends BaseService {
       })
     }
   }
-  async resetPassword (req, res) {
+  async verifyResetPasswordOtp(req, res) {
     try {
-      const post = req.body
+      const { email, otp } = req.body
 
-      const validateRule = {
-        email: 'email|required',
-        password: 'string|required',
-        otp: 'string|required'
-      }
-
-      const validateMessage = {
-        required: ':attribute is required',
-        'email.email': 'Please provide a valid :attribute.'
-      }
-
-      const validateResult = validateData(post, validateRule, validateMessage)
-
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
-      }
-
-      const { email, password } = post
-
-      const userExists = await UserModel.findOne({ email })
-      if (!userExists) {
+      if (!email || !otp) {
         return BaseService.sendFailedResponse({
-          error: 'User not found. Please try again later'
+          error: 'Email and OTP are required'
         })
       }
 
-      if (Date.now() > userExists.otpExpiresAt) {
-        return BaseService.sendFailedResponse({ error: 'OTP expired' })
-      }
+      const user = await UserModel
+      .findOne({ email })
+      .select('+resetPasswordOtp +resetPasswordOtpExpiresAt')
 
-      // Prevent same password reuse
-      const isSamePassword = await userExists.comparePassword(password)
-      if (isSamePassword) {
+
+      if (!user) {
         return BaseService.sendFailedResponse({
-          error: 'New password cannot be the same as the old password'
+          error: 'User not found'
         })
       }
 
-      // Update password (ensure your model hashes this!)
-      userExists.password = password
+      if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiresAt) {
+        return BaseService.sendFailedResponse({
+          error: 'No active OTP found'
+        })
+      }
 
-      // Clear OTP
-      userExists.otp = null
-      userExists.otpExpiresAt = null
+      if (user.resetPasswordOtp !== otp) {
+        return BaseService.sendFailedResponse({
+          error: 'Invalid OTP'
+        })
+      }
 
-      await userExists.save()
+      if (Date.now() > user.resetPasswordOtpExpiresAt) {
+        return BaseService.sendFailedResponse({
+          error: 'OTP expired'
+        })
+      }
 
-      // Send confirmation email
-      const emailHtml = `
-        <h1>Password Reset</h1>
-        <p>Hi <strong>${userExists?.fullName || email}</strong>,</p>
-        <p>Your password has been reset successfully.</p>
-      `
+      // Issue short-lived reset token
+      const resetToken = jwt.sign(
+        { userId: user._id },
+        process.env.RESET_TOKEN_SECRET,
+        { expiresIn: '10m' }
+      )
 
-      await sendEmail({
-        subject: 'Password Reset Confirmation',
-        to: email,
-        html: emailHtml
-      })
-
-
+      // Clear OTP immediately (VERY IMPORTANT)
+      user.resetPasswordOtp = null
+      user.resetPasswordOtpExpiresAt = null
+      await user.save()
 
       return BaseService.sendSuccessResponse({
-        message: 'Password reset successful'
+        message: 'OTP verified successfully',
+        resetToken
       })
     } catch (error) {
-      console.error(error)
       return BaseService.sendFailedResponse({
         error: error.message || 'Something went wrong'
       })
     }
   }
+
+  async resetPassword(req, res) {
+    try {
+      const { resetToken, password } = req.body
+
+      if (!resetToken || !password) {
+        return BaseService.sendFailedResponse({
+          error: 'Reset token and new password are required'
+        })
+      }
+
+      const decoded = jwt.verify(
+        resetToken,
+        process.env.RESET_TOKEN_SECRET
+      )
+
+      const user = await UserModel
+        .findById(decoded.userId)
+        .select('+password')
+
+      if (!user) {
+        return BaseService.sendFailedResponse({
+          error: 'User not found'
+        })
+      }
+
+      const isSamePassword = await user.comparePassword(password)
+      if (isSamePassword) {
+        return BaseService.sendFailedResponse({
+          error: 'New password cannot be the same as old password'
+        })
+      }
+
+      user.password = password
+      await user.save()
+
+      return BaseService.sendSuccessResponse({
+        message: 'Password reset successful'
+      })
+    } catch (error) {
+      return BaseService.sendFailedResponse({
+        error: 'Reset token expired or invalid'
+      })
+    }
+  }
+
   async refreshToken (req, res) {
     try {
       const refreshToken = req.headers['x-refresh-token'] // better than Authorization
@@ -737,92 +766,157 @@ class AuthService extends BaseService {
       })
     }
   }
-  async loginUser (req, res) {
+
+    async registerAdmin(req, res) {
     try {
-      const post = req.body
-      const { email, password } = post
+      const post = req.body;
 
       const validateRule = {
-        email: 'email|required',
-        password: 'string|required'
-      }
-      const validateMessage = {
-        required: ':attribute is required',
-        string: ':attribute must be a string',
-        'email.email': 'Please provide a valid :attribute.'
-      }
+        email: "email|required",
+        password: "string|required",
+        fullName: "string|required",
+        phoneNumber: "string|required",
+        userType: 'string|required'
+      };
 
-      const validateResult = validateData(post, validateRule, validateMessage)
+      const validateResult = validateData(post, validateRule);
       if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data })
+        return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const userExists = await UserModel.findOne({ email }).select('+password')
-
-      if (empty(userExists)) {
+      const userExists = await UserModel.findOne({ email: post.email });
+      if (userExists) {
         return BaseService.sendFailedResponse({
-          error: 'User not found. Please register as a new user'
-        })
+          error: "Admin already exists",
+        });
       }
 
-      if (!userExists.isVerified) {
-        return BaseService.sendFailedResponse(
-          {
-            error: 'Email is not verified. Please verifiy your email'
-          },
-          405
-        )
-      }
+      const admin = new UserModel({
+        email: post.email,
+        password: post.password,
+        fullName: post.fullName,
+        phoneNumber: post.phoneNumber,
+        userType: post.userType || ROLE.ADMIN,
+        servicePlatform: "local",
+        isVerified: true,
+      });
 
-      if (userExists.servicePlatform === 'google') {
-        // If the user signed up via Google, prevent local login attempt
-        if (password) {
-          return BaseService.sendFailedResponse({
-            error:
-              'This account was created using Google. Please log in using Google.'
-          })
-        }
-      }
-
-      if (userExists.servicePlatform !== SERVICE_PLATFORM.LOCAL) {
-        return BaseService.sendFailedResponse({
-          error: `This account was created using ${userExists.servicePlatform}. Please log in using that platform.`
-        })
-      }
-
-      if (!(await userExists.comparePassword(password))) {
-        return BaseService.sendFailedResponse({
-          error: 'Wrong email or password'
-        })
-      }
-
-      const accessToken = await userExists.generateAccessToken(
-        process.env.ACCESS_TOKEN_SECRET || ''
-      )
-      const refreshToken = await userExists.generateRefreshToken(
-        process.env.REFRESH_TOKEN_SECRET || ''
-      )
-      // res.cookie("growe_refresh_token", refreshToken, {
-      //   httpOnly: true,
-      //   secure: process.env.NODE_ENV === "production",
-      //   path: "/",
-      //   maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-      //   sameSite: "strict",
-      // });
-
-      // res.header("Authorization", `Bearer ${accessToken}`);
-      // res.header("refresh_token", `Bearer ${refreshToken}`);
+      await admin.save();
+      admin.password = undefined;
 
       return BaseService.sendSuccessResponse({
-        message: accessToken,
-        user: userExists,
-        refreshToken
-      })
+        message: "Admin account created successfully",
+        user: admin,
+      });
     } catch (error) {
-      console.log(error, 'the error')
-      return BaseService.sendFailedResponse({ error })
+      console.error(error);
+      return BaseService.sendFailedResponse({ error });
     }
   }
+
+ async _handleLogin({ email, password, allowGoogle = false }) {
+  const user = await UserModel.findOne({ email }).select("+password");
+
+  if (!user) {
+    throw new Error("User not found. Please register as a new user");
+  }
+
+  if (!user.isVerified) {
+    throw new Error("Email is not verified. Please verify your email");
+  }
+
+  // 🔐 Google account protection
+  if (user.servicePlatform === "google") {
+    if (!allowGoogle) {
+      throw new Error(
+        "This account was created using Google. Please log in using Google."
+      );
+    }
+  }
+
+  // 🔐 Other providers (facebook, apple, etc.)
+  if (user.servicePlatform !== SERVICE_PLATFORM.LOCAL && !allowGoogle) {
+    throw new Error(
+      `This account was created using ${user.servicePlatform}. Please log in using that platform.`
+    );
+  }
+
+  // 🔑 Password check (LOCAL only)
+  if (user.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+    if (!password) {
+      throw new Error("Password is required");
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      throw new Error("Wrong email or password");
+    }
+  }
+
+  const accessToken = await user.generateAccessToken(
+    process.env.ACCESS_TOKEN_SECRET || ""
+  );
+
+  const refreshToken = await user.generateRefreshToken(
+    process.env.REFRESH_TOKEN_SECRET || ""
+  );
+
+  user.password = undefined;
+
+  return { user, accessToken, refreshToken };
+}
+
+ async loginUser(req, res) {
+  try {
+    const post = req.body;
+    const { email, password } = post;
+
+    const validateRule = {
+      email: "email|required",
+      password: "string|required",
+    };
+
+    const validateResult = validateData(post, validateRule);
+    if (!validateResult.success) {
+      return BaseService.sendFailedResponse({ error: validateResult.data });
+    }
+
+    const { user, accessToken, refreshToken } =
+      await this._handleLogin({ email, password });
+
+    return BaseService.sendSuccessResponse({
+      message: accessToken,
+      user,
+      refreshToken,
+    });
+  } catch (error) {
+    return BaseService.sendFailedResponse({ error: error.message });
+  }
+}
+
+async adminLogin(req, res) {
+  try {
+    const { email, password } = req.body;
+
+    const { user, accessToken, refreshToken } =
+      await this._handleLogin({ email, password });
+
+    if (user.userType !== "admin") {
+      return BaseService.sendFailedResponse({
+        error: "Access denied. Admins only",
+      });
+    }
+
+    return BaseService.sendSuccessResponse({
+      message: accessToken,
+      user,
+      refreshToken,
+    });
+  } catch (error) {
+    return BaseService.sendFailedResponse({ error: error.message });
+  }
+}
+
 
 }
 

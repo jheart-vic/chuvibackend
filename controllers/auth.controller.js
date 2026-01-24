@@ -83,6 +83,14 @@ class UserController extends BaseController {
       ? BaseController.sendSuccessResponse(res, result.data)
       : BaseController.sendFailedResponse(res, result.data);
   }
+  async verifyResetPasswordOtp(req, res) {
+    const service = new UserService();
+    const result = await service.verifyResetPasswordOtp(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
 
   async sendOTP(req, res) {
     const service = new UserService();
@@ -96,6 +104,23 @@ class UserController extends BaseController {
   async verifyEmail(req, res) {
     const service = new UserService();
     const result = await service.verifyEmail(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+
+  async adminLogin(req, res) {
+    const service = new UserService();
+    const result = await service.adminLogin(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async registerAdmin(req, res) {
+    const service = new UserService();
+    const result = await service.registerAdmin(req, res);
 
     return result.success
       ? BaseController.sendSuccessResponse(res, result.data)

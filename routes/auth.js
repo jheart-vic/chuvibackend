@@ -12,6 +12,9 @@ const {
   ROUTE_GOOGLE_SIGNUP,
   ROUTE_APPLE_SIGNUP,
   ROUTE_RESEND_OTP,
+  ROUTE_ADMIN_LOGIN,
+  ROUTE_ADMIN_REGISTER,
+  ROUTE_VERIFY_RESET_PASSWORD_OTP
 } = require ('../util/page-route');
 
 const router = require ('express').Router ();
@@ -316,11 +319,13 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
   const userController = new UserController ();
   return userController.forgotPassword (req, res);
 });
+
 /**
  * @swagger
- * /auth/reset-password:
+ * /auth/verify-reset-password-otp:
  *   post:
- *     summary: Change your password
+ *     summary: Verify OTP for password reset
+ *     description: Verifies the OTP sent to the user's email and returns a short-lived reset token.
  *     tags:
  *       - Auth
  *     requestBody:
@@ -331,15 +336,69 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *             type: object
  *             required:
  *               - email
+ *               - otp
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "482193"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified successfully
+ *                 resetToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       400:
+ *         description: Invalid or expired OTP
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyResetPasswordOtp(req, res);
+});
+
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset user password
+ *     description: Resets the user's password using a valid reset token obtained after OTP verification.
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *               - resetToken
+ *             properties:
  *               password:
  *                 type: string
- *                 format: string
- *                 example: Word1234.
+ *                 example: StrongPassword123!
+ *               resetToken:
+ *                 type: string
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *     responses:
  *       200:
  *         description: Password reset successfully
@@ -348,58 +407,65 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: string
- *                   example: OTP verified successfully
+ *                   example: Password reset successful
  *       400:
- *         description: Missing or invalid email or OTP
+ *         description: Invalid or expired reset token
+ *       404:
+ *         description: User not found
  *       500:
  *         description: Server error
  */
-router.post (ROUTE_RESET_PASSWORD, (req, res) => {
-  const userController = new UserController ();
-  return userController.resetPassword (req, res);
+router.post(ROUTE_RESET_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.resetPassword(req, res);
 });
-/**
- * @swagger
- * /auth/send-otp:
- *   post:
- *     summary: Send your otp
- *     tags:
- *       - Auth
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *     responses:
- *       200:
- *         description: Email verified successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Email verified successfully
- *       400:
- *         description: Missing or invalid email
- *       500:
- *         description: Server error
- */
-router.post (ROUTE_SEND_OTP, (req, res) => {
-  const userController = new UserController ();
-  return userController.sendOTP (req, res);
-});
+
+
+// /**
+//  * @swagger
+//  * /auth/send-otp:
+//  *   post:
+//  *     summary: Send your otp
+//  *     tags:
+//  *       - Auth
+//  *     requestBody:
+//  *       required: true
+//  *       content:
+//  *         application/json:
+//  *           schema:
+//  *             type: object
+//  *             required:
+//  *               - email
+//  *             properties:
+//  *               email:
+//  *                 type: string
+//  *                 format: email
+//  *                 example: user@example.com
+//  *     responses:
+//  *       200:
+//  *         description: Email verified successfully
+//  *         content:
+//  *           application/json:
+//  *             schema:
+//  *               type: object
+//  *               properties:
+//  *                 message:
+//  *                   type: string
+//  *                   example: Email verified successfully
+//  *       400:
+//  *         description: Missing or invalid email
+//  *       500:
+//  *         description: Server error
+//  */
+// router.post (ROUTE_SEND_OTP, (req, res) => {
+//   const userController = new UserController ();
+//   return userController.sendOTP (req, res);
+// });
 /**
  * @swagger
  * /auth/verify-otp:
@@ -531,50 +597,50 @@ router.post (ROUTE_VERIFY_EMAIL, (req, res) => {
   const userController = new UserController ();
   return userController.verifyEmail (req, res);
 });
-/**
- * @swagger
- * /auth/verify-password-otp:
- *   post:
- *     summary: Verify your reset password OTP
- *     tags:
- *       - Auth
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *               otp:
- *                 type: string
- *                 format: string
- *                 example: 123456
- *     responses:
- *       200:
- *         description: Email verified successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP verified successfully
- *       400:
- *         description: Missing or invalid email or OTP
- *       500:
- *         description: Server error
- */
-router.post (ROUTE_VERIFY_PASSWORD_OTP, (req, res) => {
-  const userController = new UserController ();
-  return userController.verifyPasswordOTP (req, res);
-});
+// /**
+//  * @swagger
+//  * /auth/verify-password-otp:
+//  *   post:
+//  *     summary: Verify your reset password OTP
+//  *     tags:
+//  *       - Auth
+//  *     requestBody:
+//  *       required: true
+//  *       content:
+//  *         application/json:
+//  *           schema:
+//  *             type: object
+//  *             required:
+//  *               - email
+//  *             properties:
+//  *               email:
+//  *                 type: string
+//  *                 format: email
+//  *                 example: user@example.com
+//  *               otp:
+//  *                 type: string
+//  *                 format: string
+//  *                 example: 123456
+//  *     responses:
+//  *       200:
+//  *         description: Email verified successfully
+//  *         content:
+//  *           application/json:
+//  *             schema:
+//  *               type: object
+//  *               properties:
+//  *                 message:
+//  *                   type: string
+//  *                   example: OTP verified successfully
+//  *       400:
+//  *         description: Missing or invalid email or OTP
+//  *       500:
+//  *         description: Server error
+//  */
+// router.post (ROUTE_VERIFY_PASSWORD_OTP, (req, res) => {
+//   const userController = new UserController ();
+//   return userController.verifyPasswordOTP (req, res);
+// });
 /**
  * @swagger
  * /auth/refresh-token:
@@ -632,6 +698,157 @@ router.post (ROUTE_VERIFY_PASSWORD_OTP, (req, res) => {
 router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
   const userController = new UserController ();
   return userController.refreshToken (req, res);
+});
+
+/**
+ * @swagger
+ * /auth/admin/register:
+ *   post:
+ *     summary: Register a new admin (Restricted)
+ *     tags:
+ *       - Admin Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@chuvi.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: Admin@1234
+ *               fullName:
+ *                 type: string
+ *                 example: John Admin
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+2348012345678"
+ *               userType:
+ *                 type: string
+ *                 enum: [manager, admin, staff, front_desk, user]
+ *                 example: admin
+ *     responses:
+ *       200:
+ *         description: Admin registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Admin account created successfully
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     phoneNumber:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                     servicePlatform:
+ *                       type: string
+ *                       example: local
+ *       400:
+ *         description: Admin already exists or invalid fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Admin already exists
+ *       403:
+ *         description: Unauthorized access
+ *       500:
+ *         description: Internal server error
+ */
+router.post(ROUTE_ADMIN_REGISTER, (req, res) => {
+  const userController = new UserController();
+  return userController.registerAdmin(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/admin/login:
+ *   post:
+ *     summary: Login as admin
+ *     tags:
+ *       - Admin Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@chuvi.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: Admin@1234
+ *     responses:
+ *       200:
+ *         description: Admin logged in successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: JWT_ACCESS_TOKEN
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                 refreshToken:
+ *                   type: string
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Wrong email or password
+ *       403:
+ *         description: Access denied (Not an admin)
+ *       500:
+ *         description: Internal server error
+ */
+router.post(ROUTE_ADMIN_LOGIN, (req, res) => {
+  const userController = new UserController();
+  return userController.adminLogin(req, res);
 });
 
 module.exports = router;

@@ -99,6 +99,14 @@ class UserController extends BaseController{
         }
         return BaseController.sendSuccessResponse(res, getUserNotifications.data)
     }
+    async resetPasswordInProfilePage(req, res){
+        const userService = new UserService()
+        const resetPassword = await userService.resetPasswordInProfilePage(req, res)
+        if(!resetPassword.success){
+            return BaseController.sendFailedResponse(res, resetPassword.data)
+        }
+        return BaseController.sendSuccessResponse(res, resetPassword.data)
+    }
 }
 
 module.exports = UserController

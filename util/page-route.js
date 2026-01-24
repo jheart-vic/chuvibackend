@@ -1,6 +1,8 @@
 
 //users
 exports.ROUTE_REGISTER = '/register'
+exports.ROUTE_ADMIN_REGISTER = '/admin/register'
+exports.ROUTE_ADMIN_LOGIN = '/admin/login'
 exports.ROUTE_APPLE_SIGNUP = '/apple-signup'
 exports.ROUTE_GOOGLE_SIGNUP = '/google-signup'
 exports.ROUTE_LOGIN = '/login'
@@ -25,6 +27,7 @@ exports.ROUTE_DELETE_USER = '/delete-user'
 exports.ROUTE_INITIALIZE_PAYMENT = '/initialize-payment'
 exports.ROUTE_INITIALIZE_ORDER_PAYMENT = '/initialize-order-payment'
 exports.ROUTE_GET_USER_NOTIFICATIONS = '/get-user-notifications'
+exports.ROUTE_VERIFY_RESET_PASSWORD_OTP = '/verify-reset-password-otp'
 
 
 

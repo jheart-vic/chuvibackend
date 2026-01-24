@@ -98,49 +98,48 @@ class UserService extends BaseService {
   }
  }
 
-async profileImageUpload(req) {
-  try {
-    if (!req.file) {
+  async profileImageUpload(req) {
+    try {
+      if (!req.file) {
+        return BaseService.sendFailedResponse({
+          error: "Please provide your profile image",
+        });
+      }
+
+      const user = await UserModel.findById(req.user.id);
+      if (!user) {
+        return BaseService.sendFailedResponse({
+          error: "User does not exist. Please register!",
+        });
+      }
+
+      // Delete old image if exists
+      if (user.image?.publicId) {
+        await deleteImage(user.image.publicId, "image");
+      }
+
+      // Upload new image to Cloudinary
+      const result = await uploadImage(req.file);
+
+      // Save new image details
+      user.image = {
+        imageUrl: result.secure_url,
+        publicId: result.public_id,
+      };
+
+      await user.save();
+
+      return BaseService.sendSuccessResponse({
+        message: "Profile image uploaded successfully",
+        data: user.image,
+      });
+    } catch (error) {
+      console.error(error);
       return BaseService.sendFailedResponse({
-        error: "Please provide your profile image",
+        error: "Something went wrong. Please try again later.",
       });
     }
-
-    const user = await UserModel.findById(req.user.id);
-    if (!user) {
-      return BaseService.sendFailedResponse({
-        error: "User does not exist. Please register!",
-      });
-    }
-
-    // Delete old image if exists
-    if (user.image?.publicId) {
-      await deleteImage(user.image.publicId, "image");
-    }
-
-    // Upload new image to Cloudinary
-    const result = await uploadImage(req.file);
-
-    // Save new image details
-    user.image = {
-      imageUrl: result.secure_url,
-      publicId: result.public_id,
-    };
-
-    await user.save();
-
-    return BaseService.sendSuccessResponse({
-      message: "Profile image uploaded successfully",
-      data: user.image,
-    });
-  } catch (error) {
-    console.error(error);
-    return BaseService.sendFailedResponse({
-      error: "Something went wrong. Please try again later.",
-    });
   }
-}
-
 
  async addAddress(req) {
     try {
@@ -276,67 +275,67 @@ async profileImageUpload(req) {
     }
   }
 
- async updateNotificationPreferences(req, res) {
-  try {
-    const userId = req.user.id;
+  async updateNotificationPreferences(req, res) {
+    try {
+      const userId = req.user.id;
 
-    const { whatsappNotification, emailNotification } = req.body;
+      const { whatsappNotification, emailNotification } = req.body;
 
-    // Only update fields that are provided
-    const update = {};
-    if (typeof whatsappNotification === "boolean") {
-      update.whatsappNotification = whatsappNotification;
+      // Only update fields that are provided
+      const update = {};
+      if (typeof whatsappNotification === "boolean") {
+        update.whatsappNotification = whatsappNotification;
+      }
+      if (typeof emailNotification === "boolean") {
+        update.emailNotification = emailNotification;
+      }
+
+      const user = await UserModel.findByIdAndUpdate(
+        userId,
+        { $set: update },
+        { new: true }
+      ).select("whatsappNotification emailNotification");
+
+      return BaseService.sendSuccessResponse({
+        success: true,
+        message: "Notification preference updated",
+        data: user,
+        });
+    } catch (error) {
+      console.error(error);
+        return BaseService.sendFailedResponse({
+          error: "Failed to update notification preference",
+        });
     }
-    if (typeof emailNotification === "boolean") {
-      update.emailNotification = emailNotification;
-    }
+  };
 
-    const user = await UserModel.findByIdAndUpdate(
-      userId,
-      { $set: update },
-      { new: true }
-    ).select("whatsappNotification emailNotification");
+  async deleteUser(req, res) {
+    try {
+      const userId = req.user.id;
 
-     return BaseService.sendSuccessResponse({
-      success: true,
-      message: "Notification preference updated",
-      data: user,
+
+      const deletedUser = await UserModel.findByIdAndDelete(userId).select(
+        "-password -refreshToken"
+      );
+
+
+      if (!deletedUser) {
+        return BaseService.sendFailedResponse({
+          error: "User not found",
+        });
+      }
+
+      return BaseService.sendSuccessResponse({
+        message: "User profile deleted successfully",
+        data: deletedUser,
       });
-  } catch (error) {
-    console.error(error);
+    } catch (error) {
+      console.error(error);
       return BaseService.sendFailedResponse({
-        error: "Failed to update notification preference",
-      });
-  }
-};
-
-async deleteUser(req, res) {
-  try {
-    const userId = req.user.id;
-
-
-    const deletedUser = await UserModel.findByIdAndDelete(userId).select(
-      "-password -refreshToken"
-    );
-
-
-    if (!deletedUser) {
-      return BaseService.sendFailedResponse({
-        error: "User not found",
+        error: "Failed to delete user profile",
       });
     }
-
-    return BaseService.sendSuccessResponse({
-      message: "User profile deleted successfully",
-      data: deletedUser,
-    });
-  } catch (error) {
-    console.error(error);
-    return BaseService.sendFailedResponse({
-      error: "Failed to delete user profile",
-    });
   }
-}
   async getUserNotifications(req) {
     try {
       const userId = req.user.id
@@ -344,7 +343,7 @@ async deleteUser(req, res) {
       const notifications = await NotificationModel.find({userId}).sort({createdAt: -1})
 
       return BaseService.sendSuccessResponse({
-        message: notifications,
+        data: notifications,
       });
     } catch (error) {
       console.log(error);
@@ -353,6 +352,56 @@ async deleteUser(req, res) {
       });
     }
   }
+
+    async resetPasswordInProfilePage(req, res) {
+    try {
+      const userId = req.user.id
+      const { currentPassword, newPassword } = req.body
+
+      // Basic validation
+      if (!currentPassword || !newPassword) {
+        return BaseService.sendFailedResponse({
+          error: 'Current password and new password are required'
+        })
+      }
+
+      const user = await UserModel.findById(userId).select('+password')
+      if (!user) {
+        return BaseService.sendFailedResponse({ error: 'User not found' })
+      }
+
+      // Verify current password
+      const isMatch = await user.comparePassword(currentPassword)
+      if (!isMatch) {
+        return BaseService.sendFailedResponse({
+          error: 'Current password is incorrect'
+        })
+      }
+
+      // Prevent reuse
+      const isSamePassword = await user.comparePassword(newPassword)
+      if (isSamePassword) {
+        return BaseService.sendFailedResponse({
+          error: 'New password cannot be the same as the old password'
+        })
+      }
+
+      // Update password
+      user.password = newPassword
+      user.lastChangedPassword = new Date()
+      await user.save()
+
+      return BaseService.sendSuccessResponse({
+        message: 'Password changed successfully'
+      })
+    } catch (error) {
+      console.error(error)
+      return BaseService.sendFailedResponse({
+        error: 'Failed to change password'
+      })
+    }
+  }
+
 }
 
 module.exports = UserService;
