@@ -161,20 +161,35 @@ class AuthService extends BaseService {
         $or: [{ googleId }, { email }],
       });
 
-      if (userWithSub) {
-        const accessToken = await userWithSub.generateAccessToken(
-          process.env.ACCESS_TOKEN_SECRET || ""
-        );
-        const refreshToken = await userWithSub.generateRefreshToken(
-          process.env.REFRESH_TOKEN_SECRET || ""
-        );
+if (userWithSub) {
+  // If this email was created as LOCAL, decide your policy (block or link).
+  if (userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+    return BaseService.sendFailedResponse({
+      error: "This email was registered with password. Please login manually.",
+    });
+  }
 
-        return BaseService.sendSuccessResponse({
-          message: accessToken,
-          user: userWithSub,
-          refreshToken,
-        });
-      }
+  // keep provider consistent
+  userWithSub.servicePlatform = SERVICE_PLATFORM.GOOGLE;
+  userWithSub.googleId = userWithSub.googleId || googleId;
+
+  // fill missing profile info
+  if (!userWithSub.fullName && fullName) userWithSub.fullName = fullName;
+
+  if (picture) userWithSub.image = { imageUrl: picture, publicId: "" };
+
+  await userWithSub.save();
+
+  const accessToken = await userWithSub.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+  const refreshToken = await userWithSub.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+
+  return BaseService.sendSuccessResponse({
+    message: accessToken,
+    user: userWithSub,
+    refreshToken,
+  });
+}
+
 
       // ✅ Schema-aligned user object
       const userObject = {
@@ -764,20 +779,20 @@ class AuthService extends BaseService {
 
   async registerAdmin(req, res) {
     try {
-  
+
       const adminEmail = "admin@gmail.com";
-  
+
       const adminExists = await UserModel.findOne({
         email: adminEmail,
         userType: 'admin',
       });
-  
+
       if (adminExists) {
         return BaseService.sendFailedResponse({
           error: "Admin already exists. Please login.",
         });
       }
-  
+
       const admin = new UserModel({
         email: adminEmail,
         password: "Admin@123",
@@ -787,9 +802,9 @@ class AuthService extends BaseService {
         servicePlatform: "local",
         isVerified: true,
       });
-  
+
       await admin.save();
-  
+
       return BaseService.sendSuccessResponse({message: "🎉 Admin seeded successfully:"});
     } catch (error) {
       return BaseService.sendFailedResponse({ error });
@@ -808,7 +823,7 @@ class AuthService extends BaseService {
     }
 
     // 🔐 Google account protection
-    if (user.servicePlatform === "google") {
+    if (user.servicePlatform === SERVICE_PLATFORM.GOOGLE) {
       if (!allowGoogle) {
         throw new Error(
           "This account was created using Google. Please log in using Google."
