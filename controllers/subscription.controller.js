@@ -67,6 +67,14 @@ class SubscriptionController extends BaseController {
         }
         return BaseController.sendSuccessResponse(res, result.data);
     }
+    async seedPlans(req, res){
+        const subscriptionService = new SubscriptionService();
+        const result = await subscriptionService.seedPlans(req);
+        if (!result.success) {
+            return BaseController.sendFailedResponse(res, result.data);
+        }
+        return BaseController.sendSuccessResponse(res, result.data);
+    }
 }
 
 module.exports = SubscriptionController;

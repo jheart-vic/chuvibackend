@@ -124,63 +124,95 @@ class SubscriptionService extends BaseService {
       });
     }
   }
-  async subscribePlan(req) {
-    try {
-      const { email, planId } = req.body;
+  //subscription
+  async activateSubscription(userId, planId) {
+    const plan = await PlanModel.findById(planId);
+    const user = await UserModel.findById(userId);
 
-      const plan = await PlanModel.findById(planId);
-      if (!plan) {
-        return BaseService.sendFailedResponse({ error: "Plan not found" });
-      }
+    const subscription = new SubscriptionModel({
+      userId: userId,
+      plan: planId,
 
-      const response = await paystackAxios.post("/transaction/initialize", {
-        email,
-        amount: plan.price * 100,
-        plan: plan.paystackPlanCode,
-        callback_url: `${process.env.BASE_URL}/success`,
-      });
+      remainingItems: plan.monthlyLimits,
 
-      return BaseService.sendSuccessResponse({ message: response.data });
-    } catch (error) {
-      console.log("Error in:", error);
-      return BaseService.sendFailedResponse({
-        error: this.server_error_message,
-      });
-    }
+      startDate: new Date(),
+      expiresAt: addMonths(new Date(), 1),
+    });
+
+    await subscription.save();
+    return subscription;
   }
-  async cancelSubscription(req) {
-    try {
-      const { subscriptionCode, emailToken } = req.body;
+  async upgradeSubscription(sub, newPlan) {
+    // Disable old
+    await disableSubscription(sub);
 
-      await paystackAxios.post("/subscription/disable", {
-        code: subscriptionCode,
-        token: emailToken,
-      });
+    // Create new
+    const res = await createSubscription(
+      sub.paystackCustomerCode,
+      newPlan.paystackPlanCode
+    );
 
-      await SubscriptionModel.findOneAndUpdate(
-        { paystackSubscriptionCode: subscriptionCode },
-        { status: "cancelled" }
-      );
+    // Update DB
+    sub.plan = newPlan._id;
 
-      return BaseService.sendSuccessResponse({ message: response.data });
-    } catch (error) {
-      console.log("Error in:", error);
-      return BaseService.sendFailedResponse({
-        error: this.server_error_message,
-      });
-    }
+    sub.paystackSubscriptionCode = res.subscription_code;
+    sub.paystackEmailToken = res.email_token;
+
+    sub.remainingItems = newPlan.monthlyLimits;
+
+    await sub.save();
   }
+  async requestDowngrade(userId, newPlanId) {
+    const sub = await UserSubscription.findOne({ user: userId });
+
+    sub.pendingPlan = newPlanId;
+
+    await sub.save();
+  }
+  async applyDowngrade(sub) {
+    const newPlan = await SubscriptionPlan.findById(sub.pendingPlan);
+
+    await disableSubscription(sub);
+
+    const res = await createSubscription(
+      sub.paystackCustomerCode,
+      newPlan.paystackPlanCode
+    );
+
+    sub.plan = newPlan._id;
+    sub.pendingPlan = null;
+
+    sub.paystackSubscriptionCode = res.subscription_code;
+    sub.paystackEmailToken = res.email_token;
+
+    sub.remainingItems = newPlan.monthlyLimits;
+
+    await sub.save();
+  }
+  async cancelSubscription(userId) {
+    const sub = await UserSubscription.findOne({ user: userId });
+
+    await disableSubscription(sub);
+
+    sub.status = "cancelled";
+
+    await sub.save();
+  }
+
   async getCurrentSubscription(req) {
     try {
-      const userId = req.user.id
+      const userId = req.user.id;
 
-      const userSubscription = await SubscriptionModel.findOne({ userId, status: "active" });
+      const userSubscription = await SubscriptionModel.findOne({
+        userId,
+        status: "active",
+      });
 
       if (!userSubscription) {
-        return BaseService.sendFailedResponse({ error: "No active subscription found" });
+        return BaseService.sendFailedResponse({
+          error: "No active subscription found",
+        });
       }
-
-
 
       return BaseService.sendSuccessResponse({ message: userSubscription });
     } catch (error) {
@@ -188,6 +220,91 @@ class SubscriptionService extends BaseService {
       return BaseService.sendFailedResponse({
         error: this.server_error_message,
       });
+    }
+  }
+
+  async seedPlans(req) {
+    try {
+      const plans = [
+        {
+          title: "Student plan",
+          description:
+            "Perfect for students who want affordable stress-free laundry every week.",
+          duration: "monthly",
+          price: 12000,
+          monthlyLimits: 28,
+          interval: "monthly",
+          paystackPlanCode: "PLN_ji8eaz56uuog89e",
+          features: [
+            "28 - 48 hours turnaround",
+            "Up to 1 items washed and folded",
+            "Eco-friendly detergents",
+            "Neatly folder and packaged",
+          ],
+        },
+        {
+          title: "Standard plan",
+          description:
+            "Perfect for individuals and small households who need consistent laundary care.",
+          duration: "monthly",
+          price: 18000,
+          monthlyLimits: 40,
+          interval: "monthly",
+          paystackPlanCode: "PLN_oj8mwjwivp0txhe",
+          features: [
+            "Wash, fold and basic ironing",
+            "Fresh scent and stain care",
+            "Flexible pickup times",
+            "Weekly pickup and delivery",
+          ],
+        },
+        {
+          title: "Premium plan",
+          description: "Great for professional, couples and families who want maximum convenience.",
+          duration: "monthly",
+          price: 12000,
+          monthlyLimits: 60,
+          interval: "monthly",
+          paystackPlanCode: "PLN_ai0qlsa3hnrajzc",
+          features: [
+            "Full wash and iron service",
+            "Express service on request",
+            "Priority packaging and handling",
+            "Free hanger and delivery shirts"
+          ],
+        },
+        {
+          title: "VIP plan",
+          description: "ideal for executives, large families and customers wh want full premium care.",
+          duration: "monthly",
+          price: 18000,
+          monthlyLimits: 100,
+          interval: "monthly",
+          paystackPlanCode: "PLN_hds1da4kwf6fhct",
+          features: [
+            "Flexible unlimited pickups (for very high item limit)",
+            "Premium wash and iron for all items",
+            "Same-day or next-day delivery",
+            "Special handling for delicate fabrics"
+          ],
+        },
+      ];
+
+      // Prevent duplicates
+      for (const plan of plans) {
+        await PlanModel.updateOne(
+          { title: plan.title },
+          { $setOnInsert: plan },
+          { upsert: true }
+        );
+      }
+
+      return BaseService.sendSuccessResponse({
+        success: true,
+        message: "Plans seeded successfully",
+      });
+    } catch (error) {
+      return BaseService.sendFailedResponse({ error: "Failed to seed plans" });
     }
   }
 }

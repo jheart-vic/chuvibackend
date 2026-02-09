@@ -13,7 +13,6 @@ class BaseService {
       Authorization: `Token ${process.env.PAYCONNECT_TOKEN}`,
       "Content-Type": "application/json",
     };
-    this.payconnect_token = process.env.PAYCONNECT_TOKEN
   }
 
 //   async requestToPayConnect(action, url, data = null) {

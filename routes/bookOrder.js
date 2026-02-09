@@ -2,6 +2,7 @@ const router = require("express").Router();
 const BookOrderController = require("../controllers/bookOrder.controller");
 const adminAuth = require("../middlewares/adminAuth");
 const auth = require("../middlewares/auth");
+const checkSubscription = require("../middlewares/checkSubscription");
 const {
   ROUTE_CREATE_BOOK_ORDER,
   ROUTE_ADMIN_ORDER_DETAILS,
@@ -178,7 +179,7 @@ const {
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_CREATE_BOOK_ORDER, [auth], (req, res) => {
+router.post(ROUTE_CREATE_BOOK_ORDER, [auth, checkSubscription], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.postBookOrder(req, res);
 });

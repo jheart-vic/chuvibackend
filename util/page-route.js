@@ -58,6 +58,7 @@ exports.ROUTE_CURRENT_SUBSCRIPTION = '/current-subscription'
 
 //seeding
 exports.ROUTE_SEED = '/seed'
+exports.ROUTE_SEED_PLAN = '/seed-plan'
 
 //upload images - UTILS
 exports.ROUTE_IMAGE_UPLOAD_MULTIPLE = '/image-upload-multiple'
