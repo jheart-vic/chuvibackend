@@ -6,10 +6,14 @@ const planSchema = new mongoose.Schema(
     description: { type: String, required: true },
     duration: { type: String, required: true },
     // subBody: { type: String, required: true },
-    itemPerMonth: { type: Number, required: true },
+    // itemPerMonth: { type: Number, required: true },
     price: { type: Number, required: true },
-    features: {type: [ String ], required: true },
-    paystackPlanCode: {type: String}
+    features: { type: [String], required: true },
+    monthlyLimits: { type: Number, required: true },
+    paystackPlanCode: {
+      type: String,
+      required: true,
+    },
   },
   { timestamps: true }
 );

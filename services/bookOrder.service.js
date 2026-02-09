@@ -298,3 +298,183 @@ class BookOrderService extends BaseService {
 }
 
 module.exports = BookOrderService;
+
+
+// async function createOrder(userId, items) {
+//   const subscription = await UserSubscription.findOne({ user: userId })
+//     .populate("plan");
+
+//   if (!subscription) {
+//     throw new Error("No active subscription");
+//   }
+
+//   const plan = subscription.plan;
+//   const remaining = subscription.remainingItems;
+
+//   // 1️⃣ Check Restricted Items
+//   for (let item of items) {
+//     if (plan.restrictedItems.includes(item.type)) {
+//       throw new Error(`${item.type} is not allowed in your plan`);
+//     }
+//   }
+
+//   // 2️⃣ Check Limits
+//   for (let item of items) {
+//     const available = remaining[item.type] || 0;
+
+//     if (item.quantity > available) {
+//       throw new Error(
+//         `Not enough ${item.type}. Available: ${available}`
+//       );
+//     }
+//   }
+
+//   // 3️⃣ Deduct Balance
+//   for (let item of items) {
+//     remaining[item.type] -= item.quantity;
+//   }
+
+//   // 4️⃣ Save Updated Subscription
+//   subscription.remainingItems = remaining;
+//   await subscription.save();
+
+//   // 5️⃣ Calculate Total
+//   let total = 0;
+//   items.forEach(i => {
+//     total += i.price * i.quantity;
+//   });
+
+//   // 6️⃣ Create Order
+//   const order = new Order({
+//     user: userId,
+//     items,
+//     totalAmount: total,
+//   });
+
+//   await order.save();
+
+//   return order;
+// }
+
+
+
+
+// let extraCharge = 0;
+
+// for (let item of items) {
+//   const available = remaining[item.type] || 0;
+
+//   if (item.quantity > available) {
+//     const excess = item.quantity - available;
+
+//     extraCharge += excess * item.price;
+
+//     remaining[item.type] = 0;
+//   } else {
+//     remaining[item.type] -= item.quantity;
+//   }
+// }
+
+
+
+// const cron = require("node-cron");
+
+// cron.schedule("0 0 1 * *", async () => {
+//   const subscriptions = await UserSubscription.find()
+//     .populate("plan");
+
+//   for (let sub of subscriptions) {
+//     sub.remainingItems = sub.plan.monthlyLimits;
+//     sub.startDate = new Date();
+//     sub.expiresAt = addMonths(new Date(), 1);
+
+//     await sub.save();
+//   }
+// });
+
+
+
+
+
+// Step 1: Calculate Remaining Days
+// function getRemainingDays(expiresAt) {
+//   const now = new Date();
+//   const diff = expiresAt - now;
+
+//   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+// }
+
+// Step 2: Calculate Prorated Price
+// function calculateUpgradePrice(oldPlan, newPlan, remainingDays) {
+//   const daysInMonth = 30;
+
+//   const oldDaily = oldPlan.price / daysInMonth;
+//   const newDaily = newPlan.price / daysInMonth;
+
+//   const oldValueLeft = oldDaily * remainingDays;
+//   const newValueLeft = newDaily * remainingDays;
+
+//   return Math.max(0, newValueLeft - oldValueLeft);
+// }
+
+
+// Fair charging ✅
+
+// Step 3: Upgrade API
+// async function upgradePlan(userId, newPlanId) {
+//   const sub = await UserSubscription.findOne({ user: userId })
+//     .populate("plan");
+
+//   if (!sub) throw new Error("No subscription");
+
+//   const newPlan = await SubscriptionPlan.findById(newPlanId);
+
+//   if (newPlan.price <= sub.plan.price) {
+//     throw new Error("Use downgrade instead");
+//   }
+
+//   // Calculate cost
+//   const remainingDays = getRemainingDays(sub.expiresAt);
+
+//   const amountToPay = calculateUpgradePrice(
+//     sub.plan,
+//     newPlan,
+//     remainingDays
+//   );
+
+//   // 👉 Initiate Paystack Here
+
+//   return {
+//     payAmount: amountToPay,
+//     newPlan,
+//   };
+// }
+
+// Step 4: After Paystack Confirms (Webhook)
+// async function completeUpgrade(userId, newPlanId) {
+//   const sub = await UserSubscription.findOne({ user: userId })
+//     .populate("plan");
+
+//   const newPlan = await SubscriptionPlan.findById(newPlanId);
+
+//   // Recalculate balance
+//   const newBalance = {};
+
+//   for (let item in newPlan.monthlyLimits) {
+//     const oldLimit = sub.plan.monthlyLimits[item] || 0;
+//     const oldRemaining = sub.remainingItems[item] || 0;
+
+//     // Carry unused + extra
+//     const used = oldLimit - oldRemaining;
+
+//     newBalance[item] = Math.max(
+//       newPlan.monthlyLimits[item] - used,
+//       0
+//     );
+//   }
+
+//   sub.plan = newPlan._id;
+//   sub.remainingItems = newBalance;
+
+//   await sub.save();
+// }

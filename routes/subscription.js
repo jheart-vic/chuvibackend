@@ -244,10 +244,14 @@ router.delete(ROUTE_DELETE_PLAN+"/:id", [adminAuth], async (req, res) => {
  *             required:
  *               - email
  *               - planId
+ *               - type
  *             properties:
  *               email:
  *                 type: string
  *                 example: user@example.com
+ *               type:
+ *                 type: string
+ *                 example: order|subscription
  *               planId:
  *                 type: string
  *                 example: 64f21b9a5c9d0c001e7a1234

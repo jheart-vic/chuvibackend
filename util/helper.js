@@ -102,3 +102,20 @@ module.exports.generateOscNumber = () => {
 
   // return `ORD-${ulid()}`;
 };
+
+
+module.exports.addMonths = (date, months = 1)=> {
+  const d = new Date(date);
+
+  const day = d.getDate();
+
+  // Move to target month
+  d.setMonth(d.getMonth() + months);
+
+  // Fix overflow (e.g Jan 31 → Feb)
+  if (d.getDate() < day) {
+    d.setDate(0); // last day of previous month
+  }
+
+  return d;
+}

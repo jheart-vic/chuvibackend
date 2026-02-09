@@ -425,10 +425,10 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
 
 /**
  * @swagger
- * /users/initialize-order-payment:
+ * /users/initialize-payment:
  *   post:
- *     summary: Initialize an order payment with Paystack
- *     description: Initializes a Paystack transaction for order.
+ *     summary: Initialize payment with Paystack
+ *     description: Initializes a Paystack transaction.
  *     tags:
  *       - Users
  *     security:
@@ -447,10 +447,18 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                 type: string
  *                 example: "chiemelapromise30@gmail.com"
  *                 description: The user's email address
+ *               transactionType:
+ *                 type: string
+ *                 example: "order|subscription"
+ *                 description: The user's email address
  *               orderId:
  *                 type: string
  *                 example: "696537bdf4cd2de9186cb729"
  *                 description: The order Id
+ *               planId:
+ *                 type: string
+ *                 example: "696537bdf4cd2de9186cb729"
+ *                 description: The plan Id
  *               amount:
  *                 type: string
  *                 example: "4500000"
@@ -510,7 +518,7 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                   type: string
  *                   example: "An internal server error occurred. Please try again later."
  */
-router.post(ROUTE_INITIALIZE_ORDER_PAYMENT, auth, (req, res) => {
+router.post(ROUTE_INITIALIZE_PAYMENT, auth, (req, res) => {
   const userController = new UserController();
   return userController.initializePayment(req, res);
 });

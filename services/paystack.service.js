@@ -1,10 +1,13 @@
-const SubscriptionModel = require("../models/subscription.model");
+
 const UserModel = require("../models/user.model");
 // const connectRedis = require("../util/cache");
 const validateData = require("../util/validate");
 const BaseService = require("./base.service");
 const axios = require("axios");
 const paystackAxios = require("./paystack.client.service");
+const SubscriptionModel = require("../models/subscription.model");
+const PlanModel = require("../models/plan.model");
+const BookOrderModel = require("../models/bookOrder.model");
 
 class PaystackService extends BaseService {
 //   constructor() {
@@ -26,8 +29,8 @@ class PaystackService extends BaseService {
       const validateRule = {
         email: "string|required",
         amount: "integer|required",
-        // type: "string|required",
-        orderId: "string|required",
+        transactionType: "string|required|in:order,subscription",
+        // orderId: "string|required",
       };
 
       const paymentMethod = "paystack";
@@ -48,26 +51,60 @@ class PaystackService extends BaseService {
         return BaseService.sendFailedResponse({ error: "User not found" });
       }
 
-      const { email, amount } = post;
+      let plan = null
+      let subscription = null
 
-      //   if(isUserSubscribed?.status && isUserSubscribed?.data.length > 0){
-      //     return BaseService.sendFailedResponse({error: 'You are already subscribed to this plan'})
-      //   }
+      const { email, amount, transactionType, orderId, planId } = post;
+
+      if(transactionType === 'order'){
+        if(!orderId){
+          return BaseService.sendFailedResponse({error: 'Please provide order id'})
+        }
+        const order = await BookOrderModel.findById(orderId)
+
+        if(!order){
+          return BaseService.sendFailedResponse({error: 'Order not found'})
+        }
+      }
+
+      if(transactionType === 'subscription'){
+        if(!planId){
+          return BaseService.sendFailedResponse({error:'Please provide a plan id'})
+        }
+        plan = await PlanModel.findById(planId);
+
+        if(!plan){
+          return BaseService.sendFailedResponse({error: 'Plan not found'})
+        }
+
+        subscription = await SubscriptionModel.create({
+          userId: userId,
+          plan: planId,
+          status: "pending",
+          remainingItems: plan.monthlyLimits
+        });
+      }
+
 
       const response = await paystackAxios.post(
         "/transaction/initialize",
         {
           email,
-          amount, // e.g. 4500000 for ₦45,000.00
+          amount,
+          ...(plan && {plan: plan.paystackPlanCode}),
           metadata: {
             userId,
-            type: "order_payment",
-            orderId: post.orderId,
+            transactionType: transactionType,
             paymentMethod,
-          }, // VERY helpful for mapping webhooks -> user
+            ...(orderId && {orderId: post.orderId}),
+            ...(plan && {plan: plan.paystackPlanCode}),
+            ...(subscription && {subscriptionId: subscription?._id}),
+          },
           // callback_url: 'https://yourapp.com/pay/callback' // optional
         }
       );
+
+     
 
       return BaseService.sendSuccessResponse({ message: response.data });
     } catch (error) {
@@ -77,59 +114,41 @@ class PaystackService extends BaseService {
       });
     }
   }
-  async checkIfCustomerHasSubscription(customerCode, paystackSubscriptionId) {
-    try {
-      const response = await axios.get(
-        // `https://api.paystack.co/subscription?customer=${customerCode}`,
-        `https://api.paystack.co/subscription`,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-          },
-          // params: {
-          //   customer: customerCode,  // Pass customerCode to filter subscriptions
-          // },
-        }
-      );
-      function hasActiveSubscription(subscriptions, customerCode) {
-        return subscriptions.some(
-          (sub) =>
-            sub.customer.customer_code === customerCode &&
-            sub.status === "active"
-        );
-      }
-
-      const userHasSub = hasActiveSubscription(
-        response.data.data,
-        customerCode
-      );
-
-      return userHasSub;
-    } catch (error) {
-      console.error("Error checking subscription status:", error);
-      return false; // If there's an error, assume no active subscription
-    }
-  }
-  async disableSubscription(paystackSubscriptionId, token) {
-    const resp = await paystackAxios.post(
-      "/subscription/disable",
+  async createCustomer(user) {
+    const res = await paystackAxios.post(
+      "/customer",
       {
-        code: paystackSubscriptionId,
-        token,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
+        email: user.email,
+        first_name: user.firstName,
+        last_name: user.lastName,
       }
     );
-    return resp.data;
+  
+    return res.data.data.customer_code;
   }
-  isInputEmail(input) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(input.trim());
+  async createSubscription(customerCode, planCode) {
+    const res = await paystackAxios.post(
+      "/subscription",
+      {
+        customer: customerCode,
+        plan: planCode,
+      }
+    );
+  
+    return res.data.data;
   }
+
+  async disableSubscription(sub) {
+    await paystackAxios.post(
+      "/disable",
+      {
+        code: sub.paystackSubscriptionCode,
+        token: sub.paystackEmailToken,
+      },
+    );
+  }
+  
+  
 }
 
 module.exports = PaystackService;
