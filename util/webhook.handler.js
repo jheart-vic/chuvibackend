@@ -11,7 +11,7 @@ async function onSubscriptionCreated(data) {
 
   const sub = await SubscriptionModel.findOne({
     userEmail: email,
-    status: "active",
+    status: "pending",
     paystackSubscriptionCode: { $exists: false },
   });
   console.log({sub}, 'onSubscriptionCreated')
@@ -85,6 +85,10 @@ async function onSubscriptionExpired(data) {
 }
 
 async function activateSubscription(sub, data) {
+    if(!sub){
+        console.warn("Subscription is not found")
+        return
+    }
   // Prevent double activation
   if (sub.status === "active") return;
 
