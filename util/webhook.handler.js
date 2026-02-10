@@ -98,6 +98,7 @@ async function activateSubscription(sub, data) {
     sub.paystackEmailToken = data?.subscription?.email_token;
   }
 
+  console.log({subscription: data?.subscription})
   sub.paystackCustomerCode = data.customer?.customer_code;
 
   // Billing cycle
