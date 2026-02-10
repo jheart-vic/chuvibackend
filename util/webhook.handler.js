@@ -25,6 +25,7 @@ async function onChargeSuccess(data) {
   // First payment
   if (data.metadata?.transactionType === "subscription") {
     const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
+    console.log({data},'the oncharge success')
 
     sub.paystackSubscriptionCode = data.subscription.subscription_code;
 
@@ -198,7 +199,6 @@ async function renewSubscription(sub, data) {
 
 async function handlePaystackEvent(event) {
   const data = event.data;
-  console.log("called webhook5....");
 
   switch (event.event) {
     case "subscription.create":
