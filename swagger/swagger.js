@@ -14,7 +14,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: "https://chuvibackend.onrender.com/api",
+        url: "https://chuvibackend-n0zh.onrender.com/api",
       },
     ],
     components: {
