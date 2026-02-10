@@ -2,12 +2,12 @@ const SubscriptionModel = require("../models/subscription.model");
 const { addMonths } = require("./helper");
 
 async function onSubscriptionCreated(data) {
+  console.log({data},'onSubscriptionCreated')
   const { userId } = data.metadata;
 
   const subCode = data.subscription.subscription_code;
   const customerCode = data.customer.customer_code;
   const emailToken = data.email_token;
-  console.log({data},'onSubscriptionCreated')
 
   const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
 
@@ -28,7 +28,7 @@ async function onSubscriptionCreated(data) {
 
 async function onChargeSuccess(data) {
   // First payment
-  if (data.metadata?.transactionType === "subscription" && data.subscription.subscription_code) {
+  if (data.metadata?.transactionType === "subscription" && data?.subscription?.subscription_code) {
     const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
     console.log({data},'the oncharge success')
 
