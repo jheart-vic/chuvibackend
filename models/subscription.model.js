@@ -4,7 +4,7 @@ const subscriptionSchema = new mongoose.Schema({
   // userEmail: { type: String, required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
-  paystackSubscriptionCode: { type: String, required: true },
+  paystackSubscriptionCode: { type: String },
   status: {
     type: String,
     enum: ["active", "cancelled", "expired", "pending"],
