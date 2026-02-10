@@ -2,7 +2,6 @@ const SubscriptionModel = require("../models/subscription.model");
 const { addMonths } = require("./helper");
 
 async function onSubscriptionCreated(data) {
-  console.log({ data }, "onSubscriptionCreated");
 
   const subCode = data.subscription_code;
   const customerCode = data.customer.customer_code;
@@ -14,7 +13,7 @@ async function onSubscriptionCreated(data) {
     status: "pending",
     paystackSubscriptionCode: { $exists: false },
   });
-  console.log({sub}, 'onSubscriptionCreated')
+
   await activateSubscription(sub, data);
 }
 
@@ -25,7 +24,6 @@ async function onChargeSuccess(data) {
     data?.subscription?.subscription_code
   ) {
     const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
-    console.log({ data }, "the oncharge success");
 
     sub.paystackSubscriptionCode = data.subscription.subscription_code;
 
@@ -94,8 +92,8 @@ async function activateSubscription(sub, data) {
 
   // Save Paystack IDs
   if (data?.subscription?.subscription_code && data?.subscription?.email_token) {
-    sub.paystackSubscriptionCode = data.subscription.subscription_code;
-    sub.paystackEmailToken = data.subscription.email_token;
+    sub?.paystackSubscriptionCode = data?.subscription?.subscription_code;
+    sub?.paystackEmailToken = data?.subscription?.email_token;
   }
 
   sub.paystackCustomerCode = data.customer?.customer_code;

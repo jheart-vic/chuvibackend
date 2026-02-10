@@ -22,7 +22,7 @@ const subscriptionSchema = new mongoose.Schema({
     ref: "SubscriptionPlan",
     default: null,
   },
-  remainingItems: { type: Number, required: true },
+  remainingItems: { type: Number, required: true, default: 0 },
   expiresAt: Date,
   paystackCustomerCode: String,
   // paystackSubscriptionCode: String,
