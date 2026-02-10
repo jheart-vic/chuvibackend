@@ -25,7 +25,7 @@ const subscriptionSchema = new mongoose.Schema({
   remainingItems: { type: Number, required: true },
   expiresAt: Date,
   paystackCustomerCode: String,
-  paystackSubscriptionCode: String,
+  // paystackSubscriptionCode: String,
   paystackEmailToken: String,
 },{timestamps: true});
 

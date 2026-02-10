@@ -4,26 +4,31 @@ const { addMonths } = require("./helper");
 async function onSubscriptionCreated(data) {
   const { userId } = data.metadata;
 
-  const subCode = data.subscription_code;
+  const subCode = data.subscription.subscription_code;
   const customerCode = data.customer.customer_code;
   const emailToken = data.email_token;
+  console.log({data},'onSubscriptionCreated')
 
-  await SubscriptionModel.findOneAndUpdate(
-    { userId },
-    {
-      paystackCustomerCode: customerCode,
-      paystackEmailToken: emailToken,
-      paystackSubscriptionCode: data.subscription_code,
-      status: "active",
-      startDate: new Date(),
-      expiresAt: addMonths(new Date(), 1),
-    }
-  );
+  const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
+
+
+//   await SubscriptionModel.findOneAndUpdate(
+//     { userId },
+//     {
+//       paystackCustomerCode: customerCode,
+//       paystackEmailToken: emailToken,
+//       paystackSubscriptionCode: data.subscription_code,
+//       status: "active",
+//       startDate: new Date(),
+//       expiresAt: addMonths(new Date(), 1),
+//     }
+//   );
+   await activateSubscription(sub, data)
 }
 
 async function onChargeSuccess(data) {
   // First payment
-  if (data.metadata?.transactionType === "subscription") {
+  if (data.metadata?.transactionType === "subscription" && data.subscription.subscription_code) {
     const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
     console.log({data},'the oncharge success')
 
@@ -55,61 +60,6 @@ async function onChargeSuccess(data) {
   }
 }
 
-// async function onChargeSuccess(data) {
-//   const subCode = data.subscription?.subscription_code;
-
-//   if (!subCode) return;
-
-//   const sub = await SubscriptionModel.findOne({
-//     paystackSubscriptionCode: subCode,
-//   }).populate("plan");
-
-//   if (!sub) return;
-
-//   if (sub.lastPaymentReference === reference) return;
-
-//   // Renew
-//   sub.startDate = new Date();
-//   sub.expiresAt = addMonths(new Date(), 1);
-
-//   // Reset limits
-//   sub.remainingItems = sub.plan.monthlyLimits;
-
-//   sub.status = "active";
-
-//   await sub.save();
-
-//   // First payment
-//   if (data.metadata?.type === "subscription") {
-//     const sub = await Subscription.findById(data.metadata.subscriptionId);
-
-//     sub.paystackSubscriptionCode = data.subscription.subscription_code;
-
-//     await sub.save();
-
-//     await activateSubscription(sub, data);
-
-//     return;
-//   }
-
-//   // Recurring payment
-//   if (data.subscription?.subscription_code) {
-//     const sub = await Subscription.findOne({
-//       paystackSubscriptionCode: data.subscription.subscription_code,
-//     });
-
-//     if (!sub) return;
-
-//     await renewSubscription(sub, data);
-
-//     return;
-//   }
-
-//   // Order
-//   if (data.metadata?.type === "order") {
-//     //   await handleOrderPayment(data);
-//   }
-// }
 
 async function onPaymentFailed(data) {
   const subCode = data.subscription?.subscription_code;
