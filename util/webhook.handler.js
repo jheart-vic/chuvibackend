@@ -92,8 +92,8 @@ async function activateSubscription(sub, data) {
 
   // Save Paystack IDs
   if (data?.subscription?.subscription_code && data?.subscription?.email_token) {
-    sub?.paystackSubscriptionCode = data?.subscription?.subscription_code;
-    sub?.paystackEmailToken = data?.subscription?.email_token;
+    sub.paystackSubscriptionCode = data?.subscription?.subscription_code;
+    sub.paystackEmailToken = data?.subscription?.email_token;
   }
 
   sub.paystackCustomerCode = data.customer?.customer_code;
