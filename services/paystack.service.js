@@ -77,12 +77,23 @@ class PaystackService extends BaseService {
           return BaseService.sendFailedResponse({error: 'Plan not found'})
         }
 
-        subscription = await SubscriptionModel.create({
-          userId: userId,
-          plan: planId,
-          status: "pending",
-          remainingItems: plan.monthlyLimits
-        });
+        const subExists = await SubscriptionModel.findOne({userId})
+
+        if(subExists){
+          if(subExists.plan.toString() == planId.toString()){
+            return BaseService.sendFailedResponse({error: 'You are already subscribed to this plan'})
+          }
+          subscription = subExists
+        }else{
+          subscription = await SubscriptionModel.create({
+            userEmail: email,
+            userId: userId,
+            plan: planId,
+            status: "pending",
+            remainingItems: plan.monthlyLimits
+          });
+        }
+
       }
 
 

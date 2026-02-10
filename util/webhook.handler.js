@@ -2,35 +2,30 @@ const SubscriptionModel = require("../models/subscription.model");
 const { addMonths } = require("./helper");
 
 async function onSubscriptionCreated(data) {
-  console.log({data},'onSubscriptionCreated')
-  const { userId } = data.metadata;
+  console.log({ data }, "onSubscriptionCreated");
 
-  const subCode = data.subscription.subscription_code;
+  const subCode = data.subscription_code;
   const customerCode = data.customer.customer_code;
   const emailToken = data.email_token;
+  const email = data.customer.email;
 
-  const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
-
-
-//   await SubscriptionModel.findOneAndUpdate(
-//     { userId },
-//     {
-//       paystackCustomerCode: customerCode,
-//       paystackEmailToken: emailToken,
-//       paystackSubscriptionCode: data.subscription_code,
-//       status: "active",
-//       startDate: new Date(),
-//       expiresAt: addMonths(new Date(), 1),
-//     }
-//   );
-   await activateSubscription(sub, data)
+  const sub = await SubscriptionModel.findOne({
+    userEmail: email,
+    status: "active",
+    paystackSubscriptionCode: { $exists: false },
+  });
+  console.log({sub}, 'onSubscriptionCreated')
+  await activateSubscription(sub, data);
 }
 
 async function onChargeSuccess(data) {
   // First payment
-  if (data.metadata?.transactionType === "subscription" && data?.subscription?.subscription_code) {
+  if (
+    data.metadata?.transactionType === "subscription" &&
+    data?.subscription?.subscription_code
+  ) {
     const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
-    console.log({data},'the oncharge success')
+    console.log({ data }, "the oncharge success");
 
     sub.paystackSubscriptionCode = data.subscription.subscription_code;
 
@@ -59,7 +54,6 @@ async function onChargeSuccess(data) {
     await handleOrderPayment(data);
   }
 }
-
 
 async function onPaymentFailed(data) {
   const subCode = data.subscription?.subscription_code;
@@ -95,9 +89,10 @@ async function activateSubscription(sub, data) {
   if (sub.status === "active") return;
 
   // Save Paystack IDs
-  sub.paystackSubscriptionCode = data.subscription.subscription_code;
-
-  sub.paystackEmailToken = data.subscription.email_token;
+  if (data?.subscription.subscription_code && data?.subscription.email_token) {
+    sub.paystackSubscriptionCode = data.subscription.subscription_code;
+    sub.paystackEmailToken = data.subscription.email_token;
+  }
 
   sub.paystackCustomerCode = data.customer?.customer_code;
 
@@ -165,9 +160,9 @@ async function handlePaystackEvent(event) {
       console.log("called onPaymentFailed....");
       await onPaymentFailed(data);
       break;
-      
-      case "subscription.disable":
-        console.log("called subscription.disabled...");
+
+    case "subscription.disable":
+      console.log("called subscription.disabled...");
       await onSubscriptionDisabled(data);
       break;
 
