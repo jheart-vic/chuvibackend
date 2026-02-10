@@ -10,7 +10,6 @@ const handlePaystackEvent = require("./webhook.handler.js");
 
 
 const webhookFunction = async (req, res) => {
-  console.log("called webhook....")
   const secret = process.env.PAYSTACK_SECRET_KEY;
   const signature = req.headers["x-paystack-signature"];
 
@@ -21,19 +20,24 @@ const webhookFunction = async (req, res) => {
     // .update(req.rawBody) // raw body, not parsed JSON
     .digest("hex");
 
+  console.log("called webhook1....")
   if (hash !== signature) {
     return res.status(401).send("Unauthorized: Invalid signature");
   }
+  console.log("called webhook2....")
+
 
   try {
     // const event = req.body;
     const event = JSON.parse(req.body.toString());
+  console.log("called webhook3....")
 
     if (!event || !event.event || !event.data) {
       console.warn("Received malformed or test webhook:", event);
       return res.sendStatus(200); // Accept it silently so Paystack doesn't retry
     }
 
+  console.log("called webhook4....")
     handlePaystackEvent(event)
 
     return res.sendStatus(200);

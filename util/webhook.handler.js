@@ -198,21 +198,26 @@ async function renewSubscription(sub, data) {
 
 async function handlePaystackEvent(event) {
   const data = event.data;
+  console.log("called webhook5....");
 
   switch (event.event) {
     case "subscription.create":
+      console.log("called subscription.create....");
       await onSubscriptionCreated(data);
       break;
 
     case "charge.success":
+      console.log("called charge.success....");
       await onChargeSuccess(data);
       break;
 
     case "invoice.payment_failed":
+      console.log("called onPaymentFailed....");
       await onPaymentFailed(data);
       break;
-
-    case "subscription.disable":
+      
+      case "subscription.disable":
+        console.log("called subscription.disabled...");
       await onSubscriptionDisabled(data);
       break;
 
