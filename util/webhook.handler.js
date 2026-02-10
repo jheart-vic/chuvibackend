@@ -12,7 +12,8 @@ async function onSubscriptionCreated(data) {
     userEmail: email,
     status: "pending",
     paystackSubscriptionCode: { $exists: false },
-  });
+  })
+  .populate('plan');
 
   await activateSubscription(sub, data);
 }
@@ -38,7 +39,8 @@ async function onChargeSuccess(data) {
   if (data.subscription?.subscription_code) {
     const sub = await SubscriptionModel.findOne({
       paystackSubscriptionCode: data.subscription.subscription_code,
-    });
+    })
+    .populate('plan');
 
     if (!sub) return;
 
