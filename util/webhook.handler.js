@@ -42,6 +42,7 @@ async function onChargeSuccess(data) {
     if (!sub) return;
 
     await renewSubscription(sub, data);
+    console.log('renewed sub called...')
 
     return;
   }
