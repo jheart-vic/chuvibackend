@@ -3,7 +3,7 @@ const SubscriptionModel = require("../models/subscription.model");
 
 cron.schedule("0 0 * * 0", async () => {
   try {
-    await Subscription.updateMany(
+    await SubscriptionModel.updateMany(
       { status: "cancelled" },
       { remainingItems: {} }
     );

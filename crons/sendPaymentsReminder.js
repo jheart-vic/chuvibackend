@@ -4,7 +4,7 @@ import { sendEmail } from "../utils/email.js";
 
 cron.schedule("0 9 * * *", async () => {
   try {
-    const expired = await Subscription
+    const expired = await SubscriptionModel
       .find({ status: "expired" })
       .populate("user");
 
