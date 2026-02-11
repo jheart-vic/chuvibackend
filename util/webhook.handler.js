@@ -96,9 +96,15 @@ async function activateSubscription(sub, data) {
 
   // Save Paystack IDs
 
-  sub.paystackEmailToken = data?.subscription?.email_token;
-  sub.paystackSubscriptionCode = data.subscription?.subscription_code;
-  sub.paystackCustomerCode = data.customer?.customer_code;
+  const emailToken = data?.subscription?.email_token
+  const paystackSubscriptionCode = data.subscription?.subscription_code
+  const customerCode = data.customer?.customer_code
+
+  console.log({emailToken, paystackSubscriptionCode, customerCode})
+
+  sub.paystackEmailToken = emailToken;
+  sub.paystackSubscriptionCode = paystackSubscriptionCode;
+  sub.paystackCustomerCode = customerCode;
 
   // Billing cycle
   const start = new Date();
