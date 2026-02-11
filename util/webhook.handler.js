@@ -15,7 +15,7 @@ async function onSubscriptionCreated(data) {
   })
   .populate('plan');
 
-  console.log('activateSubscription in onSubscriptionCreated')
+  console.log('activateSubscription in onSubscriptionCreated', data)
   await activateSubscription(sub, data);
 }
 
