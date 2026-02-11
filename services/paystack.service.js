@@ -18,7 +18,7 @@ class PaystackService extends BaseService {
 
       const validateRule = {
         email: "string|required",
-        amount: "integer|required",
+        // amount: "integer|required",
         transactionType: "string|required|in:order,subscription",
         // orderId: "string|required",
       };
@@ -44,13 +44,14 @@ class PaystackService extends BaseService {
       let plan = null
       let subscription = null
 
-      const { email, amount, transactionType, orderId, planId } = post;
+      const { email, transactionType, orderId, planId } = post;
+      let order = null
 
       if(transactionType === 'order'){
         if(!orderId){
           return BaseService.sendFailedResponse({error: 'Please provide order id'})
         }
-        const order = await BookOrderModel.findById(orderId)
+        order = await BookOrderModel.findById(orderId)
 
         if(!order){
           return BaseService.sendFailedResponse({error: 'Order not found'})
@@ -85,6 +86,10 @@ class PaystackService extends BaseService {
         }
 
       }
+
+      let amount = 0
+
+      amount = transactionType === 'subscription' ? plan.price : order.amount
 
 
       const response = await paystackAxios.post(
