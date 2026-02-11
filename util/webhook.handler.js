@@ -15,6 +15,7 @@ async function onSubscriptionCreated(data) {
   })
   .populate('plan');
 
+  console.log('activateSubscription in onSubscriptionCreated')
   await activateSubscription(sub, data);
 }
 
@@ -30,6 +31,7 @@ async function onChargeSuccess(data) {
 
     await sub.save();
 
+    console.log('activateSubscription in onChargeSucess')
     await activateSubscription(sub, data);
 
     return;
@@ -98,7 +100,7 @@ async function activateSubscription(sub, data) {
     sub.paystackEmailToken = data?.subscription?.email_token;
   }
 
-  console.log({subscription: data?.subscription})
+  console.log({subscription: data})
   sub.paystackCustomerCode = data.customer?.customer_code;
 
   // Billing cycle
