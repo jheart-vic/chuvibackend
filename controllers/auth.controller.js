@@ -1,10 +1,10 @@
 const BaseController = require("./base.controller");
-const UserService = require("../services/auth.service");
+const AuthService = require("../services/auth.service");
 
-class UserController extends BaseController {
+class AuthController extends BaseController {
 
   async createUser(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.createUser(req, res);
 
     return result.success
@@ -13,7 +13,7 @@ class UserController extends BaseController {
   }
 
   async resendOtp(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.resendOtp(req, res);
 
     return result.success
@@ -22,7 +22,7 @@ class UserController extends BaseController {
   }
 
   async loginUser(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.loginUser(req, res);
 
     return result.success
@@ -31,7 +31,7 @@ class UserController extends BaseController {
   }
 
   async googleSignup(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.googleSignup(req, res);
 
     return result.success
@@ -40,7 +40,7 @@ class UserController extends BaseController {
   }
 
   async appleSignup(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.appleSignup(req, res);
 
     return result.success
@@ -49,7 +49,7 @@ class UserController extends BaseController {
   }
 
   async verifyOTP(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.verifyOTP(req, res);
 
     return result.success
@@ -58,7 +58,7 @@ class UserController extends BaseController {
   }
 
   async getUser(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.getUser(req, res);
 
     return result.success
@@ -67,7 +67,7 @@ class UserController extends BaseController {
   }
 
   async forgotPassword(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.forgotPassword(req, res);
 
     return result.success
@@ -76,7 +76,7 @@ class UserController extends BaseController {
   }
 
   async resetPassword(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.resetPassword(req, res);
 
     return result.success
@@ -84,7 +84,7 @@ class UserController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
   async verifyResetPasswordOtp(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.verifyResetPasswordOtp(req, res);
 
     return result.success
@@ -93,7 +93,7 @@ class UserController extends BaseController {
   }
 
   async sendOTP(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.sendOTP(req, res);
 
     return result.success
@@ -102,7 +102,7 @@ class UserController extends BaseController {
   }
 
   async verifyEmail(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.verifyEmail(req, res);
 
     return result.success
@@ -111,7 +111,7 @@ class UserController extends BaseController {
   }
 
   async adminLogin(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.adminLogin(req, res);
 
     return result.success
@@ -119,7 +119,7 @@ class UserController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
   async registerAdmin(req, res) {
-    const service = new UserService();
+    const service = new AuthService();
     const result = await service.registerAdmin(req, res);
 
     return result.success
@@ -128,5 +128,5 @@ class UserController extends BaseController {
   }
 }
 
-module.exports = UserController;
+module.exports = AuthController;
 

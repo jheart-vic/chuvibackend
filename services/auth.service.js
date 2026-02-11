@@ -780,7 +780,7 @@ if (userWithSub) {
   async registerAdmin(req, res) {
     try {
 
-      const adminEmail = "admin@gmail.com";
+      const adminEmail = "admin@chuvi.com";
 
       const adminExists = await UserModel.findOne({
         email: adminEmail,
@@ -795,7 +795,7 @@ if (userWithSub) {
 
       const admin = new UserModel({
         email: adminEmail,
-        password: "Admin@123",
+        password: "Admin@1234",
         fullName: "Super Admin",
         phoneNumber: "08000000000",
         userType: 'admin',
