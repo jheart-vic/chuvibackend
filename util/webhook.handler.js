@@ -96,11 +96,11 @@ async function activateSubscription(sub, data) {
 
   // Save Paystack IDs
 
-  const emailToken = data?.subscription?.email_token
-  const paystackSubscriptionCode = data.subscription?.subscription_code
+  const emailToken = data.subscription.email_token
+  const paystackSubscriptionCode = data.subscription.subscription_code
   const customerCode = data.customer?.customer_code
 
-  console.log({emailToken, paystackSubscriptionCode, customerCode})
+  console.log({emailToken, paystackSubscriptionCode, customerCode, subscription: data.subscription})
 
   sub.paystackEmailToken = emailToken;
   sub.paystackSubscriptionCode = paystackSubscriptionCode;
