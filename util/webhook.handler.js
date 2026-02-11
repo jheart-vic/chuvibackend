@@ -95,7 +95,6 @@ async function activateSubscription(sub, data) {
   const paystackSubscriptionCode = data.subscription_code
   const customerCode = data.customer?.customer_code
 
-  console.log({emailToken, paystackSubscriptionCode, customerCode, subscription: data.subscription})
 
   sub.paystackEmailToken = emailToken;
   sub.paystackSubscriptionCode = paystackSubscriptionCode;
