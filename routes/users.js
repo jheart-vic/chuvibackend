@@ -441,7 +441,6 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *             type: object
  *             required:
  *               - email
- *               - amount
  *             properties:
  *               email:
  *                 type: string
@@ -459,10 +458,6 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                 type: string
  *                 example: "696537bdf4cd2de9186cb729"
  *                 description: The plan Id
- *               amount:
- *                 type: string
- *                 example: "4500000"
- *                 description: Amount in kobo (₦1 = 100 kobo)
  *     responses:
  *       200:
  *         description: Payment initialized successfully
