@@ -2,10 +2,6 @@ const SubscriptionModel = require("../models/subscription.model");
 const { addMonths } = require("./helper");
 
 async function onSubscriptionCreated(data) {
-
-  const subCode = data.subscription_code;
-  const customerCode = data.customer.customer_code;
-  const emailToken = data.email_token;
   const email = data.customer.email;
 
   const sub = await SubscriptionModel.findOne({
@@ -15,7 +11,6 @@ async function onSubscriptionCreated(data) {
   })
   .populate('plan');
 
-  console.log('activateSubscription in onSubscriptionCreated', data)
   await activateSubscription(sub, data);
 }
 
@@ -96,15 +91,15 @@ async function activateSubscription(sub, data) {
 
   // Save Paystack IDs
 
-//   const emailToken = data.subscription.email_token
-//   const paystackSubscriptionCode = data.subscription.subscription_code
-//   const customerCode = data.customer?.customer_code
+  const emailToken = data.email_token
+  const paystackSubscriptionCode = data.subscription_code
+  const customerCode = data.customer?.customer_code
 
-//   console.log({emailToken, paystackSubscriptionCode, customerCode, subscription: data.subscription})
+  console.log({emailToken, paystackSubscriptionCode, customerCode, subscription: data.subscription})
 
-//   sub.paystackEmailToken = emailToken;
-//   sub.paystackSubscriptionCode = paystackSubscriptionCode;
-//   sub.paystackCustomerCode = customerCode;
+  sub.paystackEmailToken = emailToken;
+  sub.paystackSubscriptionCode = paystackSubscriptionCode;
+  sub.paystackCustomerCode = customerCode;
 
   // Billing cycle
   const start = new Date();
