@@ -10,16 +10,6 @@ const PlanModel = require("../models/plan.model");
 const BookOrderModel = require("../models/bookOrder.model");
 
 class PaystackService extends BaseService {
-//   constructor() {
-//     super();
-//     this.axiosInstance = axios.create({
-//       baseURL: "https://api.paystack.co",
-//       headers: {
-//         Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-//         "Content-Type": "application/json",
-//       },
-//     });
-//   }
 
   async initializePayment(req) {
     try {

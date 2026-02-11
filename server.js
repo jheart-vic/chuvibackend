@@ -14,6 +14,11 @@ const corsMiddleware = require('./config/cors.js');
 const setupApp = require("./config/setup.js");
 const webhookFunction = require("./util/webhook.js");
 
+require('./crons/cleanUpCancelledSubs.js')
+require('./crons/expireSubscriptions.js')
+require('./crons/reconcilePaystack.js')
+require('./crons/resetMonthlyLimits.js')
+
 
 const port = process.env.PORT || 5000;
 const mongoURL = process.env.MONGODB_URL;
