@@ -3,6 +3,7 @@ const { ROLE, NOTIFICATION_TYPE } = require("../util/constants");
 
 const notificationSchema = new mongoose.Schema(
   {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     title: { type: String, required: true },
     body: { type: String, required: true },
     subBody: { type: String },

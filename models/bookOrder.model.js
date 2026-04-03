@@ -120,6 +120,8 @@ const bookOrderSchema = new mongoose.Schema(
     },
     isPickUpOnly: { type: Boolean, default: false },
     isPickUpAndDelivery: { type: Boolean, default: false },
+    reference: { type: String },
+    paymentDate: { type: Date },
   },
   { timestamps: true }
 );

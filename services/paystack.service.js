@@ -17,7 +17,6 @@ class PaystackService extends BaseService {
       const userId = req.user.id;
 
       const validateRule = {
-        email: "string|required",
         // amount: "integer|required",
         transactionType: "string|required|in:order,subscription",
         // orderId: "string|required",
@@ -41,10 +40,12 @@ class PaystackService extends BaseService {
         return BaseService.sendFailedResponse({ error: "User not found" });
       }
 
+      const email = user.email
+
       let plan = null
       let subscription = null
 
-      const { email, transactionType, orderId, planId } = post;
+      const { transactionType, orderId, planId } = post;
       let order = null
 
       if(transactionType === 'order'){
@@ -71,25 +72,16 @@ class PaystackService extends BaseService {
         const subExists = await SubscriptionModel.findOne({userId})
 
         if(subExists && subExists.status == 'active'){
-          if(subExists.plan.toString() == planId.toString()){
+          if(subExists.planId.toString() == planId.toString()){
             return BaseService.sendFailedResponse({error: 'You are already subscribed to this plan'})
           }
           subscription = subExists
-        }else{
-          subscription = await SubscriptionModel.create({
-            userEmail: email,
-            userId: userId,
-            plan: planId,
-            status: "pending",
-            remainingItems: plan.monthlyLimits
-          });
         }
-
       }
 
       let amount = 0
 
-      amount = transactionType === 'subscription' ? plan.price : order.amount
+      amount = transactionType === 'subscription' ? plan.price * 100 : order.amount * 100
 
 
       const response = await paystackAxios.post(
