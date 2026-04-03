@@ -1,6 +1,5 @@
 const crypto = require("crypto");
-const handlePaystackEvent = require("./webhook.handler.js");
-
+const { handleSubscriptionDisable, handleSubscriptionCreate, handleChargeSuccess, handleInvoiceFailed } = require("./webhook.handler");
 
 const webhookFunction = async (req, res) => {
   const secret = process.env.PAYSTACK_SECRET_KEY;
@@ -19,20 +18,38 @@ const webhookFunction = async (req, res) => {
 
 
   try {
-    // const event = req.body;
     const event = JSON.parse(req.body.toString());
+    if (!event?.event || !event?.data) return res.sendStatus(200);
 
-    if (!event || !event.event || !event.data) {
-      console.warn("Received malformed or test webhook:", event);
-      return res.sendStatus(200); // Accept it silently so Paystack doesn't retry
+    switch (event.event) {
+      case "charge.success":
+        console.log("📩 Paystack webhook 2");
+        await handleChargeSuccess(event.data);
+        break;
+
+      case "subscription.create":
+        console.log("📩 Paystack webhook 3: subscription.create");
+        await handleSubscriptionCreate(event.data);
+        break;
+
+      case "invoice.payment_failed":
+        console.log("📩 Paystack webhook 4");
+        await handleInvoiceFailed(event.data);
+        break;
+
+      case "subscription.disable":
+        console.log("📩 Paystack webhook 5");
+        await handleSubscriptionDisable(event.data);
+        break;
+
+      default:
+        break;
     }
-
-    handlePaystackEvent(event)
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Error processing webhook:", err.message);
-    return res.status(500).send("Internal Server Error");
+    console.error("Webhook error:", err);
+    return res.sendStatus(500);
   }
 };
 

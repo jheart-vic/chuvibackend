@@ -1,4 +1,5 @@
 const PlanModel = require("../models/plan.model");
+const UserModel = require("../models/user.model");
 const SubscriptionModel = require("../models/subscription.model");
 const validateData = require("../util/validate");
 const BaseService = require("./base.service");
@@ -95,7 +96,6 @@ class SubscriptionService extends BaseService {
       });
     }
   }
-
   async getPlans(req) {
     try {
       const plans = await PlanModel.find({});
@@ -125,9 +125,22 @@ class SubscriptionService extends BaseService {
     }
   }
   //subscription
-  async activateSubscription(userId, planId) {
+  async subscribePlan(req) {
+    const userId = req.user.id;
+    const planId = req.body.planId
+    if(!planId){
+      return BaseService.sendFailedResponse({error: 'Please provide a plan id'})
+    }
     const plan = await PlanModel.findById(planId);
     const user = await UserModel.findById(userId);
+
+    if(!plan){
+      return BaseService.sendFailedResponse({error: 'Plan not found'})
+    }
+
+    if (!user) {
+      return BaseService.sendFailedResponse({ error: "User not found" });
+    }
 
     const subscription = new SubscriptionModel({
       userId: userId,
@@ -136,7 +149,7 @@ class SubscriptionService extends BaseService {
       remainingItems: plan.monthlyLimits,
 
       startDate: new Date(),
-      expiresAt: addMonths(new Date(), 1),
+      // expiresAt: addMonths(new Date(), 1),
     });
 
     await subscription.save();
@@ -198,23 +211,92 @@ class SubscriptionService extends BaseService {
 
     await sub.save();
   }
-
   async getCurrentSubscription(req) {
     try {
       const userId = req.user.id;
-
-      const userSubscription = await SubscriptionModel.findOne({
-        userId,
+  
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+  
+      const filter = {
+        user: userId,
         status: "active",
-      });
-
-      if (!userSubscription) {
-        return BaseService.sendFailedResponse({
-          error: "No active subscription found",
+        $or: [
+          { currentPeriodEnd: { $gt: new Date() } },
+          { currentPeriodEnd: { $exists: false } },
+        ],
+      };
+  
+      let subscription = await SubscriptionModel.findOne(filter).populate("planId");
+  
+      if (!subscription) {
+        return BaseService.sendSuccessResponse({
+          message: "No active subscription",
+          subscription: null,
         });
       }
-
-      return BaseService.sendSuccessResponse({ message: userSubscription });
+  
+      let subscriptionList = [];
+  
+      if (user.customerCode) {
+        try {
+          const paystackSub = await paystackAxios.get(
+            `/customer/${user.customerCode}`
+          );
+          subscriptionList = paystackSub.data.data.subscriptions || [];
+        } catch (error) {
+          console.log("Error from paystack customer check", error);
+  
+          if (error.response?.status === 404) {
+            subscriptionList = [];
+          } else {
+            return BaseService.sendFailedResponse({
+              error: "Error occured in getting the subscription status",
+            });
+          }
+        }
+      }
+  
+      // ✅ Optimized: Parallel fetching instead of sequential loop
+      if (subscriptionList.length) {
+        const fetchedSubscriptions = await Promise.all(
+          subscriptionList.map(async (sub) => {
+            try {
+              const res = await paystackAxios.get(
+                `/subscription/${sub.subscription_code}`
+              );
+              return res.data.data;
+            } catch (err) {
+              console.log("Error fetching subscription:", err);
+              return null;
+            }
+          })
+        );
+  
+        const matchedSub = fetchedSubscriptions.find(
+          (sub) =>
+            sub &&
+            sub.plan?.plan_code === subscription.paystackSubscriptionId
+        );
+  
+        if (matchedSub) {
+          subscription.subscriptionCode = matchedSub.subscription_code;
+          subscription.nextPaymentDate = matchedSub.next_payment_date;
+          subscription.status = matchedSub.status;
+          subscription.paystackEmailToken = matchedSub.email_token;
+  
+          await subscription.save(); // ✅ single save
+        }
+      }
+  
+      subscription = subscription.toObject();
+  
+      return BaseService.sendSuccessResponse({
+        message: "Subscription state retrieved successfully",
+        subscription,
+      });
     } catch (error) {
       console.log("Error in:", error);
       return BaseService.sendFailedResponse({
@@ -260,7 +342,8 @@ class SubscriptionService extends BaseService {
         },
         {
           title: "Premium plan",
-          description: "Great for professional, couples and families who want maximum convenience.",
+          description:
+            "Great for professional, couples and families who want maximum convenience.",
           duration: "monthly",
           price: 12000,
           monthlyLimits: 60,
@@ -270,12 +353,13 @@ class SubscriptionService extends BaseService {
             "Full wash and iron service",
             "Express service on request",
             "Priority packaging and handling",
-            "Free hanger and delivery shirts"
+            "Free hanger and delivery shirts",
           ],
         },
         {
           title: "VIP plan",
-          description: "ideal for executives, large families and customers wh want full premium care.",
+          description:
+            "ideal for executives, large families and customers wh want full premium care.",
           duration: "monthly",
           price: 18000,
           monthlyLimits: 100,
@@ -285,7 +369,7 @@ class SubscriptionService extends BaseService {
             "Flexible unlimited pickups (for very high item limit)",
             "Premium wash and iron for all items",
             "Same-day or next-day delivery",
-            "Special handling for delicate fabrics"
+            "Special handling for delicate fabrics",
           ],
         },
       ];

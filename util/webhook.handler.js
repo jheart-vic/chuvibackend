@@ -1,183 +1,345 @@
 const SubscriptionModel = require("../models/subscription.model");
+const UserModel = require('../models/user.model')
+const PaymentModel = require('../models/payment.model')
 const { addMonths } = require("./helper");
+const BookOrderModel = require("../models/bookOrder.model");
+const NotificationModel = require("../models/notification.model");
+const { NOTIFICATION_TYPE } = require("./constants");
+const PlanModel = require("../models/plan.model");
 
-async function onSubscriptionCreated(data) {
-  const email = data.customer.email;
+async function handleChargeSuccess(data) {
+  try {
+    // console.log({ data }, "handleChargeSuccess");
+    const metadata = data.metadata || {};
+    const reference = data.reference;
+    const userEmail = data.customer?.email;
 
-  const sub = await SubscriptionModel.findOne({
-    userEmail: email,
-    status: "pending",
-    paystackSubscriptionCode: { $exists: false },
-  })
-  .populate('plan');
-
-  await activateSubscription(sub, data);
-}
-
-async function onChargeSuccess(data) {
-  // First payment
-  if (
-    data.metadata?.transactionType === "subscription" &&
-    data?.subscription?.subscription_code
-  ) {
-    const sub = await SubscriptionModel.findById(data.metadata.subscriptionId);
-
-    sub.paystackSubscriptionCode = data.subscription.subscription_code;
-
-    await sub.save();
-
-    console.log('activateSubscription in onChargeSucess')
-    await activateSubscription(sub, data);
-
-    return;
-  }
-
-  // Recurring payment
-  if (data.subscription?.subscription_code) {
-    const sub = await SubscriptionModel.findOne({
-      paystackSubscriptionCode: data.subscription.subscription_code,
-    })
-    .populate('plan');
-
-    if (!sub) return;
-
-    await renewSubscription(sub, data);
-    console.log('renewed sub called...')
-
-    return;
-  }
-
-  // Order
-  if (data.metadata?.type === "order") {
-    await handleOrderPayment(data);
-  }
-}
-
-async function onPaymentFailed(data) {
-  const subCode = data.subscription?.subscription_code;
-
-  if (!subCode) return;
-
-  await SubscriptionModel.updateOne(
-    { paystackSubscriptionCode: subCode },
-    { status: "expired" }
-  );
-}
-
-async function onSubscriptionDisabled(data) {
-  const subCode = data.subscription_code;
-
-  await SubscriptionModel.updateOne(
-    { paystackSubscriptionCode: subCode },
-    { status: "cancelled" }
-  );
-}
-
-async function onSubscriptionExpired(data) {
-  const subCode = data.subscription_code;
-
-  await SubscriptionModel.updateOne(
-    { paystackSubscriptionCode: subCode },
-    { status: "expired" }
-  );
-}
-
-async function activateSubscription(sub, data) {
-    if(!sub){
-        console.warn("Subscription is not found")
-        return
+    if (!userEmail) {
+      console.log("No user email in charge.success");
+      return;
     }
-  // Prevent double activation
-  if (sub.status === "active") return;
 
-  // Save Paystack IDs
+    // 1️⃣ Find user
+    const user = await UserModel.findOne({ email: userEmail });
+    if (!user) {
+      console.log("User not found for email:", userEmail);
+      return;
+    }
 
-  const emailToken = data.email_token
-  const paystackSubscriptionCode = data.subscription_code
-  const customerCode = data.customer?.customer_code
+    // 2️⃣ Prevent duplicate payments
+    const existingPayment = await PaymentModel.findOne({ reference });
+    if (existingPayment) {
+      console.log("Payment already recorded:", reference);
+      return;
+    }
 
+    // 3️⃣ Save payment
+    await PaymentModel.create({
+      user: user._id,
+      amount: data.amount / 100,
+      reference,
+      status: "success",
+      type: metadata.type,
+      channel: data.channel,
+      paidAt: new Date(data.paid_at),
+      metadata,
+    });
 
-  sub.paystackEmailToken = emailToken;
-  sub.paystackSubscriptionCode = paystackSubscriptionCode;
-  sub.paystackCustomerCode = customerCode;
+    // ==========================
+    // 🛒 ORDER PAYMENT FLOW
+    // ==========================
+    if (metadata.type === "order") {
+      await handleOrderPayment(metadata, reference);
+      return;
+    }
 
-  // Billing cycle
-  const start = new Date();
+    if (metadata.type === "subscription") {
+      if (!data.subscription) {
+        await handleNormalSubscription(data, user);
+        return;
+      }
 
-  sub.status = "active";
-  sub.startDate = start;
-  sub.expiresAt = addMonths(start, 1);
+      const subscriptionCode = data.subscription.subscription_code;
 
-  // Reset laundry limits
-  sub.remainingItems = sub.plan.monthlyLimits;
+      let subscription = await SubscriptionModel.findOne({
+        subscriptionCode,
+      });
 
-  // Payment tracking
-  sub.lastPaymentReference = data.reference;
-  sub.lastPaidAt = new Date(data.paid_at);
+      // 4️⃣ Create subscription if it doesn't exist
+      if (!subscription) {
+        console.log("Creating new subscription");
 
-  await sub.save();
+        subscription = await SubscriptionModel.create({
+          userId: metadata.payerId || user._id,
+          planId: metadata.planId,
+          status: "active",
+          startDate: new Date(data.paid_at),
+          subscriptionCode: subscriptionCode,
+          paystackSubscriptionId: data.subscription.id,
+          lastPaymentAt: new Date(data.paid_at),
+          currentPeriodEnd: new Date(data.subscription.next_payment_date),
+          nextPaymentDate: new Date(data.subscription.next_payment_date),
+        });
+
+        return;
+      }
+
+      subscription.status = "active";
+      subscription.lastPaymentAt = new Date(data.paid_at);
+      subscription.currentPeriodEnd = new Date(
+        data.subscription.next_payment_date
+      );
+      subscription.nextPaymentDate = new Date(
+        data.subscription.next_payment_date
+      );
+
+      await subscription.save();
+    }
+  } catch (error) {
+    console.error("Error in handleChargeSuccess:", error);
+  }
 }
 
-async function renewSubscription(sub, data) {
-  // Idempotency (no double credit)
-  if (sub.lastPaymentReference === data.reference) {
+async function handlePaymentFailed(data) {
+  try {
+    if (!data.subscription) return;
+
+    await SubscriptionModel.findOneAndUpdate(
+      { subscriptionCode: data.subscription.subscription_code },
+      { status: "failed" }
+    );
+  } catch (error) {
+    console.error("Error in handlePaymentFailed:", error);
     return;
   }
-
-  const now = new Date();
-
-  // If expired before payment (grace case)
-  if (!sub.expiresAt || sub.expiresAt < now) {
-    sub.expiresAt = addMonths(now, 1);
-  } else {
-    // Normal renewal
-    sub.expiresAt = addMonths(sub.expiresAt, 1);
-  }
-
-  // Reset laundry limits
-  sub.remainingItems = sub.plan.monthlyLimits;
-
-  // Reactivate
-  sub.status = "active";
-
-  // Save billing info
-  sub.lastPaymentReference = data.reference;
-  sub.lastPaidAt = new Date(data.paid_at);
-
-  await sub.save();
 }
 
-async function handlePaystackEvent(event) {
-  const data = event.data;
-
-  switch (event.event) {
-    case "subscription.create":
-      console.log("called subscription.create....");
-      await onSubscriptionCreated(data);
-      break;
-
-    case "charge.success":
-      console.log("called charge.success....");
-      await onChargeSuccess(data);
-      break;
-
-    case "invoice.payment_failed":
-      console.log("called onPaymentFailed....");
-      await onPaymentFailed(data);
-      break;
-
-    case "subscription.disable":
-      console.log("called subscription.disabled...");
-      await onSubscriptionDisabled(data);
-      break;
-
-    case "subscription.not_renew":
-      await onSubscriptionExpired(data);
-      break;
-
-    default:
-      console.log("Unhandled event:", event.event);
+async function handleSubscriptionDisable(data) {
+  console.log(data, 'handleSubscriptionDisable')
+  try {
+    await SubscriptionModel.findOneAndDelete(
+      { subscriptionCode: data.subscription_code }
+    );
+  } catch (error) {
+    console.error("Error in handleSubscriptionDisable:", error);
+    return;
   }
 }
 
-module.exports = handlePaystackEvent;
+async function handleSubscriptionCreate(data) {
+  try {
+    const email = data.customer.email;
+    const planCode = data.plan.plan_code;
+    const authorizationCode = data.authorization.authorization_code;
+    const customerCode = data.customer.customer_code || ""
+    // console.log(data, "handle subscription create");
+
+    const user = await UserModel.findOne({ email });
+    if (!user) {
+      console.warn(
+        "User not found for subscription.create, cannot create subscription",
+        data.customer.email
+      );
+      return;
+    }
+
+    const filter = {
+      userId: user._id,
+      paystackAuthorizationToken: authorizationCode,
+      paystackSubscriptionId: planCode,
+    };
+    user.customerCode = customerCode
+    await user.save()
+
+    const subscription = await SubscriptionModel.findOne(filter);
+    console.log(
+      { paystackSubscriptionCode: planCode, subscription },
+      "handleSubscriptionCreate"
+    );
+
+    if (subscription) {
+      subscription.subscriptionCode = data.subscription_code;
+      subscription.paystackSubscriptionId = data.plan.plan_code;
+      subscription.paystackEmailToken = data.email_token | ""
+      subscription.status = data.status || "active";
+      subscription.nextPaymentDate = data.next_payment_date
+        ? new Date(data.next_payment_date)
+        : null;
+      subscription.paystackAuthorizationToken = authorizationCode;
+
+      await subscription.save();
+      console.log(
+        "✅ Subscription updated with Paystack subscription_code:",
+        subscription.subscriptionCode
+      );
+    } else {
+      // console.log(new Date(), "Creating create subscription with start date");
+      // await SubscriptionModel.create({
+      //   nextPaymentDate: data.next_payment_date,
+      //   status: "active",
+      //   subscriptionCode: data.subscription_code,
+      //   paystackSubscriptionId: data.plan.plan_code,
+      //   paystackAuthorizationToken: authorizationCode,
+      //   user: user._id,
+      //   currentPeriodEnd: new Date(data.next_payment_date),
+      // });
+    }
+  } catch (error) {
+    console.error("Error in handleSubscriptionCreate:", error);
+  }
+}
+
+async function handleInvoiceFailed(data) {
+  try {
+    if (!data.subscription) return;
+
+    await SubscriptionModel.findOneAndUpdate(
+      { subscriptionCode: data.subscription.subscription_code },
+      { status: "failed" }
+    );
+  } catch (error) {
+    console.error("Error in handleInvoiceFailed:", error);
+    return;
+  }
+}
+
+async function handleNormalSubscription(data) {
+  try {
+    const email = data.customer.email;
+    const planCode = data.plan.plan_code;
+    const authorizationCode = data.authorization.authorization_code;
+    const metadata = data.metadata || {};
+
+    const user = await UserModel.findOne({ email });
+
+    if (!user) {
+      console.warn(
+        "User not found for subscription.create, cannot create subscription",
+        data.customer.email
+      );
+      return;
+    }
+
+    const filter = {
+      user: user._id,
+      paystackSubscriptionId: planCode,
+      paystackAuthorizationToken: authorizationCode,
+    };
+
+    let subscription = await SubscriptionModel.findOne(filter);
+    console.log(
+      { paystackSubscriptionCode: planCode, subscription },
+      "handleNormalSubscription"
+    );
+
+    const planId = metadata.plan
+
+      if(!planId){
+        console.warn("No planId in metadata for normal subscription, cannot set limits");
+        return;
+      }
+
+      const plan = await PlanModel.findById(planId)
+
+    if (!subscription) {
+      console.log(
+        "Subscription does not exist, creating new subscription from webhook"
+      );
+
+      // Optional: fallback values if you have a mapping table or default plan/coach
+      console.log(
+        new Date(),
+        "Creating handle normal subscription with start date"
+      );
+
+      const nextPaymentDate = generateNextPaymentDate("monthly");
+
+      
+
+      subscription = await SubscriptionModel.create({
+        paystackSubscriptionId: metadata.paystackSubscriptionCode || null,
+        startDate: new Date(data.paid_at),
+        planId: planId,
+        lastPaymentAt: new Date(data.paid_at),
+        userId: user._id,
+        paystackAuthorizationToken: authorizationCode,
+        status: "active",
+        currentPeriodEnd: nextPaymentDate,
+        nextPaymentDate: nextPaymentDate,
+        remainingItems: plan.monthlyLimits
+      });
+
+      return;
+    } else {
+      subscription.status = "active";
+      (subscription.paystackSubscriptionId =
+        metadata.paystackSubscriptionCode || null),
+        (subscription.startDate = new Date(data.paid_at)),
+        (subscription.planId = planId),
+        (subscription.monthlyLimits = plan.monthlyLimits),
+        (subscription.userId = user._id),
+        (subscription.lastPaymentAt = new Date(data.paid_at));
+      await subscription.save();
+    }
+  } catch (error) {
+    console.error("Error in handleNormalSubscription:", error);
+  }
+}
+
+async function handleOrderPayment(metadata, reference) {
+  try {
+    const { orderId } = metadata;
+
+    if (!orderId) {
+      console.warn("Order payment missing orderId in metadata");
+      return;
+    }
+
+    const order = await BookOrderModel.findById(orderId);
+    if (!order) {
+      console.warn(`Order ${orderId} not found`);
+      return;
+    }
+
+    // 🔒 Idempotency guard
+    if (order.paymentStatus === "success") {
+      return;
+    }
+
+    order.paymentStatus = "success";
+    order.reference = reference;
+    order.paymentDate = new Date();
+    order.paymentMethod = "paystack";
+
+    await order.save();
+
+    // 🔔 Optional notification
+    await NotificationModel.create({
+      userId: order.userId,
+      title: "Payment Successful",
+      body: "Your order payment was successful and is being processed.",
+      subBody: "Your order payment was successful and is being processed.",
+      type: NOTIFICATION_TYPE.PAYMENT_APPROVED
+    });
+  } catch (error) {
+    console.error("Error in handleOrderPayment:", error);
+    return;
+  }
+}
+
+function generateNextPaymentDate(duration, startDate = new Date()) {
+  const next = new Date(startDate);
+
+  if (duration === "monthly") next.setMonth(next.getMonth() + 1);
+  if (duration === "yearly") next.setFullYear(next.getFullYear() + 1);
+
+  return next.toISOString().replace("Z", "+00:00");
+}
+
+module.exports = {
+  handleChargeSuccess,
+  handlePaymentFailed,
+  handleSubscriptionDisable,
+  handleSubscriptionCreate,
+  handleInvoiceFailed,
+};

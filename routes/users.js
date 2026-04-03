@@ -58,7 +58,6 @@ const {
   ROUTE_GET_ADDRESS,
   ROUTE_NOTITICATION_PREFERENCE,
   ROUTE_GET_USER_NOTIFICATIONS,
-  ROUTE_INITIALIZE_ORDER_PAYMENT,
 } = require("../util/page-route");
 const { image_uploader } = require("../util/imageUpload");
 const router = require("express").Router();

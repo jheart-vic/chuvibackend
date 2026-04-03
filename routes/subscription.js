@@ -1,9 +1,18 @@
-const SubscriptionController = require('../controllers/subscription.controller');
-const { ROUTE_GET_PLAN, ROUTE_GET_PLANS, ROUTE_UPDATE_PLAN, ROUTE_DELETE_PLAN, ROUTE_SUBSCRIBE_PLAN, ROUTE_CANCEL_SUBSCRIPTION, ROUTE_CREATE_PLAN, ROUTE_CURRENT_SUBSCRIPTION } = require('../util/page-route');
-const adminAuth = require('../middlewares/adminAuth');
-const auth = require('../middlewares/auth');
+const SubscriptionController = require("../controllers/subscription.controller");
+const {
+  ROUTE_GET_PLAN,
+  ROUTE_GET_PLANS,
+  ROUTE_UPDATE_PLAN,
+  ROUTE_DELETE_PLAN,
+  ROUTE_SUBSCRIBE_PLAN,
+  ROUTE_CANCEL_SUBSCRIPTION,
+  ROUTE_CREATE_PLAN,
+  ROUTE_CURRENT_SUBSCRIPTION,
+} = require("../util/page-route");
+const adminAuth = require("../middlewares/adminAuth");
+const auth = require("../middlewares/auth");
 
-const router = require('express').Router();
+const router = require("express").Router();
 
 /**
  * @swagger
@@ -82,8 +91,8 @@ const router = require('express').Router();
  *         description: Server error
  */
 router.post(ROUTE_CREATE_PLAN, [adminAuth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.createPlans(req, res)
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.createPlans(req, res);
 });
 
 /**
@@ -112,8 +121,8 @@ router.post(ROUTE_CREATE_PLAN, [adminAuth], async (req, res) => {
  *         description: Server error
  */
 router.get(ROUTE_GET_PLANS, [auth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.getPlans(req, res)
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.getPlans(req, res);
 });
 
 /**
@@ -148,9 +157,9 @@ router.get(ROUTE_GET_PLANS, [auth], async (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_GET_PLAN+"/:id", [auth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.getPlan(req, res)
+router.get(ROUTE_GET_PLAN + "/:id", [auth], async (req, res) => {
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.getPlan(req, res);
 });
 
 /**
@@ -196,9 +205,9 @@ router.get(ROUTE_GET_PLAN+"/:id", [auth], async (req, res) => {
  *       500:
  *         description: Server error
  */
-router.put(ROUTE_UPDATE_PLAN+"/:id", [adminAuth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.updatePlan(req, res)
+router.put(ROUTE_UPDATE_PLAN + "/:id", [adminAuth], async (req, res) => {
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.updatePlan(req, res);
 });
 
 /**
@@ -223,9 +232,9 @@ router.put(ROUTE_UPDATE_PLAN+"/:id", [adminAuth], async (req, res) => {
  *       500:
  *         description: Server error
  */
-router.delete(ROUTE_DELETE_PLAN+"/:id", [adminAuth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.deletePlan(req, res)
+router.delete(ROUTE_DELETE_PLAN + "/:id", [adminAuth], async (req, res) => {
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.deletePlan(req, res);
 });
 
 /**
@@ -242,16 +251,8 @@ router.delete(ROUTE_DELETE_PLAN+"/:id", [adminAuth], async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - email
  *               - planId
- *               - type
  *             properties:
- *               email:
- *                 type: string
- *                 example: user@example.com
- *               type:
- *                 type: string
- *                 example: order|subscription
  *               planId:
  *                 type: string
  *                 example: 64f21b9a5c9d0c001e7a1234
@@ -264,8 +265,8 @@ router.delete(ROUTE_DELETE_PLAN+"/:id", [adminAuth], async (req, res) => {
  *         description: Server error
  */
 router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.subscribePlan(req, res)
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.subscribePlan(req, res);
 });
 
 /**
@@ -298,12 +299,86 @@ router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
  *         description: Server error
  */
 router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.cancelSubscription(req, res)
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.cancelSubscription(req, res);
 });
 
 /**
  * @swagger
+ * components:
+ *   schemas:
+ *     Subscription:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *           example: 64f1a2b3c4d5e6f7890abc12
+ *         userEmail:
+ *           type: string
+ *           example: user@example.com
+ *         userId:
+ *           type: string
+ *           example: 64f1a2b3c4d5e6f7890abc34
+ *         planId:
+ *           type: object
+ *           description: Populated plan document
+ *         categoryId:
+ *           type: object
+ *           nullable: true
+ *           description: Resolved category object from plan
+ *         paystackSubscriptionCode:
+ *           type: string
+ *           example: SUB_xxxxxx
+ *         subscriptionCode:
+ *           type: string
+ *           example: SUB_xxxxxx
+ *         status:
+ *           type: string
+ *           enum: [active, cancelled, expired, pending, failed]
+ *           example: active
+ *         startDate:
+ *           type: string
+ *           format: date-time
+ *         nextPaymentDate:
+ *           type: string
+ *           format: date-time
+ *         paystackAuthorizationToken:
+ *           type: string
+ *           nullable: true
+ *         paystackSubscriptionId:
+ *           type: string
+ *         currentPeriodEnd:
+ *           type: string
+ *           format: date-time
+ *         cancelledAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         lastPaymentAt:
+ *           type: string
+ *           format: date-time
+ *         lastPaymentReference:
+ *           type: string
+ *         pendingPlan:
+ *           type: string
+ *           nullable: true
+ *         remainingItems:
+ *           type: number
+ *           example: 10
+ *         expiresAt:
+ *           type: string
+ *           format: date-time
+ *         paystackCustomerCode:
+ *           type: string
+ *         paystackEmailToken:
+ *           type: string
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *
  * /subscription/current-subscription:
  *   get:
  *     summary: Get the current active subscription of the user
@@ -311,15 +386,25 @@ router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
  *       - Subscription
  *     responses:
  *       200:
- *         description: Current subscription fetched successfully
- *       404:
- *         description: No active subscription found
+ *         description: Subscription state retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Subscription state retrieved successfully
+ *                 subscription:
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/Subscription'
+ *                   nullable: true
  *       500:
  *         description: Server error
  */
 router.get(ROUTE_CURRENT_SUBSCRIPTION, [auth], async (req, res) => {
-    const subscriptionController = new SubscriptionController()
-    return subscriptionController.getCurrentSubscription(req, res)
+  const subscriptionController = new SubscriptionController();
+  return subscriptionController.getCurrentSubscription(req, res);
 });
 
 module.exports = router;
