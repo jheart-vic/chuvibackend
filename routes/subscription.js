@@ -282,16 +282,6 @@ router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - subscriptionCode
- *               - emailToken
- *             properties:
- *               subscriptionCode:
- *                 type: string
- *                 example: SUB_xxxxx
- *               emailToken:
- *                 type: string
- *                 example: email_token_here
  *     responses:
  *       200:
  *         description: Subscription cancelled successfully

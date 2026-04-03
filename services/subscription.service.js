@@ -202,14 +202,58 @@ class SubscriptionService extends BaseService {
 
     await sub.save();
   }
-  async cancelSubscription(userId) {
-    const sub = await UserSubscription.findOne({ user: userId });
+  async cancelSubscription(req) {
+    try {
+      const userId = req.user.id;
 
-    await disableSubscription(sub);
+      const subscription = await SubscriptionModel.findOne({
+        user: userId,
+        status: "active",
+      });
 
-    sub.status = "cancelled";
+      if (!subscription) {
+        return BaseService.sendFailedResponse({
+          error: "No active subscription found",
+        });
+      }
 
-    await sub.save();
+      const sub_code = subscription.subscriptionCode;
+      const token = subscription.paystackEmailToken;
+      let subscriptionStatus = "";
+
+        try {
+          const response = await paystackAxios.get(`/subscription/${sub_code}`);
+          const isSubActive = response.data.data.status;
+
+          subscriptionStatus = isSubActive;
+
+          if (isSubActive == "active") {
+            const response = await paystackAxios.post("/subscription/disable", {
+              code: sub_code,
+              token: token,
+            });
+          }
+        } catch (error) {
+          const message = error.response.data.message;
+          console.log(message, "error from paystack");
+          return BaseService.sendFailedResponse({
+            error:
+              message || "Something went wrong disabling this subscription",
+          });
+        }
+
+      await SubscriptionModel.findByIdAndDelete(subscription._id)
+
+      return BaseService.sendSuccessResponse({
+        message:
+          subscriptionStatus === "active"
+            ? "Subscription cancelled Successfully"
+            : "You have already cancelled your subscription",
+      });
+    } catch (error) {
+      console.error("Create plan error:", error);
+      return BaseService.sendFailedResponse({ error: "Failed to cancel plan" });
+    }
   }
   async getCurrentSubscription(req) {
     try {
