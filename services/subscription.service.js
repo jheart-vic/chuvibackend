@@ -16,6 +16,7 @@ class SubscriptionService extends BaseService {
         duration: "string|required",
         itemPerMonth: "integer|required",
         price: "integer|required",
+        monthlyLimits: "integer|required",
         features: "array|required",
       };
 
@@ -30,7 +31,9 @@ class SubscriptionService extends BaseService {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const planExist = await PlanModel.findOne({ title: post.title });
+      const planExist = await PlanModel.findOne({
+        title: { $regex: `^${post.title}$`, $options: "i" },
+      });
 
       if (planExist) {
         return BaseService.sendFailedResponse({

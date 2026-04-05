@@ -50,6 +50,9 @@ const router = require("express").Router();
  *               price:
  *                 type: integer
  *                 example: 5000
+ *               monthlyLimits:
+ *                 type: integer
+ *                 example: 45
  *               features:
  *                 type: array
  *                 items:
