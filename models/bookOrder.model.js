@@ -8,6 +8,7 @@ const {
   PICK_UP_TIME,
   PAYMENT_METHOD,
   BILLING_TYPE,
+  ITEM_ENUM_TYPES,
 } = require("../util/constants");
 
 const bookOrderSchema = new mongoose.Schema(
@@ -83,7 +84,7 @@ const bookOrderSchema = new mongoose.Schema(
     oscNumber: { type: String, required: true, index: true, unique: true },
     items: [
       {
-        type: { type: String, required: true },
+        type: { type: String, required: true, enum: ITEM_ENUM_TYPES },
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
       },
@@ -118,7 +119,6 @@ const bookOrderSchema = new mongoose.Schema(
       ],
       default: PAYMENT_ORDER_STATUS.PENDING,
     },
-    isPickUpOnly: { type: Boolean, default: false },
     isPickUpAndDelivery: { type: Boolean, default: false },
     reference: { type: String },
     paymentDate: { type: Date },

@@ -16,6 +16,7 @@ class SubscriptionService extends BaseService {
         duration: "string|required",
         itemPerMonth: "integer|required",
         price: "integer|required",
+        monthlyLimits: "integer|required",
         features: "array|required",
       };
 
@@ -30,7 +31,9 @@ class SubscriptionService extends BaseService {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const planExist = await PlanModel.findOne({ title: post.title });
+      const planExist = await PlanModel.findOne({
+        title: { $regex: `^${post.title}$`, $options: "i" },
+      });
 
       if (planExist) {
         return BaseService.sendFailedResponse({
@@ -127,15 +130,17 @@ class SubscriptionService extends BaseService {
   //subscription
   async subscribePlan(req) {
     const userId = req.user.id;
-    const planId = req.body.planId
-    if(!planId){
-      return BaseService.sendFailedResponse({error: 'Please provide a plan id'})
+    const planId = req.body.planId;
+    if (!planId) {
+      return BaseService.sendFailedResponse({
+        error: "Please provide a plan id",
+      });
     }
     const plan = await PlanModel.findById(planId);
     const user = await UserModel.findById(userId);
 
-    if(!plan){
-      return BaseService.sendFailedResponse({error: 'Plan not found'})
+    if (!plan) {
+      return BaseService.sendFailedResponse({ error: "Plan not found" });
     }
 
     if (!user) {
@@ -155,71 +160,67 @@ class SubscriptionService extends BaseService {
     await subscription.save();
     return subscription;
   }
-  async upgradeSubscription(sub, newPlan) {
-    // Disable old
-    await disableSubscription(sub);
+  async cancelSubscription(req) {
+    try {
+      const userId = req.user.id;
 
-    // Create new
-    const res = await createSubscription(
-      sub.paystackCustomerCode,
-      newPlan.paystackPlanCode
-    );
+      const subscription = await SubscriptionModel.findOne({
+        user: userId,
+        status: "active",
+      });
 
-    // Update DB
-    sub.plan = newPlan._id;
+      if (!subscription) {
+        return BaseService.sendFailedResponse({
+          error: "No active subscription found",
+        });
+      }
 
-    sub.paystackSubscriptionCode = res.subscription_code;
-    sub.paystackEmailToken = res.email_token;
+      const sub_code = subscription.subscriptionCode;
+      const token = subscription.paystackEmailToken;
+      let subscriptionStatus = "";
 
-    sub.remainingItems = newPlan.monthlyLimits;
+      try {
+        const response = await paystackAxios.get(`/subscription/${sub_code}`);
+        const isSubActive = response.data.data.status;
 
-    await sub.save();
-  }
-  async requestDowngrade(userId, newPlanId) {
-    const sub = await UserSubscription.findOne({ user: userId });
+        subscriptionStatus = isSubActive;
 
-    sub.pendingPlan = newPlanId;
+        if (isSubActive == "active") {
+          const response = await paystackAxios.post("/subscription/disable", {
+            code: sub_code,
+            token: token,
+          });
+        }
+      } catch (error) {
+        const message = error.response.data.message;
+        console.log(message, "error from paystack");
+        return BaseService.sendFailedResponse({
+          error: message || "Something went wrong disabling this subscription",
+        });
+      }
 
-    await sub.save();
-  }
-  async applyDowngrade(sub) {
-    const newPlan = await SubscriptionPlan.findById(sub.pendingPlan);
+      await SubscriptionModel.findByIdAndDelete(subscription._id);
 
-    await disableSubscription(sub);
-
-    const res = await createSubscription(
-      sub.paystackCustomerCode,
-      newPlan.paystackPlanCode
-    );
-
-    sub.plan = newPlan._id;
-    sub.pendingPlan = null;
-
-    sub.paystackSubscriptionCode = res.subscription_code;
-    sub.paystackEmailToken = res.email_token;
-
-    sub.remainingItems = newPlan.monthlyLimits;
-
-    await sub.save();
-  }
-  async cancelSubscription(userId) {
-    const sub = await UserSubscription.findOne({ user: userId });
-
-    await disableSubscription(sub);
-
-    sub.status = "cancelled";
-
-    await sub.save();
+      return BaseService.sendSuccessResponse({
+        message:
+          subscriptionStatus === "active"
+            ? "Subscription cancelled Successfully"
+            : "You have already cancelled your subscription",
+      });
+    } catch (error) {
+      console.error("Create plan error:", error);
+      return BaseService.sendFailedResponse({ error: "Failed to cancel plan" });
+    }
   }
   async getCurrentSubscription(req) {
     try {
       const userId = req.user.id;
-  
+
       const user = await UserModel.findById(userId);
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
       }
-  
+
       const filter = {
         user: userId,
         status: "active",
@@ -228,18 +229,20 @@ class SubscriptionService extends BaseService {
           { currentPeriodEnd: { $exists: false } },
         ],
       };
-  
-      let subscription = await SubscriptionModel.findOne(filter).populate("planId");
-  
+
+      let subscription = await SubscriptionModel.findOne(filter).populate(
+        "planId"
+      );
+
       if (!subscription) {
         return BaseService.sendSuccessResponse({
           message: "No active subscription",
           subscription: null,
         });
       }
-  
+
       let subscriptionList = [];
-  
+
       if (user.customerCode) {
         try {
           const paystackSub = await paystackAxios.get(
@@ -248,7 +251,7 @@ class SubscriptionService extends BaseService {
           subscriptionList = paystackSub.data.data.subscriptions || [];
         } catch (error) {
           console.log("Error from paystack customer check", error);
-  
+
           if (error.response?.status === 404) {
             subscriptionList = [];
           } else {
@@ -258,7 +261,7 @@ class SubscriptionService extends BaseService {
           }
         }
       }
-  
+
       // ✅ Optimized: Parallel fetching instead of sequential loop
       if (subscriptionList.length) {
         const fetchedSubscriptions = await Promise.all(
@@ -274,25 +277,32 @@ class SubscriptionService extends BaseService {
             }
           })
         );
-  
+
         const matchedSub = fetchedSubscriptions.find(
           (sub) =>
-            sub &&
-            sub.plan?.plan_code === subscription.paystackSubscriptionId
+            sub && sub.plan?.plan_code === subscription.paystackSubscriptionId
         );
-  
+
+        if (matchedSub && matchedSub.status !== "active") {
+          await SubscriptionModel.findByIdAndDelete(subscription._id);
+          return BaseService.sendFailedResponse({
+            error:
+              "Your subscription is no longer active, please subscribe again to continue enjoying our services",
+          });
+        }
+
         if (matchedSub) {
           subscription.subscriptionCode = matchedSub.subscription_code;
           subscription.nextPaymentDate = matchedSub.next_payment_date;
           subscription.status = matchedSub.status;
           subscription.paystackEmailToken = matchedSub.email_token;
-  
+
           await subscription.save(); // ✅ single save
         }
       }
-  
+
       subscription = subscription.toObject();
-  
+
       return BaseService.sendSuccessResponse({
         message: "Subscription state retrieved successfully",
         subscription,

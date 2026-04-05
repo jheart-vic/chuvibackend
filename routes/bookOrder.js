@@ -30,7 +30,6 @@ const {
  *               - phoneNumber
  *               - serviceType
  *               - serviceTier
- *               - isPickUpOnly
  *               - isPickUpAndDelivery
  *               - items
  *             properties:
@@ -50,9 +49,6 @@ const {
  *               pickupTime:
  *                 type: string
  *                 example: "10am-12pm | 4pm-6pm"
- *               isPickUpOnly:
- *                 type: boolean
- *                 example: false
  *               isPickUpAndDelivery:
  *                 type: boolean
  *                 example: false
