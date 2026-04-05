@@ -92,7 +92,9 @@ class PaystackService extends BaseService {
             transactionType: transactionType,
             paymentMethod,
             ...(orderId && {orderId: post.orderId}),
-            ...(plan && {plan: plan.paystackPlanCode}),
+            ...(plan && {paystackPlan: plan.paystackPlanCode}),
+            ...(plan && {planId: plan._id}),
+            // ...(plan && {paystackSubscriptionCode: plan.paystackPlanCode}),
             ...(subExists && {subscriptionId: subExists?._id}),
           },
           // callback_url: 'https://yourapp.com/pay/callback' // optional
