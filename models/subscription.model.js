@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const subscriptionSchema = new mongoose.Schema({
-  userEmail: { type: String, required: true },
+  email: { type: String, required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   planId: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
   paystackSubscriptionCode: { type: String },

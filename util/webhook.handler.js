@@ -258,6 +258,7 @@ async function handleNormalSubscription(data) {
       
 
       subscription = await SubscriptionModel.create({
+        email: email,
         paystackSubscriptionId: paystackId || null,
         startDate: new Date(data.paid_at),
         planId: planId,
@@ -273,6 +274,7 @@ async function handleNormalSubscription(data) {
       return;
     } else {
       subscription.status = "active";
+      subscription.email = email;
       (subscription.paystackSubscriptionId = paystackPlan || null),
         (subscription.startDate = new Date(data.paid_at)),
         (subscription.planId = planId),
