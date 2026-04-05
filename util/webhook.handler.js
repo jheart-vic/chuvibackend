@@ -232,14 +232,15 @@ async function handleNormalSubscription(data) {
       "handleNormalSubscription"
     );
 
-    const planId = metadata.plan
+    const planId = metadata.planId
+    const paystackId = metadata.paystackPlan
 
-      if(!planId){
+      if(!planId || !paystackId){
         console.warn("No planId in metadata for normal subscription, cannot set limits");
         return;
       }
 
-      const plan = await PlanModel.findById(planId)
+      const plan = await PlanModel.findOne({paystackPlanCode: paystackId})
 
     if (!subscription) {
       console.log(
@@ -257,7 +258,7 @@ async function handleNormalSubscription(data) {
       
 
       subscription = await SubscriptionModel.create({
-        paystackSubscriptionId: metadata.paystackSubscriptionCode || null,
+        paystackSubscriptionId: paystackId || null,
         startDate: new Date(data.paid_at),
         planId: planId,
         lastPaymentAt: new Date(data.paid_at),
@@ -272,8 +273,7 @@ async function handleNormalSubscription(data) {
       return;
     } else {
       subscription.status = "active";
-      (subscription.paystackSubscriptionId =
-        metadata.paystackSubscriptionCode || null),
+      (subscription.paystackSubscriptionId = paystackPlan || null),
         (subscription.startDate = new Date(data.paid_at)),
         (subscription.planId = planId),
         (subscription.monthlyLimits = plan.monthlyLimits),
