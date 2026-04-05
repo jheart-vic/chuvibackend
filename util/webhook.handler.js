@@ -39,7 +39,7 @@ async function handleChargeSuccess(data) {
       amount: data.amount / 100,
       reference,
       status: "success",
-      type: metadata.type,
+      type: metadata.transactionType,
       channel: data.channel,
       paidAt: new Date(data.paid_at),
       metadata,
@@ -48,12 +48,12 @@ async function handleChargeSuccess(data) {
     // ==========================
     // 🛒 ORDER PAYMENT FLOW
     // ==========================
-    if (metadata.type === "order") {
+    if (metadata.transactionType === "order") {
       await handleOrderPayment(metadata, reference);
       return;
     }
 
-    if (metadata.type === "subscription") {
+    if (metadata.transactionType === "subscription") {
       if (!data.subscription) {
         await handleNormalSubscription(data, user);
         return;
