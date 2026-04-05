@@ -66,34 +66,34 @@ async function handleChargeSuccess(data) {
       });
 
       // 4️⃣ Create subscription if it doesn't exist
-      if (!subscription) {
-        console.log("Creating new subscription");
+      // if (!subscription) {
+      //   console.log("Creating new subscription");
 
-        subscription = await SubscriptionModel.create({
-          userId: metadata.payerId || user._id,
-          planId: metadata.planId,
-          status: "active",
-          startDate: new Date(data.paid_at),
-          subscriptionCode: subscriptionCode,
-          paystackSubscriptionId: data.subscription.id,
-          lastPaymentAt: new Date(data.paid_at),
-          currentPeriodEnd: new Date(data.subscription.next_payment_date),
-          nextPaymentDate: new Date(data.subscription.next_payment_date),
-        });
+      //   subscription = await SubscriptionModel.create({
+      //     userId: metadata.payerId || user._id,
+      //     planId: metadata.planId,
+      //     status: "active",
+      //     startDate: new Date(data.paid_at),
+      //     subscriptionCode: subscriptionCode,
+      //     paystackSubscriptionId: data.subscription.id,
+      //     lastPaymentAt: new Date(data.paid_at),
+      //     currentPeriodEnd: new Date(data.subscription.next_payment_date),
+      //     nextPaymentDate: new Date(data.subscription.next_payment_date),
+      //   });
 
-        return;
-      }
+      //   return;
+      // }
 
-      subscription.status = "active";
-      subscription.lastPaymentAt = new Date(data.paid_at);
-      subscription.currentPeriodEnd = new Date(
-        data.subscription.next_payment_date
-      );
-      subscription.nextPaymentDate = new Date(
-        data.subscription.next_payment_date
-      );
+      // subscription.status = "active";
+      // subscription.lastPaymentAt = new Date(data.paid_at);
+      // subscription.currentPeriodEnd = new Date(
+      //   data.subscription.next_payment_date
+      // );
+      // subscription.nextPaymentDate = new Date(
+      //   data.subscription.next_payment_date
+      // );
 
-      await subscription.save();
+      // await subscription.save();
     }
   } catch (error) {
     console.error("Error in handleChargeSuccess:", error);
@@ -159,7 +159,7 @@ async function handleSubscriptionCreate(data) {
 
     if (subscription) {
       subscription.subscriptionCode = data.subscription_code;
-      subscription.paystackSubscriptionId = data.plan.plan_code;
+      subscription.paystackSubscriptionId = planCode;
       subscription.paystackEmailToken = data.email_token | ""
       subscription.status = data.status || "active";
       subscription.nextPaymentDate = data.next_payment_date
