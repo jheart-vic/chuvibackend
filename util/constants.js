@@ -85,8 +85,25 @@ const PICK_UP_TIME = {
   EVENING_TIME: "4pm-6pm",
 };
 
+const ITEMS_OF_ORDER = {
+  SHIRT: "shirt",
+  TROUSER: "trouser",
+  DRESS: "dress",
+  SUIT: "suit",
+  SKIRT: "skirt",
+  JACKET: "jacket",
+  BLOUSE: "blouse",
+  JEANS: "jeans",
+  BEDSHEET: "bedsheet",
+  CURTAIN: "curtain",
+  BLANKET: "blanket",
+  TOWEL: "towel",
+}
+
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5MB
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
+
+const ITEM_ENUM_TYPES = Object.values(ITEMS_OF_ORDER);
 
 module.exports = {
   EXPIRES_AT,
@@ -105,4 +122,6 @@ module.exports = {
   PICK_UP_TIME,
   MAX_FILE_BYTES,
   ALLOWED_MIMES,
+  ITEMS_OF_ORDER,
+  ITEM_ENUM_TYPES
 };

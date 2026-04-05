@@ -43,7 +43,7 @@ class PaystackService extends BaseService {
       const email = user.email
 
       let plan = null
-      let subscription = null
+      let subExists = null
 
       const { transactionType, orderId, planId } = post;
       let order = null
@@ -69,13 +69,10 @@ class PaystackService extends BaseService {
           return BaseService.sendFailedResponse({error: 'Plan not found'})
         }
 
-        const subExists = await SubscriptionModel.findOne({userId})
+        subExists = await SubscriptionModel.findOne({userId})
 
-        if(subExists && subExists.status == 'active'){
-          if(subExists.planId.toString() == planId.toString()){
+        if(subExists && subExists.status == 'active' && subExists.planId.toString() === planId){
             return BaseService.sendFailedResponse({error: 'You are already subscribed to this plan'})
-          }
-          subscription = subExists
         }
       }
 
@@ -96,7 +93,7 @@ class PaystackService extends BaseService {
             paymentMethod,
             ...(orderId && {orderId: post.orderId}),
             ...(plan && {plan: plan.paystackPlanCode}),
-            ...(subscription && {subscriptionId: subscription?._id}),
+            ...(subExists && {subscriptionId: subExists?._id}),
           },
           // callback_url: 'https://yourapp.com/pay/callback' // optional
         }
