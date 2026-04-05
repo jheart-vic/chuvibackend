@@ -222,7 +222,7 @@ class SubscriptionService extends BaseService {
       }
 
       const filter = {
-        user: userId,
+        userId: userId,
         status: "active",
         $or: [
           { currentPeriodEnd: { $gt: new Date() } },
@@ -233,6 +233,7 @@ class SubscriptionService extends BaseService {
       let subscription = await SubscriptionModel.findOne(filter).populate(
         "planId"
       );
+
 
       if (!subscription) {
         return BaseService.sendSuccessResponse({
