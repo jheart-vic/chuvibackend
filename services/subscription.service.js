@@ -165,7 +165,7 @@ class SubscriptionService extends BaseService {
       const userId = req.user.id;
 
       const subscription = await SubscriptionModel.findOne({
-        user: userId,
+        userId: userId,
         status: "active",
       });
 
