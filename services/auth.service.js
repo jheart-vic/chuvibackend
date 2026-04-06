@@ -12,6 +12,7 @@ const {
   signAccessToken,
 } = require("../util/helper");
 const { EXPIRES_AT, SERVICE_PLATFORM } = require("../util/constants");
+const FreePlanModel = require("../models/freeplan.model");
 
 class AuthService extends BaseService {
   async createUser(req, res) {
@@ -102,6 +103,12 @@ class AuthService extends BaseService {
       </div>
     `,
       });
+
+      const existingFreePlan = await FreePlanModel.findOne({ userId: newUser._id });
+      if(existingFreePlan) {
+        await FreePlanModel.deleteOne({ userId: newUser._id });
+      }
+      await FreePlanModel.create({ userId: newUser._id });
 
       await sendSmsOtp(newUser.phoneNumber, `${otp}`);
 
