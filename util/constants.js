@@ -1,13 +1,16 @@
 const EXPIRES_AT = 10 * 60 * 1000;
 const DELIVERY_CHARGE = 1000;
 
-// enum: ["manager", "admin", "staff", "front-desk"],
+
 const ROLE = {
-  MANAGER: "manager",
+  INTAKE_AND_TAG: "intake-and-tag",
   ADMIN: "admin",
-  STAFF: "staff",
-  FRONT_DESK: "front_desk",
+  QC: "qc",
+  PRESS: "press",
+  WASH_AND_DRY: "wash-and-dry",
+  SORT_AND_PRETREAT: "sort-and-pretreat",
   USER: "user",
+  RIDER: "rider",
 };
 const SERVICE_PLATFORM = {
   GOOGLE: "google",
@@ -54,6 +57,7 @@ const NOTIFICATION_TYPE = {
   ORDER_IRONING: "order-ironing",
   ORDER_DELIVERED: "order-delivered",
   PAYMENT_APPROVED: "payment-approved",
+  WALLET_TOP_UP: "wallet-top-up",
 };
 
 const ORDER_SERVICE_TYPE = {

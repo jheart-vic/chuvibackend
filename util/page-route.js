@@ -1,8 +1,6 @@
 
 //users
 exports.ROUTE_REGISTER = '/register'
-exports.ROUTE_ADMIN_REGISTER = '/admin/register'
-exports.ROUTE_ADMIN_LOGIN = '/admin/login'
 exports.ROUTE_APPLE_SIGNUP = '/apple-signup'
 exports.ROUTE_GOOGLE_SIGNUP = '/google-signup'
 exports.ROUTE_LOGIN = '/login'
@@ -29,6 +27,42 @@ exports.ROUTE_INITIALIZE_ORDER_PAYMENT = '/initialize-order-payment'
 exports.ROUTE_GET_USER_NOTIFICATIONS = '/get-user-notifications'
 exports.ROUTE_VERIFY_RESET_PASSWORD_OTP = '/verify-reset-password-otp'
 
+// Intake User
+exports.ROUTE_INTAKE_USER_REFRESH_TOKEN = '/intake-user/refresh-token'
+exports.ROUTE_INTAKE_USER_REGISTER = '/intake-user/register'
+exports.ROUTE_INTAKE_USER_APPLE_SIGNUP = '/intake-user/apple-signup'
+exports.ROUTE_INTAKE_USER_GOOGLE_SIGNUP = '/intake-user/google-signup'
+exports.ROUTE_INTAKE_USER_LOGIN = '/intake-user/login'
+exports.ROUTE_INTAKE_USER_FORGOT_PASSWORD = '/intake-user/forgot-password'
+exports.ROUTE_INTAKE_USER_RESET_PASSWORD = '/intake-user/reset-password'
+exports.ROUTE_INTAKE_USER_SEND_OTP = '/intake-user/send-otp'
+exports.ROUTE_INTAKE_USER_RESEND_OTP = '/intake-user/resend-otp'
+exports.ROUTE_INTAKE_USER_VERIFY_OTP = '/intake-user/verify-otp'
+exports.ROUTE_INTAKE_USER_VERIFY_EMAIL = '/intake-user/verify-email'
+exports.ROUTE_INTAKE_USER_VERIFY_RESET_PASSWORD_OTP = '/intake-user/verify-reset-password-otp'
+
+
+
+// QC User
+exports.ROUTE_QC_USER_REFRESH_TOKEN = '/qc-user/refresh-token'
+exports.ROUTE_QC_USER_REGISTER = '/qc-user/register'
+exports.ROUTE_QC_USER_APPLE_SIGNUP = '/qc-user/apple-signup'
+exports.ROUTE_QC_USER_GOOGLE_SIGNUP = '/qc-user/google-signup'
+exports.ROUTE_QC_USER_LOGIN = '/qc-user/login'
+exports.ROUTE_QC_USER_FORGOT_PASSWORD = '/qc-user/forgot-password'
+exports.ROUTE_QC_USER_RESET_PASSWORD = '/qc-user/reset-password'
+exports.ROUTE_QC_USER_SEND_OTP = '/qc-user/send-otp'
+exports.ROUTE_QC_USER_RESEND_OTP = '/qc-user/resend-otp'
+exports.ROUTE_QC_USER_VERIFY_OTP = '/qc-user/verify-otp'
+exports.ROUTE_QC_USER_VERIFY_EMAIL = '/qc-user/verify-email'
+exports.ROUTE_QC_USER_VERIFY_RESET_PASSWORD_OTP = '/qc-user/verify-reset-password-otp'
+
+
+
+
+// Admin
+exports.ROUTE_ADMIN_REGISTER = '/admin/register'
+exports.ROUTE_ADMIN_LOGIN = '/admin/login'
 
 
 // book orders
@@ -44,6 +78,8 @@ exports.ROUTE_WALLET_TOP_UP = "/wallet-top-up"
 exports.ROUTE_PAY_WITH_WALLET = "/pay-with-wallet"
 exports.ROUTE_FETCH_USER_TRANSACTIONS = "/fetch-user-transactions"
 exports.ROUTE_WALLET_BALANCE = "/wallet-balance"
+exports.ROUTE_GET_MONTHLY_TRANSACTIONS = "/get-monthly-transactions"
+exports.ROUTE_UPLOAD_PAYMENT_PROOF = "/upload-payment-proof"
 
 //subscription
 exports.ROUTE_CREATE_PLAN = '/create-plan'
