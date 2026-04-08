@@ -6,6 +6,7 @@ const BookOrderModel = require("../models/bookOrder.model");
 const NotificationModel = require("../models/notification.model");
 const { NOTIFICATION_TYPE } = require("./constants");
 const PlanModel = require("../models/plan.model");
+const WalletModel = require("../models/wallet.model");
 
 async function handleChargeSuccess(data) {
   try {
@@ -35,13 +36,16 @@ async function handleChargeSuccess(data) {
 
     // 3️⃣ Save payment
     await PaymentModel.create({
-      user: user._id,
+      userId: user._id,
       amount: data.amount / 100,
       reference,
       status: "success",
+      subscription: metadata.subscriptionId || null,
+      order: metadata.orderId || null,
       type: metadata.transactionType,
       channel: data.channel,
       paidAt: new Date(data.paid_at),
+      alertType: metadata.transactionType === "wallet-top-up" ? "credit" : "debit",
       metadata,
     });
 
@@ -50,6 +54,11 @@ async function handleChargeSuccess(data) {
     // ==========================
     if (metadata.transactionType === "order") {
       await handleOrderPayment(metadata, reference);
+      return;
+    }
+
+    if (metadata.transactionType === "wallet-top-up") {
+      await handleWalletTopUp(metadata, reference);
       return;
     }
 
@@ -322,6 +331,40 @@ async function handleOrderPayment(metadata, reference) {
       body: "Your order payment was successful and is being processed.",
       subBody: "Your order payment was successful and is being processed.",
       type: NOTIFICATION_TYPE.PAYMENT_APPROVED
+    });
+  } catch (error) {
+    console.error("Error in handleOrderPayment:", error);
+    return;
+  }
+}
+async function handleWalletTopUp(metadata) {
+  try {
+    const { userId } = metadata;
+
+    if (!userId) {
+      console.warn("User Id missing in metadata");
+      return;
+    }
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      console.warn(`User ${userId} not found`);
+      return;
+    }
+
+    const wallet = await WalletModel.findOne({userId})
+
+    if(wallet){
+      wallet.balance += metadata.amount / 100;
+    }
+
+    // 🔔 Optional notification
+    await NotificationModel.create({
+      userId: userId,
+      title: "Wallet top up Successful",
+      body: "Your wallet top up is successful.",
+      subBody: "Your wallet top up is successful.",
+      type: NOTIFICATION_TYPE.WALLET_TOP_UP
     });
   } catch (error) {
     console.error("Error in handleOrderPayment:", error);

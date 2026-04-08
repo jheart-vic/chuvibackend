@@ -1,4 +1,4 @@
-const UserController = require ('../controllers/auth.controller');
+const UserController = require("../controllers/auth.controller");
 const {
   ROUTE_REGISTER,
   ROUTE_LOGIN,
@@ -14,10 +14,32 @@ const {
   ROUTE_RESEND_OTP,
   ROUTE_ADMIN_LOGIN,
   ROUTE_ADMIN_REGISTER,
-  ROUTE_VERIFY_RESET_PASSWORD_OTP
-} = require ('../util/page-route');
+  ROUTE_VERIFY_RESET_PASSWORD_OTP,
+  ROUTE_INTAKE_USER_REFRESH_TOKEN,
+  ROUTE_INTAKE_USER_RESEND_OTP,
+  ROUTE_INTAKE_USER_VERIFY_EMAIL,
+  ROUTE_INTAKE_USER_VERIFY_OTP,
+  ROUTE_INTAKE_USER_RESET_PASSWORD,
+  ROUTE_INTAKE_USER_VERIFY_RESET_PASSWORD_OTP,
+  ROUTE_INTAKE_USER_FORGOT_PASSWORD,
+  ROUTE_INTAKE_USER_LOGIN,
+  ROUTE_INTAKE_USER_REGISTER,
+  ROUTE_INTAKE_USER_GOOGLE_SIGNUP,
+  ROUTE_QC_USER_REGISTER,
+  ROUTE_QC_USER_GOOGLE_SIGNUP,
+  ROUTE_INTAKE_USER_APPLE_SIGNUP,
+  ROUTE_QC_USER_APPLE_SIGNUP,
+  ROUTE_QC_USER_LOGIN,
+  ROUTE_QC_USER_FORGOT_PASSWORD,
+  ROUTE_QC_USER_VERIFY_RESET_PASSWORD_OTP,
+  ROUTE_QC_USER_RESET_PASSWORD,
+  ROUTE_QC_USER_VERIFY_OTP,
+  ROUTE_QC_USER_RESEND_OTP,
+  ROUTE_QC_USER_VERIFY_EMAIL,
+  ROUTE_QC_USER_REFRESH_TOKEN,
+} = require("../util/page-route");
 
-const router = require ('express').Router ();
+const router = require("express").Router();
 
 /**
  * @swagger
@@ -25,7 +47,7 @@ const router = require ('express').Router ();
  *   post:
  *     summary: Register a new user
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -108,10 +130,9 @@ const router = require ('express').Router ();
  *                   type: string
  *                   example: Server error
  */
-
-router.post (ROUTE_REGISTER, (req, res) => {
-  const userController = new UserController ();
-  return userController.createUser (req, res);
+router.post(ROUTE_REGISTER, (req, res) => {
+  const userController = new UserController();
+  return userController.createUser(req, res);
 });
 
 /**
@@ -120,7 +141,7 @@ router.post (ROUTE_REGISTER, (req, res) => {
  *   post:
  *     summary: Register new user through google
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -154,9 +175,9 @@ router.post (ROUTE_REGISTER, (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post (ROUTE_GOOGLE_SIGNUP, (req, res) => {
-  const userController = new UserController ();
-  return userController.googleSignup (req, res);
+router.post(ROUTE_GOOGLE_SIGNUP, (req, res) => {
+  const userController = new UserController();
+  return userController.googleSignup(req, res);
 });
 
 /**
@@ -165,7 +186,7 @@ router.post (ROUTE_GOOGLE_SIGNUP, (req, res) => {
  *   post:
  *     summary: Register new user through apple
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -203,9 +224,9 @@ router.post (ROUTE_GOOGLE_SIGNUP, (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post (ROUTE_APPLE_SIGNUP, (req, res) => {
-  const userController = new UserController ();
-  return userController.appleSignup (req, res);
+router.post(ROUTE_APPLE_SIGNUP, (req, res) => {
+  const userController = new UserController();
+  return userController.appleSignup(req, res);
 });
 
 /**
@@ -213,7 +234,7 @@ router.post (ROUTE_APPLE_SIGNUP, (req, res) => {
  * /auth/login:
  *   post:
  *     summary: Login a user
- *     tags: [Auth]
+ *     tags: [AuthUser]
  *     requestBody:
  *       required: true
  *       content:
@@ -275,9 +296,9 @@ router.post (ROUTE_APPLE_SIGNUP, (req, res) => {
  *                   type: string
  *                   example: Invalid email or password
  */
-router.post (ROUTE_LOGIN, (req, res) => {
-  const userController = new UserController ();
-  return userController.loginUser (req, res);
+router.post(ROUTE_LOGIN, (req, res) => {
+  const userController = new UserController();
+  return userController.loginUser(req, res);
 });
 /**
  * @swagger
@@ -285,7 +306,7 @@ router.post (ROUTE_LOGIN, (req, res) => {
  *   post:
  *     summary: Send password reset email
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -315,9 +336,9 @@ router.post (ROUTE_LOGIN, (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
-  const userController = new UserController ();
-  return userController.forgotPassword (req, res);
+router.post(ROUTE_FORGOT_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.forgotPassword(req, res);
 });
 
 /**
@@ -327,7 +348,7 @@ router.post (ROUTE_FORGOT_PASSWORD, (req, res) => {
  *     summary: Verify OTP for password reset
  *     description: Verifies the OTP sent to the user's email and returns a short-lived reset token.
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -374,7 +395,6 @@ router.post(ROUTE_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
   return userController.verifyResetPasswordOtp(req, res);
 });
 
-
 /**
  * @swagger
  * /auth/reset-password:
@@ -382,7 +402,7 @@ router.post(ROUTE_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
  *     summary: Reset user password
  *     description: Resets the user's password using a valid reset token obtained after OTP verification.
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -425,54 +445,13 @@ router.post(ROUTE_RESET_PASSWORD, (req, res) => {
   return userController.resetPassword(req, res);
 });
 
-
-// /**
-//  * @swagger
-//  * /auth/send-otp:
-//  *   post:
-//  *     summary: Send your otp
-//  *     tags:
-//  *       - Auth
-//  *     requestBody:
-//  *       required: true
-//  *       content:
-//  *         application/json:
-//  *           schema:
-//  *             type: object
-//  *             required:
-//  *               - email
-//  *             properties:
-//  *               email:
-//  *                 type: string
-//  *                 format: email
-//  *                 example: user@example.com
-//  *     responses:
-//  *       200:
-//  *         description: Email verified successfully
-//  *         content:
-//  *           application/json:
-//  *             schema:
-//  *               type: object
-//  *               properties:
-//  *                 message:
-//  *                   type: string
-//  *                   example: Email verified successfully
-//  *       400:
-//  *         description: Missing or invalid email
-//  *       500:
-//  *         description: Server error
-//  */
-// router.post (ROUTE_SEND_OTP, (req, res) => {
-//   const userController = new UserController ();
-//   return userController.sendOTP (req, res);
-// });
 /**
  * @swagger
  * /auth/verify-otp:
  *   post:
  *     summary: Verify your otp
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -506,9 +485,9 @@ router.post(ROUTE_RESET_PASSWORD, (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post (ROUTE_VERIFY_OTP, (req, res) => {
-  const userController = new UserController ();
-  return userController.verifyOTP (req, res);
+router.post(ROUTE_VERIFY_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyOTP(req, res);
 });
 
 /**
@@ -517,7 +496,7 @@ router.post (ROUTE_VERIFY_OTP, (req, res) => {
  *   post:
  *     summary: Resend OTP to user email/phone
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     requestBody:
  *       required: true
  *       content:
@@ -556,98 +535,13 @@ router.post(ROUTE_RESEND_OTP, (req, res) => {
   return userController.resendOtp(req, res);
 });
 
-
-/**
- * @swagger
- * /auth/verify-email:
- *   post:
- *     summary: Verify your email
- *     tags:
- *       - Auth
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *     responses:
- *       200:
- *         description: Email verified successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Email verified successfully
- *       400:
- *         description: Missing or invalid email
- *       500:
- *         description: Server error
- */
-router.post (ROUTE_VERIFY_EMAIL, (req, res) => {
-  const userController = new UserController ();
-  return userController.verifyEmail (req, res);
-});
-// /**
-//  * @swagger
-//  * /auth/verify-password-otp:
-//  *   post:
-//  *     summary: Verify your reset password OTP
-//  *     tags:
-//  *       - Auth
-//  *     requestBody:
-//  *       required: true
-//  *       content:
-//  *         application/json:
-//  *           schema:
-//  *             type: object
-//  *             required:
-//  *               - email
-//  *             properties:
-//  *               email:
-//  *                 type: string
-//  *                 format: email
-//  *                 example: user@example.com
-//  *               otp:
-//  *                 type: string
-//  *                 format: string
-//  *                 example: 123456
-//  *     responses:
-//  *       200:
-//  *         description: Email verified successfully
-//  *         content:
-//  *           application/json:
-//  *             schema:
-//  *               type: object
-//  *               properties:
-//  *                 message:
-//  *                   type: string
-//  *                   example: OTP verified successfully
-//  *       400:
-//  *         description: Missing or invalid email or OTP
-//  *       500:
-//  *         description: Server error
-//  */
-// router.post (ROUTE_VERIFY_PASSWORD_OTP, (req, res) => {
-//   const userController = new UserController ();
-//   return userController.verifyPasswordOTP (req, res);
-// });
 /**
  * @swagger
  * /auth/refresh-token:
  *   post:
  *     summary: Refresh Access Token
  *     tags:
- *       - Auth
+ *       - AuthUser
  *     description: Uses a refresh token to generate a new access token.
  *     parameters:
  *       - in: header
@@ -694,19 +588,19 @@ router.post (ROUTE_VERIFY_EMAIL, (req, res) => {
  *                   type: string
  *                   example: Invalid or expired refresh token
  */
-
-router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
-  const userController = new UserController ();
-  return userController.refreshToken (req, res);
+router.post(ROUTE_REFRESH_TOKEN, (req, res) => {
+  const userController = new UserController();
+  return userController.refreshToken(req, res);
 });
 
+// ADMIN
 /**
  * @swagger
  * /auth/admin/register:
  *   get:
  *     summary: Seed register a new admin (Restricted)
  *     tags:
- *       - Admin Auth
+ *       - AuthAdmin
  *     requestBody:
  *       required: true
  *       content:
@@ -715,7 +609,7 @@ router.post (ROUTE_REFRESH_TOKEN, (req, res) => {
  *       200:
  *         description: Admin seed successful
  *       400:
- *         description: Admin already exists or 
+ *         description: Admin already exists or
  *         content:
  *           application/json:
  *             schema:
@@ -740,7 +634,7 @@ router.get(ROUTE_ADMIN_REGISTER, (req, res) => {
  *   post:
  *     summary: Login as admin
  *     tags:
- *       - Admin Auth
+ *       - AuthAdmin
  *     requestBody:
  *       required: true
  *       content:
@@ -800,6 +694,1197 @@ router.get(ROUTE_ADMIN_REGISTER, (req, res) => {
 router.post(ROUTE_ADMIN_LOGIN, (req, res) => {
   const userController = new UserController();
   return userController.adminLogin(req, res);
+});
+
+// INTAKE USER
+/**
+ * @swagger
+ * /auth/intake-user/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *               - userType
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: gRDERIdiidfjii@
+ *               fullName:
+ *                 type: string
+ *                 example: John Doe
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+1234567890"
+ *               userType:
+ *                 type: string
+ *                 enum: [manager, admin, staff, front_desk, user]
+ *                 example: user
+
+ *     responses:
+ *       200:
+ *         description: Registration successful, OTP sent for email verification
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Registration successful. Please verify your email.
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     phoneNumber:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                     servicePlatform:
+ *                       type: string
+ *                     otp:
+ *                       type: string
+ *                     otpExpiresAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Missing or invalid fields, or user already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: User exists. Please login
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Server error
+ */
+router.post(ROUTE_INTAKE_USER_REGISTER, (req, res) => {
+  const userController = new UserController();
+  return userController.createIntakeUser(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/google-signup:
+ *   post:
+ *     summary: Register new user through google
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 format: text
+ *                 example: <your_id_token>
+ *               userType:
+ *                 type: string
+ *                 format: text
+ *                 example: (manager, admin, staff, front_desk, user)
+ *     responses:
+ *       200:
+ *         description: Registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: <access_token>
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_GOOGLE_SIGNUP, (req, res) => {
+  const userController = new UserController();
+  return userController.googleIntakeUserSignup(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/apple-signup:
+ *   post:
+ *     summary: Register new user through apple
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 format: text
+ *                 example: <your_id_token>
+ *               userType:
+ *                 type: string
+ *                 format: text
+ *                 example: (manager, admin, staff, front_desk, user)
+ *               authorizationCode:
+ *                 type: string
+ *                 format: text
+ *                 example: <your_authorization_code>
+ *     responses:
+ *       200:
+ *         description: Registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: <access_token>
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_APPLE_SIGNUP, (req, res) => {
+  const userController = new UserController();
+  return userController.appleIntakeUserSignup(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/login:
+ *   post:
+ *     summary: Login a user
+ *     tags: [AuthIntakeUser]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Access token (JWT)
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 user:
+ *                   type: object
+ *                   description: Logged in user details
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "612345abcdef67890"
+ *                     email:
+ *                       type: string
+ *                       example: user@example.com
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                     name:
+ *                       type: string
+ *                       example: John Doe
+ *                 refreshToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Invalid email or password
+ */
+router.post(ROUTE_INTAKE_USER_LOGIN, (req, res) => {
+  const userController = new UserController();
+  return userController.loginIntakeUser(req, res);
+});
+/**
+ * @swagger
+ * /auth/intake-user/forgot-password:
+ *   post:
+ *     summary: Send password reset email
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Reset email sent
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Reset email sent
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_FORGOT_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.forgotIntakeUserPassword(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/verify-reset-password-otp:
+ *   post:
+ *     summary: Verify OTP for password reset
+ *     description: Verifies the OTP sent to the user's email and returns a short-lived reset token.
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "482193"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified successfully
+ *                 resetToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       400:
+ *         description: Invalid or expired OTP
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyIntakeUserResetPasswordOtp(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/reset-password:
+ *   post:
+ *     summary: Reset user password
+ *     description: Resets the user's password using a valid reset token obtained after OTP verification.
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *               - resetToken
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 example: StrongPassword123!
+ *               resetToken:
+ *                 type: string
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Password reset successful
+ *       400:
+ *         description: Invalid or expired reset token
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_RESET_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.resetIntakeUserPassword(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/verify-otp:
+ *   post:
+ *     summary: Verify your otp
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 format: string
+ *                 example: 123456
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified successfully
+ *       400:
+ *         description: Missing or invalid email or OTP
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_VERIFY_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyIntakeUserOTP(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/resend-otp:
+ *   post:
+ *     summary: Resend OTP to user email/phone
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: OTP resent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP resent to email successfully.
+ *       400:
+ *         description: Missing or invalid email
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Email already verified
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_RESEND_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.resendIntakeUserOtp(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/verify-email:
+ *   post:
+ *     summary: Verify your email
+ *     tags:
+ *       - AuthIntakeUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Email verified successfully
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_INTAKE_USER_VERIFY_EMAIL, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyIntakeUserEmail(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/intake-user/refresh-token:
+ *   post:
+ *     summary: Refresh Access Token
+ *     tags:
+ *       - AuthIntakeUser
+ *     description: Uses a refresh token to generate a new access token.
+ *     parameters:
+ *       - in: header
+ *         name: x-refresh-token
+ *         schema:
+ *           type: string
+ *         required: false
+ *         description: The refresh token sent in the header
+ *     responses:
+ *       200:
+ *         description: Access token successfully refreshed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       400:
+ *         description: Refresh token is missing or invalid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: No refresh token provided
+ *       401:
+ *         description: Invalid or expired refresh token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Invalid or expired refresh token
+ */
+
+router.post(ROUTE_INTAKE_USER_REFRESH_TOKEN, (req, res) => {
+  const userController = new UserController();
+  return userController.resendIntakeUserOtp(req, res);
+});
+
+
+// QC USER
+/**
+ * @swagger
+ * /auth/qc-user/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *               - userType
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: gRDERIdiidfjii@
+ *               fullName:
+ *                 type: string
+ *                 example: John Doe
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+1234567890"
+ *               userType:
+ *                 type: string
+ *                 enum: [manager, admin, staff, front_desk, user]
+ *                 example: user
+
+ *     responses:
+ *       200:
+ *         description: Registration successful, OTP sent for email verification
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Registration successful. Please verify your email.
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                     fullName:
+ *                       type: string
+ *                     phoneNumber:
+ *                       type: string
+ *                     userType:
+ *                       type: string
+ *                     servicePlatform:
+ *                       type: string
+ *                     otp:
+ *                       type: string
+ *                     otpExpiresAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Missing or invalid fields, or user already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: User exists. Please login
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Server error
+ */
+router.post(ROUTE_QC_USER_REGISTER, (req, res) => {
+  const userController = new UserController();
+  return userController.createQCUser(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/google-signup:
+ *   post:
+ *     summary: Register new user through google
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 format: text
+ *                 example: <your_id_token>
+ *               userType:
+ *                 type: string
+ *                 format: text
+ *                 example: (manager, admin, staff, front_desk, user)
+ *     responses:
+ *       200:
+ *         description: Registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: <access_token>
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_GOOGLE_SIGNUP, (req, res) => {
+  const userController = new UserController();
+  return userController.googleQCUserSignup(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/apple-signup:
+ *   post:
+ *     summary: Register new user through apple
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 format: text
+ *                 example: <your_id_token>
+ *               userType:
+ *                 type: string
+ *                 format: text
+ *                 example: (manager, admin, staff, front_desk, user)
+ *               authorizationCode:
+ *                 type: string
+ *                 format: text
+ *                 example: <your_authorization_code>
+ *     responses:
+ *       200:
+ *         description: Registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: <access_token>
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_APPLE_SIGNUP, (req, res) => {
+  const userController = new UserController();
+  return userController.appleQCUserSignup(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/login:
+ *   post:
+ *     summary: Login a user
+ *     tags: [AuthQCUser]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Access token (JWT)
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 user:
+ *                   type: object
+ *                   description: Logged in user details
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "612345abcdef67890"
+ *                     email:
+ *                       type: string
+ *                       example: user@example.com
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                     name:
+ *                       type: string
+ *                       example: John Doe
+ *                 refreshToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Invalid email or password
+ */
+router.post(ROUTE_QC_USER_LOGIN, (req, res) => {
+  const userController = new UserController();
+  return userController.loginQCUser(req, res);
+});
+/**
+ * @swagger
+ * /auth/qc-user/forgot-password:
+ *   post:
+ *     summary: Send password reset email
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Reset email sent
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Reset email sent
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_FORGOT_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.forgotQCUserPassword(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/verify-reset-password-otp:
+ *   post:
+ *     summary: Verify OTP for password reset
+ *     description: Verifies the OTP sent to the user's email and returns a short-lived reset token.
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "482193"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified successfully
+ *                 resetToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       400:
+ *         description: Invalid or expired OTP
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyQCUserResetPasswordOtp(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/reset-password:
+ *   post:
+ *     summary: Reset user password
+ *     description: Resets the user's password using a valid reset token obtained after OTP verification.
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *               - resetToken
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 example: StrongPassword123!
+ *               resetToken:
+ *                 type: string
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Password reset successful
+ *       400:
+ *         description: Invalid or expired reset token
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_RESET_PASSWORD, (req, res) => {
+  const userController = new UserController();
+  return userController.resetQCUserPassword(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/verify-otp:
+ *   post:
+ *     summary: Verify your otp
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 format: string
+ *                 example: 123456
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified successfully
+ *       400:
+ *         description: Missing or invalid email or OTP
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_VERIFY_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyQCUserOTP(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/resend-otp:
+ *   post:
+ *     summary: Resend OTP to user email/phone
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: OTP resent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP resent to email successfully.
+ *       400:
+ *         description: Missing or invalid email
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Email already verified
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_RESEND_OTP, (req, res) => {
+  const userController = new UserController();
+  return userController.resendQCUserOtp(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/verify-email:
+ *   post:
+ *     summary: Verify your email
+ *     tags:
+ *       - AuthQCUser
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Email verified successfully
+ *       400:
+ *         description: Missing or invalid email
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_QC_USER_VERIFY_EMAIL, (req, res) => {
+  const userController = new UserController();
+  return userController.verifyQCUserEmail(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/qc-user/refresh-token:
+ *   post:
+ *     summary: Refresh Access Token
+ *     tags:
+ *       - AuthQCUser
+ *     description: Uses a refresh token to generate a new access token.
+ *     parameters:
+ *       - in: header
+ *         name: x-refresh-token
+ *         schema:
+ *           type: string
+ *         required: false
+ *         description: The refresh token sent in the header
+ *     responses:
+ *       200:
+ *         description: Access token successfully refreshed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       400:
+ *         description: Refresh token is missing or invalid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: No refresh token provided
+ *       401:
+ *         description: Invalid or expired refresh token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Invalid or expired refresh token
+ */
+
+router.post(ROUTE_QC_USER_REFRESH_TOKEN, (req, res) => {
+  const userController = new UserController();
+  return userController.resendQCUserOtp(req, res);
 });
 
 module.exports = router;

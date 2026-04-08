@@ -6,10 +6,10 @@ const { ROLE, SERVICE_PLATFORM, GENERAL_STATUS } = require("../util/constants");
 
 const AddressSchema = new mongoose.Schema({
   label: { type: String, required: true },
-  address: { type: String, required: true },
+  address: { type: String, required: true }
 });
 
-const userSchema = new mongoose.Schema(
+const intakeUserSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, trim: true, unique: true },
     fullName: { type: String, trim: true },
@@ -17,9 +17,9 @@ const userSchema = new mongoose.Schema(
     phoneNumber: { type: String },
     userType: {
       type: String,
-      default: ROLE.USER,
+      default: ROLE.INTAKE_AND_TAG,
     },
-    // hub: {type: mongoose.Schema.Types.ObjectId, ref: "Hub"},
+    hub: {type: mongoose.Schema.Types.ObjectId, ref: "Hub"},
     googleId: { type: String, unique: true, sparse: true },
     appleId: { type: String, unique: true, sparse: true },
     image: {
@@ -40,21 +40,13 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     servicePlatform: {
       type: String,
-      enum: [
-        SERVICE_PLATFORM.LOCAL,
-        SERVICE_PLATFORM.GOOGLE,
-        SERVICE_PLATFORM.APPLE,
-      ],
-      default: SERVICE_PLATFORM.LOCAL,
+      enum: [SERVICE_PLATFORM.LOCAL, SERVICE_PLATFORM.GOOGLE, SERVICE_PLATFORM.APPLE],
+      default: SERVICE_PLATFORM.LOCAL
     },
     status: {
       type: String,
       default: GENERAL_STATUS.ACTIVE,
-      enum: [
-        GENERAL_STATUS.ACTIVE,
-        GENERAL_STATUS.INACTIVE,
-        GENERAL_STATUS.SUSPENDED,
-      ],
+      enum: [GENERAL_STATUS.ACTIVE, GENERAL_STATUS.INACTIVE, GENERAL_STATUS.SUSPENDED],
     },
     addresses: [AddressSchema],
     // address2: { type: String },
@@ -65,14 +57,13 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-userSchema.pre("save", async function (next) {
+intakeUserSchema.pre("save", async function (next) {
   try {
     if (this.isModified("password")) {
       // const user = this as IUser;
       const hashPassword = await bcrypt.hash(this.password, 10);
       this.password = hashPassword;
     }
-    this.isVerifiedCoach = undefined;
 
     next();
   } catch (error) {
@@ -80,14 +71,14 @@ userSchema.pre("save", async function (next) {
   }
 });
 
-userSchema.pre("save", function (next) {
+intakeUserSchema.pre("save", function (next) {
   if (this.isNew && this.isVerified) {
     this.emailNotification = true;
   }
   next();
 });
 
-userSchema.methods.comparePassword = async function (password) {
+intakeUserSchema.methods.comparePassword = async function (password) {
   const user = this;
   // console.log({password, userPassword: user.password})
   if (!password || !user.password) {
@@ -96,10 +87,7 @@ userSchema.methods.comparePassword = async function (password) {
   return await bcrypt.compare(password, user.password);
 };
 
-userSchema.methods.generateAccessToken = async function (
-  secretToken,
-  expiresIn = "1w"
-) {
+intakeUserSchema.methods.generateAccessToken = async function (secretToken, expiresIn="1w") {
   const token = jwt.sign(
     {
       id: this._id,
@@ -111,7 +99,7 @@ userSchema.methods.generateAccessToken = async function (
   return token;
 };
 
-userSchema.methods.generateRefreshToken = async function (secretToken) {
+intakeUserSchema.methods.generateRefreshToken = async function (secretToken) {
   const token = jwt.sign(
     {
       id: this._id,
@@ -123,5 +111,6 @@ userSchema.methods.generateRefreshToken = async function (secretToken) {
   return token;
 };
 
-const UserModel = mongoose.model("User", userSchema);
-module.exports = UserModel;
+
+const IntakeUserModel = mongoose.model("IntakeUser", intakeUserSchema);
+module.exports = IntakeUserModel;
