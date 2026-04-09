@@ -68,6 +68,7 @@ exports.ROUTE_ADMIN_LOGIN = '/admin/login'
 // book orders
 exports.ROUTE_CREATE_BOOK_ORDER = '/create-book-order'
 exports.ROUTE_ADMIN_ORDER_DETAILS = '/admin-order-details'
+exports.ROUTE_GET_ORDER_DETAIL = '/get-order-detail'
 exports.ROUTE_UPDATE_BOOK_ORDER_PAYMENT_STATUS = '/update-book-order-payment-status'
 exports.ROUTE_UPDATE_BOOK_ORDER_STAGE = '/'
 exports.ROUTE_BOOK_ORDER_HISTORY = '/book-order-history'

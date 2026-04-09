@@ -5,7 +5,14 @@ const BookOrderModel = require("../models/bookOrder.model");
 const AdminOrderDetailsModel = require("../models/adminOrderDetails.model");
 const { generateOscNumber } = require("../util/helper");
 const NotificationModel = require("../models/notification.model");
-const { NOTIFICATION_TYPE, ORDER_STATUS } = require("../util/constants");
+const SubscriptionModel = require("../models/subscription.model");
+const {
+  NOTIFICATION_TYPE,
+  ORDER_STATUS,
+  DELIVERY_SPEED,
+  BILLING_TYPE,
+  STANDARD_ITEMS_ENUM_TYPES,
+} = require("../util/constants");
 
 class BookOrderService extends BaseService {
   async postBookOrder(req, res) {
@@ -28,7 +35,7 @@ class BookOrderService extends BaseService {
         serviceType: "string|required",
         serviceTier: "string|required",
         billingType: "string|required",
-        // deliverySpeed: "string|required",
+        deliverySpeed: "string|required:in:express,standard,same-day",
         isPickUpOnly: "boolean|required",
         isPickUpAndDelivery: "boolean|required",
         items: "array|required",
@@ -48,39 +55,142 @@ class BookOrderService extends BaseService {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const totalPrice = post.items.reduce((sum, item) => {
-        const price = Number(item.price);
-        const quantity = Number(item.quantity);
+      let finalMessage = 'Order booked successfully';
+      const adminOrderSettings = await AdminOrderDetailsModel.findOne({});
 
-        return sum + price * quantity;
-      }, 0);
 
-      const oscNumber = generateOscNumber();
-      const newOrderItem = {
-        oscNumber,
-        amount: totalPrice,
-        ...post,
-      };
-      const newOrder = new BookOrderModel(newOrderItem);
-      await newOrder.save();
 
-      await NotificationModel.create({
-        userId: userId,
-        title: "Order Created Successfully",
-        body: `Your laundry order has been received. We will pick it up shortly.`,
-        subBody: `Order ID: ${oscNumber}.`,
-        type: NOTIFICATION_TYPE.ORDER_CREATED,
-      });
+      if (post.billingType == BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
+        const subscription = await SubscriptionModel.findOne({
+          userId,
+        }).populate("planId");
+        if (!subscription) {
+          return BaseService.sendFailedResponse({
+            error: "No active subscription found for user",
+          });
+        }
 
-      return BaseService.sendSuccessResponse({
-        message: newOrder,
-      });
+        if (subscription.status !== "active") {
+          return BaseService.sendFailedResponse({
+            error: "Subscription is not active",
+          });
+        }
+
+
+        if (!adminOrderSettings) {
+          return BaseService.sendFailedResponse({
+            error: "Admin order settings not found",
+          });
+        }
+
+        const isAllStandard = post.items.every((item) => STANDARD_ITEMS_ENUM_TYPES.includes(item.type));
+
+        if (!isAllStandard) {
+          return BaseService.sendFailedResponse({
+            error: "Your subscription plan only allows standard items. Please remove any non-standard items from your order.",
+          });
+        }
+
+        if(post.deliverySpeed === DELIVERY_SPEED.SAME_DAY && post.items.length > adminOrderSettings.sameDayCapacity){
+          return BaseService.sendFailedResponse({
+            error: `Same day delivery is currently at full capacity. Please reduce your items or choose the express delivery speed.`,
+          });
+        }
+
+        if(post.deliverySpeed === DELIVERY_SPEED.EXPRESS && post.items.length > adminOrderSettings.expressCapacity){
+          return BaseService.sendFailedResponse({
+            error: `Same day delivery is currently at full capacity. Please reduce your items or choose the standard delivery speed.`,
+          });
+        }
+
+        if(post.deliverySpeed === DELIVERY_SPEED.STANDARD && post.items.length > adminOrderSettings.standardCapacity){
+          finalMessage += ` We expect this to take ${adminOrderSettings.standardDeliveryPeriod} days. We appreciate your patience and understanding.`
+        }
+
+        const subscriptionPlanMonthlyLimits = subscription.planId.monthlyLimits;
+        if(post.items.length > subscriptionPlanMonthlyLimits){
+          return BaseService.sendFailedResponse({error: 'You selected items has exceeded your currently subscription limit. Consider upgrading or reducing your items'})
+        }
+
+        let totalPrice = post.items.reduce((sum, item) => {
+          const price = Number(item.price);
+          const quantity = Number(item.quantity);
+
+          return sum + price * quantity;
+        }, 0);
+
+        let extraDeliveryCost = 0;
+
+        totalPrice += extraDeliveryCost;
+
+        const oscNumber = generateOscNumber();
+        const newOrderItem = {
+          oscNumber,
+          amount: totalPrice,
+          deliveryAmount: extraDeliveryCost,
+          ...post,
+        };
+        const newOrder = new BookOrderModel(newOrderItem);
+        await newOrder.save();
+
+        await NotificationModel.create({
+          userId: userId,
+          title: "Order Created Successfully",
+          body: `Your laundry order has been received. We will pick it up shortly.`,
+          subBody: `Order ID: ${oscNumber}.`,
+          type: NOTIFICATION_TYPE.ORDER_CREATED,
+        });
+
+        return BaseService.sendSuccessResponse({
+          message: finalMessage,
+        });
+
+      } else if (post.billingType == BILLING_TYPE.PAY_PER_ITEM) {
+        let totalPrice = post.items.reduce((sum, item) => {
+          const price = Number(item.price);
+          const quantity = Number(item.quantity);
+
+          return sum + price * quantity;
+        }, 0);
+
+        let extraDeliveryCost = 0;
+
+        if (post.deliverySpeend == DELIVERY_SPEED.EXPRESS) {
+          extraDeliveryCost = 300;
+        } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
+          extraDeliveryCost = 500;
+        }
+
+        totalPrice += extraDeliveryCost;
+
+        const oscNumber = generateOscNumber();
+        const newOrderItem = {
+          oscNumber,
+          amount: totalPrice,
+          deliveryAmount: extraDeliveryCost,
+          ...post,
+        };
+        const newOrder = new BookOrderModel(newOrderItem);
+        await newOrder.save();
+
+        await NotificationModel.create({
+          userId: userId,
+          title: "Order Created Successfully",
+          body: `Your laundry order has been received. We will pick it up shortly.`,
+          subBody: `Order ID: ${oscNumber}.`,
+          type: NOTIFICATION_TYPE.ORDER_CREATED,
+        });
+
+        return BaseService.sendSuccessResponse({
+          message: finalMessage,
+        });
+      }
     } catch (error) {
       console.log(error);
       return BaseService.sendFailedResponse({ error });
     }
   }
-  async getBookOrderDetails(req, res) {
+  async getAdminOrderDetails(req, res) {
     try {
       const adminOrderDetails = await AdminOrderDetailsModel.findOne({});
 
@@ -157,16 +267,16 @@ class BookOrderService extends BaseService {
           ORDER_STATUS.READY,
           ORDER_STATUS.RECEIVED,
         ].includes(stage)
-      ){
+      ) {
         return BaseService.sendFailedResponse({
           error: "Please provide a valid stage for the book order",
-        })
+        });
       }
-        if (!bookOrderId) {
-          return BaseService.sendFailedResponse({
-            error: "Please provide a book order id",
-          });
-        }
+      if (!bookOrderId) {
+        return BaseService.sendFailedResponse({
+          error: "Please provide a book order id",
+        });
+      }
 
       const bookOrder = await BookOrderModel.findById(bookOrderId);
       if (!bookOrder) {
@@ -184,29 +294,29 @@ class BookOrderService extends BaseService {
       switch (stage) {
         case ORDER_STATUS.PICKED_UP:
           message = "Your laundry has been picked up successfully";
-          title = "Picked Up"
+          title = "Picked Up";
           break;
         case ORDER_STATUS.WASHING:
           message = "Your laundry is being washed";
-          title = "Washing"
+          title = "Washing";
           break;
         case ORDER_STATUS.IRONING:
           message = "Your laundry is being ironed";
-          title = "Ironing"
+          title = "Ironing";
           break;
         case ORDER_STATUS.DELIVERED:
           message = "Your order has been delivered successfully";
-          title = "Delivered"
+          title = "Delivered";
           break;
         case ORDER_STATUS.OUT_FOR_DELIVERY:
           message = "Your order is out for delivery";
-          title = 'Delivered'
+          title = "Delivered";
         case ORDER_STATUS.RECEIVED:
           message = "Your order has been received";
-          title = "Received"
+          title = "Received";
         case ORDER_STATUS.READY:
           message = "Your order is ready for pickup";
-          title = "Ready"
+          title = "Ready";
           break;
         default:
           message = "Status updated";
@@ -275,20 +385,24 @@ class BookOrderService extends BaseService {
   }
   async getBookOrder(req, res) {
     try {
-      const bookOrderId = req.params.id
+      const bookOrderId = req.params.id;
 
-      if(!bookOrderId){
-        return BaseService.sendFailedResponse({error: 'Please provide a valid book order id'})
+      if (!bookOrderId) {
+        return BaseService.sendFailedResponse({
+          error: "Please provide a valid book order id",
+        });
       }
-      const bookOrder = await BookOrderModel.findById(bookOrderId)
+      const bookOrder = await BookOrderModel.findById(bookOrderId);
 
-      if(!bookOrder){
-        return BaseService.sendFailedResponse({error: 'Book order not found'})
+      if (!bookOrder) {
+        return BaseService.sendFailedResponse({
+          error: "Book order not found",
+        });
       }
 
       // 5️⃣ Send response
       return BaseService.sendSuccessResponse({
-        message: bookOrder
+        message: bookOrder,
       });
     } catch (error) {
       console.log(error);
@@ -298,7 +412,6 @@ class BookOrderService extends BaseService {
 }
 
 module.exports = BookOrderService;
-
 
 // async function createOrder(userId, items) {
 //   const subscription = await UserSubscription.findOne({ user: userId })
@@ -356,9 +469,6 @@ module.exports = BookOrderService;
 //   return order;
 // }
 
-
-
-
 // let extraCharge = 0;
 
 // for (let item of items) {
@@ -375,8 +485,6 @@ module.exports = BookOrderService;
 //   }
 // }
 
-
-
 // const cron = require("node-cron");
 
 // cron.schedule("0 0 1 * *", async () => {
@@ -391,10 +499,6 @@ module.exports = BookOrderService;
 //     await sub.save();
 //   }
 // });
-
-
-
-
 
 // Step 1: Calculate Remaining Days
 // function getRemainingDays(expiresAt) {
@@ -416,7 +520,6 @@ module.exports = BookOrderService;
 
 //   return Math.max(0, newValueLeft - oldValueLeft);
 // }
-
 
 // Fair charging ✅
 
