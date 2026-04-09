@@ -16,9 +16,15 @@ const {
  * @swagger
  * /bookOrder/create-book-order:
  *   post:
- *     summary: Create a new order
+ *     summary: Create a new laundry order
+ *     description: |
+ *       Creates a new laundry order for the authenticated user.
+ *       Items must match allowed service types. Total amount is calculated on the backend.
+ *       Pickup details are required only if pickup and delivery is selected.
  *     tags:
  *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -30,7 +36,7 @@ const {
  *               - phoneNumber
  *               - serviceType
  *               - serviceTier
- *               - isPickUpAndDelivery
+ *               - isPickupAndDelivery
  *               - items
  *             properties:
  *               fullName:
@@ -38,28 +44,34 @@ const {
  *                 example: John Doe
  *               phoneNumber:
  *                 type: string
- *                 example: 08151128383
+ *                 example: "+2348151128383"
  *               pickupAddress:
  *                 type: string
  *                 example: 12 Allen Avenue, Ikeja
+ *                 description: Required if isPickupAndDelivery is true
  *               pickupDate:
  *                 type: string
  *                 format: date
- *                 example: 2025-06-01
+ *                 example: 2026-06-01
+ *                 description: Required if isPickupAndDelivery is true
  *               pickupTime:
  *                 type: string
- *                 example: "10am-12pm | 4pm-6pm"
- *               isPickUpAndDelivery:
+ *                 example: "10am-12pm"
+ *                 description: Required if isPickupAndDelivery is true
+ *               isPickupAndDelivery:
  *                 type: boolean
- *                 example: false
+ *                 example: true
  *               serviceType:
  *                 type: string
+ *                 enum: [wash-and-iron, dry-cleaning]
  *                 example: wash-and-iron
  *               serviceTier:
  *                 type: string
+ *                 enum: [standard, premium]
  *                 example: premium
  *               deliverySpeed:
  *                 type: string
+ *                 enum: [normal, express]
  *                 example: express
  *               extraNote:
  *                 type: string
@@ -75,6 +87,7 @@ const {
  *                   properties:
  *                     type:
  *                       type: string
+ *                       enum: [shirt, trouser, blanket]
  *                       example: trouser
  *                     price:
  *                       type: integer
@@ -84,12 +97,15 @@ const {
  *                       example: 5
  *     responses:
  *       200:
- *         description: A single book order document
+ *         description: Order created successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: object
  *                   properties:
@@ -104,17 +120,17 @@ const {
  *                       example: "John Doe"
  *                     phoneNumber:
  *                       type: string
- *                       example: "+1234567890"
+ *                       example: "+2348151128383"
  *                     pickupAddress:
  *                       type: string
- *                       example: "123 Main Street"
+ *                       example: "12 Allen Avenue, Ikeja"
  *                     pickupDate:
  *                       type: string
  *                       format: date
- *                       example: "2026-01-13"
+ *                       example: "2026-06-01"
  *                     pickupTime:
  *                       type: string
- *                       example: "morning"
+ *                       example: "10am-12pm"
  *                     serviceType:
  *                       type: string
  *                       example: "wash-and-iron"
@@ -126,10 +142,12 @@ const {
  *                       example: "express"
  *                     amount:
  *                       type: number
- *                       example: 150
+ *                       example: 3500
+ *                       description: Total calculated amount based on items and selected services
  *                     paymentMethod:
  *                       type: string
  *                       example: "paystack"
+ *                       description: Automatically assigned by the system
  *                     oscNumber:
  *                       type: string
  *                       example: "OSC123456"
@@ -143,7 +161,7 @@ const {
  *                             example: "shirt"
  *                           price:
  *                             type: number
- *                             example: 50
+ *                             example: 700
  *                           quantity:
  *                             type: number
  *                             example: 2
@@ -171,9 +189,33 @@ const {
  *                       format: date-time
  *                       example: "2026-01-13T13:00:00.123Z"
  *       400:
- *         description: Validation error
+ *         description: Validation error or bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: object
+ *                   example:
+ *                     fullName: ["fullName is required"]
+ *                     items: ["items is required"]
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
  */
 router.post(ROUTE_CREATE_BOOK_ORDER, [auth, checkSubscription], (req, res) => {
   const bookOrderController = new BookOrderController();
@@ -253,9 +295,9 @@ router.post(ROUTE_CREATE_BOOK_ORDER, [auth, checkSubscription], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_ADMIN_ORDER_DETAILS, (req, res) => {
+router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
-  return bookOrderController.getBookOrderDetails(req, res);
+  return bookOrderController.getAdminOrderDetails(req, res);
 });
 
 /**
@@ -462,7 +504,7 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *                             example: "premium"
  *                           deliverySpeed:
  *                             type: string
- *                             example: "express"
+ *                             example: "express | standard | same-day"
  *                           amount:
  *                             type: number
  *                             example: 150

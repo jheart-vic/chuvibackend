@@ -68,6 +68,10 @@ const adminOrderDetailsSchema = new mongoose.Schema(
         { itemType: "jacket", price: 1200 },
       ],
     },
+    standardCapacity: { type: Number, default: 100 },
+    sameDayCapacity: { type: Number, default: 50 },
+    expressCapacity: { type: Number, default: 30 },
+    standardDeliveryPeriod: {type: Number, default: 2},
   },
   { timestamps: true }
 );

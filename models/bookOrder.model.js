@@ -9,6 +9,7 @@ const {
   PAYMENT_METHOD,
   BILLING_TYPE,
   ITEM_ENUM_TYPES,
+  ORDER_CHANNEL,
 } = require("../util/constants");
 
 const bookOrderSchema = new mongoose.Schema(
@@ -23,6 +24,9 @@ const bookOrderSchema = new mongoose.Schema(
     pickupAddress: { type: String, required: true },
     // deliveryAddress: { type: String, required: true },
     pickupDate: { type: Date, required: true },
+    deliveryDate: { type: Date },
+    isVerified: {type: Boolean, default: false},
+    rejectReason: {type: String},
     pickupTime: {
       type: String,
       required: true,
@@ -57,21 +61,33 @@ const bookOrderSchema = new mongoose.Schema(
       enum: [
         DELIVERY_SPEED.EXPRESS,
         DELIVERY_SPEED.STANDARD,
-        DELIVERY_SPEED.VIP,
+        DELIVERY_SPEED.SAME_DAY,
+      ],
+    },
+    channel: {
+      type: String,
+      required: true,
+      trim: true,
+      default: ORDER_CHANNEL.WEBSITE,
+      enum: [
+        ORDER_CHANNEL.WHATSAPP,
+        ORDER_CHANNEL.WEBSITE,
+        ORDER_CHANNEL.OFFICE,
       ],
     },
     // noOfItems: { type: Number, required: true },
     amount: { type: Number, required: true },
+    deliveryAmount: { type: Number, default: 0 },
     billingType: {
       type: String,
-      required: true,
-      trim: true,
+      // required: true,
+      // trim: true,
       enum: [BILLING_TYPE.PAY_FROM_SUBSCRIPTION, BILLING_TYPE.PAY_PER_ITEM],
     },
     paymentMethod: {
       type: String,
-      required: true,
-      trim: true,
+      // required: true,
+      // trim: true,
       enum: [
         PAYMENT_METHOD.BANK_TRANFER,
         PAYMENT_METHOD.CARD,
@@ -99,12 +115,14 @@ const bookOrderSchema = new mongoose.Schema(
           ORDER_STATUS.PICKED_UP,
           ORDER_STATUS.DELIVERED,
           ORDER_STATUS.OUT_FOR_DELIVERY,
-          ORDER_STATUS.IN_PROCESS,
+          ORDER_STATUS.PENDING,
           ORDER_STATUS.READY,
           ORDER_STATUS.WASHING,
           ORDER_STATUS.IRONING,
+          ORDER_STATUS.QUEUE,
+          ORDER_STATUS.HOLD,
         ],
-        default: ORDER_STATUS.IN_PROCESS,
+        default: ORDER_STATUS.PENDING,
       },
       note: { type: String },
     },
@@ -122,6 +140,11 @@ const bookOrderSchema = new mongoose.Schema(
     isPickUpAndDelivery: { type: Boolean, default: false },
     reference: { type: String },
     paymentDate: { type: Date },
+    staffId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "IntakeUser",
+      required: false,
+    }
   },
   { timestamps: true }
 );

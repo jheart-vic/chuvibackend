@@ -25,7 +25,9 @@ const GENERAL_STATUS = {
   SUSPENDED: "suspended",
 };
 const ORDER_STATUS = {
-  IN_PROCESS: "in-process",
+  PENDING: "pending",
+  HOLD: "hold",
+  QUEUE: "queue",
   RECEIVED: "received",
   PICKED_UP: "picked-up",
   READY: "ready",
@@ -82,6 +84,13 @@ const DELIVERY_SPEED = {
   STANDARD: "standard",
   EXPRESS: "express",
   VIP: "vip",
+  SAME_DAY: "same-day",
+};
+
+const ORDER_CHANNEL = {
+  WHATSAPP: "whatsapp",
+  WEBSITE: "website",
+  OFFICE: "office",
 };
 
 const PICK_UP_TIME = {
@@ -89,7 +98,7 @@ const PICK_UP_TIME = {
   EVENING_TIME: "4pm-6pm",
 };
 
-const ITEMS_OF_ORDER = {
+const ORDER_ITEMS = {
   SHIRT: "shirt",
   TROUSER: "trouser",
   DRESS: "dress",
@@ -103,11 +112,22 @@ const ITEMS_OF_ORDER = {
   BLANKET: "blanket",
   TOWEL: "towel",
 }
+const STANDARD_ORDER_ITEMS = {
+  SHIRT: "shirt",
+  TROUSER: "trouser",
+  DRESS: "dress",
+  SKIRT: "skirt",
+  JACKET: "jacket",
+  BLOUSE: "blouse",
+  JEANS: "jeans",
+  TOWEL: "towel",
+}
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5MB
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 
-const ITEM_ENUM_TYPES = Object.values(ITEMS_OF_ORDER);
+const ITEM_ENUM_TYPES = Object.values(ORDER_ITEMS);
+const STANDARD_ITEMS_ENUM_TYPES = Object.values(STANDARD_ORDER_ITEMS);
 
 module.exports = {
   EXPIRES_AT,
@@ -126,6 +146,9 @@ module.exports = {
   PICK_UP_TIME,
   MAX_FILE_BYTES,
   ALLOWED_MIMES,
-  ITEMS_OF_ORDER,
-  ITEM_ENUM_TYPES
+  ORDER_ITEMS,
+  STANDARD_ORDER_ITEMS,
+  STANDARD_ITEMS_ENUM_TYPES,
+  ITEM_ENUM_TYPES,
+  ORDER_CHANNEL
 };

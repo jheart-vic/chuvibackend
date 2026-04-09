@@ -7,6 +7,7 @@ const bookOrderRouter = require('./bookOrder')
 const walletRouter = require('./wallet')
 const subscriptionRouter = require('./subscription')
 const utilsRouter = require('./utils')
+const intakeUserRouter = require('./intake-user')
 const seedRouter = require('./seed')
 
 
@@ -17,6 +18,7 @@ router.use('/bookOrder', bookOrderRouter)
 router.use('/wallet', walletRouter)
 router.use('/subscription', subscriptionRouter)
 router.use('/utils', utilsRouter)
+router.use('/intake-user', intakeUserRouter)
 router.use('/seeds', seedRouter)
 
 module.exports = router
