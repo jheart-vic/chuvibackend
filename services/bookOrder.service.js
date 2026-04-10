@@ -124,10 +124,23 @@ class BookOrderService extends BaseService {
         totalPrice += extraDeliveryCost;
 
         const oscNumber = generateOscNumber();
+
+        const stage = {
+          status: ORDER_STATUS.PENDING,
+          updatedAt: new Date(),
+        }
+        const stageHistory = {
+          status: ORDER_STATUS.PENDING,
+          note: "Order created",
+          updatedAt: new Date(),
+        }
+
         const newOrderItem = {
           oscNumber,
           amount: totalPrice,
           deliveryAmount: extraDeliveryCost,
+          stage,
+          stageHistory: [stageHistory],
           ...post,
         };
         const newOrder = new BookOrderModel(newOrderItem);
@@ -141,9 +154,11 @@ class BookOrderService extends BaseService {
           type: NOTIFICATION_TYPE.ORDER_CREATED,
         });
 
-        return BaseService.sendSuccessResponse({
-          message: finalMessage,
-        });
+        // update the subscription usage
+        subscription.remainingItems -= post.items.length;
+        await subscription.save();
+
+        
 
       } else if (post.billingType == BILLING_TYPE.PAY_PER_ITEM) {
         let totalPrice = post.items.reduce((sum, item) => {
@@ -164,10 +179,24 @@ class BookOrderService extends BaseService {
         totalPrice += extraDeliveryCost;
 
         const oscNumber = generateOscNumber();
+
+
+        const stage = {
+          status: ORDER_STATUS.PENDING,
+          updatedAt: new Date(),
+        }
+        const stageHistory = {
+          status: ORDER_STATUS.PENDING,
+          note: "Order created",
+          updatedAt: new Date(),
+        }
+
         const newOrderItem = {
           oscNumber,
           amount: totalPrice,
           deliveryAmount: extraDeliveryCost,
+          stage,
+          stageHistory: [stageHistory],
           ...post,
         };
         const newOrder = new BookOrderModel(newOrderItem);
@@ -180,11 +209,20 @@ class BookOrderService extends BaseService {
           subBody: `Order ID: ${oscNumber}.`,
           type: NOTIFICATION_TYPE.ORDER_CREATED,
         });
-
-        return BaseService.sendSuccessResponse({
-          message: finalMessage,
-        });
       }
+      // update the capacity in admin order settings
+      if(post.deliverySpeed === DELIVERY_SPEED.SAME_DAY){
+        adminOrderSettings.sameDayCapacity -= post.items.length;
+      }else if(post.deliverySpeed === DELIVERY_SPEED.EXPRESS){
+        adminOrderSettings.expressCapacity -= post.items.length;
+      }else if(post.deliverySpeed === DELIVERY_SPEED.STANDARD){
+        adminOrderSettings.standardCapacity -= post.items.length;
+      }
+      await adminOrderSettings.save();
+      return BaseService.sendSuccessResponse({
+        message: finalMessage,
+      });
+
     } catch (error) {
       console.log(error);
       return BaseService.sendFailedResponse({ error });
@@ -344,7 +382,7 @@ class BookOrderService extends BaseService {
       const limit = parseInt(req.query.limit) || 10; // default 10 per page
       const skip = (page - 1) * limit;
       const userId = req.user.id;
-      const scope = req.query.scope || "user"; // default to user scope
+      const scope = req.query.scope || "all"; // default to user scope "user | all"
 
       // 2️⃣ Optional filters
       const filter = {};

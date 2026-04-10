@@ -73,6 +73,18 @@ exports.ROUTE_UPDATE_BOOK_ORDER_PAYMENT_STATUS = '/update-book-order-payment-sta
 exports.ROUTE_UPDATE_BOOK_ORDER_STAGE = '/'
 exports.ROUTE_BOOK_ORDER_HISTORY = '/book-order-history'
 exports.ROUTE_BOOK_ORDER = '/book-order'
+exports.ROUTE_FLAG_ORDER_ID = '/flag-order/:id'
+exports.ROUTE_PROCEED_TO_TAG_ID = '/proceed-to-tag/:id'
+exports.ROUTE_CONFIRM_TAG_ID_ITEM_ID = '/confirm-tag/:id/item/:itemId'
+exports.ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID = '/undo-confirm-tag/:id/item/:itemId'
+exports.ROUTE_PROCEED_TO_SORT_AND_PRETREAT_ID = '/proceed-to-sort-and-pretreat/:id'
+exports.ROUTE_SEND_TOP_UP_REQUEST_ID = '/send-top-up-request/:id'
+exports.ROUTE_ADJUST_WALLET = '/adjust-wallet/:id/:userId'
+exports.ROUTE_GET_USER_WALLET_ID = '/get-user-wallet/:id'
+exports.ROUTE_PICKABLE_ORDERS = '/pickable-orders'
+exports.ROUTE_DELIVERABLE_ORDERS = '/deliverable-orders'
+exports.ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID = '/assign-rider/:riderId/pickup-order/:id'
+exports.ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/assign-rider/:riderId/delivery-order/:id'
 
 //wallet
 exports.ROUTE_WALLET_TOP_UP = "/wallet-top-up"

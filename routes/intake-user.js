@@ -1,16 +1,29 @@
-const router = require('express').Router();
+const router = require("express").Router();
 const IntakeUserController = require("../controllers/intake-user.controller");
-const { ROUTE_CREATE_BOOK_ORDER } = require("../util/page-route");
+const {
+  ROUTE_CREATE_BOOK_ORDER,
+  ROUTE_FLAG_ORDER_ID,
+  ROUTE_PROCEED_TO_TAG_ID,
+  ROUTE_CONFIRM_TAG_ID_ITEM_ID,
+  ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID,
+  ROUTE_PROCEED_TO_SORT_AND_PRETREAT_ID,
+  ROUTE_SEND_TOP_UP_REQUEST_ID,
+  ROUTE_ADJUST_WALLET,
+  ROUTE_GET_USER_WALLET_ID,
+  ROUTE_DELIVERABLE_ORDERS,
+  ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID,
+  ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID,
+  ROUTE_PICKABLE_ORDERS,
+} = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
-
 
 /**
  * @swagger
- * /bookOrder/create-book-order:
+ * /intake-user/create-book-order:
  *   post:
  *     summary: Create a new order
  *     tags:
- *       - INTAKE_USER
+ *       - Intake User
  *     requestBody:
  *       required: true
  *       content:
@@ -168,8 +181,709 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *         description: Server error
  */
 router.post(ROUTE_CREATE_BOOK_ORDER, [intakeUserAuth], (req, res) => {
-    const bookOrderController = new IntakeUserController();
-    return bookOrderController.createBookOrder(req, res);
-  });
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.createBookOrder(req, res);
+});
 
-  module.exports = router
+/**
+ * @swagger
+ * /intake-user/flag-order/{id}:
+ *   post:
+ *     summary: Flag an order (set status to HOLD)
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - message
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 example: "Order flaggged as hold"
+ *     responses:
+ *       200:
+ *         description: Order flagged successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order flagged successfully"
+ *       400:
+ *         description: Validation error or missing order ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order ID is required"
+ *       404:
+ *         description: Order or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_FLAG_ORDER_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.flagOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/proceed-to-tag/{id}:
+ *   post:
+ *     summary: Move order to tagging queue
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *     responses:
+ *       200:
+ *         description: Order moved to tag and queue successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order moved to tag and queue successfully"
+ *       400:
+ *         description: Validation error or missing order ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order ID is required"
+ *       404:
+ *         description: Order or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_PROCEED_TO_TAG_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.proceedToTag(req, res);
+});
+/**
+ * @swagger
+ * /intake-user/confirm-tag/{orderId}/item/{itemId}:
+ *   put:
+ *     summary: Confirm and update tag details for a specific item in an order
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         description: Item ID inside the order
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f67890"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tagState
+ *               - tagColor
+ *               - tagStatus
+ *               - tagId
+ *             properties:
+ *               tagState:
+ *                 type: string
+ *                 example: "cleaned"
+ *               tagColor:
+ *                 type: string
+ *                 example: "blue"
+ *               tagStatus:
+ *                 type: string
+ *                 example: "complete"
+ *               tagId:
+ *                 type: string
+ *                 example: "TAG123456"
+ *     responses:
+ *       200:
+ *         description: Tag successfully confirmed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Tag successfully confirmed"
+ *       400:
+ *         description: Validation error or missing parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Item ID is required"
+ *       404:
+ *         description: Order or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.confirmTagItem(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/undo-confirm-tag/{id}/item/{itemId}:
+ *   put:
+ *     summary: Undo tag confirmation for a specific item in an order
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         description: Item ID inside the order
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f67890"
+ *     responses:
+ *       200:
+ *         description: Tag successfully undone
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Tag successfully undone"
+ *       400:
+ *         description: Validation error or missing parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Item ID is required"
+ *       404:
+ *         description: Order or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.undoConfirmTagItem(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/proceed-to-sort-and-pretreat/{id}:
+ *   post:
+ *     summary: Move order to sort and pretreat stage
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *     responses:
+ *       200:
+ *         description: Order successfully moved to sort and pretreat stage
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order OSC123456 successfully sent"
+ *       400:
+ *         description: Validation error or missing order ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order ID is required"
+ *       404:
+ *         description: Order or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_PROCEED_TO_SORT_AND_PRETREAT_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.proceedToSortAndPretreat(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/send-top-up-request/{id}:
+ *   post:
+ *     summary: Send a top-up request for an order (e.g. additional charges)
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - message
+ *               - amount
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 example: "Additional charges for stain removal"
+ *               amount:
+ *                 type: integer
+ *                 example: 1500
+ *     responses:
+ *       200:
+ *         description: Top-up request sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Top-up request sent successfully"
+ *       400:
+ *         description: Validation error or missing order ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Amount is required"
+ *       404:
+ *         description: Order or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_SEND_TOP_UP_REQUEST_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.sendTopUpRequest(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/adjust-wallet/{id}/{userId}:
+ *   post:
+ *     summary: Adjust a user's wallet balance (credit or debit) for an order
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         description: User ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f54321"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - message
+ *               - amount
+ *               - type
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 example: "Refund for damaged item"
+ *               amount:
+ *                 type: integer
+ *                 example: 2000
+ *               type:
+ *                 type: string
+ *                 enum: [credit, debit]
+ *                 example: credit
+ *     responses:
+ *       200:
+ *         description: Wallet adjustment successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Wallet credit request successful of 2000 Reason: Refund for damaged item"
+ *       400:
+ *         description: Validation error or insufficient balance
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Insufficient balance"
+ *       404:
+ *         description: Order, user, or wallet not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Wallet not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_ADJUST_WALLET, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.adjustWallet(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/get-user-wallet/{id}:
+ *   get:
+ *     summary: Get a user's wallet balance
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: User ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f54321"
+ *     responses:
+ *       200:
+ *         description: Wallet retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: number
+ *                   example: 5000
+ *       400:
+ *         description: Missing user ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "User ID is required"
+ *       404:
+ *         description: User or wallet not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Wallet not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.getUserWallet(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/pickable-orders:
+ *   get:
+ *     summary: Get all orders available for pickup (pending stage)
+ *     tags:
+ *       - Intake User
+ *     responses:
+ *       200:
+ *         description: List of pickable orders
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/BookOrder'
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.getPickableOrders(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/deliverable-orders:
+ *   get:
+ *     summary: Get all orders ready for delivery
+ *     tags:
+ *       - Intake User
+ *     responses:
+ *       200:
+ *         description: List of deliverable orders
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/BookOrder'
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.getDeliverableOrders(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/assign-rider/{riderId}/pickup-order/{id}:
+ *   patch:
+ *     summary: Assign a rider to a pickup order
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: riderId
+ *         required: true
+ *         description: Rider ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f54321"
+ *     responses:
+ *       200:
+ *         description: Rider successfully assigned to order
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Rider successfully assigned to order"
+ *       400:
+ *         description: Validation error or missing parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Rider ID is required"
+ *       404:
+ *         description: Order not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.assignRiderTopPickupOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/assign-rider/{riderId}/delivery-order/{id}:
+ *   patch:
+ *     summary: Assign a rider to a delivery order
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: riderId
+ *         required: true
+ *         description: Rider ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f54321"
+ *     responses:
+ *       200:
+ *         description: Rider successfully assigned to delivery order
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Rider successfully assigned to order"
+ *       400:
+ *         description: Validation error or missing parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Rider ID is required"
+ *       404:
+ *         description: Order not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Order not found"
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.assignRiderTopDeliveryOrder(req, res);
+});
+
+module.exports = router;

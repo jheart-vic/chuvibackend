@@ -24,6 +24,21 @@ const GENERAL_STATUS = {
   PENDING: "pending",
   SUSPENDED: "suspended",
 };
+
+const PICKUP_STATUS = {
+  PENDING: "pending",
+  PICKED_UP: "picked-up",
+  FAILED: "failed",
+  SCHEDULED: "scheduled",
+}
+
+const DELIVERY_STATUS = {
+  READY: "ready",
+  DELIVERED: "delivered",
+  OUT_FOR_DELIVERY: "out-for-delivery",
+  FAILED: "failed",
+}
+
 const ORDER_STATUS = {
   PENDING: "pending",
   HOLD: "hold",
@@ -34,7 +49,8 @@ const ORDER_STATUS = {
   DELIVERED: "delivered",
   OUT_FOR_DELIVERY: "out-for-delivery",
   WASHING: "washing",
-  IRONING: "ironing"
+  IRONING: "ironing",
+  SORT_AND_PRETREAT: "sort-and-pretreat",
 };
 const PAYMENT_ORDER_STATUS = {
   SUCCESS: "success",
@@ -123,6 +139,19 @@ const STANDARD_ORDER_ITEMS = {
   TOWEL: "towel",
 }
 
+const TAG_STATE = {
+  DAMAGED: "damaged",
+  STAINED: "stained",
+  PRETREAT: "pretreat",
+  DELICATE: "delicate"
+}
+
+const TAG_COLOR = {
+  WHITE: "white",
+  DARK: "dark",
+  LIGHT: "light",
+}
+
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5MB
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 
@@ -150,5 +179,9 @@ module.exports = {
   STANDARD_ORDER_ITEMS,
   STANDARD_ITEMS_ENUM_TYPES,
   ITEM_ENUM_TYPES,
-  ORDER_CHANNEL
+  ORDER_CHANNEL,
+  TAG_STATE,
+  TAG_COLOR,
+  PICKUP_STATUS,
+  DELIVERY_STATUS
 };

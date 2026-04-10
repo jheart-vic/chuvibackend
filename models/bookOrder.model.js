@@ -10,7 +10,21 @@ const {
   BILLING_TYPE,
   ITEM_ENUM_TYPES,
   ORDER_CHANNEL,
+  TAG_STATE,
+  TAG_COLOR,
+  PICKUP_STATUS,
+  DELIVERY_STATUS,
 } = require("../util/constants");
+
+const ItemSchema = new mongoose.Schema({
+  type: { type: String, required: true, enum: ITEM_ENUM_TYPES },
+  price: { type: Number, required: true },
+  quantity: { type: Number, required: true },
+  tagId: { type: String },
+  tagState: { type: String, enum: [TAG_STATE.DAMAGED, TAG_STATE.DELICATE, TAG_STATE.PRETREAT, TAG_STATE.STAINED] },
+  tagColor: { type: String, enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE] },
+  tagStatus: {type: String, enum: ['complete', 'pending'], default: 'pending'}
+}, { _id: true });
 
 const bookOrderSchema = new mongoose.Schema(
   {
@@ -26,7 +40,6 @@ const bookOrderSchema = new mongoose.Schema(
     pickupDate: { type: Date, required: true },
     deliveryDate: { type: Date },
     isVerified: {type: Boolean, default: false},
-    rejectReason: {type: String},
     pickupTime: {
       type: String,
       required: true,
@@ -98,52 +111,62 @@ const bookOrderSchema = new mongoose.Schema(
       default: PAYMENT_METHOD.PAYSTACK
     },
     oscNumber: { type: String, required: true, index: true, unique: true },
-    items: [
-      {
-        type: { type: String, required: true, enum: ITEM_ENUM_TYPES },
-        price: { type: Number, required: true },
-        quantity: { type: Number, required: true },
-      },
-    ],
+    items: [ItemSchema],
     extraNote: { type: String },
     stage: {
       status: {
         type: String,
         required: true,
         trim: true,
-        enum: [
-          ORDER_STATUS.PICKED_UP,
-          ORDER_STATUS.DELIVERED,
-          ORDER_STATUS.OUT_FOR_DELIVERY,
-          ORDER_STATUS.PENDING,
-          ORDER_STATUS.READY,
-          ORDER_STATUS.WASHING,
-          ORDER_STATUS.IRONING,
-          ORDER_STATUS.QUEUE,
-          ORDER_STATUS.HOLD,
-        ],
+        enum: Object.values(ORDER_STATUS),
         default: ORDER_STATUS.PENDING,
       },
       note: { type: String },
+      updatedAt: { type: Date, default: Date.now }
     },
+    stageHistory: [
+      {
+        status: {
+          type: String,
+          enum: Object.values(ORDER_STATUS),
+        },
+        note: String,
+        updatedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     paymentStatus: {
       type: String,
       required: true,
       trim: true,
-      enum: [
-        PAYMENT_ORDER_STATUS.SUCCESS,
-        PAYMENT_ORDER_STATUS.PENDING,
-        PAYMENT_ORDER_STATUS.FAILED,
-      ],
+      enum: Object.values(PAYMENT_ORDER_STATUS),
       default: PAYMENT_ORDER_STATUS.PENDING,
     },
     isPickUpAndDelivery: { type: Boolean, default: false },
     reference: { type: String },
     paymentDate: { type: Date },
-    staffId: {
+    adjustWallet:{
+      amount: {type: Number},
+      message: {type: String}
+    },
+    intakeStaffId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "IntakeUser",
       required: false,
+    },
+    dispatchDetails: {
+      pickup: {
+        status: {type: String, enum: Object.values(PICKUP_STATUS), default: PICKUP_STATUS.PENDING},
+        rider: {type: mongoose.Schema.Types.ObjectId, ref: "Rider"},
+        isVerified: {type: Boolean, default: false},
+      },
+      delivery: {
+        status: {type: String, enum: Object.values(DELIVERY_STATUS), default: DELIVERY_STATUS.READY},
+        rider: {type: mongoose.Schema.Types.ObjectId, ref: "Rider"},
+        note: {type: String},
+      }
     }
   },
   { timestamps: true }

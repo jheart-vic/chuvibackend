@@ -12,6 +12,7 @@ const {
   ROUTE_BOOK_ORDER,
 } = require("../util/page-route");
 
+
 /**
  * @swagger
  * /bookOrder/create-book-order:
@@ -217,7 +218,7 @@ const {
  *                   type: string
  *                   example: "Internal server error"
  */
-router.post(ROUTE_CREATE_BOOK_ORDER, [auth, checkSubscription], (req, res) => {
+router.post(ROUTE_CREATE_BOOK_ORDER, [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.postBookOrder(req, res);
 });
