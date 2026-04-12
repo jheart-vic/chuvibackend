@@ -2448,6 +2448,57 @@ if (userWithSub) {
       });
     }
   }
+  async _handleLogin({ email, password, allowGoogle = false }) {
+    const user = await UserModel.findOne({ email }).select("+password");
+  
+    if (!user) {
+      throw new Error("User not found. Please register as a new user");
+    }
+  
+    if (!user.isVerified) {
+      throw new Error("Email is not verified. Please verify your email");
+    }
+  
+    // 🔐 Google account protection
+    if (user.servicePlatform === "google") {
+      if (!allowGoogle) {
+        throw new Error(
+          "This account was created using Google. Please log in using Google."
+        );
+      }
+    }
+  
+    // 🔐 Other providers (facebook, apple, etc.)
+    if (user.servicePlatform !== SERVICE_PLATFORM.LOCAL && !allowGoogle) {
+      throw new Error(
+        `This account was created using ${user.servicePlatform}. Please log in using that platform.`
+      );
+    }
+  
+    // 🔑 Password check (LOCAL only)
+    if (user.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+      if (!password) {
+        throw new Error("Password is required");
+      }
+  
+      const isMatch = await user.comparePassword(password);
+      if (!isMatch) {
+        throw new Error("Wrong email or password");
+      }
+    }
+  
+    const accessToken = await user.generateAccessToken(
+      process.env.ACCESS_TOKEN_SECRET || ""
+    );
+  
+    const refreshToken = await user.generateRefreshToken(
+      process.env.REFRESH_TOKEN_SECRET || ""
+    );
+  
+    user.password = undefined;
+  
+    return { user, accessToken, refreshToken };
+  }
 }
 
 module.exports = AuthService;

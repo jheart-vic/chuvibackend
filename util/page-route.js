@@ -63,6 +63,7 @@ exports.ROUTE_QC_USER_VERIFY_RESET_PASSWORD_OTP = '/qc-user/verify-reset-passwor
 // Admin
 exports.ROUTE_ADMIN_REGISTER = '/admin/register'
 exports.ROUTE_ADMIN_LOGIN = '/admin/login'
+exports.ROUTE_DASHBOARD_STATS = '/dashboard-stats'
 
 
 // book orders
