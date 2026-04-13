@@ -1,3 +1,4 @@
+const ActivityModel = require("../models/activity.model");
 const BookOrderModel = require("../models/bookOrder.model");
 const IntakeUserModel = require("../models/intakeUser.model");
 const UserModel = require("../models/user.model");
@@ -9,6 +10,7 @@ const {
   ORDER_STATUS,
   PICKUP_STATUS,
   DELIVERY_STATUS,
+  ACTIVITY_TYPE,
 } = require("../util/constants");
 const BaseService = require("./base.service");
 
@@ -91,6 +93,12 @@ class IntakeUserService extends BaseService {
         type: NOTIFICATION_TYPE.ORDER_CREATED,
       });
 
+      await ActivityModel.create({
+        title: "New Order Registered",
+        description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
+        type: ACTIVITY_TYPE.ORDER_CREATED,
+      });
+
       return BaseService.sendSuccessResponse({
         message: newOrder,
       });
@@ -147,6 +155,12 @@ class IntakeUserService extends BaseService {
 
       await order.save();
 
+      await ActivityModel.create({
+        title: "Order Flagged",
+        description: `Order ${order.oscNumber} has been flagged with the following message: ${message}`,
+        type: ACTIVITY_TYPE.ORDER_FLAGGED,
+      });
+
       return BaseService.sendSuccessResponse({
         message: "Order flagged successfully",
       });
@@ -185,6 +199,12 @@ class IntakeUserService extends BaseService {
       });
 
       await order.save();
+
+      await ActivityModel.create({
+        title: "Order moved to tag and queue",
+        description: `A order ${oscNumber} has been moved to tag and queue`,
+        type: ACTIVITY_TYPE.TAG_AND_QUEUE,
+      });
 
       return BaseService.sendSuccessResponse({
         message: "Order moved to tag and queue successfully",
@@ -251,15 +271,14 @@ class IntakeUserService extends BaseService {
             "items.$.tagStatus": tagStatus,
             "items.$.tagId": tagId,
           },
-          //   $push: {
-          //     stageHistory: {
-          //       status: ORDER_STATUS.QUEUE,
-          //       note,
-          //       updatedAt: new Date(),
-          //     },
-          //   },
         }
       );
+
+      await ActivityModel.create({
+        title: "Order Item Tagged",
+        description: `An item with ${tagId} order ${oscNumber} has been tagged`,
+        type: ACTIVITY_TYPE.ORDER_CONFIRM,
+      });
 
       return BaseService.sendSuccessResponse({
         message: "Tag successfully confirmed",
@@ -298,19 +317,6 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: "User not found" });
       }
 
-      //   $set: {
-      //     "stage.status": newStatus,
-      //     "stage.note": note,
-      //     "stage.updatedAt": new Date(),
-      //   },
-      //   $push: {
-      //     stageHistory: {
-      //       status: newStatus,
-      //       note,
-      //       updatedAt: new Date(),
-      //     },
-      //   },
-
       await BookOrderModel.updateOne(
         { "items._id": itemId },
         {
@@ -322,6 +328,12 @@ class IntakeUserService extends BaseService {
           },
         }
       );
+
+      await ActivityModel.create({
+        title: "Order Item Tag Undone",
+        description: `An item with ${itemId} order ${oscNumber} has been undone from tagging`,
+        type: ACTIVITY_TYPE.ORDER_CONFIRM,
+      });
 
       return BaseService.sendSuccessResponse({
         message: "Tag successfully undone",
@@ -362,6 +374,12 @@ class IntakeUserService extends BaseService {
 
       await order.save();
 
+      await ActivityModel.create({
+        title: "Order moved to sort and pretreat",
+        description: `A order ${oscNumber} has been moved to sort and pretreat`,
+        type: ACTIVITY_TYPE.SORT_AND_PRETREAT,
+      });
+
       return BaseService.sendSuccessResponse({
         message: `Order ${order.oscNumber} successfully sent`,
       });
@@ -381,7 +399,7 @@ class IntakeUserService extends BaseService {
           error: "Order ID is required",
         });
       }
-      const order = await BookOrderModel.findById(orderId);
+      const order = await BookOrderModel.findById(orderId).populate("userId");
       if (!order) {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
@@ -409,6 +427,11 @@ class IntakeUserService extends BaseService {
       }
 
       //   send message either SMS or Whatsapp to a user
+      await ActivityModel.create({
+        title: "Wallet Adjustment request",
+        description: `Credit ${amount} to ${order.userId.fullName} with ${order.userId.phoneNumber}`,
+        type: ACTIVITY_TYPE.TOP_UP_REQUEST,
+      });
 
       return BaseService.sendSuccessResponse({
         message: "Order moved to sort and pretreat successfully",
@@ -481,6 +504,12 @@ class IntakeUserService extends BaseService {
       order.adjustWallet.message = message;
       order.adjustWallet.amount = amount;
       order.save();
+
+      await ActivityModel.create({
+        title: "Wallet Adjustment",
+        description: `${type === "credit" ? "Credited" : "Debited"} ${amount} to wallet of ${order.userId.fullName} with ${order.userId.phoneNumber}. Reason: ${message}`,
+        type: ACTIVITY_TYPE.WALLET_ADJUSTMENT,
+      });
 
       return BaseService.sendSuccessResponse({
         message: `Wallet ${type} request successful of ${amount}
@@ -578,6 +607,12 @@ class IntakeUserService extends BaseService {
 
       await order.save();
 
+      await ActivityModel.create({
+        title: "Dispach Run Created",
+        description: `Order ${order.oscNumber}: ${order.items.length} assigned for pickup`,
+        type: ACTIVITY_TYPE.ORDER_PICKED,
+      });
+
       return BaseService.sendSuccessResponse({
         message: "Rider successfully assigned to order",
       });
@@ -612,6 +647,12 @@ class IntakeUserService extends BaseService {
       order.dispatchDetails.delivery.status = DELIVERY_STATUS.OUT_FOR_DELIVERY;
 
       await order.save();
+
+      await ActivityModel.create({
+        title: "Dispach Run Created",
+        description: `Order ${order.oscNumber}: ${order.items.length} assigned for delivery`,
+        type: ACTIVITY_TYPE.ORDER_DELIVERED,
+      });
 
       return BaseService.sendSuccessResponse({
         message: "Rider successfully assigned to order",

@@ -39,6 +39,24 @@ const DELIVERY_STATUS = {
   FAILED: "failed",
 }
 
+const ACTIVITY_TYPE = {
+  ORDER_CREATED: "order-created",
+  ORDER_PICKED: "order-picked",
+  ORDER_WASHING: "order-washing",
+  ORDER_IRONING: "order-ironing",
+  ORDER_CONFIRM: "order-confirm",
+  ORDER_FLAGGED: "order-flagged",
+  ORDER_DELIVERED: "order-delivered",
+  PAYMENT_APPROVED: "payment-approved",
+  WALLET_TOP_UP: "wallet-top-up",
+  WALLET_ADJUSTMENT: "wallet-adjustment",
+  DISPATCH_PICKUP: "dispatch-pickup",
+  DISPATCH_DELIVERY: "dispatch-delivery",
+  TAG_AND_QUEUE: "tag-and-queue",
+  SORT_AND_PRETREAT: "sort-and-pretreat",
+  TOP_UP_REQUEST: "top-up-request",
+}
+
 const ORDER_STATUS = {
   PENDING: "pending",
   HOLD: "hold",
@@ -183,5 +201,6 @@ module.exports = {
   TAG_STATE,
   TAG_COLOR,
   PICKUP_STATUS,
-  DELIVERY_STATUS
+  DELIVERY_STATUS,
+  ACTIVITY_TYPE
 };
