@@ -1,6 +1,5 @@
 const ActivityModel = require("../models/activity.model");
 const BookOrderModel = require("../models/bookOrder.model");
-const IntakeUserModel = require("../models/intakeUser.model");
 const UserModel = require("../models/user.model");
 const WalletModel = require("../models/wallet.model");
 const {
@@ -21,7 +20,7 @@ class IntakeUserService extends BaseService {
       const post = req.body;
       const userId = req.user.id;
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -130,7 +129,7 @@ class IntakeUserService extends BaseService {
 
       const userId = req.user.id;
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -190,7 +189,7 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -244,7 +243,7 @@ class IntakeUserService extends BaseService {
 
       const post = req.body;
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -318,7 +317,7 @@ class IntakeUserService extends BaseService {
 
       const post = req.body;
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -365,7 +364,7 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -412,7 +411,7 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
@@ -465,7 +464,7 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
 
-      const user = await IntakeUserModel.findById(userId);
+      const user = await UserModel.findById(userId);
 
       if (!user) {
         return BaseService.sendFailedResponse({ error: "User not found" });
