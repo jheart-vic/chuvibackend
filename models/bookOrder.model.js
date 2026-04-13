@@ -14,6 +14,7 @@ const {
   TAG_COLOR,
   PICKUP_STATUS,
   DELIVERY_STATUS,
+  STATION_STATUS,
   FABRIC_TYPE,
   PRETREATMENT_OPTIONS,
   DAMAGE_RISK_FLAGS,
@@ -101,70 +102,43 @@ const bookOrderSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      enum: [PICK_UP_TIME.MORNING_TIME, PICK_UP_TIME.EVENING_TIME],
+      enum: Object.values(PICK_UP_TIME),
     },
     serviceType: {
       type: String,
       required: true,
       trim: true,
-      enum: [
-        ORDER_SERVICE_TYPE.IRONING_ONLY,
-        ORDER_SERVICE_TYPE.WASHING_ONLY,
-        ORDER_SERVICE_TYPE.WASH_AND_IRON,
-      ],
+      enum: Object.values(ORDER_SERVICE_TYPE),
     },
     serviceTier: {
       type: String,
       required: true,
       trim: true,
-      enum: [
-        SERVICE_TIERS.PREMIUM,
-        SERVICE_TIERS.STANDARD,
-        SERVICE_TIERS.VIP,
-        SERVICE_TIERS.STUDENT,
-      ],
+      enum: Object.values(SERVICE_TIERS),
     },
     deliverySpeed: {
       type: String,
       required: true,
       trim: true,
-      enum: [
-        DELIVERY_SPEED.EXPRESS,
-        DELIVERY_SPEED.STANDARD,
-        DELIVERY_SPEED.SAME_DAY,
-      ],
+      enum: Object.values(DELIVERY_SPEED),
     },
     channel: {
       type: String,
       required: true,
       trim: true,
       default: ORDER_CHANNEL.WEBSITE,
-      enum: [
-        ORDER_CHANNEL.WHATSAPP,
-        ORDER_CHANNEL.WEBSITE,
-        ORDER_CHANNEL.OFFICE,
-      ],
+      enum: Object.values(ORDER_CHANNEL),
     },
     // noOfItems: { type: Number, required: true },
     amount: { type: Number, required: true },
     deliveryAmount: { type: Number, default: 0 },
     billingType: {
       type: String,
-      // required: true,
-      // trim: true,
-      enum: [BILLING_TYPE.PAY_FROM_SUBSCRIPTION, BILLING_TYPE.PAY_PER_ITEM],
+      enum: Object.values(BILLING_TYPE),
     },
     paymentMethod: {
       type: String,
-      // required: true,
-      // trim: true,
-      enum: [
-        PAYMENT_METHOD.BANK_TRANFER,
-        PAYMENT_METHOD.CARD,
-        PAYMENT_METHOD.PAYPAL,
-        PAYMENT_METHOD.PAYSTACK,
-        PAYMENT_METHOD.WALLET
-      ],
+      enum: Object.values(PAYMENT_METHOD),
       default: PAYMENT_METHOD.PAYSTACK
     },
     oscNumber: { type: String, required: true, index: true, unique: true },
@@ -194,6 +168,11 @@ const bookOrderSchema = new mongoose.Schema(
         },
       },
     ],
+    stationStatus: {
+      type: String,
+      enum: Object.values(STATION_STATUS),
+      default: STATION_STATUS.PENDING
+    },
     paymentStatus: {
       type: String,
       required: true,
@@ -210,7 +189,7 @@ const bookOrderSchema = new mongoose.Schema(
     },
     intakeStaffId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "IntakeUser",
+      ref: "User",
       required: false,
     },
     dispatchDetails: {

@@ -75,7 +75,17 @@ exports.ROUTE_SORT_AND_PRETREAT_REFRESH_TOKEN = "/sort-pretreat/refresh-token";
 // Admin
 exports.ROUTE_ADMIN_REGISTER = '/admin/register'
 exports.ROUTE_ADMIN_LOGIN = '/admin/login'
-exports.ROUTE_DASHBOARD_STATS = '/dashboard-stats'
+exports.ROUTE_ADMIN_DASHBOARD_STATS = '/admin/dashboard-stats'
+exports.ROUTE_ADMIN_ORDER_MANAGEMENT = '/admin/order-management'
+exports.ROUTE_ADMIN_ORDER_ORDERID = '/admin/order/:id'
+exports.ROUTE_ADMIN_PAYMENT_VERIFICATION_QUEUE = '/admin/payment-verification-queue'
+exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT = '/admin/payment/:paymentId/accept'
+exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT = '/admin/payment/:paymentId/reject'
+exports.ROUTE_ADMIN_ORDER_BY_STATE = '/admin/orders/by-state'
+exports.ROUTE_ADMIN_DISPATCH_DATA_COUNT = '/admin/dispatch/data-count'
+exports.ROUTE_HOLD_ORDERS = '/admin/hold-orders'
+exports.ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION = '/admin/orders/:id/reassign-station'
+
 
 
 // book orders
