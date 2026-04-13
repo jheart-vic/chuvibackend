@@ -152,6 +152,33 @@ const TAG_COLOR = {
   LIGHT: "light",
 }
 
+const COLOR_GROUP = {
+  WHITE: "white",
+  COLORED: "colored",
+};
+
+const FABRIC_TYPE = {
+  DELICATE: "delicate",
+  LIGHT: "light",
+  HEAVY: "heavy",
+};
+
+const PRETREATMENT_OPTIONS = {
+  STAIN_TREATMENT: "stain_treatment_required",
+  ODOR_REMOVAL: "odor_removal",
+  SPOT_CLEANING: "spot_cleaning",
+  SPECIAL_DETERGENT: "special_detergent",
+  FABRIC_SOFTENER_PREP: "fabric_softener_prep",
+  NO_PRETREATMENT: "no_pretreatment_needed",
+};
+
+const DAMAGE_RISK_FLAGS = {
+  TEARS_DAMAGE: "tears_damage",
+  COLOR_BLEEDING_RISK: "color_bleeding_risk",
+  SHRINK_RISK: "shrink_risk",
+  MISSING_PARTS: "missing_parts",
+};
+
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5MB
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 
@@ -182,6 +209,10 @@ module.exports = {
   ORDER_CHANNEL,
   TAG_STATE,
   TAG_COLOR,
+COLOR_GROUP,
+PRETREATMENT_OPTIONS,
+DAMAGE_RISK_FLAGS,
+FABRIC_TYPE,
   PICKUP_STATUS,
   DELIVERY_STATUS
 };
