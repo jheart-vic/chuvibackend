@@ -16,6 +16,7 @@ const FreePlanModel = require("../models/freeplan.model");
 const WalletModel = require("../models/wallet.model");
 const IntakeUserModel = require("../models/intakeUser.model");
 const QcUserModel = require("../models/qcUser.model");
+const sortAndPretreatModel = require("../models/sortAndPretreatUser.model");
 
 class AuthService extends BaseService {
   async createUser(req, res) {
@@ -2450,15 +2451,15 @@ if (userWithSub) {
   }
   async _handleLogin({ email, password, allowGoogle = false }) {
     const user = await UserModel.findOne({ email }).select("+password");
-  
+
     if (!user) {
       throw new Error("User not found. Please register as a new user");
     }
-  
+
     if (!user.isVerified) {
       throw new Error("Email is not verified. Please verify your email");
     }
-  
+
     // 🔐 Google account protection
     if (user.servicePlatform === "google") {
       if (!allowGoogle) {
@@ -2467,36 +2468,591 @@ if (userWithSub) {
         );
       }
     }
-  
+
     // 🔐 Other providers (facebook, apple, etc.)
     if (user.servicePlatform !== SERVICE_PLATFORM.LOCAL && !allowGoogle) {
       throw new Error(
         `This account was created using ${user.servicePlatform}. Please log in using that platform.`
       );
     }
-  
+
     // 🔑 Password check (LOCAL only)
     if (user.servicePlatform === SERVICE_PLATFORM.LOCAL) {
       if (!password) {
         throw new Error("Password is required");
       }
-  
+
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
         throw new Error("Wrong email or password");
       }
     }
-  
+
     const accessToken = await user.generateAccessToken(
       process.env.ACCESS_TOKEN_SECRET || ""
     );
-  
+
     const refreshToken = await user.generateRefreshToken(
       process.env.REFRESH_TOKEN_SECRET || ""
     );
-  
+
     user.password = undefined;
-  
+
+    return { user, accessToken, refreshToken };
+  }
+
+
+// sort and pretreat
+ async createSortAndPretreatUser(req, res) {
+    try {
+      const post = req.body;
+
+      const validateRule = {
+        email: "email|required",
+        password: "string|required",
+        fullName: "string|required",
+        phoneNumber: "string|required",
+        userType: "string|required",
+      };
+
+      const validateMessage = {
+        required: ":attribute is required",
+        "email.email": "Please provide a valid :attribute.",
+      };
+
+      const validateResult = validateData(post, validateRule, validateMessage);
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
+
+      const userExists = await sortAndPretreatModel.findOne({ email: post.email });
+      if (userExists) {
+        return BaseService.sendFailedResponse({ error: "User exists. Please login" });
+      }
+
+      const newUser = new sortAndPretreatModel({
+        email: post.email,
+        password: post.password,
+        fullName: post.fullName,
+        phoneNumber: post.phoneNumber,
+        userType: post.userType,
+        servicePlatform: "local",
+      });
+
+      await newUser.save();
+
+      // Attach OTP
+      const otp = generateOTP();
+      const expiresAt = new Date(Date.now() + EXPIRES_AT);
+      newUser.otp = otp;
+      newUser.otpExpiresAt = expiresAt;
+      await newUser.save();
+      newUser.password = undefined;
+
+      // Send welcome + OTP email
+      await sendEmail({
+        subject: "Welcome to Chuvi Laundry — Verify Your Email",
+        to: newUser.email,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
+            <h1 style="color: #1A73E8;">Welcome to Chuvi Laundry 👕✨</h1>
+            <p>Hello <strong>${newUser.fullName}</strong>,</p>
+            <p>
+              Thank you for joining <strong>Chuvi Laundry</strong>.
+              Your account has been successfully created!
+            </p>
+            <p>Please verify your email using the OTP below:</p>
+            <h2 style="color: #1A73E8; font-size: 32px;">${otp}</h2>
+            <p>This code will expire in <strong>10 minutes</strong>.</p>
+            <br>
+            <p>If you didn't create this account, you can safely ignore this email.</p>
+            <br>
+            <p>Warm regards,<br><strong>The Chuvi Laundry Team</strong></p>
+          </div>
+        `,
+      });
+
+      await sendSmsOtp(newUser.phoneNumber, `${otp}`);
+
+      return BaseService.sendSuccessResponse({
+        message: "Registration successful. Please verify your email.",
+        user: newUser,
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({ error });
+    }
+  }
+  // ─── Login ───────────────────────────────────────────────────────────────────
+  async loginSortAndPretreatUser(req, res) {
+    try {
+      const post = req.body;
+      const { email, password } = post;
+
+      const validateRule = {
+        email: "email|required",
+        password: "string|required",
+      };
+
+      const validateResult = validateData(post, validateRule);
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
+
+      const { user, accessToken, refreshToken } = await this._handleLogin({ email, password });
+
+      return BaseService.sendSuccessResponse({ message: accessToken, user, refreshToken });
+    } catch (error) {
+      return BaseService.sendFailedResponse({ error: error.message });
+    }
+  }
+  // ─── Google Signup ───────────────────────────────────────────────────────────
+  async googleSortAndPretreatSignup(req, res) {
+    try {
+      const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+      const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+      const post = req.body;
+
+      const validateRule = {
+        idToken: "string|required",
+        userType: "string|required",
+      };
+
+      const validateResult = validateData(post, validateRule, { required: ":attribute is required" });
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
+
+      const ticket = await client.verifyIdToken({
+        idToken: post.idToken,
+        audience: GOOGLE_CLIENT_ID,
+      });
+
+      const { sub: googleId, email, name, picture, given_name, family_name } = ticket.getPayload();
+      const fullName = name || [given_name, family_name].filter(Boolean).join(" ");
+
+      const existingUser = await sortAndPretreatModel.findOne({ $or: [{ googleId }, { email }] });
+
+      if (existingUser) {
+        if (existingUser.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+          return BaseService.sendFailedResponse({
+            error: "This email was registered with a password. Please login manually.",
+          });
+        }
+
+        existingUser.servicePlatform = SERVICE_PLATFORM.GOOGLE;
+        existingUser.googleId = existingUser.googleId || googleId;
+        if (!existingUser.fullName && fullName) existingUser.fullName = fullName;
+        if (picture) existingUser.image = { imageUrl: picture, publicId: "" };
+        await existingUser.save();
+
+        const accessToken = await existingUser.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+        const refreshToken = await existingUser.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+
+        return BaseService.sendSuccessResponse({ message: accessToken, user: existingUser, refreshToken });
+      }
+
+      const newUser = new sortAndPretreatModel({
+        googleId,
+        email,
+        fullName,
+        image: { imageUrl: picture, publicId: "" },
+        isVerified: true,
+        servicePlatform: "google",
+        userType: post.userType,
+      });
+      await newUser.save();
+
+      const accessToken = await newUser.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+      const refreshToken = await newUser.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+
+      await sendEmail({
+        subject: "Welcome to Chuvi Laundry",
+        to: newUser.email,
+        html: `
+          <h1>Registration successful</h1>
+          <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+          <p>You have successfully signed up.</p>
+        `,
+      });
+
+      return BaseService.sendSuccessResponse({ message: accessToken, user: newUser, refreshToken });
+    } catch (error) {
+      console.error(error);
+      return BaseService.sendFailedResponse({ error: "Something went wrong. Please try again." });
+    }
+  }
+  // ─── Apple Signup ────────────────────────────────────────────────────────────
+  async appleSortAndPretreatSignup(req, res) {
+    try {
+      const { authorizationCode, idToken, userType } = req.body;
+
+      const validateRule = {
+        authorizationCode: "string|required",
+        idToken: "string|required",
+        userType: "string|required",
+      };
+
+      const validateResult = validateData(req.body, validateRule, { required: ":attribute is required" });
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
+
+      // Exchange authorization code for tokens
+      const tokenResponse = await axios.post("https://appleid.apple.com/auth/token", null, {
+        params: {
+          client_id: process.env.APPLE_CLIENT_ID,
+          client_secret: process.env.APPLE_CLIENT_SECRET,
+          code: authorizationCode,
+          grant_type: "authorization_code",
+          redirect_uri: "https://yourdomain.com/auth/apple/callback",
+        },
+      });
+
+      const { id_token: newIdToken } = tokenResponse.data;
+      const payload = jwt.decode(newIdToken);
+      const { sub: appleId, email, given_name, family_name, name, picture } = payload;
+
+      const firstName = given_name || name?.split(" ")[0];
+      const lastName = family_name || name?.split(" ").slice(1).join(" ");
+      const username = email ? email.split("@")[0] : name?.replace(/\s+/g, "").toLowerCase();
+
+      const existingUser = await sortAndPretreatModel.findOne({ $or: [{ appleId }, { email }] });
+
+      if (existingUser) {
+        const accessToken = await existingUser.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+        const refreshToken = await existingUser.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+        return BaseService.sendSuccessResponse({ message: accessToken, user: existingUser, refreshToken });
+      }
+
+      const newUser = new sortAndPretreatModel({
+        appleId,
+        firstName,
+        lastName,
+        username,
+        email,
+        image: { imageUrl: picture || "", publicId: "" },
+        isVerified: true,
+        servicePlatform: "apple",
+        userType,
+      });
+      await newUser.save();
+
+      const accessToken = await newUser.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+      const refreshToken = await newUser.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+
+      await sendEmail({
+        subject: "Welcome to Chuvi Laundry",
+        to: newUser.email,
+        html: `
+          <h1>Registration successful</h1>
+          <p>Hi <strong>${newUser.email}</strong>,</p>
+          <p>You have successfully signed up with Apple.</p>
+        `,
+      });
+
+      return BaseService.sendSuccessResponse({ message: accessToken, user: newUser, refreshToken });
+    } catch (error) {
+      console.error("Apple Sign-Up Error:", error);
+      return BaseService.sendFailedResponse({ error: "Something went wrong with the Apple Sign-Up process." });
+    }
+  }
+  // ─── Verify OTP ──────────────────────────────────────────────────────────────
+  async verifySortAndPretreatOTP(req, res) {
+    try {
+      const { email, otp } = req.body;
+
+      const userExists = await sortAndPretreatModel
+        .findOne({ email })
+        .select("otp otpExpiresAt fullName");
+
+      if (empty(userExists)) {
+        return BaseService.sendFailedResponse({ error: "User not found. Please try again later" });
+      }
+      if (empty(userExists.otp)) {
+        return BaseService.sendFailedResponse({ error: "OTP not found" });
+      }
+      if (userExists.otpExpiresAt < new Date()) {
+        return BaseService.sendFailedResponse({ error: "OTP expired" });
+      }
+      if (userExists.otp !== otp) {
+        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
+      }
+
+      userExists.isVerified = true;
+      userExists.otp = "";
+      userExists.otpExpiresAt = null;
+      await userExists.save();
+
+      const accessToken = await userExists.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+      const refreshToken = await userExists.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+
+      await sendEmail({
+        subject: "Email Verification",
+        to: email,
+        html: `
+          <h1>Your email has been verified</h1>
+          <p>Hi <strong>${userExists.fullName || email}</strong>,</p>
+          <p>You have successfully verified your account.</p>
+        `,
+      });
+
+      return BaseService.sendSuccessResponse({ message: accessToken, user: userExists, refreshToken });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({ error });
+    }
+  }
+  // ─── Resend OTP ──────────────────────────────────────────────────────────────
+  async resendSortAndPretreatOtp(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return BaseService.sendFailedResponse({ error: "Email is required" });
+      }
+
+      const userExists = await sortAndPretreatModel.findOne({ email }).select("+password");
+
+      if (empty(userExists)) {
+        return BaseService.sendFailedResponse({ error: "User not found. Please register as a new user" });
+      }
+
+      if (!userExists.isVerified) {
+        return BaseService.sendFailedResponse(
+          { error: "Email is not verified. Please verify your email" },
+          405
+        );
+      }
+
+      const otp = generateOTP();
+      const expiresAt = new Date(Date.now() + EXPIRES_AT);
+      userExists.otp = otp;
+      userExists.otpExpiresAt = expiresAt;
+      await userExists.save();
+
+      await sendEmail({
+        subject: "Your OTP Code — Chuvi Laundry",
+        to: email,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+            <h1 style="color: #1A73E8;">Your OTP Code</h1>
+            <p>Hi <strong>${userExists.fullName || email}</strong>,</p>
+            <p>Use the code below to proceed:</p>
+            <h2 style="color: #1A73E8; font-size: 32px;">${otp}</h2>
+            <p>This code expires in <strong>10 minutes</strong>.</p>
+            <br>
+            <p>The Chuvi Laundry Team</p>
+          </div>
+        `,
+      });
+
+      await sendSmsOtp(userExists.phoneNumber, `${otp}`);
+
+      return BaseService.sendSuccessResponse({ message: "OTP resent to email successfully." });
+    } catch (error) {
+      console.log(error, "the error");
+      return BaseService.sendFailedResponse({ error });
+    }
+  }
+  // ─── Verify Email ─────────────────────────────────────────────────────────────
+  async verifySortAndPretreatEmail(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return BaseService.sendFailedResponse({ error: "Email is required" });
+      }
+
+      const userExists = await sortAndPretreatModel.findOne({ email });
+      if (!userExists) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+
+      if (userExists.isVerified) {
+        return BaseService.sendFailedResponse({ error: "Email already verified" }, 409);
+      }
+
+      userExists.isVerified = true;
+      await userExists.save();
+
+      return BaseService.sendSuccessResponse({ message: "Email verified successfully" });
+    } catch (error) {
+      return BaseService.sendFailedResponse({ error });
+    }
+  }
+  // ─── Forgot Password ──────────────────────────────────────────────────────────
+  async forgotSortAndPretreatPassword(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return BaseService.sendFailedResponse({ error: "Email is required" });
+      }
+
+      const userExists = await sortAndPretreatModel.findOne({ email });
+      if (!userExists) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+
+      const otp = generateOTP();
+      userExists.resetPasswordOtp = otp;
+      userExists.resetPasswordOtpExpiresAt = new Date(Date.now() + EXPIRES_AT);
+      await userExists.save();
+
+      await sendEmail({
+        subject: "Chuvi Laundry — Password Reset Code",
+        to: email,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
+            <h1 style="color: #1A73E8;">Password Reset Request</h1>
+            <p>Hi <strong>${userExists.fullName || email}</strong>,</p>
+            <p>
+              We received a request to reset your password for your
+              <strong>Chuvi Laundry</strong> account.
+            </p>
+            <p>Use the code below to continue:</p>
+            <h2 style="color: #1A73E8; font-size: 32px;">${otp}</h2>
+            <p>This code is valid for <strong>10 minutes</strong>. If you did not request this, ignore this email.</p>
+            <br>
+            <p>Best regards,<br><strong>Chuvi Laundry Support Team</strong></p>
+          </div>
+        `,
+      });
+
+      await sendSmsOtp(userExists.phoneNumber, `${otp}`);
+
+      return BaseService.sendSuccessResponse({ message: "Password Reset Request Successful" });
+    } catch (error) {
+      return BaseService.sendFailedResponse({ error: error.message || "Something went wrong" });
+    }
+  }
+  // ─── Verify Reset Password OTP ────────────────────────────────────────────────
+  async verifySortAndPretreatResetPasswordOtp(req, res) {
+    try {
+      const { email, otp } = req.body;
+
+      if (!email || !otp) {
+        return BaseService.sendFailedResponse({ error: "Email and OTP are required" });
+      }
+
+      const user = await sortAndPretreatModel
+        .findOne({ email })
+        .select("+resetPasswordOtp +resetPasswordOtpExpiresAt");
+
+      if (!user) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+      if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiresAt) {
+        return BaseService.sendFailedResponse({ error: "No active OTP found" });
+      }
+      if (user.resetPasswordOtp !== otp) {
+        return BaseService.sendFailedResponse({ error: "Invalid OTP" });
+      }
+      if (Date.now() > user.resetPasswordOtpExpiresAt) {
+        return BaseService.sendFailedResponse({ error: "OTP expired" });
+      }
+
+      const resetToken = jwt.sign(
+        { userId: user._id },
+        process.env.RESET_TOKEN_SECRET,
+        { expiresIn: "10m" }
+      );
+
+      user.resetPasswordOtp = null;
+      user.resetPasswordOtpExpiresAt = null;
+      await user.save();
+
+      return BaseService.sendSuccessResponse({ message: "OTP verified successfully", resetToken });
+    } catch (error) {
+      return BaseService.sendFailedResponse({ error: error.message || "Something went wrong" });
+    }
+  }
+  // ─── Reset Password ───────────────────────────────────────────────────────────
+  async resetSortAndPretreatPassword(req, res) {
+    try {
+      const { resetToken, password } = req.body;
+
+      if (!resetToken || !password) {
+        return BaseService.sendFailedResponse({ error: "Reset token and new password are required" });
+      }
+
+      const decoded = jwt.verify(resetToken, process.env.RESET_TOKEN_SECRET);
+      const user = await sortAndPretreatModel.findById(decoded.userId).select("+password");
+
+      if (!user) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+
+      const isSamePassword = await user.comparePassword(password);
+      if (isSamePassword) {
+        return BaseService.sendFailedResponse({ error: "New password cannot be the same as old password" });
+      }
+
+      user.password = password;
+      await user.save();
+
+      return BaseService.sendSuccessResponse({ message: "Password reset successful" });
+    } catch (error) {
+      return BaseService.sendFailedResponse({ error: "Reset token expired or invalid" });
+    }
+  }
+  // ─── Refresh Token ────────────────────────────────────────────────────────────
+  async refreshSortAndPretreatToken(req, res) {
+    try {
+      const refreshToken = req.headers["x-refresh-token"];
+
+      if (!refreshToken) {
+        return BaseService.sendFailedResponse({ error: "No refresh token provided" });
+      }
+
+      let decoded;
+      try {
+        decoded = verifyRefreshToken(refreshToken);
+      } catch (err) {
+        return BaseService.sendFailedResponse({ error: "Invalid or expired refresh token" });
+      }
+
+      const newAccessToken = signAccessToken({ id: decoded.id, userType: decoded.userType });
+
+      res.header("Authorization", `Bearer ${newAccessToken}`);
+
+      return BaseService.sendSuccessResponse({ message: newAccessToken });
+    } catch (err) {
+      console.error("Refresh Token Error:", err);
+      return BaseService.sendFailedResponse({ error: "Something went wrong. Please try again later." });
+    }
+  }
+  // ─── Internal: Handle Login ───────────────────────────────────────────────────
+  async _handleLogin({ email, password }) {
+    const user = await sortAndPretreatModel.findOne({ email }).select("+password");
+
+    if (!user) {
+      throw new Error("Invalid email or password");
+    }
+
+    if (!user.isVerified) {
+      throw new Error("Email is not verified. Please verify your email.");
+    }
+
+    if (user.servicePlatform === SERVICE_PLATFORM.GOOGLE) {
+      throw new Error("This account was created using Google. Please log in using Google.");
+    }
+
+    if (user.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+      if (!user.password) {
+        throw new Error("Account created via a different platform. Please use the appropriate platform to log in.");
+      }
+      const isMatch = await user.comparePassword(password);
+      if (!isMatch) {
+        throw new Error("Invalid email or password");
+      }
+    }
+
+    const accessToken = await user.generateAccessToken(process.env.ACCESS_TOKEN_SECRET || "");
+    const refreshToken = await user.generateRefreshToken(process.env.REFRESH_TOKEN_SECRET || "");
+
+    user.password = undefined;
     return { user, accessToken, refreshToken };
   }
 }
