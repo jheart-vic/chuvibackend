@@ -132,7 +132,7 @@ const bookOrderSchema = new mongoose.Schema(
     },
     intakeStaffId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "IntakeUser",
+      ref: "User",
       required: false,
     },
     dispatchDetails: {

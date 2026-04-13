@@ -14,8 +14,6 @@ const {
 const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require("../util/constants");
 const FreePlanModel = require("../models/freeplan.model");
 const WalletModel = require("../models/wallet.model");
-const IntakeUserModel = require("../models/intakeUser.model");
-const QcUserModel = require("../models/qcUser.model");
 
 class AuthService extends BaseService {
   async createUser(req) {
@@ -602,16 +600,6 @@ class AuthService extends BaseService {
       const refreshToken = await userExists.generateRefreshToken(
         process.env.REFRESH_TOKEN_SECRET || ""
       );
-      // res.cookie("growe_refresh_token", refreshToken, {
-      //   httpOnly: true,
-      //   secure: process.env.NODE_ENV === "production",
-      //   path: "/",
-      //   maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-      //   sameSite: "strict",
-      // });
-
-      // res.header("Authorization", `Bearer ${accessToken}`);
-      // res.header("refresh_token", `Bearer ${refreshToken}`);
 
       userExists.password = undefined;
 
@@ -790,7 +778,7 @@ class AuthService extends BaseService {
           error: "userType is required",
         });
       }
-      
+
       if (!resetToken || !password) {
         return BaseService.sendFailedResponse({
           error: "Reset token and new password are required",
@@ -934,7 +922,7 @@ class AuthService extends BaseService {
   }
   async _handleLogin({ email, password, userType, allowGoogle = false }) {
     const user = await UserModel.findOne({ email, userType }).select(
-      "+password"
+      "-password"
     );
 
     if (!user) {
