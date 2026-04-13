@@ -57,6 +57,15 @@ const ACTIVITY_TYPE = {
   TOP_UP_REQUEST: "top-up-request",
 }
 
+const STATION_STATUS = {
+  INTAKE_AND_TAG_STATION: "intake-and-tag-station",
+  SORT_AND_PRETREAT_STATION: "sort-and-pretreat-station",
+  WASH_AND_DRY_STATION: "wash-and-dry-station",
+  PRESSING_AND_IRONING_STATION: "pressing-and-ironing-station",
+  QC_STATION: 'qc-station',
+  PENDING: 'pending'
+}
+
 const ORDER_STATUS = {
   PENDING: "pending",
   HOLD: "hold",
@@ -68,6 +77,7 @@ const ORDER_STATUS = {
   OUT_FOR_DELIVERY: "out-for-delivery",
   WASHING: "washing",
   IRONING: "ironing",
+  QC: "qc",
   SORT_AND_PRETREAT: "sort-and-pretreat",
 };
 const PAYMENT_ORDER_STATUS = {
@@ -202,5 +212,6 @@ module.exports = {
   TAG_COLOR,
   PICKUP_STATUS,
   DELIVERY_STATUS,
-  ACTIVITY_TYPE
+  ACTIVITY_TYPE,
+  STATION_STATUS
 };

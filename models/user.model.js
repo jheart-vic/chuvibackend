@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema(
     phoneNumber: { type: String },
     userType: {
       type: String,
+      enum: Object.values(ROLE),
       default: ROLE.USER,
     },
     // hub: {type: mongoose.Schema.Types.ObjectId, ref: "Hub"},

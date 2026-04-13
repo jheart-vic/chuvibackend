@@ -13,6 +13,7 @@ const {
   BILLING_TYPE,
   STANDARD_ITEMS_ENUM_TYPES,
   ACTIVITY_TYPE,
+  STATION_STATUS,
 } = require("../util/constants");
 const ActivityModel = require("../models/activity.model");
 
@@ -143,6 +144,7 @@ class BookOrderService extends BaseService {
           deliveryAmount: extraDeliveryCost,
           stage,
           stageHistory: [stageHistory],
+          stationStatus: STATION_STATUS.PENDING,
           ...post,
         };
         const newOrder = new BookOrderModel(newOrderItem);

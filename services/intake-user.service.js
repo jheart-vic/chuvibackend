@@ -11,6 +11,7 @@ const {
   PICKUP_STATUS,
   DELIVERY_STATUS,
   ACTIVITY_TYPE,
+  STATION_STATUS,
 } = require("../util/constants");
 const BaseService = require("./base.service");
 
@@ -80,6 +81,11 @@ class IntakeUserService extends BaseService {
         stage: {
           status: ORDER_STATUS.QUEUE,
         },
+        stageHistory: [{
+          status: ORDER_STATUS.QUEUE,
+          updatedAt: new Date(),
+          note: 'Order Created'
+        }],
         ...post,
       };
       const newOrder = new BookOrderModel(newOrderItem);
@@ -197,6 +203,7 @@ class IntakeUserService extends BaseService {
         note: "",
         updatedAt: new Date(),
       });
+      order.stationStatus = STATION_STATUS.INTAKE_AND_TAG_STATION;
 
       await order.save();
 
@@ -371,6 +378,7 @@ class IntakeUserService extends BaseService {
         note: "",
         updatedAt: new Date(),
       });
+      order.stationStatus = STATION_STATUS.SORT_AND_PRETREAT_STATION;
 
       await order.save();
 
