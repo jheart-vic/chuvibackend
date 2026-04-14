@@ -47,6 +47,8 @@ const ACTIVITY_TYPE = {
   ORDER_CONFIRM: "order-confirm",
   ORDER_FLAGGED: "order-flagged",
   ORDER_DELIVERED: "order-delivered",
+  ORDER_UPDATED: "order-updated",
+  ORDER_STATUS_UPDATED: "order-status-updated",
   PAYMENT_APPROVED: "payment-approved",
   WALLET_TOP_UP: "wallet-top-up",
   WALLET_ADJUSTMENT: "wallet-adjustment",
@@ -55,6 +57,11 @@ const ACTIVITY_TYPE = {
   TAG_AND_QUEUE: "tag-and-queue",
   SORT_AND_PRETREAT: "sort-and-pretreat",
   TOP_UP_REQUEST: "top-up-request",
+  ORDER_ITEM_WASH_CONFIRMED:   "order_item_wash_confirmed",
+  ORDER_MOVED_TO_DRYING:       "order_moved_to_drying",
+  ORDER_WASH_DRY_COMPLETED:    "order_wash_dry_completed",
+  ORDER_ON_HOLD:               "order_on_hold",
+  ORDER_RELEASED_FROM_HOLD:    "order_released_from_hold",
 }
 
 const STATION_STATUS = {
@@ -76,6 +83,7 @@ const ORDER_STATUS = {
   DELIVERED: "delivered",
   OUT_FOR_DELIVERY: "out-for-delivery",
   WASHING: "washing",
+  DRYING:"drying",
   IRONING: "ironing",
   QC: "qc",
   SORT_AND_PRETREAT: "sort-and-pretreat",
