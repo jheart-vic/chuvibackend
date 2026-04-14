@@ -15,6 +15,10 @@ const {
   PICKUP_STATUS,
   DELIVERY_STATUS,
   STATION_STATUS,
+  FABRIC_TYPE,
+  PRETREATMENT_OPTIONS,
+  DAMAGE_RISK_FLAGS,
+  COLOR_GROUP,
 } = require("../util/constants");
 
 const ItemSchema = new mongoose.Schema({
@@ -24,7 +28,60 @@ const ItemSchema = new mongoose.Schema({
   tagId: { type: String },
   tagState: { type: String, enum: [TAG_STATE.DAMAGED, TAG_STATE.DELICATE, TAG_STATE.PRETREAT, TAG_STATE.STAINED] },
   tagColor: { type: String, enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE] },
-  tagStatus: {type: String, enum: ['complete', 'pending'], default: 'pending'}
+  tagStatus: {type: String, enum: ['complete', 'pending'], default: 'pending'},
+// Sort & Pretreat fields
+colorGroup: {
+  type: String,
+  enum: Object.values(COLOR_GROUP),   // white | colored
+  default: null,
+},
+fabricType: {
+  type: String,
+  enum: Object.values(FABRIC_TYPE),   // delicate | light | heavy
+  default: null,
+},
+pretreatmentOptions: {
+  type: [String],
+  enum: Object.values(PRETREATMENT_OPTIONS),
+  default: [],
+},
+damageRiskFlags: {
+  type: [String],
+  enum: Object.values(DAMAGE_RISK_FLAGS),
+  default: [],
+},
+itemNote: {
+  type: String,
+  default: "",
+},
+sortStatus: {
+  type: String,
+  enum: ["pending", "complete"],
+  default: "pending",
+},
+pretreatStatus: {
+  type: String,
+  enum: ["pending", "complete"],
+  default: "pending",
+},
+
+    // ── Washing stage ────────────────────────────────────────────────────────
+    washStatus: { type: String, enum: ["pending", "complete"], default: "pending" },
+
+    // ── Ironing stage ────────────────────────────────────────────────────────
+    ironStatus: { type: String, enum: ["pending", "complete"], default: "pending" },
+
+    // ── Full audit trail (used by History timeline) ──────────────────────────
+    // Every service method that changes item state pushes an entry here.
+    // action values: "sorted" | "undo_sorted" | "pretreated" | "undo_pretreated"
+    //              | "flagged" | "washed" | "undo_washed" | "ironed" | "undo_ironed"
+    actionLog: [
+      {
+        action:    { type: String },
+        note:      { type: String, default: "" },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
 }, { _id: true });
 
 const bookOrderSchema = new mongoose.Schema(

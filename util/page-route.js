@@ -57,7 +57,19 @@ exports.ROUTE_QC_USER_VERIFY_OTP = '/qc-user/verify-otp'
 exports.ROUTE_QC_USER_VERIFY_EMAIL = '/qc-user/verify-email'
 exports.ROUTE_QC_USER_VERIFY_RESET_PASSWORD_OTP = '/qc-user/verify-reset-password-otp'
 
+//sortandpretreat
 
+exports.ROUTE_SORT_AND_PRETREAT_REGISTER = "/sort-pretreat/register";
+exports.ROUTE_SORT_AND_PRETREAT_GOOGLE_SIGNUP = "/sort-pretreat/google-signup";
+exports.ROUTE_SORT_AND_PRETREAT_APPLE_SIGNUP = "/sort-pretreat/apple-signup";
+exports.ROUTE_SORT_AND_PRETREAT_LOGIN = "/sort-pretreat/login";
+exports.ROUTE_SORT_AND_PRETREAT_FORGOT_PASSWORD = "/sort-pretreat/forgot-password";
+exports.ROUTE_SORT_AND_PRETREAT_VERIFY_RESET_PASSWORD_OTP = "/sort-pretreat/verify-reset-password-otp";
+exports.ROUTE_SORT_AND_PRETREAT_RESET_PASSWORD = "/sort-pretreat/reset-password";
+exports.ROUTE_SORT_AND_PRETREAT_VERIFY_OTP = "/sort-pretreat/verify-otp";
+exports.ROUTE_SORT_AND_PRETREAT_RESEND_OTP = "/sort-pretreat/resend-otp";
+exports.ROUTE_SORT_AND_PRETREAT_VERIFY_EMAIL = "/sort-pretreat/verify-email";
+exports.ROUTE_SORT_AND_PRETREAT_REFRESH_TOKEN = "/sort-pretreat/refresh-token";
 
 
 // Admin

@@ -958,6 +958,7 @@ class AuthService extends BaseService {
       };
     }
 
+
     // 🔑 Password check (LOCAL only)
     if (user.servicePlatform === SERVICE_PLATFORM.LOCAL) {
       if (!password) {
