@@ -921,7 +921,7 @@ class AuthService extends BaseService {
     }
   }
   async _handleLogin({ email, password, userType, allowGoogle = false }) {
-    const user = await UserModel.findOne({ email, userType })
+    const user = await UserModel.findOne({ email, userType }).select("+password");
 
     if (!user) {
       return {
