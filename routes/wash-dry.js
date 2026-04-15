@@ -483,6 +483,7 @@ router.patch(ROUTE_WASH_AND_DRY_MARK_COMPLETE, [washAndDryAuth], (req, res) => {
  *                           fullName:   { type: string, example: "Jude Victor" }
  *                           holdReason: { type: string, example: "Item Missing" }
  *                           holdTime:   { type: string, format: date-time }
+ *                           operator:   { type: string, example: "Victor Jp" }
  *                           flaggedItems:
  *                             type: array
  *                             items:

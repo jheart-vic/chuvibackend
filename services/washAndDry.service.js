@@ -685,17 +685,25 @@ class WashAndDryService extends BaseService {
                 ]
             }
 
-            const { data, pagination } = await paginate(BookOrderModel, query, {
-                page,
-                limit,
-                sort: { 'stage.updatedAt': -1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails createdAt updatedAt',
-                lean: true,
-            })
+        const { data, pagination } = await paginate(BookOrderModel, query, {
+            page,
+            limit,
+            sort: { 'stage.updatedAt': -1 },
+            select: `
+                oscNumber fullName phoneNumber serviceType serviceTier amount
+                stage stationStatus stageHistory washDetails createdAt updatedAt items
+            `,
+            populate: {
+                path: 'washDetails.operatorId',
+                select: 'fullName',
+            },
+            lean: true,
+        })
 
             const holdItems = data.map((order) => ({
                 orderId: order.oscNumber,
                 fullName: order.fullName,
+                operator: order.washDetails?.operatorId?.fullName || null,
                 stage: order.stage,
                 stationStatus: order.stationStatus,
                 holdReason: order.stage.note || '',
