@@ -1,12 +1,32 @@
-const router = require("express").Router();
-const SortAndPretreatController = require("../controllers/sortAndPretreat.controller");
-const sortAndPretreatAuth = require("../middlewares/sortAndPretreatAuth");
+const router = require('express').Router()
+const SortAndPretreatController = require('../controllers/sortAndPretreat.controller')
+const sortAndPretreatAuth = require('../middlewares/sortAndPretreatAuth')
+const {
+    ROUTE_SORT_AND_PRETREAT_ORDER_QUEUE,
+    ROUTE_SORT_AND_PRETREAT_SINGLE_ORDER,
+    ROUTE_SORT_AND_PRETREAT_UPDATE_ITEM,
+    ROUTE_SORT_AND_PRETREAT_MARK_ITEM_SORTED,
+    ROUTE_SORT_AND_PRETREAT_UNMARK_SORTED_ITEM,
+    ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED,
+    ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED,
+    ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED,
+    ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED,
+    ROUTE_SORT_AND_PRETREAT_NEXT_STAGE,
+    ROUTE_SORT_AND_PRETREAT_GET_FLAGGED,
+    ROUTE_SORT_AND_PRETREAT_GET_COMPLETED,
+    ROUTE_SORT_AND_PRETREAT_WASHING,
+    ROUTE_SORT_AND_PRETREAT_WASHING_SINGLE,
+    ROUTE_SORT_AND_PRETREAT_IRONING,
+    ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE,
+    ROUTE_SORT_AND_PRETREAT_HISTORY,
+    ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE,
+} = require('../util/page-route')
 
 // ORDER QUEUE
 
 /**
  * @swagger
- * /sort-pretreat/queue:
+ * /sort-pretreat/orders/queue:
  *   get:
  *     summary: Get all orders in the sort & pretreat queue
  *     tags:
@@ -41,14 +61,18 @@ const sortAndPretreatAuth = require("../middlewares/sortAndPretreatAuth");
  *       500:
  *         description: Server error
  */
-router.get("/queue", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getOrderQueue(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_ORDER_QUEUE,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getOrderQueue(req, res)
+    },
+)
 
 /**
  * @swagger
- * /sort-pretreat/{id}:
+ * /sort-pretreat/order/{id}:
  *   get:
  *     summary: Get single order details (must be in sort & pretreat stage)
  *     tags:
@@ -78,22 +102,29 @@ router.get("/queue", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/:id", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getOrderDetails(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_SINGLE_ORDER,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getOrderDetails(req, res)
+    },
+)
 
 // ITEM SORT DETAILS (auto-save)
 
 /**
  * @swagger
- * /sort-pretreat/{id}/items/{itemId}/sort-details:
+ * /sort-pretreat/order/{id}/items/{itemId}/sort-details:
  *   patch:
  *     summary: Auto-save sort & pretreat details for a single item
  *     description: |
  *       All fields are optional per call. The frontend can call this as the
  *       operator makes selections (colorGroup, fabricType, pretreatmentOptions,
- *       damageRiskFlags, itemNote) without waiting for the final Mark buttons.
+ *       damageRiskFlags, itemNote) without waiting for the final Mark buttons
+ *       Note: if fabricType is provided,
+ *       colorGroup must also be provided in the same request or already saved
+*        on the item — fabricType cannot be set without a color context..
  *     tags:
  *       - Sort & Pretreat
  *     parameters:
@@ -161,10 +192,14 @@ router.get("/:id", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/:id/items/:itemId/sort-details", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.updateItemSortDetails(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_UPDATE_ITEM,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.updateItemSortDetails(req, res)
+    },
+)
 
 // MARK SORTED
 
@@ -204,10 +239,14 @@ router.patch("/:id/items/:itemId/sort-details", [sortAndPretreatAuth], (req, res
  *       500:
  *         description: Server error
  */
-router.patch("/:id/items/:itemId/mark-sorted", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.markItemAsSorted(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_MARK_ITEM_SORTED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.markItemAsSorted(req, res)
+    },
+)
 
 /**
  * @swagger
@@ -239,14 +278,18 @@ router.patch("/:id/items/:itemId/mark-sorted", [sortAndPretreatAuth], (req, res)
  *       500:
  *         description: Server error
  */
-router.patch("/:id/items/:itemId/undo-sorted", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.undoMarkItemAsSorted(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_UNMARK_SORTED_ITEM,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.undoMarkItemAsSorted(req, res)
+    },
+)
 
 /**
  * @swagger
- * /sort-pretreat/{id}/mark-all-sorted:
+ * /sort-pretreat/order/{id}/mark-all-sorted:
  *   patch:
  *     summary: Mark all items in an order as sorted at once
  *     tags:
@@ -274,16 +317,20 @@ router.patch("/:id/items/:itemId/undo-sorted", [sortAndPretreatAuth], (req, res)
  *       500:
  *         description: Server error
  */
-router.patch("/:id/mark-all-sorted", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.markAllItemsAsSorted(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.markAllItemsAsSorted(req, res)
+    },
+)
 
 // MARK PRETREATED
 
 /**
  * @swagger
- * /sort-pretreat/{id}/items/{itemId}/mark-pretreated:
+ * /sort-pretreat/order/{id}/items/{itemId}/mark-pretreated:
  *   patch:
  *     summary: Mark a single item as pretreated
  *     tags:
@@ -319,14 +366,18 @@ router.patch("/:id/mark-all-sorted", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/:id/items/:itemId/mark-pretreated", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.markItemAsPretreated(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.markItemAsPretreated(req, res)
+    },
+)
 
 /**
  * @swagger
- * /sort-pretreat/{id}/items/{itemId}/undo-pretreated:
+ * /sort-pretreat/order/{id}/items/{itemId}/undo-pretreated:
  *   patch:
  *     summary: Undo pretreated status for a single item
  *     tags:
@@ -354,16 +405,20 @@ router.patch("/:id/items/:itemId/mark-pretreated", [sortAndPretreatAuth], (req, 
  *       500:
  *         description: Server error
  */
-router.patch("/:id/items/:itemId/undo-pretreated", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.undoMarkItemAsPretreated(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.undoMarkItemAsPretreated(req, res)
+    },
+)
 
 // FLAG ITEM
 
 /**
  * @swagger
- * /sort-pretreat/{id}/items/{itemId}/flag:
+ * /sort-pretreat/order/{id}/items/{itemId}/flag:
  *   patch:
  *     summary: Flag a specific item for review
  *     tags:
@@ -405,10 +460,14 @@ router.patch("/:id/items/:itemId/undo-pretreated", [sortAndPretreatAuth], (req, 
  *       500:
  *         description: Server error
  */
-router.patch("/:id/items/:itemId/flag", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.flagItemForReview(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.flagItemForReview(req, res)
+    },
+)
 
 // SEND TO NEXT STAGE
 
@@ -444,18 +503,22 @@ router.patch("/:id/items/:itemId/flag", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/:id/send-to-next-stage", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.sendToNextStage(req, res);
-});
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_NEXT_STAGE,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.sendToNextStage(req, res)
+    },
+)
 
 // FLAGGED ORDERS
 
 /**
  * @swagger
- * /sort-pretreat/flagged:
+ * /sort-pretreat/orders/flagged:
  *   get:
- *     summary: Get all flagged (HOLD) orders
+ *     summary: Get all orders that have at least one flagged item
  *     tags:
  *       - Sort & Pretreat
  *     parameters:
@@ -468,9 +531,10 @@ router.patch("/:id/send-to-next-stage", [sortAndPretreatAuth], (req, res) => {
  *       - in: query
  *         name: search
  *         schema: { type: string, example: "OSC-001" }
+ *         description: Search by oscNumber, fullName, or phoneNumber
  *     responses:
  *       200:
- *         description: Paginated list of orders in HOLD stage
+ *         description: Paginated list of orders containing flagged items
  *         content:
  *           application/json:
  *             schema:
@@ -479,24 +543,80 @@ router.patch("/:id/send-to-next-stage", [sortAndPretreatAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     orders:
+ *                     data:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             example: "64d3c9c0f1b2a8e9d0f12345"
+ *                           oscNumber:
+ *                             type: string
+ *                             example: "OSC-001"
+ *                           fullName:
+ *                             type: string
+ *                             example: "John Doe"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "+2348012345678"
+ *                           serviceType:
+ *                             type: string
+ *                             example: "wash_and_iron"
+ *                           serviceTier:
+ *                             type: string
+ *                             example: "standard"
+ *                           amount:
+ *                             type: number
+ *                             example: 5000
+ *                           flaggedItemCount:
+ *                             type: integer
+ *                             description: Number of items on this order with flaggedForReview = true
+ *                             example: 2
+ *                           stage:
+ *                             type: object
+ *                             properties:
+ *                               status:
+ *                                 type: string
+ *                                 example: "sort_and_pretreat"
+ *                               note:
+ *                                 type: string
+ *                               updatedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                           items:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                           stageHistory:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
-router.get("/flagged", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getFlaggedOrders(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_GET_FLAGGED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getFlaggedOrders(req, res)
+    },
+)
 
 // SORTED & PRETREATED LIST
 
 /**
  * @swagger
- * /sort-pretreat/completed:
+ * /sort-pretreat/orders/completed:
  *   get:
  *     summary: Get all orders that have passed through sort & pretreat
  *     tags:
@@ -536,10 +656,14 @@ router.get("/flagged", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/completed", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getSortedAndPretreatdOrders(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_GET_COMPLETED,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getSortedAndPretreatdOrders(req, res)
+    },
+)
 
 // WASHING VIEW (read-only)
 
@@ -579,10 +703,14 @@ router.get("/completed", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/washing", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getWashingOrders(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_WASHING,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getWashingOrders(req, res)
+    },
+)
 
 /**
  * @swagger
@@ -613,16 +741,20 @@ router.get("/washing", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/washing/:id", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getWashingOrderDetails(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_WASHING_SINGLE,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getWashingOrderDetails(req, res)
+    },
+)
 
 // IRONING VIEW (read-only)
 
 /**
  * @swagger
- * /sort-pretreat/ironing:
+ * /sort-pretreat/orders/ironing:
  *   get:
  *     summary: Get all orders currently at the Press & Iron station (read-only monitor)
  *     description: |
@@ -659,14 +791,18 @@ router.get("/washing/:id", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/ironing", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getIroningOrders(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_IRONING,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getIroningOrders(req, res)
+    },
+)
 
 /**
  * @swagger
- * /sort-pretreat/ironing/{id}:
+ * /sort-pretreat/orders/ironing/{id}:
  *   get:
  *     summary: Get single order details from the ironing stage (read-only)
  *     tags:
@@ -693,10 +829,14 @@ router.get("/ironing", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/ironing/:id", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getIroningOrderDetails(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getIroningOrderDetails(req, res)
+    },
+)
 
 // HISTORY
 
@@ -742,10 +882,14 @@ router.get("/ironing/:id", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/history", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getHistoryList(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_HISTORY,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getHistoryList(req, res)
+    },
+)
 
 /**
  * @swagger
@@ -811,9 +955,13 @@ router.get("/history", [sortAndPretreatAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/history/:id/timeline", [sortAndPretreatAuth], (req, res) => {
-  const controller = new SortAndPretreatController();
-  return controller.getOrderTimeline(req, res);
-});
+router.get(
+    ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getOrderTimeline(req, res)
+    },
+)
 
-module.exports = router;
+module.exports = router

@@ -9,7 +9,7 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  // ── Wash Queue ─────────────────────────────────────────────────────────────
+  // Wash Queue
   async getWashQueue(req, res) {
     const result = await WashAndDryService.getWashQueue(req);
     return result.success
@@ -45,7 +45,7 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  // ── Active Wash ────────────────────────────────────────────────────────────
+  // Active Wash
   async getActiveWash(req, res) {
     const result = await WashAndDryService.getActiveWash(req);
     return result.success
@@ -60,7 +60,7 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  // ── Active Dry ─────────────────────────────────────────────────────────────
+  //  Active Dry
   async getActiveDry(req, res) {
     const result = await WashAndDryService.getActiveDry(req);
     return result.success
@@ -75,7 +75,7 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  // ── Hold ───────────────────────────────────────────────────────────────────
+  // Hold
   async getHoldQueue(req, res) {
     const result = await WashAndDryService.getHoldQueue(req);
     return result.success
@@ -90,7 +90,7 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  // ── History ────────────────────────────────────────────────────────────────
+  //  History
   async getHistoryList(req, res) {
     const result = await WashAndDryService.getHistoryList(req);
     return result.success

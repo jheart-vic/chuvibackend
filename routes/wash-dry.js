@@ -1,14 +1,27 @@
-const router = require("express").Router();
-const WashAndDryController = require("../controllers/washAndDry.controller");
-const washAndDryAuth = require("../middlewares/washAndDryAuth");
+const router = require('express').Router()
+const WashAndDryController = require('../controllers/washAndDry.controller')
+const washAndDryAuth = require('../middlewares/washAndDryAuth')
+const {
+    ROUTE_WASH_AND_DRY_UNMARK_DASHBOARD,
+    ROUTE_WASH_AND_DRY_QUEUE,
+    ROUTE_WASH_AND_DRY_QUEUE_SINGLE,
+    ROUTE_WASH_AND_DRY_CONFIRM_FOR_WASHING,
+    ROUTE_WASH_AND_DRY_UNDO_CONFIRM_FOR_WASHING,
+    ROUTE_WASH_AND_DRY_HOLD,
+    ROUTE_WASH_AND_DRY_GET_ACTIVE_WASHING,
+    ROUTE_WASH_AND_DRY_MOVE_TO_DRYING,
+    ROUTE_WASH_AND_ACTIVE_DRYING,
+    ROUTE_WASH_AND_DRY_MARK_COMPLETE,
+    ROUTE_WASH_AND_DRY_GET_HOLD,
+    ROUTE_WASH_AND_DRY_HISTORY,
+    ROUTE_WASH_AND_DRY_HISTORY_TIMELINE,
+    ROUTE_WASH_AND_DRY_RELEASE,
+} = require('../util/page-route')
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * @swagger
- * /wash/dashboard:
+ * /wash-dry/dashboard:
  *   get:
  *     summary: Get Wash & Dry dashboard overview
  *     description: Returns stats (Wash Queue, Active Wash, Active Dry, Completed Today) and recent queue preview.
@@ -38,18 +51,19 @@ const washAndDryAuth = require("../middlewares/washAndDryAuth");
  *       500:
  *         description: Server error
  */
-router.get("/dashboard", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getDashboard(req, res);
-});
+router.get(
+    ROUTE_WASH_AND_DRY_UNMARK_DASHBOARD,
+    [washAndDryAuth],
+    (req, res) => {
+        const controller = new WashAndDryController()
+        return controller.getDashboard(req, res)
+    },
+)
 
-// ─────────────────────────────────────────────────────────────────────────────
 // WASH QUEUE
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * @swagger
- * /wash-dry/queue:
+ * /wash-dry/orders/queue:
  *   get:
  *     summary: Get wash queue — orders waiting to be washed
  *     tags:
@@ -83,14 +97,14 @@ router.get("/dashboard", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/queue", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getWashQueue(req, res);
-});
+router.get(ROUTE_WASH_AND_DRY_QUEUE, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.getWashQueue(req, res)
+})
 
 /**
  * @swagger
- * /wash-dry/queue/{id}:
+ * /wash-dry/order/queue/{id}:
  *   get:
  *     summary: Get single order details from wash queue
  *     tags:
@@ -117,14 +131,14 @@ router.get("/queue", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/queue/:id", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getWashQueueOrderDetails(req, res);
-});
+router.get(ROUTE_WASH_AND_DRY_QUEUE_SINGLE, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.getWashQueueOrderDetails(req, res)
+})
 
 /**
  * @swagger
- * /wash-dry/queue/{id}/items/{itemId}/confirm-washing:
+ * /wash-dry/order/queue/{id}/items/{itemId}/confirm-washing:
  *   patch:
  *     summary: Confirm a single item is present and ready for washing
  *     description: |
@@ -165,14 +179,18 @@ router.get("/queue/:id", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/queue/:id/items/:itemId/confirm-washing", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.confirmItemForWashing(req, res);
-});
+router.patch(
+    ROUTE_WASH_AND_DRY_CONFIRM_FOR_WASHING,
+    [washAndDryAuth],
+    (req, res) => {
+        const controller = new WashAndDryController()
+        return controller.confirmItemForWashing(req, res)
+    },
+)
 
 /**
  * @swagger
- * /wash-dry/queue/{id}/items/{itemId}/undo-washing:
+ * /wash-dry/order/queue/{id}/items/{itemId}/undo-washing:
  *   patch:
  *     summary: Undo a single item's wash confirmation
  *     description: Reverts item.washStatus back to pending and clears machine details.
@@ -201,14 +219,18 @@ router.patch("/queue/:id/items/:itemId/confirm-washing", [washAndDryAuth], (req,
  *       500:
  *         description: Server error
  */
-router.patch("/queue/:id/items/:itemId/undo-washing", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.undoConfirmItemForWashing(req, res);
-});
+router.patch(
+    ROUTE_WASH_AND_DRY_UNDO_CONFIRM_FOR_WASHING,
+    [washAndDryAuth],
+    (req, res) => {
+        const controller = new WashAndDryController()
+        return controller.undoConfirmItemForWashing(req, res)
+    },
+)
 
 /**
  * @swagger
- * /wash-dry/queue/{id}/items/{itemId}/hold:
+ * /wash-dry/order/queue/{id}/items/{itemId}/hold:
  *   patch:
  *     summary: Place a specific item on hold
  *     description: |
@@ -262,18 +284,15 @@ router.patch("/queue/:id/items/:itemId/undo-washing", [washAndDryAuth], (req, re
  *       500:
  *         description: Server error
  */
-router.patch("/queue/:id/items/:itemId/hold", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.sendToHold(req, res);
-});
+router.patch(ROUTE_WASH_AND_DRY_HOLD, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.sendToHold(req, res)
+})
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ACTIVE WASH
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * @swagger
- * /wash-dry/active-wash:
+ * /wash-dry/orders/active-wash:
  *   get:
  *     summary: Get orders currently being washed
  *     description: Orders that have been started but not yet moved to the dryer.
@@ -305,14 +324,18 @@ router.patch("/queue/:id/items/:itemId/hold", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/active-wash", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getActiveWash(req, res);
-});
+router.get(
+    ROUTE_WASH_AND_DRY_GET_ACTIVE_WASHING,
+    [washAndDryAuth],
+    (req, res) => {
+        const controller = new WashAndDryController()
+        return controller.getActiveWash(req, res)
+    },
+)
 
 /**
  * @swagger
- * /wash-dry/active-wash/{id}/move-to-drying:
+ * /wash-dry/order/active-wash/{id}/move-to-drying:
  *   patch:
  *     summary: Move order from washing to drying
  *     description: Operator clicks "Move to Drying". Records movedToDryingAt, moves stage to DRYING.
@@ -337,18 +360,19 @@ router.get("/active-wash", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/active-wash/:id/move-to-drying", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.moveToDrying(req, res);
-});
+router.patch(
+    ROUTE_WASH_AND_DRY_MOVE_TO_DRYING,
+    [washAndDryAuth],
+    (req, res) => {
+        const controller = new WashAndDryController()
+        return controller.moveToDrying(req, res)
+    },
+)
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ACTIVE DRY
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * @swagger
- * /wash-dry/active-dry:
+ * /wash-dry/orders/active-dry:
  *   get:
  *     summary: Get orders currently being dried
  *     tags:
@@ -379,14 +403,14 @@ router.patch("/active-wash/:id/move-to-drying", [washAndDryAuth], (req, res) => 
  *       500:
  *         description: Server error
  */
-router.get("/active-dry", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getActiveDry(req, res);
-});
+router.get(ROUTE_WASH_AND_ACTIVE_DRYING, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.getActiveDry(req, res)
+})
 
 /**
  * @swagger
- * /wash-dry/active-dry/{id}/complete:
+ * /wash-dry/order/active-dry/{id}/complete:
  *   patch:
  *     summary: Mark wash & dry as done and send to ironing
  *     description: |
@@ -415,18 +439,15 @@ router.get("/active-dry", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/active-dry/:id/complete", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.washAndDryComplete(req, res);
-});
+router.patch(ROUTE_WASH_AND_DRY_MARK_COMPLETE, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.washAndDryComplete(req, res)
+})
 
-// ─────────────────────────────────────────────────────────────────────────────
 // HOLD
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * @swagger
- * /wash-dry/hold:
+ * /wash-dry/orders/hold:
  *   get:
  *     summary: Get hold queue — orders on hold at the wash & dry station
  *     description: Returns flattened list showing order ID, flagged items, hold reason, hold time, operator and assigned station.
@@ -462,6 +483,7 @@ router.patch("/active-dry/:id/complete", [washAndDryAuth], (req, res) => {
  *                           fullName:   { type: string, example: "Jude Victor" }
  *                           holdReason: { type: string, example: "Item Missing" }
  *                           holdTime:   { type: string, format: date-time }
+ *                           operator:   { type: string, example: "Victor Jp" }
  *                           flaggedItems:
  *                             type: array
  *                             items:
@@ -476,10 +498,10 @@ router.patch("/active-dry/:id/complete", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/hold", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getHoldQueue(req, res);
-});
+router.get(ROUTE_WASH_AND_DRY_GET_HOLD, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.getHoldQueue(req, res)
+})
 
 /**
  * @swagger
@@ -507,15 +529,12 @@ router.get("/hold", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch("/hold/:id/release", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.releaseFromHold(req, res);
-});
+router.patch(ROUTE_WASH_AND_DRY_RELEASE, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.releaseFromHold(req, res)
+})
 
-// ─────────────────────────────────────────────────────────────────────────────
 // HISTORY
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * @swagger
  * /wash-dry/history:
@@ -558,10 +577,10 @@ router.patch("/hold/:id/release", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/history", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getHistoryList(req, res);
-});
+router.get(ROUTE_WASH_AND_DRY_HISTORY, [washAndDryAuth], (req, res) => {
+    const controller = new WashAndDryController()
+    return controller.getHistoryList(req, res)
+})
 
 /**
  * @swagger
@@ -619,9 +638,13 @@ router.get("/history", [washAndDryAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/history/:id/timeline", [washAndDryAuth], (req, res) => {
-  const controller = new WashAndDryController();
-  return controller.getOrderTimeline(req, res);
-});
+router.get(
+    ROUTE_WASH_AND_DRY_HISTORY_TIMELINE,
+    [washAndDryAuth],
+    (req, res) => {
+        const controller = new WashAndDryController()
+        return controller.getOrderTimeline(req, res)
+    },
+)
 
-module.exports = router;
+module.exports = router
