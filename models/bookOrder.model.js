@@ -19,6 +19,7 @@ const {
     PRETREATMENT_OPTIONS,
     DAMAGE_RISK_FLAGS,
     COLOR_GROUP,
+    ROLE,
 } = require('../util/constants')
 
 const ItemSchema = new mongoose.Schema(
@@ -93,18 +94,18 @@ const ItemSchema = new mongoose.Schema(
         washConfirmedAt: { type: Date },
         washConfirmedByOperatorId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'WashAndDry',
+            ref: 'UserModel',
         },
         holdDetails: {
             reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
             assignTo: {
                 type: String,
-                enum: ['admin_manager', 'sort_and_pretreat', 'intake_and_tag'],
+                enum: [ROLE.ADMIN, ROLE.SORT_AND_PRETREAT, ROLE.INTAKE_AND_TAG],
             },
             heldAt: { type: Date },
             heldByOperatorId: {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: 'WashAndDry',
+                ref: 'UserModel',
             },
         },
         actionLog: [
@@ -230,7 +231,7 @@ const bookOrderSchema = new mongoose.Schema(
           startedAt:         { type: Date },
           movedToDryingAt:   { type: Date },
           dryingCompletedAt: { type: Date },
-          operatorId:        { type: mongoose.Schema.Types.ObjectId, ref: "WashAndDry" },
+          operatorId:        { type: mongoose.Schema.Types.ObjectId, ref: "UserModel" },
         },
         dispatchDetails: {
             pickup: {
