@@ -120,6 +120,7 @@ class IntakeUserService extends BaseService {
     try {
       const orderId = req.params.id;
       const post = req.body;
+      const {message} = post
 
       if (!orderId) {
         return BaseService.sendFailedResponse({
