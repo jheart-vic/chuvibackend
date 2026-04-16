@@ -6,6 +6,7 @@ const {
     ORDER_SERVICE_TYPE,
     STATION_STATUS,
     ACTIVITY_TYPE,
+    ROLE,
 } = require('../util/constants')
 const {buildStageUpdate} =require('../util/helper')
 const BaseService = require('./base.service')
@@ -363,11 +364,7 @@ class WashAndDryService extends BaseService {
                 })
 
             const allowedReasons = ['item_missing', 'item_mismatched']
-            const allowedAssignees = [
-                'admin',
-                'sort-and-pretreat',
-                'intake-and-tag',
-            ]
+            const allowedAssignees = [ROLE.ADMIN, ROLE.SORT_AND_PRETREAT, ROLE.INTAKE_AND_TAG]
 
             if (!allowedReasons.includes(reason)) {
                 return BaseService.sendFailedResponse({

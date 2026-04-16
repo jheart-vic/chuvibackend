@@ -96,6 +96,17 @@ const ItemSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'UserModel',
         },
+        pressStatus: {
+            type: String,
+            enum: ['pending', 'complete'],
+            default: 'pending',
+        },
+        pressConfirmedAt: { type: Date },
+        pressConfirmedByOperatorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'UserModel',
+        },
+        flaggedForReview:{type: Boolean, default: false},
         holdDetails: {
             reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
             assignTo: {
@@ -228,10 +239,21 @@ const bookOrderSchema = new mongoose.Schema(
             required: false,
         },
         washDetails: {
-          startedAt:         { type: Date },
-          movedToDryingAt:   { type: Date },
-          dryingCompletedAt: { type: Date },
-          operatorId:        { type: mongoose.Schema.Types.ObjectId, ref: "UserModel" },
+            startedAt: { type: Date },
+            movedToDryingAt: { type: Date },
+            dryingCompletedAt: { type: Date },
+            operatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'UserModel',
+            },
+        },
+        pressDetails: {
+            startedAt: { type: Date },
+            completedAt: { type: Date },
+            operatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'UserModel',
+            },
         },
         dispatchDetails: {
             pickup: {
