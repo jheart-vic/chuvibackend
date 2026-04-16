@@ -12,6 +12,8 @@ const {
   DELIVERY_STATUS,
   ACTIVITY_TYPE,
   STATION_STATUS,
+  DELIVERY_SPEED,
+  NOTIFICATION_TYPE,
 } = require("../util/constants");
 const { generateOscNumber } = require("../util/helper");
 const validateData = require("../util/validate");
