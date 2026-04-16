@@ -62,6 +62,8 @@ const ACTIVITY_TYPE = {
   ORDER_WASH_DRY_COMPLETED:    "order_wash_dry_completed",
   ORDER_ON_HOLD:               "order_on_hold",
   ORDER_RELEASED_FROM_HOLD:    "order_released_from_hold",
+  ORDER_ITEM_PRESS_CONFIRMED:  'order_item_press_confirmed',
+  ORDER_PRESS_COMPLETED:       'order_press_completed',
 }
 
 const STATION_STATUS = {
