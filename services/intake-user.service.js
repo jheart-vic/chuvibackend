@@ -120,6 +120,7 @@ class IntakeUserService extends BaseService {
     try {
       const orderId = req.params.id;
       const post = req.body;
+      const {message} = post
 
       if (!orderId) {
         return BaseService.sendFailedResponse({
@@ -286,7 +287,7 @@ class IntakeUserService extends BaseService {
 
       await ActivityModel.create({
         title: "Order Item Tagged",
-        description: `An item with ${tagId} order ${oscNumber} has been tagged`,
+        description: `An item with ${tagId} order ${order.oscNumber} has been tagged`,
         type: ACTIVITY_TYPE.ORDER_CONFIRM,
       });
 
@@ -341,7 +342,7 @@ class IntakeUserService extends BaseService {
 
       await ActivityModel.create({
         title: "Order Item Tag Undone",
-        description: `An item with ${itemId} order ${oscNumber} has been undone from tagging`,
+        description: `An item with ${itemId} order ${order.oscNumber} has been undone from tagging`,
         type: ACTIVITY_TYPE.ORDER_CONFIRM,
       });
 
@@ -387,7 +388,7 @@ class IntakeUserService extends BaseService {
 
       await ActivityModel.create({
         title: "Order moved to sort and pretreat",
-        description: `A order ${oscNumber} has been moved to sort and pretreat`,
+        description: `A order ${order.oscNumber} has been moved to sort and pretreat`,
         type: ACTIVITY_TYPE.SORT_AND_PRETREAT,
       });
 
