@@ -438,6 +438,7 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
+      const {amount} = post;
       //   send message either SMS or Whatsapp to a user
       await ActivityModel.create({
         title: "Wallet Adjustment request",
