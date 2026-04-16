@@ -35,7 +35,6 @@ class IntakeUserService extends BaseService {
         pickupAddress: "string|required",
         serviceType: "string|required",
         serviceTier: "string|required",
-        isPickUpOnly: "boolean|required",
         isPickUpAndDelivery: "boolean|required",
         deliverySpeed: "string|required",
         items: "array|required",
