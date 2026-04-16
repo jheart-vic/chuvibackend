@@ -1,5 +1,6 @@
 const ActivityModel = require("../models/activity.model");
 const BookOrderModel = require("../models/bookOrder.model");
+const NotificationModel = require("../models/notification.model");
 const UserModel = require("../models/user.model");
 const WalletModel = require("../models/wallet.model");
 const {
@@ -12,6 +13,8 @@ const {
   ACTIVITY_TYPE,
   STATION_STATUS,
 } = require("../util/constants");
+const { generateOscNumber } = require("../util/helper");
+const validateData = require("../util/validate");
 const BaseService = require("./base.service");
 
 class IntakeUserService extends BaseService {
@@ -611,6 +614,7 @@ class IntakeUserService extends BaseService {
 
       order.dispatchDetails.pickup.rider = riderId;
       order.dispatchDetails.pickup.status = PICKUP_STATUS.SCHEDULED;
+      order.dispatchDetails.pickup.updatedAt = new Date();
 
       await order.save();
 
@@ -652,6 +656,7 @@ class IntakeUserService extends BaseService {
 
       order.dispatchDetails.delivery.rider = riderId;
       order.dispatchDetails.delivery.status = DELIVERY_STATUS.OUT_FOR_DELIVERY;
+      order.dispatchDetails.delivery.updatedAt = new Date();
 
       await order.save();
 

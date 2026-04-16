@@ -264,6 +264,7 @@ const bookOrderSchema = new mongoose.Schema(
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'Rider' },
                 isVerified: { type: Boolean, default: false },
+                updatedAt: { type: Date },
             },
             delivery: {
                 status: {
@@ -273,6 +274,7 @@ const bookOrderSchema = new mongoose.Schema(
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'Rider' },
                 note: { type: String },
+                updatedAt: { type: Date },
             },
         },
     },

@@ -1,0 +1,56 @@
+const RiderService = require("../services/rider.service");
+const BaseController = require("./base.controller");
+
+class RiderController extends BaseController {
+  async getRiderAssignedDeliveries(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.getRiderAssignedDeliveries(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+
+  async getOrderDetails(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.getOrderDetails(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async startDelivery(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.startDelivery(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async getActiveDeliveries(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.getActiveDeliveries(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async markOrderAsDelivered(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.markOrderAsDelivered(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async markOrderDeliveryAsFailed(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.markOrderDeliveryAsFailed(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+}
+
+module.exports = RiderController;

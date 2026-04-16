@@ -35,6 +35,11 @@ async function handleChargeSuccess(data) {
     }
 
     // 3️⃣ Save payment
+    console.log(metadata, "metadata")
+    if(!metadata.transactionType){
+      console.warn("No transaction type in metadata, cannot process payment");
+      return;
+    }
     await PaymentModel.create({
       userId: user._id,
       amount: data.amount / 100,
