@@ -14,6 +14,8 @@ const {
   ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID,
   ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID,
   ROUTE_PICKABLE_ORDERS,
+  ROUTE_GET_BOOK_ORDER_ID,
+  ROUTE_GET_PENDING_ORDERS,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -183,6 +185,180 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
 router.post(ROUTE_CREATE_BOOK_ORDER, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.createBookOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/get-pending-orders:
+ *   get:
+ *     summary: Get all pending orders
+ *     tags:
+ *       - Intake User
+ *     responses:
+ *       200:
+ *         description: List of pending book orders
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                         example: "64d3c9c0f1b2a8e9d0f12345"
+ *                       fullName:
+ *                         type: string
+ *                         example: "John Doe"
+ *                       phoneNumber:
+ *                         type: string
+ *                         example: "+1234567890"
+ *                       serviceType:
+ *                         type: string
+ *                         example: "wash-and-iron"
+ *                       serviceTier:
+ *                         type: string
+ *                         example: "premium"
+ *                       amount:
+ *                         type: number
+ *                         example: 150
+ *                       paymentStatus:
+ *                         type: string
+ *                         example: "pending"
+ *                       stage:
+ *                         type: object
+ *                         properties:
+ *                           status:
+ *                             type: string
+ *                             example: "pending"
+ *                           note:
+ *                             type: string
+ *                             example: "Awaiting pickup"
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-01-13T12:34:56.789Z"
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_PENDING_ORDERS, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.getPendingOrders(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/get-book-order/{id}:
+ *   get:
+ *     summary: Get a single book order by ID
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: The ID of the order
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *     responses:
+ *       200:
+ *         description: A single book order document
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: "64d3c9c0f1b2a8e9d0f12345"
+ *                     fullName:
+ *                       type: string
+ *                       example: "John Doe"
+ *                     phoneNumber:
+ *                       type: string
+ *                       example: "+1234567890"
+ *                     pickupAddress:
+ *                       type: string
+ *                       example: "123 Main Street"
+ *                     pickupDate:
+ *                       type: string
+ *                       format: date
+ *                       example: "2026-01-13"
+ *                     pickupTime:
+ *                       type: string
+ *                       example: "morning"
+ *                     serviceType:
+ *                       type: string
+ *                       example: "wash-and-iron"
+ *                     serviceTier:
+ *                       type: string
+ *                       example: "premium"
+ *                     deliverySpeed:
+ *                       type: string
+ *                       example: "express"
+ *                     amount:
+ *                       type: number
+ *                       example: 150
+ *                     paymentMethod:
+ *                       type: string
+ *                       example: "paystack"
+ *                     oscNumber:
+ *                       type: string
+ *                       example: "OSC123456"
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           type:
+ *                             type: string
+ *                             example: "shirt"
+ *                           price:
+ *                             type: number
+ *                             example: 50
+ *                           quantity:
+ *                             type: number
+ *                             example: 2
+ *                     extraNote:
+ *                       type: string
+ *                       example: "Handle with care"
+ *                     stage:
+ *                       type: object
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           example: "in-process"
+ *                         note:
+ *                           type: string
+ *                           example: "Picked up by driver"
+ *                     paymentStatus:
+ *                       type: string
+ *                       example: "pending"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-13T12:34:56.789Z"
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-13T13:00:00.123Z"
+ *       400:
+ *         description: Invalid request (e.g., missing ID)
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_BOOK_ORDER_ID, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.getBookOrder(req, res);
 });
 
 /**

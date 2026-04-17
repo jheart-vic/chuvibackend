@@ -108,6 +108,8 @@ exports.ROUTE_PICKABLE_ORDERS = '/pickable-orders'
 exports.ROUTE_DELIVERABLE_ORDERS = '/deliverable-orders'
 exports.ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID = '/assign-rider/:riderId/pickup-order/:id'
 exports.ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/assign-rider/:riderId/delivery-order/:id'
+exports.ROUTE_GET_BOOK_ORDER_ID = '/get-book-order/:id'
+exports.ROUTE_GET_PENDING_ORDERS = '/get-pending-orders'
 
 //wallet
 exports.ROUTE_WALLET_TOP_UP = "/wallet-top-up"
