@@ -118,6 +118,7 @@ class IntakeUserService extends BaseService {
   }
   async flagOrder(req) {
     try {
+      const userId = req.user.id;
       const orderId = req.params.id;
       const post = req.body;
       const {message} = post
@@ -132,7 +133,6 @@ class IntakeUserService extends BaseService {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
 
-      const userId = req.user.id;
 
       const user = await UserModel.findById(userId);
 
@@ -213,7 +213,7 @@ class IntakeUserService extends BaseService {
 
       await ActivityModel.create({
         title: "Order moved to tag and queue",
-        description: `A order ${oscNumber} has been moved to tag and queue`,
+        description: `A order ${order.oscNumber} has been moved to tag and queue`,
         type: ACTIVITY_TYPE.TAG_AND_QUEUE,
       });
 
@@ -319,8 +319,6 @@ class IntakeUserService extends BaseService {
       if (!order) {
         return BaseService.sendFailedResponse({ error: "Order not found" });
       }
-
-      const post = req.body;
 
       const user = await UserModel.findById(userId);
 
