@@ -116,6 +116,42 @@ class IntakeUserService extends BaseService {
       return BaseService.sendFailedResponse({ error });
     }
   }
+  async getPendingOrders(req) {
+    try {
+      const orders = await BookOrderModel.find({
+        "stage.status": ORDER_STATUS.PENDING,
+      });
+
+      return BaseService.sendSuccessResponse({
+        message: orders,
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({ error: "Failed to get orders" });
+    }
+  }
+  async getBookOrder(req) {
+    try {
+      const orderId = req.params.id;
+
+      if (!orderId) {
+        return BaseService.sendFailedResponse({
+          error: "Order ID is required",
+        });
+      }
+      const order = await BookOrderModel.findById(orderId);
+      if (!order) {
+        return BaseService.sendFailedResponse({ error: "Order not found" });
+      }
+
+      return BaseService.sendSuccessResponse({
+        message: order,
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({ error: "Failed to get order" });
+    }
+  }
   async flagOrder(req) {
     try {
       const userId = req.user.id;
@@ -222,7 +258,7 @@ class IntakeUserService extends BaseService {
       });
     } catch (error) {
       console.log(error);
-      return BaseService.sendFailedResponse({ error: "Failed to flag order" });
+      return BaseService.sendFailedResponse({ error: "Failed to proceed order" });
     }
   }
   async confirmTagItem(req) {
