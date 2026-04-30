@@ -75,5 +75,4 @@ httpServer.listen(port, async () => {
   console.log(`Server running on ${port}`);
   await connectToMongoDB(mongoURL);
   setupApp()
-  // setupSocket(httpServer)
 });

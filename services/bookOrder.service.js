@@ -59,6 +59,7 @@ class BookOrderService extends BaseService {
 
       let finalMessage = 'Order booked successfully';
       const adminOrderSettings = await AdminOrderDetailsModel.findOne({});
+      const oscNumber = generateOscNumber();
 
 
 
@@ -124,9 +125,6 @@ class BookOrderService extends BaseService {
         let extraDeliveryCost = 0;
 
         totalPrice += extraDeliveryCost;
-
-        const oscNumber = generateOscNumber();
-
         const stage = {
           status: ORDER_STATUS.PENDING,
           updatedAt: new Date(),
@@ -181,7 +179,7 @@ class BookOrderService extends BaseService {
 
         totalPrice += extraDeliveryCost;
 
-        const oscNumber = generateOscNumber();
+        // const oscNumber = generateOscNumber();
 
 
         const stage = {
