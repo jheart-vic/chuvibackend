@@ -88,6 +88,7 @@ router.post(
  *       500:
  *         description: Server error
  */
+
 router.post(
   ROUTE_IMAGE_UPLOAD_SINGLE,
   auth,
