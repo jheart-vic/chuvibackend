@@ -10,15 +10,7 @@ const notificationSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: [
-        NOTIFICATION_TYPE.SYSTEM,
-        NOTIFICATION_TYPE.ORDER_CREATED,
-        NOTIFICATION_TYPE.ORDER_DELIVERED,
-        NOTIFICATION_TYPE.ORDER_IRONING,
-        NOTIFICATION_TYPE.ORDER_WASHING,
-        NOTIFICATION_TYPE.ORDER_PICKED,
-        NOTIFICATION_TYPE.PAYMENT_APPROVED,
-    ],
+      enum: Object.values(NOTIFICATION_TYPE),
       default: NOTIFICATION_TYPE.SYSTEM,
     },
   },
