@@ -11,6 +11,14 @@ class IntakeUserController extends BaseController {
       ? BaseController.sendSuccessResponse(res, result.data)
       : BaseController.sendFailedResponse(res, result.data);
   }
+  async intakeDashboard(req, res) {
+    const intakeUserService = new IntakeUserService();
+    const result = await intakeUserService.intakeDashboard(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
   async getPendingOrders(req, res) {
     const intakeUserService = new IntakeUserService();
     const result = await intakeUserService.getPendingOrders(req);

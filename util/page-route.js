@@ -40,6 +40,7 @@ exports.ROUTE_INTAKE_USER_RESEND_OTP = '/intake-user/resend-otp'
 exports.ROUTE_INTAKE_USER_VERIFY_OTP = '/intake-user/verify-otp'
 exports.ROUTE_INTAKE_USER_VERIFY_EMAIL = '/intake-user/verify-email'
 exports.ROUTE_INTAKE_USER_VERIFY_RESET_PASSWORD_OTP = '/intake-user/verify-reset-password-otp'
+exports.ROUTE_INTAKE_USER_DASHBOARD_STATS = '/intake-user/dashboard-stats'
 
 
 

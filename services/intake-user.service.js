@@ -116,14 +116,51 @@ class IntakeUserService extends BaseService {
       return BaseService.sendFailedResponse({ error });
     }
   }
+  async intakeDashboard(req, res){
+    try {
+      const pendingOrders = await BookOrderModel.countDocuments({"stage.status": ORDER_STATUS.PENDING})
+      const taggingQueue = await BookOrderModel.countDocuments({"stage.status": ORDER_STATUS.QUEUE})
+      const holdOrders = await BookOrderModel.countDocuments({"stage.status": ORDER_STATUS.HOLD})
+
+      const response = {}
+      response['pendingOrders'] = pendingOrders
+      response['taggingQueueOrders'] = taggingQueue
+      response['holdOrders'] = holdOrders
+
+      return BaseService.sendSuccessResponse({message: response})
+    } catch (error) {
+      console.log(error)
+      return BaseService.sendFailedResponse({error: 'Something went wrong.'})
+    }
+  }
   async getPendingOrders(req) {
     try {
-      const orders = await BookOrderModel.find({
-        "stage.status": ORDER_STATUS.PENDING,
-      });
+      const page = parseInt(req.query.page) || 1; // default to page 1
+      const limit = parseInt(req.query.limit) || 10; // default 10 per page
+      const skip = (page - 1) * limit;
 
+      const filter = {
+        "stage.status": ORDER_STATUS.PENDING,
+      }
+
+      const orders = await BookOrderModel.find(filter)
+      .sort({ createdAt: -1 }) // latest first
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      // 4️⃣ Count total for pagination meta
+      const total = await BookOrderModel.countDocuments(filter);
+
+      // 5️⃣ Send response
       return BaseService.sendSuccessResponse({
-        message: orders,
+        message: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          data: orders,
+        },
       });
     } catch (error) {
       console.log(error);
