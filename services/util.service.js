@@ -4,7 +4,7 @@ class UtilService extends BaseService {
     async uploadSingleImage(req) {
       try {
         let image = {};
-        if (empty(req.file)) {
+        if (!req.file) {
           return BaseService.sendFailedResponse({
             error: "Please provide an image",
           });
@@ -24,7 +24,7 @@ class UtilService extends BaseService {
     async uploadMultipleImage(req) {
         try {
           let images = [];
-          if (empty(req.files)) {
+          if (req.files) {
             return BaseService.sendFailedResponse({
               error: "Please provide multiple images",
             });
