@@ -345,23 +345,28 @@ async function handleOrderPayment(metadata, reference) {
 async function handleWalletTopUp(metadata) {
   try {
     const { userId } = metadata;
+    console.log('stage 1 handlewallet')
 
     if (!userId) {
       console.warn("User Id missing in metadata");
       return;
     }
+    console.log('stage 2 handlewallet')
 
     const user = await UserModel.findById(userId);
     if (!user) {
       console.warn(`User ${userId} not found`);
       return;
     }
+    console.log('stage 3 handlewallet')
 
     const wallet = await WalletModel.findOne({userId})
 
     if(wallet){
       wallet.balance += metadata.amount / 100;
     }
+    console.log('stage 4 handlewallet')
+
 
     // 🔔 Optional notification
     await NotificationModel.create({
@@ -371,6 +376,7 @@ async function handleWalletTopUp(metadata) {
       subBody: "Your wallet top up is successful.",
       type: NOTIFICATION_TYPE.WALLET_TOP_UP
     });
+    console.log('stage 5 handlewallet')
   } catch (error) {
     console.error("Error in handleOrderPayment:", error);
     return;
