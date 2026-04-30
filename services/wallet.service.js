@@ -227,7 +227,7 @@ class WalletService extends BaseService {
       });
 
       // 🧮 Totals
-      const totalsAgg = await PaymentModel.aggregate([
+      const [result] = await WalletTransactionModel.aggregate([
         {
           $match: {
             userId: new mongoose.Types.ObjectId(userId),
@@ -237,19 +237,23 @@ class WalletService extends BaseService {
         },
         {
           $group: {
-            _id: "$alertType",
-            totalAmount: { $sum: "$amount" },
+            _id: null,
+            credit: {
+              $sum: {
+                $cond: [{ $eq: ["$type", "credit"] }, "$amount", 0],
+              },
+            },
+            debit: {
+              $sum: {
+                $cond: [{ $eq: ["$type", "debit"] }, "$amount", 0],
+              },
+            },
           },
         },
       ]);
-
-      let credit = 0;
-      let debit = 0;
-
-      totalsAgg.forEach((item) => {
-        if (item._id === "credit") credit = item.totalAmount;
-        if (item._id === "debit") debit = item.totalAmount;
-      });
+      
+      const credit = result?.credit || 0;
+      const debit = result?.debit || 0;
 
       return BaseService.sendSuccessResponse({
         message: {

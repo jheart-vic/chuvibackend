@@ -2,6 +2,7 @@ const ActivityModel = require("../models/activity.model");
 const BookOrderModel = require("../models/bookOrder.model");
 const PaymentModel = require("../models/payment.model");
 const SubscriptionModel = require("../models/subscription.model");
+const WalletTransactionModel = require("../models/walletTransaction.model");
 const {
   ORDER_STATUS,
   PAYMENT_ORDER_STATUS,
@@ -706,6 +707,15 @@ class AdminService extends BaseService {
       payment.verifiedBy = adminId;
       payment.verifiedAt = new Date();
       await payment.save();
+
+      if(payment.type === "wallet-top-up"){
+        await WalletTransactionModel.create({
+          userId: payment.userId,
+          type: "credit",
+          amount: payment.amount,
+          status: "success",
+        })
+      }
 
       // If it's an order payment, update the order's payment status
       if (payment.type === "order" && payment.order) {
