@@ -8,6 +8,7 @@ const corsOptions = {
     'http://localhost:5000',
     'http://localhost:5173',
     'https://www.chuvilaundry.com',
+    ''
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
