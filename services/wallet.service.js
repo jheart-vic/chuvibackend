@@ -49,7 +49,7 @@ class WalletService extends BaseService {
         metadata: {
           userId,
           transactionType: "wallet-top-up",
-          // orderId: post.orderId,
+          amount,
           paymentMethod,
         },
       });
