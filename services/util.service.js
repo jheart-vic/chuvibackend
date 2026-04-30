@@ -40,7 +40,7 @@ class UtilService extends BaseService {
         } catch (error) {
           BaseService.sendFailedResponse(this.server_error_message);
         }
-      }
+    }
 }
 
 module.exports = UtilService;
