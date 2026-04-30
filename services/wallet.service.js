@@ -230,7 +230,7 @@ class WalletService extends BaseService {
       const totalsAgg = await PaymentModel.aggregate([
         {
           $match: {
-            userId: mongoose.Types.ObjectId(userId),
+            userId: new mongoose.Types.ObjectId(userId),
             status: "success",
             createdAt: { $gte: startOfMonth, $lte: endOfMonth },
           },
