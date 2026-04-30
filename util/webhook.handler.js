@@ -7,6 +7,7 @@ const NotificationModel = require("../models/notification.model");
 const { NOTIFICATION_TYPE } = require("./constants");
 const PlanModel = require("../models/plan.model");
 const WalletModel = require("../models/wallet.model");
+const WalletTransactionModel = require("../models/walletTransaction.model");
 
 async function handleChargeSuccess(data) {
   try {
@@ -345,27 +346,37 @@ async function handleOrderPayment(metadata, reference) {
 async function handleWalletTopUp(metadata) {
   try {
     const { userId } = metadata;
-    console.log('stage 1 handlewallet')
 
     if (!userId) {
       console.warn("User Id missing in metadata");
       return;
     }
-    console.log('stage 2 handlewallet')
 
     const user = await UserModel.findById(userId);
     if (!user) {
       console.warn(`User ${userId} not found`);
       return;
     }
-    console.log('stage 3 handlewallet')
 
-    const wallet = await WalletModel.findOne({userId})
+    // const wallet = await WalletModel.findOne({userId})
 
-    if(wallet){
-      wallet.balance += metadata.amount / 100;
-    }
-    console.log('stage 4 handlewallet')
+    // if(wallet){
+    //   wallet.balance += metadata.amount / 100;
+    //   await wallet.save()
+    // }
+
+    await WalletModel.findOneAndUpdate(
+      { userId },
+      { $setOnInsert: { balance: 0 } },
+      { upsert: true }
+    );
+
+    await WalletTransactionModel.create({
+      userId,
+      type: "credit",
+      amount: metadata.amount / 100,
+      status: "success",
+    });
 
 
     // 🔔 Optional notification
@@ -376,7 +387,6 @@ async function handleWalletTopUp(metadata) {
       subBody: "Your wallet top up is successful.",
       type: NOTIFICATION_TYPE.WALLET_TOP_UP
     });
-    console.log('stage 5 handlewallet')
   } catch (error) {
     console.error("Error in handleOrderPayment:", error);
     return;
