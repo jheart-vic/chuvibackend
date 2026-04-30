@@ -367,9 +367,13 @@ async function handleWalletTopUp(metadata) {
 
     await WalletModel.findOneAndUpdate(
       { userId },
-      { $setOnInsert: { balance: metadata.amount / 100 } },
-      { upsert: true }
+      { $set: { balance: metadata.amount / 100 } }, // Updates if exists
+      { 
+        upsert: true, // Creates if doesn't exist
+        new: true     // Returns the updated document
+      }
     );
+    
 
     await WalletTransactionModel.create({
       userId,
