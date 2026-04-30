@@ -60,7 +60,7 @@ class BookOrderService extends BaseService {
       let finalMessage = 'Order booked successfully';
       const adminOrderSettings = await AdminOrderDetailsModel.findOne({});
       const oscNumber = generateOscNumber();
-
+      let newOrder = null
 
 
       if (post.billingType == BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
@@ -144,7 +144,7 @@ class BookOrderService extends BaseService {
           stationStatus: STATION_STATUS.PENDING,
           ...post,
         };
-        const newOrder = new BookOrderModel(newOrderItem);
+        newOrder = new BookOrderModel(newOrderItem);
         await newOrder.save();
 
         await NotificationModel.create({
@@ -228,6 +228,7 @@ class BookOrderService extends BaseService {
       });
       return BaseService.sendSuccessResponse({
         message: finalMessage,
+        order: newOrder
       });
 
     } catch (error) {
