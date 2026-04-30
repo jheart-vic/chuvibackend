@@ -16,6 +16,7 @@ const {
   ROUTE_PICKABLE_ORDERS,
   ROUTE_GET_BOOK_ORDER_ID,
   ROUTE_GET_PENDING_ORDERS,
+  ROUTE_INTAKE_USER_DASHBOARD_STATS,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -425,6 +426,43 @@ router.get(ROUTE_GET_BOOK_ORDER_ID, [intakeUserAuth], (req, res) => {
 router.post(ROUTE_FLAG_ORDER_ID, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.flagOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-users/dashboard-stats:
+ *   get:
+ *     summary: Get dashboard statistics and analytics
+ *     tags:
+ *       - Intake User
+ *     description: Returns aggregated metrics including revenue, orders, subscriptions, and activity insights for the admin dashboard.
+ *     responses:
+ *       200:
+ *         description: Dashboard statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     pendingOrders:
+ *                       type: integer
+ *                       example: 120
+ *                     taggingQueueOrders:
+ *                       type: number
+ *                       example: 500
+ *                     holdOrders:
+ *                       type: number
+ *                       description: Percentage change compared to yesterday
+ *                       example: 12
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_INTAKE_USER_DASHBOARD_STATS, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.intakeDashboard(req, res);
 });
 
 /**
