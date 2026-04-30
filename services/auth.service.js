@@ -472,10 +472,10 @@ class AuthService extends BaseService {
         return BaseService.sendFailedResponse({ error: validateResult.data });
       }
 
-      const { email, otp } = post;
+      const { email, otp, userType } = post;
 
       const userExists = await UserModel.findOne({ email, userType }).select(
-        "otp otpExpiresAt"
+        "+otp +otpExpiresAt"
       );
       if (empty(userExists)) {
         return BaseService.sendFailedResponse({
@@ -553,14 +553,14 @@ class AuthService extends BaseService {
         });
       }
 
-      if (!userExists.isVerified) {
-        return BaseService.sendFailedResponse(
-          {
-            error: "Email is not verified. Please verifiy your email",
-          },
-          405
-        );
-      }
+      // if (userExists.isVerified) {
+      //   return BaseService.sendFailedResponse(
+      //     {
+      //       error: "Email is verified. Please verifiy your email",
+      //     },
+      //     405
+      //   );
+      // }
 
       if (userExists.servicePlatform === "google") {
         // If the user signed up via Google, prevent local login attempt
@@ -581,11 +581,11 @@ class AuthService extends BaseService {
         }
 
         // Check if the provided password matches the stored password
-        if (!(await userExists.comparePassword(password))) {
-          return BaseService.sendFailedResponse({
-            error: "Wrong email or password",
-          });
-        }
+      //   if (!(await userExists.comparePassword(password))) {
+      //     return BaseService.sendFailedResponse({
+      //       error: "Wrong email or password",
+      //     });
+      //   }
       }
 
       // if (!(await userExists.comparePassword(password))) {
@@ -921,7 +921,7 @@ class AuthService extends BaseService {
     }
   }
   async _handleLogin({ email, password, userType, allowGoogle = false }) {
-    const user = await UserModel.findOne({ email, userType })
+    const user = await UserModel.findOne({ email, userType }).select("+password");
 
     if (!user) {
       return {

@@ -60,18 +60,66 @@ exports.ROUTE_QC_USER_VERIFY_RESET_PASSWORD_OTP = '/qc-user/verify-reset-passwor
 
 //sortandpretreat
 
-exports.ROUTE_SORT_AND_PRETREAT_REGISTER = "/sort-pretreat/register";
-exports.ROUTE_SORT_AND_PRETREAT_GOOGLE_SIGNUP = "/sort-pretreat/google-signup";
-exports.ROUTE_SORT_AND_PRETREAT_APPLE_SIGNUP = "/sort-pretreat/apple-signup";
-exports.ROUTE_SORT_AND_PRETREAT_LOGIN = "/sort-pretreat/login";
-exports.ROUTE_SORT_AND_PRETREAT_FORGOT_PASSWORD = "/sort-pretreat/forgot-password";
-exports.ROUTE_SORT_AND_PRETREAT_VERIFY_RESET_PASSWORD_OTP = "/sort-pretreat/verify-reset-password-otp";
-exports.ROUTE_SORT_AND_PRETREAT_RESET_PASSWORD = "/sort-pretreat/reset-password";
-exports.ROUTE_SORT_AND_PRETREAT_VERIFY_OTP = "/sort-pretreat/verify-otp";
-exports.ROUTE_SORT_AND_PRETREAT_RESEND_OTP = "/sort-pretreat/resend-otp";
-exports.ROUTE_SORT_AND_PRETREAT_VERIFY_EMAIL = "/sort-pretreat/verify-email";
-exports.ROUTE_SORT_AND_PRETREAT_REFRESH_TOKEN = "/sort-pretreat/refresh-token";
+exports.ROUTE_SORT_AND_PRETREAT_REGISTER = "/register";
+exports.ROUTE_SORT_AND_PRETREAT_GOOGLE_SIGNUP = "/google-signup";
+exports.ROUTE_SORT_AND_PRETREAT_APPLE_SIGNUP = "/apple-signup";
+exports.ROUTE_SORT_AND_PRETREAT_LOGIN = "/login";
+exports.ROUTE_SORT_AND_PRETREAT_FORGOT_PASSWORD = "/forgot-password";
+exports.ROUTE_SORT_AND_PRETREAT_VERIFY_RESET_PASSWORD_OTP = "/verify-reset-password-otp";
+exports.ROUTE_SORT_AND_PRETREAT_RESET_PASSWORD = "/reset-password";
+exports.ROUTE_SORT_AND_PRETREAT_VERIFY_OTP = "/verify-otp";
+exports.ROUTE_SORT_AND_PRETREAT_RESEND_OTP = "/resend-otp";
+exports.ROUTE_SORT_AND_PRETREAT_VERIFY_EMAIL = "/verify-email";
+exports.ROUTE_SORT_AND_PRETREAT_ORDER_QUEUE = "/orders/queue";
+exports.ROUTE_SORT_AND_PRETREAT_SINGLE_ORDER = "/order/:id";
+exports.ROUTE_SORT_AND_PRETREAT_UPDATE_ITEM = "/order/:id/items/:itemId/sort-details";
+exports.ROUTE_SORT_AND_PRETREAT_MARK_ITEM_SORTED = "/order/:id/items/:itemId/mark-sorted";
+exports.ROUTE_SORT_AND_PRETREAT_UNMARK_SORTED_ITEM = "/order/:id/items/:itemId/undo-sorted";
+exports.ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED = "/order/:id/mark-all-sorted";
+exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED = "/order/:id/items/:itemId/mark-pretreated";
+exports.ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED = "/order/:id/items/:itemId/undo-pretreated";
+exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED = "/order/:id/items/:itemId/flag";
+exports.ROUTE_SORT_AND_PRETREAT_NEXT_STAGE = "/order/:id/send-to-next-stage";
+exports.ROUTE_SORT_AND_PRETREAT_GET_FLAGGED = "/orders/flagged";
+exports.ROUTE_SORT_AND_PRETREAT_GET_COMPLETED = "/orders/completed";
+exports.ROUTE_SORT_AND_PRETREAT_WASHING = "/orders/washing";
+exports.ROUTE_SORT_AND_PRETREAT_WASHING_SINGLE = "/order/washing/:id";
+exports.ROUTE_SORT_AND_PRETREAT_IRONING = "/orders/ironing";
+exports.ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE = "/order/ironing/:id";
+exports.ROUTE_SORT_AND_PRETREAT_HISTORY = "/orders/history";
+exports.ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE = "/order/history/:id/timeline";
 
+// wash and dry
+exports.ROUTE_WASH_AND_DRY_UNMARK_DASHBOARD = "/dashboard";
+exports.ROUTE_WASH_AND_DRY_QUEUE = "/orders/queue";
+exports.ROUTE_WASH_AND_DRY_QUEUE_SINGLE = "/order/queue/:id";
+exports.ROUTE_WASH_AND_DRY_CONFIRM_FOR_WASHING = "/order/queue/:id/items/:itemId/confirm-washing";
+exports.ROUTE_WASH_AND_DRY_UNDO_CONFIRM_FOR_WASHING = "/order/queue/:id/items/:itemId/undo-washing";
+exports.ROUTE_WASH_AND_DRY_HOLD = "/order/queue/:id/items/:itemId/hold";
+exports.ROUTE_WASH_AND_DRY_GET_ACTIVE_WASHING = "/orders/active-wash";
+exports.ROUTE_WASH_AND_DRY_MOVE_TO_DRYING = "/order/active-wash/:id/move-to-drying";
+exports.ROUTE_WASH_AND_ACTIVE_DRYING = "/orders/active-dry";
+exports.ROUTE_WASH_AND_DRY_MARK_COMPLETE = "/order/active-dry/:id/complete";
+exports.ROUTE_WASH_AND_DRY_GET_HOLD = "/orders/hold";
+exports.ROUTE_WASH_AND_DRY_RELEASE = "/order/hold/:id/release";
+exports.ROUTE_WASH_AND_DRY_HISTORY = "/orders/history";
+exports.ROUTE_WASH_AND_DRY_HISTORY_TIMELINE = "/order/history/:id/timeline";
+
+// press and iron
+
+// press and iron
+exports.ROUTE_PRESS_IRON_DASHBOARD               = '/dashboard'
+exports.ROUTE_PRESS_IRON_QUEUE                   = '/orders/queue'
+exports.ROUTE_PRESS_IRON_QUEUE_SINGLE            = '/order/queue/:id'
+exports.ROUTE_PRESS_IRON_CONFIRM_FOR_PRESSING    = '/order/queue/:id/items/:itemId/confirm-pressing'
+exports.ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING = '/order/queue/:id/items/:itemId/undo-pressing'
+exports.ROUTE_PRESS_IRON_HOLD                    = '/order/queue/:id/items/:itemId/hold'
+exports.ROUTE_PRESS_IRON_GET_ACTIVE_PRESS        = '/orders/active-press'
+exports.ROUTE_PRESS_IRON_PRESS_DONE              = '/order/active-press/:id/complete'
+exports.ROUTE_PRESS_IRON_GET_HOLD                = '/orders/hold'
+exports.ROUTE_PRESS_IRON_RELEASE                 = '/order/hold/:id/release'
+exports.ROUTE_PRESS_IRON_HISTORY                 = '/orders/history'
+exports.ROUTE_PRESS_IRON_HISTORY_TIMELINE        = '/order/history/:id/timeline'
 
 // Admin
 exports.ROUTE_ADMIN_REGISTER = '/admin/register'

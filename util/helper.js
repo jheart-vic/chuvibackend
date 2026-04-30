@@ -119,3 +119,15 @@ module.exports.addMonths = (date, months = 1)=> {
 
   return d;
 }
+
+module.exports.buildStageUpdate = (status, stationStatus, note = '') => ({
+    $set: {
+        'stage.status': status,
+        'stage.note': note,
+        'stage.updatedAt': new Date(),
+        stationStatus,
+    },
+    $push: {
+        stageHistory: { status, note, updatedAt: new Date() },
+    },
+})
