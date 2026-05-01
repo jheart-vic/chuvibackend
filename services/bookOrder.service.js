@@ -59,11 +59,20 @@ class BookOrderService extends BaseService {
 
       let finalMessage = 'Order booked successfully';
       const adminOrderSettings = await AdminOrderDetailsModel.findOne({});
+
+        if (!adminOrderSettings) {
+          return BaseService.sendFailedResponse({
+            error: "Admin order settings not found",
+          });
+        }
+
       const oscNumber = generateOscNumber();
       let newOrder = null
+console.log('billingType from request:', post.billingType);
+console.log('PAY_FROM_SUBSCRIPTION constant:', BILLING_TYPE.PAY_FROM_SUBSCRIPTION);
+console.log('PAY_PER_ITEM constant:', BILLING_TYPE.PAY_PER_ITEM);
 
-
-      if (post.billingType == BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
+      if (post.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
         const subscription = await SubscriptionModel.findOne({
           userId,
         }).populate("planId");
@@ -80,11 +89,6 @@ class BookOrderService extends BaseService {
         }
 
 
-        if (!adminOrderSettings) {
-          return BaseService.sendFailedResponse({
-            error: "Admin order settings not found",
-          });
-        }
 
         const isAllStandard = post.items.every((item) => STANDARD_ITEMS_ENUM_TYPES.includes(item.type));
 
@@ -159,9 +163,9 @@ class BookOrderService extends BaseService {
         subscription.remainingItems -= post.items.length;
         await subscription.save();
 
-        
 
-      } else if (post.billingType == BILLING_TYPE.PAY_PER_ITEM) {
+
+      } else if (post.billingType === BILLING_TYPE.PAY_PER_ITEM) {
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
           const quantity = Number(item.quantity);
@@ -171,7 +175,7 @@ class BookOrderService extends BaseService {
 
         let extraDeliveryCost = 0;
 
-        if (post.deliverySpeend == DELIVERY_SPEED.EXPRESS) {
+        if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
           extraDeliveryCost = 300;
         } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
           extraDeliveryCost = 500;
@@ -200,7 +204,7 @@ class BookOrderService extends BaseService {
           stageHistory: [stageHistory],
           ...post,
         };
-        const newOrder = new BookOrderModel(newOrderItem);
+         newOrder = new BookOrderModel(newOrderItem);
         await newOrder.save();
 
         await NotificationModel.create({
@@ -230,7 +234,6 @@ class BookOrderService extends BaseService {
         message: finalMessage,
         order: newOrder
       });
-
     } catch (error) {
       console.log(error);
       return BaseService.sendFailedResponse({ error });
