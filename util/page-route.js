@@ -88,6 +88,7 @@ exports.ROUTE_SORT_AND_PRETREAT_IRONING = "/orders/ironing";
 exports.ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE = "/order/ironing/:id";
 exports.ROUTE_SORT_AND_PRETREAT_HISTORY = "/orders/history";
 exports.ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE = "/order/history/:id/timeline";
+exports.ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD = "/dashboard";
 
 // wash and dry
 exports.ROUTE_WASH_AND_DRY_UNMARK_DASHBOARD = "/dashboard";

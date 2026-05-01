@@ -2,6 +2,13 @@ const SortAndPretreatService = require("../services/sortAndPretreat.service");
 const BaseController = require("./base.controller");
 
 class SortAndPretreatController extends BaseController {
+
+async getDashboard(req, res) {
+    const result = await SortAndPretreatService.getDashboard(req)
+    return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data)
+}
   // ── Order Queue ────────────────────────────────────────────────────────────
   async getOrderQueue(req, res) {
     const result = await SortAndPretreatService.getOrderQueue(req);

@@ -15,6 +15,107 @@ const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
 
 class SortAndPretreatService extends BaseService {
+    async getDashboard(req) {
+        try {
+            const userId = req.user.id
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const { page = 1, limit = 20, search = '' } = req.query
+
+            const todayStart = new Date()
+            todayStart.setHours(0, 0, 0, 0)
+            const yesterdayStart = new Date(todayStart)
+            yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+
+            const [
+                ordersReceivedToday,
+                ordersReceivedYesterday,
+                ordersAwaitingSorting,
+                flaggedCount,
+                recentOrdersResult,
+            ] = await Promise.all([
+                BookOrderModel.countDocuments({
+                    createdAt: { $gte: todayStart },
+                }),
+                BookOrderModel.countDocuments({
+                    createdAt: { $gte: yesterdayStart, $lt: todayStart },
+                }),
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                }),
+                BookOrderModel.countDocuments({
+                    'items.damageRiskFlags.0': { $exists: true },
+                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                }),
+                (() => {
+                    const query = {
+                        'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                    }
+                    if (search) {
+                        query.$or = [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ]
+                    }
+                    return paginate(BookOrderModel, query, {
+                        page,
+                        limit,
+                        sort: { updatedAt: -1 },
+                        select: 'oscNumber fullName phoneNumber serviceType serviceTier stage createdAt updatedAt',
+                        lean: true,
+                    })
+                })(),
+            ])
+
+            // Items pretreated today — items inside orders where pretreatStatus flipped today
+            const pretreatedToday = await BookOrderModel.aggregate([
+                { $unwind: '$items' },
+                {
+                    $match: {
+                        'items.pretreatStatus': 'complete',
+                        'items.updatedAt': { $gte: todayStart },
+                    },
+                },
+                { $count: 'total' },
+            ])
+
+            const itemsPretreatedToday = pretreatedToday[0]?.total ?? 0
+
+            const receivedDelta =
+                ordersReceivedYesterday === 0
+                    ? null
+                    : Math.round(
+                          ((ordersReceivedToday - ordersReceivedYesterday) /
+                              ordersReceivedYesterday) *
+                              100,
+                      )
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    stats: {
+                        ordersReceivedToday,
+                        receivedDeltaPercent: receivedDelta,
+                        ordersAwaitingSorting,
+                        itemsPretreatedToday,
+                        riskFlaggedItems: flaggedCount,
+                    },
+                    recentOrders: recentOrdersResult.data,
+                    pagination: recentOrdersResult.pagination,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch dashboard',
+            })
+        }
+    }
+
     // GET ORDER QUEUE
     async getOrderQueue(req) {
         try {
@@ -494,8 +595,10 @@ class SortAndPretreatService extends BaseService {
             })
 
             return BaseService.sendSuccessResponse({
-              message: { message: 'All items marked as sorted',
-                allItemsSorted: true,}
+                message: {
+                    message: 'All items marked as sorted',
+                    allItemsSorted: true,
+                },
             })
         } catch (error) {
             console.log(error)
@@ -578,8 +681,10 @@ class SortAndPretreatService extends BaseService {
             })
 
             return BaseService.sendSuccessResponse({
-              message: { message: 'Item marked as pretreated',
-                data:{ allItemsSorted, allItemsPretreated, readyToSend },}
+                message: {
+                    message: 'Item marked as pretreated',
+                    data: { allItemsSorted, allItemsPretreated, readyToSend },
+                },
             })
         } catch (error) {
             console.log(error)
@@ -869,50 +974,57 @@ class SortAndPretreatService extends BaseService {
     // }
 
     async getFlaggedOrders(req) {
-    try {
-      const userId = req.user.id;
+        try {
+            const userId = req.user.id
 
-      const user = await UserModel.findById(userId);
-      if (!user) return BaseService.sendFailedResponse({ error: "User not found" });
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-      const { page = 1, limit = 20, search = "" } = req.query;
+            const { page = 1, limit = 20, search = '' } = req.query
 
-      const query = {
-        items: { $elemMatch: { flaggedForReview: true } },
-      };
+            const query = {
+                items: { $elemMatch: { flaggedForReview: true } },
+            }
 
-      if (search) {
-        query.$or = [
-          { oscNumber:   { $regex: search, $options: "i" } },
-          { fullName:    { $regex: search, $options: "i" } },
-          { phoneNumber: { $regex: search, $options: "i" } },
-        ];
-      }
+            if (search) {
+                query.$or = [
+                    { oscNumber: { $regex: search, $options: 'i' } },
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
 
-      const { data, pagination } = await paginate(BookOrderModel, query, {
-        page,
-        limit,
-        sort: { updatedAt: -1 },
-        select: "oscNumber fullName phoneNumber serviceType serviceTier amount stage stageHistory items createdAt updatedAt",
-        lean: true,
-      });
+            const { data, pagination } = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+                sort: { updatedAt: -1 },
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stageHistory items createdAt updatedAt',
+                lean: true,
+            })
 
-      const ordersWithFlagCount = data.map((order) => ({
-        ...order,
-        flaggedItemCount: order.items.filter((i) => i.flaggedForReview === true).length,
-      }));
+            const ordersWithFlagCount = data.map((order) => ({
+                ...order,
+                flaggedItemCount: order.items.filter(
+                    (i) => i.flaggedForReview === true,
+                ).length,
+            }))
 
-      return BaseService.sendSuccessResponse({
-        message: {
-          data: ordersWithFlagCount,
-          pagination,
-        },
-      });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({ error: "Failed to fetch flagged orders" });
+            return BaseService.sendSuccessResponse({
+                message: {
+                    data: ordersWithFlagCount,
+                    pagination,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch flagged orders',
+            })
+        }
     }
-  }
 
     // GET SORTED & PRETREATED ORDERS LIST
     async getSortedAndPretreatdOrders(req) {

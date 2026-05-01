@@ -20,7 +20,34 @@ const {
     ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE,
     ROUTE_SORT_AND_PRETREAT_HISTORY,
     ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE,
+    ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD
 } = require('../util/page-route')
+
+/**
+ * @swagger
+ * /sort-pretreat/dashboard:
+ *   get:
+ *     summary: Dashboard overview — stats + recent order queue
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-001" }
+ *     responses:
+ *       200:
+ *         description: Dashboard stats and recent orders
+ */
+router.get(ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD, [sortAndPretreatAuth], (req, res) => {
+    const controller = new SortAndPretreatController()
+    return controller.getDashboard(req, res)
+})
 
 // ORDER QUEUE
 
