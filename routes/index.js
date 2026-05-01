@@ -24,7 +24,7 @@ router.use('/utils', utilsRouter)
 router.use('/intake-user', intakeUserRouter)
 router.use('/press-iron', pressIronRouter)
 router.use('/wash-dry', washDryRouter)
-router.use('/sort', sortPretreatRouter)
+router.use('/sort-pretreat', sortPretreatRouter)
 router.use('/seeds', seedRouter)
 
 module.exports = router
