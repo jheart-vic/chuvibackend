@@ -8,83 +8,86 @@ const {
     ACTIVITY_TYPE,
     ROLE,
 } = require('../util/constants')
-const {buildStageUpdate} =require('../util/helper')
+const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
-  async getDashboard(req) {
-    try {
-      const userId = req.user.id;
-      const user = await UserModel.findById(userId);
-      if (!user) return BaseService.sendFailedResponse({ error: "User not found" });
+    async getDashboard(req) {
+        try {
+            const userId = req.user.id
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
 
-      const [
-        washQueue,
-        activeWash,
-        activeDry,
-        completedToday,
-        recentQueueResult,
-      ] = await Promise.all([
+            const [
+                washQueue,
+                activeWash,
+                activeDry,
+                completedToday,
+                recentQueueResult,
+            ] = await Promise.all([
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.WASHING,
+                    'washDetails.startedAt': { $exists: false },
+                }),
 
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.WASHING,
+                    'washDetails.startedAt': { $exists: true },
+                    'washDetails.movedToDryingAt': { $exists: false },
+                }),
 
-        BookOrderModel.countDocuments({
-          "stage.status": ORDER_STATUS.WASHING,
-          "washDetails.startedAt": { $exists: false },
-        }),
+                // Orders currently in drying stage
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.DRYING,
+                }),
 
-        BookOrderModel.countDocuments({
-          "stage.status": ORDER_STATUS.WASHING,
-          "washDetails.startedAt": { $exists: true },
-          "washDetails.movedToDryingAt": { $exists: false },
-        }),
+                BookOrderModel.countDocuments({
+                    'stageHistory.status': ORDER_STATUS.DRYING,
+                    'stageHistory.updatedAt': { $gte: startOfToday },
+                    'stage.status': {
+                        $nin: [ORDER_STATUS.WASHING, ORDER_STATUS.DRYING],
+                    },
+                }),
 
-        // Orders currently in drying stage
-        BookOrderModel.countDocuments({
-          "stage.status": ORDER_STATUS.DRYING,
-        }),
+                paginate(
+                    BookOrderModel,
+                    { 'stage.status': ORDER_STATUS.WASHING },
+                    {
+                        page: 1,
+                        limit: 5,
+                        sort: { 'stage.updatedAt': 1 },
+                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt washDetails',
+                        lean: true,
+                    },
+                ),
+            ])
 
-        BookOrderModel.countDocuments({
-          "stageHistory.status": ORDER_STATUS.DRYING,
-          "stageHistory.updatedAt": { $gte: startOfToday },
-          "stage.status": {
-            $nin: [ORDER_STATUS.WASHING, ORDER_STATUS.DRYING],
-          },
-        }),
-
-        paginate(
-          BookOrderModel,
-          { "stage.status": ORDER_STATUS.WASHING },
-          {
-            page: 1,
-            limit: 5,
-            sort: { "stage.updatedAt": 1 },
-            select: "oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt washDetails",
-            lean: true,
-          }
-        ),
-      ]);
-
-      return BaseService.sendSuccessResponse({
-        message: {
-          stats: {
-            washQueue,
-            activeWash,
-            activeDry,
-            completedToday,
-          },
-          recentQueue: recentQueueResult.data,
-        },
-      });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({ error: "Failed to fetch dashboard" });
+            return BaseService.sendSuccessResponse({
+                message: {
+                    stats: {
+                        washQueue,
+                        activeWash,
+                        activeDry,
+                        completedToday,
+                    },
+                    recentQueue: recentQueueResult.data,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch dashboard',
+            })
+        }
     }
-  }
 
     // GET WASH QUEUE
     async getWashQueue(req) {
@@ -287,54 +290,75 @@ class WashAndDryService extends BaseService {
     // UNDO ITEM WASH CONFIRMATION
     async undoConfirmItemForWashing(req) {
         try {
-        const orderId = req.params.id;
-        const itemId  = req.params.itemId;
-        const userId  = req.user.id;
+            const orderId = req.params.id
+            const itemId = req.params.itemId
+            const userId = req.user.id
 
-        if (!orderId) return BaseService.sendFailedResponse({ error: "Order ID is required" });
-        if (!itemId)  return BaseService.sendFailedResponse({ error: "Item ID is required" });
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
 
-        const user = await UserModel.findById(userId);
-        if (!user) return BaseService.sendFailedResponse({ error: "User not found" });
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-        const order = await BookOrderModel.findOne({
-            _id: orderId,
-            "stage.status": ORDER_STATUS.WASHING,
-        });
-        if (!order) return BaseService.sendFailedResponse({ error: "Order not found or not in washing stage" });
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.WASHING,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in washing stage',
+                })
 
-        const item = order.items.id(itemId);
-        if (!item) return BaseService.sendFailedResponse({ error: "Item not found in order" });
+            const item = order.items.id(itemId)
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
 
-        if (item.washStatus === "pending") {
-            return BaseService.sendFailedResponse({ error: "Item wash has not been confirmed yet" });
-        }
-
-        await BookOrderModel.updateOne(
-            { _id: orderId, "items._id": itemId },
-            {
-            $set: {
-                "items.$.washStatus": "pending",
-                "items.$.washConfirmedAt": null,
-                "items.$.washConfirmedByOperatorId": null,
-                "washDetails.startedAt": null,
-                "washDetails.operatorId": null,
-                stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
-            },
-            $push: {
-                "items.$.actionLog": {
-                action:    "undo_wash_confirmed",
-                note:      "",
-                timestamp: new Date(),
-                },
-            },
+            if (item.washStatus === 'pending') {
+                return BaseService.sendFailedResponse({
+                    error: 'Item wash has not been confirmed yet',
+                })
             }
-        );
 
-        return BaseService.sendSuccessResponse({ message: "Item wash confirmation undone" });
+            await BookOrderModel.updateOne(
+                { _id: orderId, 'items._id': itemId },
+                {
+                    $set: {
+                        'items.$.washStatus': 'pending',
+                        'items.$.washConfirmedAt': null,
+                        'items.$.washConfirmedByOperatorId': null,
+                        'washDetails.startedAt': null,
+                        'washDetails.operatorId': null,
+                        stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    },
+                    $push: {
+                        'items.$.actionLog': {
+                            action: 'undo_wash_confirmed',
+                            note: '',
+                            timestamp: new Date(),
+                        },
+                    },
+                },
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: 'Item wash confirmation undone',
+            })
         } catch (error) {
-        console.log(error);
-        return BaseService.sendFailedResponse({ error: "Failed to undo item wash confirmation" });
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to undo item wash confirmation',
+            })
         }
     }
 
@@ -364,16 +388,22 @@ class WashAndDryService extends BaseService {
                 })
 
             const allowedReasons = ['item_missing', 'item_mismatched']
-            const allowedAssignees = [ROLE.ADMIN, ROLE.SORT_AND_PRETREAT, ROLE.INTAKE_AND_TAG]
+
+            const stationMap = {
+                [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
+                [ROLE.SORT_AND_PRETREAT]:
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
+            }
 
             if (!allowedReasons.includes(reason)) {
                 return BaseService.sendFailedResponse({
                     error: `reason must be one of: ${allowedReasons.join(', ')}`,
                 })
             }
-            if (!allowedAssignees.includes(assignTo)) {
+            if (!stationMap[assignTo]) {
                 return BaseService.sendFailedResponse({
-                    error: `assignTo must be one of: ${allowedAssignees.join(', ')}`,
+                    error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
                 })
             }
 
@@ -398,7 +428,6 @@ class WashAndDryService extends BaseService {
                     error: 'Item not found in order',
                 })
 
-            // Store hold details on the item
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
                 {
@@ -409,6 +438,8 @@ class WashAndDryService extends BaseService {
                         'items.$.holdDetails.assignTo': assignTo,
                         'items.$.holdDetails.heldAt': new Date(),
                         'items.$.holdDetails.heldByOperatorId': userId,
+                        'items.$.holdDetails.heldByStation':
+                            STATION_STATUS.WASH_AND_DRY_STATION,
                     },
                     $push: {
                         'items.$.actionLog': {
@@ -420,20 +451,21 @@ class WashAndDryService extends BaseService {
                 },
             )
 
-            // Move order to HOLD stage so it surfaces in the Hold Queue
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 buildStageUpdate(
                     ORDER_STATUS.HOLD,
-                    STATION_STATUS.WASH_AND_DRY_STATION,
+                    stationMap[assignTo],
                     reason,
                 ),
             )
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`,
+                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}. Assigned to: ${assignTo}`,
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
+                orderId: order._id,
+                userId,
             })
 
             return BaseService.sendSuccessResponse({
@@ -473,8 +505,36 @@ class WashAndDryService extends BaseService {
                 lean: true,
             })
 
+            const WASH_DURATION_MINUTES = {
+                standard: 45,
+                premium: 90,
+                express: 30,
+            }
+
+            const ordersWithMeta = data.map((order) => {
+                const startedAt = order.washDetails?.startedAt
+                const durationMinutes =
+                    WASH_DURATION_MINUTES[order.serviceTier] ?? 60
+                const estimatedFinish = startedAt
+                    ? new Date(
+                          new Date(startedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...order,
+                    itemCount: (order.items || []).length,
+                    washDetails: {
+                        ...order.washDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { data: ordersWithMeta, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -669,51 +729,81 @@ class WashAndDryService extends BaseService {
 
             const { page = 1, limit = 20, search = '' } = req.query
 
-            const query = {
+            const baseQuery = {
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                $or: [
+                    { stationStatus: STATION_STATUS.WASH_AND_DRY_STATION },
+                    {
+                        'items.holdDetails.heldByStation':
+                            STATION_STATUS.WASH_AND_DRY_STATION,
+                    },
+                ],
             }
 
             if (search) {
-                query.$or = [
-                    { oscNumber: { $regex: search, $options: 'i' } },
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { phoneNumber: { $regex: search, $options: 'i' } },
+                baseQuery.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
                 ]
             }
 
-        const { data, pagination } = await paginate(BookOrderModel, query, {
-            page,
-            limit,
-            sort: { 'stage.updatedAt': -1 },
-            select: `
-                oscNumber fullName phoneNumber serviceType serviceTier amount
-                stage stationStatus stageHistory washDetails createdAt updatedAt items
-            `,
-            populate: {
-                path: 'washDetails.operatorId',
-                select: 'fullName',
-            },
-            lean: true,
-        })
+            const { data, pagination } = await paginate(
+                BookOrderModel,
+                baseQuery,
+                {
+                    page,
+                    limit,
+                    sort: { 'stage.updatedAt': -1 },
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
+                    populate: {
+                        path: 'washDetails.operatorId',
+                        select: 'fullName',
+                    },
+                    lean: true,
+                },
+            )
 
-            const holdItems = data.map((order) => ({
-                orderId: order.oscNumber,
-                fullName: order.fullName,
-                operator: order.washDetails?.operatorId?.fullName || null,
-                stage: order.stage,
-                stationStatus: order.stationStatus,
-                holdReason: order.stage.note || '',
-                holdTime: order.stage.updatedAt,
-                flaggedItems: (order.items || [])
-                    .filter((i) => i.flaggedForReview)
+            const holdItems = data.map((order) => {
+                const assignedToUs =
+                    order.stationStatus === STATION_STATUS.WASH_AND_DRY_STATION
+                const flaggedItems = (order.items || [])
+                    .filter(
+                        (i) =>
+                            i.holdDetails?.heldByStation ||
+                            i.holdDetails?.assignTo,
+                    )
                     .map((i) => ({
                         itemId: i._id,
                         tagId: i.tagId,
                         type: i.type,
                         flagNote: i.flagNote,
-                    })),
-            }))
+                        holdReason: i.holdDetails?.reason,
+                        assignTo: i.holdDetails?.assignTo,
+                        heldByStation: i.holdDetails?.heldByStation,
+                        heldAt: i.holdDetails?.heldAt,
+                    }))
+
+                return {
+                    orderId: order._id,
+                    oscNumber: order.oscNumber,
+                    fullName: order.fullName,
+                    phoneNumber: order.phoneNumber,
+                    serviceType: order.serviceType,
+                    serviceTier: order.serviceTier,
+                    operator: order.washDetails?.operatorId?.fullName || null,
+                    stage: order.stage,
+                    stationStatus: order.stationStatus,
+                    holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
+                    holdReason: order.stage.note || '',
+                    holdTime: order.stage.updatedAt,
+                    flaggedItems,
+                }
+            })
 
             return BaseService.sendSuccessResponse({
                 message: { data: holdItems, pagination },
@@ -726,7 +816,6 @@ class WashAndDryService extends BaseService {
         }
     }
 
-    // RELEASE FROM HOLD
     async releaseFromHold(req) {
         try {
             const orderId = req.params.id
@@ -753,19 +842,34 @@ class WashAndDryService extends BaseService {
                     error: 'Order not found or not on hold at this station',
                 })
 
+            // stamp release details on all held items
+            const now = new Date()
+            const updatedItems = order.items.map((item) => {
+                if (item.holdDetails?.assignTo) {
+                    item.holdDetails.releasedAt = now
+                    item.holdDetails.releasedByOperatorId = userId
+                }
+                return item
+            })
+
             await BookOrderModel.updateOne(
                 { _id: orderId },
-                buildStageUpdate(
-                    ORDER_STATUS.WASHING,
-                    STATION_STATUS.WASH_AND_DRY_STATION,
-                    'Released from hold',
-                ),
+                {
+                    $set: { items: updatedItems },
+                    ...buildStageUpdate(
+                        ORDER_STATUS.WASHING,
+                        STATION_STATUS.WASH_AND_DRY_STATION,
+                        'Released from hold',
+                    ),
+                },
             )
 
             await ActivityModel.create({
                 title: 'Order Released from Hold',
-                description: `Order ${order.oscNumber} released from hold and returned to wash queue`,
+                description: `Order ${order.oscNumber} released from hold and returned to wash queue by ${user.fullName}`,
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
+                orderId: order._id,
+                userId,
             })
 
             return BaseService.sendSuccessResponse({

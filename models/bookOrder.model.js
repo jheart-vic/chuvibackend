@@ -94,7 +94,7 @@ const ItemSchema = new mongoose.Schema(
         washConfirmedAt: { type: Date },
         washConfirmedByOperatorId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'UserModel',
+            ref: 'User',
         },
         pressStatus: {
             type: String,
@@ -104,19 +104,34 @@ const ItemSchema = new mongoose.Schema(
         pressConfirmedAt: { type: Date },
         pressConfirmedByOperatorId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'UserModel',
+            ref: 'User',
         },
-        flaggedForReview:{type: Boolean, default: false},
+        flaggedForReview: { type: Boolean, default: false },
         holdDetails: {
             reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
             assignTo: {
                 type: String,
-                enum: [ROLE.ADMIN, ROLE.SORT_AND_PRETREAT, ROLE.INTAKE_AND_TAG],
+                enum: [
+                    ROLE.ADMIN,
+                    ROLE.SORT_AND_PRETREAT,
+                    ROLE.INTAKE_AND_TAG,
+                    ROLE.WASH_AND_DRY,
+                    ROLE.PRESS_AND_IRON,
+                ],
             },
             heldAt: { type: Date },
             heldByOperatorId: {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: 'UserModel',
+                ref: 'User',
+            },
+            heldByStation: {
+                type: String,
+                enum: Object.values(STATION_STATUS),
+            },
+            releasedAt: { type: Date },
+            releasedByOperatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User',
             },
         },
         actionLog: [
@@ -244,7 +259,7 @@ const bookOrderSchema = new mongoose.Schema(
             dryingCompletedAt: { type: Date },
             operatorId: {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: 'UserModel',
+                ref: 'User',
             },
         },
         pressDetails: {
@@ -252,7 +267,7 @@ const bookOrderSchema = new mongoose.Schema(
             completedAt: { type: Date },
             operatorId: {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: 'UserModel',
+                ref: 'User',
             },
         },
         dispatchDetails: {

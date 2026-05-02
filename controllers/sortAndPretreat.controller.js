@@ -157,6 +157,27 @@ class SortAndPretreatController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+
+    async sendToHold(req, res) {
+        const result = await SortAndPretreatService.sendToHold(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async getHoldQueue(req, res) {
+        const result = await SortAndPretreatService.getHoldQueue(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async releaseFromHold(req, res) {
+        const result = await SortAndPretreatService.releaseFromHold(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 }
 
 module.exports = SortAndPretreatController

@@ -9,22 +9,23 @@ const {
 } = require('../util/constants')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
-const {buildStageUpdate} =require('../util/helper')
+const { buildStageUpdate } = require('../util/helper')
 
 class PressAndIronService extends BaseService {
-
     async getDashboard(req) {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const startOfToday = new Date()
             startOfToday.setHours(0, 0, 0, 0)
 
             const [pressQueue, activePress, completedToday, recentQueueResult] =
                 await Promise.all([
-
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.IRONING,
                         'items.pressConfirmedAt': { $exists: false },
@@ -60,7 +61,9 @@ class PressAndIronService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch dashboard' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch dashboard',
+            })
         }
     }
 
@@ -68,7 +71,10 @@ class PressAndIronService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20, search = '' } = req.query
 
@@ -92,9 +98,15 @@ class PressAndIronService extends BaseService {
 
             const ordersWithMeta = data.map((o) => ({
                 ...o,
-                flaggedItemCount: (o.items || []).filter((i) => i.flaggedForReview).length,
-                allItemsConfirmed: (o.items || []).every((i) => i.pressStatus === 'complete'),
-                confirmedItemCount: (o.items || []).filter((i) => i.pressStatus === 'complete').length,
+                flaggedItemCount: (o.items || []).filter(
+                    (i) => i.flaggedForReview,
+                ).length,
+                allItemsConfirmed: (o.items || []).every(
+                    (i) => i.pressStatus === 'complete',
+                ),
+                confirmedItemCount: (o.items || []).filter(
+                    (i) => i.pressStatus === 'complete',
+                ).length,
             }))
 
             return BaseService.sendSuccessResponse({
@@ -102,7 +114,9 @@ class PressAndIronService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch press queue' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch press queue',
+            })
         }
     }
 
@@ -111,24 +125,39 @@ class PressAndIronService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.IRONING,
             }).lean()
 
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in ironing stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in ironing stage',
+                })
 
-            const allItemsConfirmed = order.items.every((i) => i.pressStatus === 'complete')
+            const allItemsConfirmed = order.items.every(
+                (i) => i.pressStatus === 'complete',
+            )
 
-            return BaseService.sendSuccessResponse({ message: { order, allItemsConfirmed } })
+            return BaseService.sendSuccessResponse({
+                message: { order, allItemsConfirmed },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch order details' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch order details',
+            })
         }
     }
 
@@ -138,21 +167,39 @@ class PressAndIronService extends BaseService {
             const itemId = req.params.itemId
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
-            if (!itemId) return BaseService.sendFailedResponse({ error: 'Item ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.IRONING,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in ironing stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in ironing stage',
+                })
 
             const item = order.items.id(itemId)
-            if (!item) return BaseService.sendFailedResponse({ error: 'Item not found in order' })
-            if (item.pressStatus === 'complete') return BaseService.sendFailedResponse({ error: 'Item already confirmed for pressing' })
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
+            if (item.pressStatus === 'complete')
+                return BaseService.sendFailedResponse({
+                    error: 'Item already confirmed for pressing',
+                })
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -173,7 +220,9 @@ class PressAndIronService extends BaseService {
             )
 
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allItemsConfirmed = updatedOrder.items.every((i) => i.pressStatus === 'complete')
+            const allItemsConfirmed = updatedOrder.items.every(
+                (i) => i.pressStatus === 'complete',
+            )
 
             // Auto-promote when all items confirmed
             if (allItemsConfirmed) {
@@ -181,7 +230,8 @@ class PressAndIronService extends BaseService {
                     { _id: orderId },
                     {
                         $set: {
-                            stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                            stationStatus:
+                                STATION_STATUS.PRESSING_AND_IRONING_STATION,
                             'pressDetails.startedAt': new Date(),
                             'pressDetails.operatorId': userId,
                         },
@@ -196,11 +246,16 @@ class PressAndIronService extends BaseService {
             })
 
             return BaseService.sendSuccessResponse({
-                message: { message: 'Item confirmed for pressing', allItemsConfirmed },
+                message: {
+                    message: 'Item confirmed for pressing',
+                    allItemsConfirmed,
+                },
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to confirm item for pressing' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to confirm item for pressing',
+            })
         }
     }
 
@@ -210,21 +265,39 @@ class PressAndIronService extends BaseService {
             const itemId = req.params.itemId
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
-            if (!itemId) return BaseService.sendFailedResponse({ error: 'Item ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.IRONING,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in ironing stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in ironing stage',
+                })
 
             const item = order.items.id(itemId)
-            if (!item) return BaseService.sendFailedResponse({ error: 'Item not found in order' })
-            if (item.pressStatus === 'pending') return BaseService.sendFailedResponse({ error: 'Item was never completed, please confirm as completed' })
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
+            if (item.pressStatus === 'pending')
+                return BaseService.sendFailedResponse({
+                    error: 'Item was never completed, please confirm as completed',
+                })
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
                 {
@@ -242,18 +315,29 @@ class PressAndIronService extends BaseService {
             // If pressDetails.startedAt was set (auto-promoted when all items confirmed),
             // clear it since items are no longer all confirmed
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allStillConfirmed = updatedOrder.items.every((i) => i.pressStatus === 'complete')
+            const allStillConfirmed = updatedOrder.items.every(
+                (i) => i.pressStatus === 'complete',
+            )
             if (!allStillConfirmed && updatedOrder.pressDetails?.startedAt) {
                 await BookOrderModel.updateOne(
                     { _id: orderId },
-                    { $unset: { 'pressDetails.startedAt': '', 'pressDetails.operatorId': '' } },
+                    {
+                        $unset: {
+                            'pressDetails.startedAt': '',
+                            'pressDetails.operatorId': '',
+                        },
+                    },
                 )
             }
 
-            return BaseService.sendSuccessResponse({ message: 'Item press confirmation undone' })
+            return BaseService.sendSuccessResponse({
+                message: 'Item press confirmation undone',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to undo item press confirmation' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to undo item press confirmation',
+            })
         }
     }
 
@@ -264,32 +348,63 @@ class PressAndIronService extends BaseService {
             const userId = req.user.id
             const { reason, assignTo } = req.body
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
-            if (!itemId) return BaseService.sendFailedResponse({ error: 'Item ID is required' })
-            if (!reason) return BaseService.sendFailedResponse({ error: 'A reason is required' })
-            if (!assignTo) return BaseService.sendFailedResponse({ error: 'An assignee is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
+            if (!reason)
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required',
+                })
+            if (!assignTo)
+                return BaseService.sendFailedResponse({
+                    error: 'An assignee is required',
+                })
 
             const allowedReasons = ['item_missing', 'item_mismatched']
-            const allowedAssignees = [ROLE.ADMIN, ROLE.SORT_AND_PRETREAT, ROLE.INTAKE_AND_TAG]
+
+            const stationMap = {
+                [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
+                [ROLE.WASH_AND_DRY]: STATION_STATUS.WASH_AND_DRY_STATION,
+                [ROLE.SORT_AND_PRETREAT]:
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
+            }
 
             if (!allowedReasons.includes(reason)) {
-                return BaseService.sendFailedResponse({ error: `reason must be one of: ${allowedReasons.join(', ')}` })
+                return BaseService.sendFailedResponse({
+                    error: `reason must be one of: ${allowedReasons.join(', ')}`,
+                })
             }
-            if (!allowedAssignees.includes(assignTo)) {
-                return BaseService.sendFailedResponse({ error: `assignTo must be one of: ${allowedAssignees.join(', ')}` })
+            if (!stationMap[assignTo]) {
+                return BaseService.sendFailedResponse({
+                    error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
+                })
             }
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.IRONING,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in ironing stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in ironing stage',
+                })
 
             const item = order.items.id(itemId)
-            if (!item) return BaseService.sendFailedResponse({ error: 'Item not found in order' })
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -301,6 +416,8 @@ class PressAndIronService extends BaseService {
                         'items.$.holdDetails.assignTo': assignTo,
                         'items.$.holdDetails.heldAt': new Date(),
                         'items.$.holdDetails.heldByOperatorId': userId,
+                        'items.$.holdDetails.heldByStation':
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
                     },
                     $push: {
                         'items.$.actionLog': {
@@ -314,19 +431,29 @@ class PressAndIronService extends BaseService {
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
-                buildStageUpdate(ORDER_STATUS.HOLD, STATION_STATUS.PRESSING_AND_IRONING_STATION, reason),
+                buildStageUpdate(
+                    ORDER_STATUS.HOLD,
+                    stationMap[assignTo],
+                    reason,
+                ),
             )
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`,
+                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}. Assigned to: ${assignTo}`,
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
+                orderId: order._id,
+                userId,
             })
 
-            return BaseService.sendSuccessResponse({ message: 'Item placed on hold successfully' })
+            return BaseService.sendSuccessResponse({
+                message: 'Item placed on hold successfully',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to place item on hold' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to place item on hold',
+            })
         }
     }
 
@@ -334,7 +461,10 @@ class PressAndIronService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20 } = req.query
 
@@ -352,10 +482,14 @@ class PressAndIronService extends BaseService {
                 lean: true,
             })
 
-            return BaseService.sendSuccessResponse({ message: { data, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch active press orders' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch active press orders',
+            })
         }
     }
 
@@ -364,17 +498,26 @@ class PressAndIronService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.IRONING,
                 'pressDetails.startedAt': { $exists: true },
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not currently being pressed' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not currently being pressed',
+                })
 
             const now = new Date()
 
@@ -389,7 +532,11 @@ class PressAndIronService extends BaseService {
                         'pressDetails.completedAt': now,
                     },
                     $push: {
-                        stageHistory: { status: ORDER_STATUS.QC, note: '', updatedAt: now },
+                        stageHistory: {
+                            status: ORDER_STATUS.QC,
+                            note: '',
+                            updatedAt: now,
+                        },
                     },
                 },
             )
@@ -405,7 +552,9 @@ class PressAndIronService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to complete pressing' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to complete pressing',
+            })
         }
     }
 
@@ -413,56 +562,101 @@ class PressAndIronService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20, search = '' } = req.query
 
-            const query = {
+            const baseQuery = {
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                $or: [
+                    {
+                        stationStatus:
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    },
+                    {
+                        'items.holdDetails.heldByStation':
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    },
+                ],
             }
 
             if (search) {
-                query.$or = [
-                    { oscNumber: { $regex: search, $options: 'i' } },
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { phoneNumber: { $regex: search, $options: 'i' } },
+                baseQuery.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
                 ]
             }
 
-            const { data, pagination } = await paginate(BookOrderModel, query, {
-                page,
-                limit,
-                sort: { 'stage.updatedAt': -1 },
-                select: 'oscNumber fullName phoneNumber items serviceType stage stationStatus stageHistory createdAt pressDetails',
-                populate: {path: 'pressDetails.operatorId', select: 'fullName',},
-                lean: true,
-            })
+            const { data, pagination } = await paginate(
+                BookOrderModel,
+                baseQuery,
+                {
+                    page,
+                    limit,
+                    sort: { 'stage.updatedAt': -1 },
+                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus stageHistory pressDetails createdAt updatedAt',
+                    populate: {
+                        path: 'pressDetails.operatorId',
+                        select: 'fullName',
+                    },
+                    lean: true,
+                },
+            )
 
-            const holdItems = data.map((order) => ({
-                _id: order._id,
-                oscNumber: order.oscNumber,
-                fullName: order.fullName,
-                stage: order.stage,
-                stationStatus: order.stationStatus,
-                operator: order.pressDetails?.operatorId?.fullName || null,
-                holdReason: order.stage.note || '',
-                holdTime: order.stage.updatedAt,
-                flaggedItems: (order.items || [])
-                    .filter((i) => i.flaggedForReview)
+            const holdItems = data.map((order) => {
+                const assignedToUs =
+                    order.stationStatus ===
+                    STATION_STATUS.PRESSING_AND_IRONING_STATION
+                const flaggedItems = (order.items || [])
+                    .filter(
+                        (i) =>
+                            i.holdDetails?.heldByStation ||
+                            i.holdDetails?.assignTo,
+                    )
                     .map((i) => ({
                         itemId: i._id,
                         tagId: i.tagId,
                         type: i.type,
                         flagNote: i.flagNote,
-                        holdDetails: i.holdDetails,
-                    })),
-            }))
+                        holdReason: i.holdDetails?.reason,
+                        assignTo: i.holdDetails?.assignTo,
+                        heldByStation: i.holdDetails?.heldByStation,
+                        heldAt: i.holdDetails?.heldAt,
+                    }))
 
-            return BaseService.sendSuccessResponse({ message: { data: holdItems, pagination } })
+                return {
+                    orderId: order._id,
+                    oscNumber: order.oscNumber,
+                    fullName: order.fullName,
+                    phoneNumber: order.phoneNumber,
+                    serviceType: order.serviceType,
+                    serviceTier: order.serviceTier,
+                    operator: order.pressDetails?.operatorId?.fullName || null,
+                    stage: order.stage,
+                    stationStatus: order.stationStatus,
+                    holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
+                    holdReason: order.stage.note || '',
+                    holdTime: order.stage.updatedAt,
+                    flaggedItems,
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: holdItems, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch hold queue' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch hold queue',
+            })
         }
     }
 
@@ -471,47 +665,88 @@ class PressAndIronService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
                 stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not on hold at this station' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not on hold at this station',
+                })
+
+            const now = new Date()
+            const updatedItems = order.items.map((item) => {
+                if (item.holdDetails?.assignTo) {
+                    item.holdDetails.releasedAt = now
+                    item.holdDetails.releasedByOperatorId = userId
+                }
+                return item
+            })
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
-                buildStageUpdate(ORDER_STATUS.IRONING, STATION_STATUS.PRESSING_AND_IRONING_STATION, 'Released from hold'),
+                {
+                    $set: { items: updatedItems },
+                    ...buildStageUpdate(
+                        ORDER_STATUS.IRONING,
+                        STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                        'Released from hold',
+                    ),
+                },
             )
 
             await ActivityModel.create({
                 title: 'Order Released from Hold',
-                description: `Order ${order.oscNumber} released from hold and returned to press queue`,
+                description: `Order ${order.oscNumber} released from hold and returned to press queue by ${user.fullName}`,
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
+                orderId: order._id,
+                userId,
             })
 
-            return BaseService.sendSuccessResponse({ message: 'Order released from hold and returned to press queue' })
+            return BaseService.sendSuccessResponse({
+                message: 'Order released from hold and returned to press queue',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to release order from hold' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to release order from hold',
+            })
         }
     }
-
     async getHistoryList(req) {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-            const { page = 1, limit = 20, search = '', startDate, endDate } = req.query
+            const {
+                page = 1,
+                limit = 20,
+                search = '',
+                startDate,
+                endDate,
+            } = req.query
 
             const query = {
                 'stageHistory.status': ORDER_STATUS.IRONING,
-                'stage.status': { $nin: [ORDER_STATUS.IRONING, ORDER_STATUS.HOLD] },
+                'stage.status': {
+                    $nin: [ORDER_STATUS.IRONING, ORDER_STATUS.HOLD],
+                },
             }
 
             if (search) {
@@ -536,10 +771,14 @@ class PressAndIronService extends BaseService {
                 lean: true,
             })
 
-            return BaseService.sendSuccessResponse({ message: { data, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch history' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch history',
+            })
         }
     }
 
@@ -548,23 +787,56 @@ class PressAndIronService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findById(orderId).lean()
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
 
             const PIPELINE = [
-                { key: 'intake',     label: 'Intake',     status: ORDER_STATUS.PENDING            },
-                { key: 'tagged',     label: 'Tagged',     status: ORDER_STATUS.QUEUE              },
-                { key: 'pretreated', label: 'Pretreated', status: ORDER_STATUS.SORT_AND_PRETREAT  },
-                { key: 'washed',     label: 'Washed',     status: ORDER_STATUS.WASHING            },
-                { key: 'ironing',    label: 'Ironing',    status: ORDER_STATUS.IRONING            },
-                { key: 'qc_passed',  label: 'QC Passed',  status: ORDER_STATUS.QC                 },
-                { key: 'ready',      label: 'Ready',      status: ORDER_STATUS.READY },
-                { key: 'delivered',  label: 'Delivered',  status: ORDER_STATUS.DELIVERED          },
+                {
+                    key: 'intake',
+                    label: 'Intake',
+                    status: ORDER_STATUS.PENDING,
+                },
+                { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
+                {
+                    key: 'pretreated',
+                    label: 'Pretreated',
+                    status: ORDER_STATUS.SORT_AND_PRETREAT,
+                },
+                {
+                    key: 'washed',
+                    label: 'Washed',
+                    status: ORDER_STATUS.WASHING,
+                },
+                {
+                    key: 'ironing',
+                    label: 'Ironing',
+                    status: ORDER_STATUS.IRONING,
+                },
+                {
+                    key: 'qc_passed',
+                    label: 'QC Passed',
+                    status: ORDER_STATUS.QC,
+                },
+                { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
+                {
+                    key: 'delivered',
+                    label: 'Delivered',
+                    status: ORDER_STATUS.DELIVERED,
+                },
             ]
 
             const stageTimestampMap = {}
@@ -578,7 +850,12 @@ class PressAndIronService extends BaseService {
 
             const pipeline = PIPELINE.map((step) => {
                 const timestamp = stageTimestampMap[step.status] || null
-                return { key: step.key, label: step.label, completed: !!timestamp, timestamp }
+                return {
+                    key: step.key,
+                    label: step.label,
+                    completed: !!timestamp,
+                    timestamp,
+                }
             })
 
             const itemTimeline = []
@@ -594,10 +871,14 @@ class PressAndIronService extends BaseService {
                     })
                 }
             }
-            itemTimeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+            itemTimeline.sort(
+                (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+            )
 
             const trackingStatus =
-                order.stage.status === ORDER_STATUS.DELIVERED ? 'completed' : 'in_progress'
+                order.stage.status === ORDER_STATUS.DELIVERED
+                    ? 'completed'
+                    : 'in_progress'
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -620,7 +901,9 @@ class PressAndIronService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch order timeline' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch order timeline',
+            })
         }
     }
 }

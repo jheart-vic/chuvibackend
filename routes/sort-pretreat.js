@@ -22,7 +22,10 @@ const {
     ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE,
     ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD,
     ROUTE_SORT_AND_PRETREAT_SORTED_ORDER_DETAIL,
-    ROUTE_SORT_AND_PRETREAT_FLAGGED_ORDER_DETAIL
+    ROUTE_SORT_AND_PRETREAT_FLAGGED_ORDER_DETAIL,
+    ROUTE_SORT_AND_PRETREAT_GET_HOLD,
+    ROUTE_SORT_AND_PRETREAT_RELEASE,
+    ROUTE_SORT_AND_PRETREAT_HOLD,
 } = require('../util/page-route')
 
 /**
@@ -46,10 +49,14 @@ const {
  *       200:
  *         description: Dashboard stats and recent orders
  */
-router.get(ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD, [sortAndPretreatAuth], (req, res) => {
-    const controller = new SortAndPretreatController()
-    return controller.getDashboard(req, res)
-})
+router.get(
+    ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getDashboard(req, res)
+    },
+)
 
 // ORDER QUEUE
 
@@ -153,7 +160,7 @@ router.get(
  *       damageRiskFlags, itemNote) without waiting for the final Mark buttons
  *       Note: if fabricType is provided,
  *       colorGroup must also be provided in the same request or already saved
-*        on the item — fabricType cannot be set without a color context..
+ *        on the item — fabricType cannot be set without a color context..
  *     tags:
  *       - Sort & Pretreat
  *     parameters:
@@ -1091,6 +1098,197 @@ router.get(
     (req, res) => {
         const controller = new SortAndPretreatController()
         return controller.getFlaggedOrderDetail(req, res)
+    },
+)
+
+/**
+ * @swagger
+ * /sort-pretreat/order/{id}/items/{itemId}/hold:
+ *   patch:
+ *     summary: Place an item on hold and assign to another station
+ *     description: |
+ *       S&P operator places a problematic item on hold and assigns it to
+ *       either admin or intake & tag for resolution. Hold details are stored
+ *       on the item with `heldByStation` set to sort-and-pretreat-station.
+ *       The order leaves the S&P queue and routes to the assigned station's
+ *       hold queue. S&P can monitor it in their hold queue (raised_by_us)
+ *       but cannot release it.
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason, assignTo]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 enum: [item_missing, item_mismatched]
+ *                 example: item_missing
+ *               assignTo:
+ *                 type: string
+ *                 enum: [admin, intake-and-tag]
+ *                 example: intake-and-tag
+ *     responses:
+ *       200:
+ *         description: Item placed on hold successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string, example: "Item placed on hold successfully" }
+ *       400:
+ *         description: reason or assignTo missing or invalid
+ *       404:
+ *         description: Order or item not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_HOLD,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.sendToHold(req, res)
+    },
+)
+
+/**
+ * @swagger
+ * /sort-pretreat/orders/hold:
+ *   get:
+ *     summary: Get hold queue — assigned to us and raised by us
+ *     description: |
+ *       Returns two categories of held orders for S&P:
+ *
+ *       **assigned_to_us** — orders assigned to S&P by another station
+ *       (e.g. W&D). S&P is responsible for fixing and releasing these.
+ *
+ *       **raised_by_us** — orders S&P placed on hold and assigned elsewhere.
+ *       Read-only monitoring. S&P cannot release these.
+ *
+ *       Use the `holdType` field to separate them in the UI.
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-001" }
+ *         description: Search by oscNumber, fullName or phoneNumber
+ *     responses:
+ *       200:
+ *         description: Paginated hold queue with holdType per order
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           orderId:       { type: string }
+ *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                           fullName:      { type: string, example: "Temitope Balogun" }
+ *                           phoneNumber:   { type: string, example: "07081234567" }
+ *                           serviceType:   { type: string, example: "wash-and-iron" }
+ *                           serviceTier:   { type: string, example: "standard" }
+ *                           stationStatus: { type: string, example: "wash-and-dry-station" }
+ *                           holdType:
+ *                             type: string
+ *                             enum: [assigned_to_us, raised_by_us]
+ *                             example: assigned_to_us
+ *                           holdReason:    { type: string, example: "item_missing" }
+ *                           holdTime:      { type: string, format: date-time }
+ *                           flaggedItems:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 itemId:        { type: string }
+ *                                 tagId:         { type: string }
+ *                                 type:          { type: string, example: "shirt" }
+ *                                 flagNote:      { type: string }
+ *                                 holdReason:    { type: string, example: "item_missing" }
+ *                                 assignTo:      { type: string, example: "intake-and-tag" }
+ *                                 heldByStation: { type: string, example: "sort-and-pretreat-station" }
+ *                                 heldAt:        { type: string, format: date-time }
+ *                     pagination:
+ *                       $ref: '#/components/schemas/Pagination'
+ *       500:
+ *         description: Server error
+ */
+router.get(
+    ROUTE_SORT_AND_PRETREAT_GET_HOLD,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getHoldQueue(req, res)
+    },
+)
+
+/**
+ * @swagger
+ * /sort-pretreat/order/hold/{id}/release:
+ *   patch:
+ *     summary: Release an order from hold back into the sort & pretreat queue
+ *     description: |
+ *       Only available for orders with `holdType: assigned_to_us`. Releases
+ *       the order back to `sort-and-pretreat` status so it re-enters S&P's
+ *       main queue for re-processing. Stamps `releasedAt` and
+ *       `releasedByOperatorId` on all held items for audit trail. Once S&P
+ *       completes re-processing, `sendToNextStage` routes it back to W&D.
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     responses:
+ *       200:
+ *         description: Order released and returned to sort & pretreat queue
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Order released from hold and returned to sort & pretreat queue
+ *       404:
+ *         description: Order not found or not on hold at this station
+ *       500:
+ *         description: Server error
+ */
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_RELEASE,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.releaseFromHold(req, res)
     },
 )
 

@@ -1534,6 +1534,277 @@ class SortAndPretreatService extends BaseService {
             })
         }
     }
+
+    async sendToHold(req) {
+        try {
+            const orderId = req.params.id
+            const itemId = req.params.itemId
+            const userId = req.user.id
+            const { reason, assignTo } = req.body
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
+            if (!reason)
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required',
+                })
+            if (!assignTo)
+                return BaseService.sendFailedResponse({
+                    error: 'An assignee is required',
+                })
+
+            const allowedReasons = ['item_missing', 'item_mismatched']
+
+            const stationMap = {
+                [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
+                [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
+            }
+
+            if (!allowedReasons.includes(reason)) {
+                return BaseService.sendFailedResponse({
+                    error: `reason must be one of: ${allowedReasons.join(', ')}`,
+                })
+            }
+            if (!stationMap[assignTo]) {
+                return BaseService.sendFailedResponse({
+                    error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
+                })
+            }
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in sort & pretreat stage',
+                })
+
+            const item = order.items.id(itemId)
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
+
+            await BookOrderModel.updateOne(
+                { _id: orderId, 'items._id': itemId },
+                {
+                    $set: {
+                        'items.$.flaggedForReview': true,
+                        'items.$.flagNote': reason,
+                        'items.$.holdDetails.reason': reason,
+                        'items.$.holdDetails.assignTo': assignTo,
+                        'items.$.holdDetails.heldAt': new Date(),
+                        'items.$.holdDetails.heldByOperatorId': userId,
+                        'items.$.holdDetails.heldByStation':
+                            STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    },
+                    $push: {
+                        'items.$.actionLog': {
+                            action: 'item_held',
+                            note: `Reason: ${reason}, Assigned to: ${assignTo}`,
+                            timestamp: new Date(),
+                        },
+                    },
+                },
+            )
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                buildStageUpdate(
+                    ORDER_STATUS.HOLD,
+                    stationMap[assignTo],
+                    reason,
+                ),
+            )
+
+            await ActivityModel.create({
+                title: 'Item Placed on Hold',
+                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}. Assigned to: ${assignTo}`,
+                type: ACTIVITY_TYPE.ORDER_ON_HOLD,
+                orderId: order._id,
+                userId,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: 'Item placed on hold successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to place item on hold',
+            })
+        }
+    }
+
+    async getHoldQueue(req) {
+        try {
+            const userId = req.user.id
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const { page = 1, limit = 20, search = '' } = req.query
+
+            const baseQuery = {
+                'stage.status': ORDER_STATUS.HOLD,
+                $or: [
+                    { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
+                    {
+                        'items.holdDetails.heldByStation':
+                            STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    },
+                ],
+            }
+
+            if (search) {
+                baseQuery.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
+                ]
+            }
+
+            const { data, pagination } = await paginate(
+                BookOrderModel,
+                baseQuery,
+                {
+                    page,
+                    limit,
+                    sort: { 'stage.updatedAt': -1 },
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory items createdAt updatedAt',
+                    lean: true,
+                },
+            )
+
+            const holdItems = data.map((order) => {
+                const assignedToUs =
+                    order.stationStatus ===
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION
+                const flaggedItems = (order.items || [])
+                    .filter(
+                        (i) =>
+                            i.holdDetails?.heldByStation ||
+                            i.holdDetails?.assignTo,
+                    )
+                    .map((i) => ({
+                        itemId: i._id,
+                        tagId: i.tagId,
+                        type: i.type,
+                        flagNote: i.flagNote,
+                        holdReason: i.holdDetails?.reason,
+                        assignTo: i.holdDetails?.assignTo,
+                        heldByStation: i.holdDetails?.heldByStation,
+                        heldAt: i.holdDetails?.heldAt,
+                    }))
+
+                return {
+                    orderId: order._id,
+                    oscNumber: order.oscNumber,
+                    fullName: order.fullName,
+                    phoneNumber: order.phoneNumber,
+                    serviceType: order.serviceType,
+                    serviceTier: order.serviceTier,
+                    stage: order.stage,
+                    stationStatus: order.stationStatus,
+                    holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
+                    holdReason: order.stage.note || '',
+                    holdTime: order.stage.updatedAt,
+                    flaggedItems,
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: holdItems, pagination },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch hold queue',
+            })
+        }
+    }
+
+    async releaseFromHold(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.HOLD,
+                stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not on hold at this station',
+                })
+
+            // stamp releasedAt and releasedByOperatorId on all held items
+            const now = new Date()
+            const updatedItems = order.items.map((item) => {
+                if (item.holdDetails?.assignTo) {
+                    item.holdDetails.releasedAt = now
+                    item.holdDetails.releasedByOperatorId = userId
+                }
+                return item
+            })
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: { items: updatedItems },
+                    ...buildStageUpdate(
+                        ORDER_STATUS.SORT_AND_PRETREAT,
+                        STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                        'Released from hold',
+                    ),
+                },
+            )
+
+            await ActivityModel.create({
+                title: 'Order Released from Hold',
+                description: `Order ${order.oscNumber} released from hold and returned to sort & pretreat queue by ${user.fullName}`,
+                type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
+                orderId: order._id,
+                userId,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message:
+                    'Order released from hold and returned to sort & pretreat queue',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to release order from hold',
+            })
+        }
+    }
 }
 
 module.exports = new SortAndPretreatService()

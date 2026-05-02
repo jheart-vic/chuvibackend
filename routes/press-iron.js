@@ -217,12 +217,16 @@ router.patch(ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING, [pressAndIronAuth], (re
  * @swagger
  * /press-iron/order/queue/{id}/items/{itemId}/hold:
  *   patch:
- *     summary: Place a specific item on hold
+ *     summary: Place a specific item on hold and assign to another station
  *     description: |
- *       Operator clicks "Hold" per item. The "Move to Hold" modal shows:
- *       - reason: Item Missing | Item Mismatched (radio)
- *       - assignTo: Admin / Manager | Sort & Pretreat | Intake & Tag (radio)
- *       Hold details stored on item. Order stage → HOLD, stationStatus → PRESSING_AND_IRONING_STATION.
+ *       Operator clicks "Hold" on a specific item. A modal appears with:
+ *       - reason: item_missing | item_mismatched
+ *       - assignTo: admin | wash-and-dry | sort-and-pretreat
+ *
+ *       Hold details are stored on the item with `heldByStation` set to
+ *       pressing-and-ironing-station. The order routes to the assigned
+ *       station's hold queue. Press & Iron can monitor it in their hold
+ *       queue (raised_by_us) but cannot release it.
  *     tags:
  *       - Press & Iron
  *     parameters:
@@ -248,8 +252,8 @@ router.patch(ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING, [pressAndIronAuth], (re
  *                 example: item_missing
  *               assignTo:
  *                 type: string
- *                 enum: [admin_manager, sort_and_pretreat, intake_and_tag]
- *                 example: sort_and_pretreat
+ *                 enum: [admin, wash-and-dry, sort-and-pretreat]
+ *                 example: wash-and-dry
  *     responses:
  *       200:
  *         description: Item placed on hold successfully
@@ -260,7 +264,7 @@ router.patch(ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING, [pressAndIronAuth], (re
  *               properties:
  *                 message: { type: string, example: "Item placed on hold successfully" }
  *       400:
- *         description: reason or assignTo missing/invalid
+ *         description: reason or assignTo missing or invalid
  *       404:
  *         description: Order or item not found
  *       500:
@@ -349,11 +353,18 @@ router.patch(ROUTE_PRESS_IRON_PRESS_DONE, [pressAndIronAuth], (req, res) => {
  * @swagger
  * /press-iron/orders/hold:
  *   get:
- *     summary: Get hold queue — orders on hold at the press & iron station
+ *     summary: Get hold queue — assigned to us and raised by us
  *     description: |
- *       Returns flattened list showing:
- *       Order ID, Item ID, Type, Reason, Hold Time, Operator, Assigned (station), Status.
- *       Scoped to PRESSING_AND_IRONING_STATION only.
+ *       Returns two categories of held orders for Press & Iron:
+ *
+ *       **assigned_to_us** — orders assigned to Press & Iron by QC or another
+ *       station. Press & Iron is responsible for fixing and releasing these
+ *       back to the ironing queue.
+ *
+ *       **raised_by_us** — orders Press & Iron placed on hold and assigned
+ *       elsewhere. Read-only monitoring. Press & Iron cannot release these.
+ *
+ *       Use the `holdType` field to separate them in the UI.
  *     tags:
  *       - Press & Iron
  *     parameters:
@@ -368,7 +379,7 @@ router.patch(ROUTE_PRESS_IRON_PRESS_DONE, [pressAndIronAuth], (req, res) => {
  *         schema: { type: string, example: "ORD-2024-001" }
  *     responses:
  *       200:
- *         description: Paginated hold queue
+ *         description: Paginated hold queue with holdType per order
  *         content:
  *           application/json:
  *             schema:
@@ -382,27 +393,30 @@ router.patch(ROUTE_PRESS_IRON_PRESS_DONE, [pressAndIronAuth], (req, res) => {
  *                       items:
  *                         type: object
  *                         properties:
- *                           orderId:       { type: string, example: "ORD-2024-001" }
+ *                           orderId:       { type: string }
+ *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
  *                           fullName:      { type: string, example: "Jude Victor" }
+ *                           stationStatus: { type: string, example: "wash-and-dry-station" }
+ *                           holdType:
+ *                             type: string
+ *                             enum: [assigned_to_us, raised_by_us]
+ *                             example: assigned_to_us
  *                           holdReason:    { type: string, example: "item_missing" }
  *                           holdTime:      { type: string, format: date-time }
- *                           operator:   { type: string, example: "Victor Jp" }
- *                           stationStatus: { type: string, example: "pressing-and-ironing-station" }
+ *                           operator:      { type: string, example: "Victor Jp", nullable: true }
  *                           flaggedItems:
  *                             type: array
  *                             items:
  *                               type: object
  *                               properties:
- *                                 itemId:   { type: string }
- *                                 tagId:    { type: string, example: "Tag-2024-001-01" }
- *                                 type:     { type: string, example: "Shirt" }
- *                                 flagNote: { type: string, example: "item_missing" }
- *                                 holdDetails:
- *                                   type: object
- *                                   properties:
- *                                     reason:   { type: string, example: "item_missing" }
- *                                     assignTo: { type: string, example: "sort_and_pretreat" }
- *                                     heldAt:   { type: string, format: date-time }
+ *                                 itemId:        { type: string }
+ *                                 tagId:         { type: string, example: "Tag-2024-001-01" }
+ *                                 type:          { type: string, example: "shirt" }
+ *                                 flagNote:      { type: string }
+ *                                 holdReason:    { type: string, example: "item_missing" }
+ *                                 assignTo:      { type: string, example: "wash-and-dry" }
+ *                                 heldByStation: { type: string, example: "pressing-and-ironing-station" }
+ *                                 heldAt:        { type: string, format: date-time }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
@@ -418,7 +432,11 @@ router.get(ROUTE_PRESS_IRON_GET_HOLD, [pressAndIronAuth], (req, res) => {
  * /press-iron/order/hold/{id}/release:
  *   patch:
  *     summary: Release an order from hold back to press queue
- *     description: Moves order back to IRONING stage, stationStatus stays PRESSING_AND_IRONING_STATION.
+ *     description: |
+ *       Only available for orders with `holdType: assigned_to_us`. Releases
+ *       the order back to `ironing` status so it re-enters the press queue.
+ *       Stamps `releasedAt` and `releasedByOperatorId` on all held items
+ *       for audit trail.
  *     tags:
  *       - Press & Iron
  *     parameters:
@@ -428,13 +446,15 @@ router.get(ROUTE_PRESS_IRON_GET_HOLD, [pressAndIronAuth], (req, res) => {
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
  *     responses:
  *       200:
- *         description: Order released from hold and returned to press queue
+ *         description: Order released and returned to press queue
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Order released from hold and returned to press queue" }
+ *                 message:
+ *                   type: string
+ *                   example: Order released from hold and returned to press queue
  *       404:
  *         description: Order not found or not on hold at this station
  *       500:

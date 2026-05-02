@@ -83,12 +83,12 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  async releaseFromHold(req, res) {
-    const result = await WashAndDryService.releaseFromHold(req);
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+  // async releaseFromHold(req, res) {
+  //   const result = await WashAndDryService.releaseFromHold(req);
+  //   return result.success
+  //     ? BaseController.sendSuccessResponse(res, result.data)
+  //     : BaseController.sendFailedResponse(res, result.data);
+  // }
 
   //  History
   async getHistoryList(req, res) {

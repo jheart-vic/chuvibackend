@@ -91,6 +91,9 @@ exports.ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE = "/order/ironing/:id";
 exports.ROUTE_SORT_AND_PRETREAT_HISTORY = "/orders/history";
 exports.ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE = "/order/history/:id/timeline";
 exports.ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD = "/dashboard";
+exports.ROUTE_SORT_AND_PRETREAT_HOLD = "/order/:id/items/:itemId/hold";
+exports.ROUTE_SORT_AND_PRETREAT_GET_HOLD = "/orders/hold";
+exports.ROUTE_SORT_AND_PRETREAT_RELEASE  = "/order/hold/:id/release";
 
 // wash and dry
 exports.ROUTE_WASH_AND_DRY_UNMARK_DASHBOARD = "/dashboard";

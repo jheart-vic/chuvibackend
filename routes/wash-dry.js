@@ -232,13 +232,16 @@ router.patch(
  * @swagger
  * /wash-dry/order/queue/{id}/items/{itemId}/hold:
  *   patch:
- *     summary: Place a specific item on hold
+ *     summary: Place a specific item on hold and assign to another station
  *     description: |
- *       Operator clicks "Hold" on a specific item. The "Move to Hold" modal appears with:
- *       - reason: Item Missing | Item Mismatched
- *       - assignTo: Admin / Manager | Sort & Pretreat | Intake & Tag
- *       Hold details are stored on the item. The order stage moves to HOLD so it surfaces
- *       in the Hold Queue.
+ *       Operator clicks "Hold" on a specific item. A modal appears with:
+ *       - reason: item_missing | item_mismatched
+ *       - assignTo: admin | sort_and_pretreat | intake_and_tag
+ *
+ *       Hold details are stored on the item with `heldByStation` set to
+ *       wash-and-dry-station. The order stage moves to HOLD and routes to
+ *       the assigned station's hold queue. W&D can monitor it in their
+ *       hold queue (raised_by_us) but cannot release it.
  *     tags:
  *       - Wash & Dry
  *     parameters:
@@ -266,8 +269,8 @@ router.patch(
  *                 example: item_missing
  *               assignTo:
  *                 type: string
- *                 enum: [admin_manager, sort_and_pretreat, intake_and_tag]
- *                 example: sort_and_pretreat
+ *                 enum: [admin, sort-and-pretreat, intake-and-tag]
+ *                 example: sort-and-pretreat
  *     responses:
  *       200:
  *         description: Item placed on hold successfully
@@ -278,7 +281,7 @@ router.patch(
  *               properties:
  *                 message: { type: string, example: "Item placed on hold successfully" }
  *       400:
- *         description: reason or assignTo missing/invalid
+ *         description: reason or assignTo missing or invalid
  *       404:
  *         description: Order or item not found
  *       500:
@@ -449,8 +452,11 @@ router.patch(ROUTE_WASH_AND_DRY_MARK_COMPLETE, [washAndDryAuth], (req, res) => {
  * @swagger
  * /wash-dry/orders/hold:
  *   get:
- *     summary: Get hold queue — orders on hold at the wash & dry station
- *     description: Returns flattened list showing order ID, flagged items, hold reason, hold time, operator and assigned station.
+ *     summary: Get hold queue — orders raised by wash & dry station
+ *     description: |
+ *       Read-only monitoring view. Shows all orders that W&D placed on hold
+ *       and assigned to another station. W&D cannot release these orders —
+ *       only the assigned station can release them.
  *     tags:
  *       - Wash & Dry
  *     parameters:
@@ -474,25 +480,32 @@ router.patch(ROUTE_WASH_AND_DRY_MARK_COMPLETE, [washAndDryAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     holdItems:
+ *                     data:
  *                       type: array
  *                       items:
  *                         type: object
  *                         properties:
- *                           orderId:    { type: string, example: "ORD-2024-001" }
- *                           fullName:   { type: string, example: "Jude Victor" }
- *                           holdReason: { type: string, example: "Item Missing" }
- *                           holdTime:   { type: string, format: date-time }
- *                           operator:   { type: string, example: "Victor Jp" }
+ *                           orderId:       { type: string }
+ *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                           fullName:      { type: string, example: "Jude Victor" }
+ *                           holdType:      { type: string, enum: [raised_by_us], example: "raised_by_us" }
+ *                           holdReason:    { type: string, example: "item_missing" }
+ *                           holdTime:      { type: string, format: date-time }
+ *                           stationStatus: { type: string, example: "sort-and-pretreat-station" }
+ *                           operator:      { type: string, example: "Victor Jp", nullable: true }
  *                           flaggedItems:
  *                             type: array
  *                             items:
  *                               type: object
  *                               properties:
- *                                 itemId:   { type: string }
- *                                 tagId:    { type: string, example: "Tag-2024-001-01" }
- *                                 type:     { type: string, example: "Shirt" }
- *                                 flagNote: { type: string, example: "Item Missing" }
+ *                                 itemId:        { type: string }
+ *                                 tagId:         { type: string, example: "Tag-2024-001-01" }
+ *                                 type:          { type: string, example: "shirt" }
+ *                                 flagNote:      { type: string }
+ *                                 holdReason:    { type: string, example: "item_missing" }
+ *                                 assignTo:      { type: string, example: "sort-and-pretreat" }
+ *                                 heldByStation: { type: string, example: "wash-and-dry-station" }
+ *                                 heldAt:        { type: string, format: date-time }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
@@ -537,7 +550,7 @@ router.patch(ROUTE_WASH_AND_DRY_RELEASE, [washAndDryAuth], (req, res) => {
 // HISTORY
 /**
  * @swagger
- * /wash-dry/history:
+ * /wash-dry/orders/history:
  *   get:
  *     summary: Get history — orders that completed wash & dry and moved to ironing
  *     tags:
@@ -584,7 +597,7 @@ router.get(ROUTE_WASH_AND_DRY_HISTORY, [washAndDryAuth], (req, res) => {
 
 /**
  * @swagger
- * /wash-dry/history/{id}/timeline:
+ * /wash-dry/order/history/{id}/timeline:
  *   get:
  *     summary: Get order timeline — pipeline stepper for history view
  *     description: |
