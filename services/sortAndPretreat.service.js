@@ -144,7 +144,7 @@ class SortAndPretreatService extends BaseService {
                 page,
                 limit,
                 sort: { updatedAt: -1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stageHistory createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount items stage stageHistory createdAt updatedAt',
                 lean: true,
             })
 
