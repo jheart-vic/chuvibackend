@@ -20,7 +20,9 @@ const {
     ROUTE_SORT_AND_PRETREAT_IRONING_SINGLE,
     ROUTE_SORT_AND_PRETREAT_HISTORY,
     ROUTE_SORT_AND_PRETREAT_HISTORY_TIMELINE,
-    ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD
+    ROUTE_SORT_AND_PRETREAT_GET_DASHBOARD,
+    ROUTE_SORT_AND_PRETREAT_SORTED_ORDER_DETAIL,
+    ROUTE_SORT_AND_PRETREAT_FLAGGED_ORDER_DETAIL
 } = require('../util/page-route')
 
 /**
@@ -988,6 +990,107 @@ router.get(
     (req, res) => {
         const controller = new SortAndPretreatController()
         return controller.getOrderTimeline(req, res)
+    },
+)
+
+/**
+ * @swagger
+ * /sort-pretreat/orders/completed/{id}:
+ *   get:
+ *     summary: Get detail of a sorted & pretreated order
+ *     description: |
+ *       Returns the full order with all items and their sort/pretreat data.
+ *       The order must have passed through the sort & pretreat stage but can
+ *       be at any subsequent stage (washing, ironing, qc, etc.).
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     responses:
+ *       200:
+ *         description: Order detail with sort & pretreat summary flags
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     allItemsSorted: { type: boolean, example: true }
+ *                     allItemsPretreated: { type: boolean, example: true }
+ *       404:
+ *         description: Order not found or has not passed through sort & pretreat
+ *       500:
+ *         description: Server error
+ */
+router.get(
+    ROUTE_SORT_AND_PRETREAT_SORTED_ORDER_DETAIL,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getSortedOrderDetail(req, res)
+    },
+)
+
+/**
+ * @swagger
+ * /sort-pretreat/orders/flagged/{id}:
+ *   get:
+ *     summary: Get detail of a flagged order
+ *     description: |
+ *       Returns the full order alongside a filtered `flaggedItems` array
+ *       containing only items where `flaggedForReview` is true.
+ *       Intended for the next stage operator to know which items need
+ *       special handling before processing begins.
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     responses:
+ *       200:
+ *         description: Order detail with flagged items isolated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     flaggedItems:
+ *                       type: array
+ *                       description: Only items where flaggedForReview is true
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id: { type: string }
+ *                           type: { type: string, example: "shirt" }
+ *                           flagNote: { type: string, example: "Color bleeding risk on collar" }
+ *                           damageRiskFlags:
+ *                             type: array
+ *                             items: { type: string }
+ *                             example: ["color_bleeding_risk"]
+ *                     flaggedItemCount: { type: integer, example: 2 }
+ *       404:
+ *         description: Order not found or has no flagged items
+ *       500:
+ *         description: Server error
+ */
+router.get(
+    ROUTE_SORT_AND_PRETREAT_FLAGGED_ORDER_DETAIL,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.getFlaggedOrderDetail(req, res)
     },
 )
 

@@ -1026,6 +1026,50 @@ class SortAndPretreatService extends BaseService {
         }
     }
 
+    async getFlaggedOrderDetail(req) {
+        try {
+            const orderId = req.params.id
+
+            const userId = req.user.id
+
+            const user = await UserModel.findById(userId)
+
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+
+                items: { $elemMatch: { flaggedForReview: true } },
+            }).lean()
+
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or has no flagged items',
+                })
+
+            const flaggedItems = order.items.filter(
+                (i) => i.flaggedForReview === true,
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    order,
+                    flaggedItems,
+                    flaggedItemCount: flaggedItems.length,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch flagged order detail',
+            })
+        }
+    }
+
     // GET SORTED & PRETREATED ORDERS LIST
     async getSortedAndPretreatdOrders(req) {
         try {
@@ -1098,6 +1142,49 @@ class SortAndPretreatService extends BaseService {
         }
     }
 
+    async getSortedOrderDetail(req) {
+        try {
+            const orderId = req.params.id
+
+            const userId = req.user.id
+
+            const user = await UserModel.findById(userId)
+
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+
+                'stageHistory.status': ORDER_STATUS.SORT_AND_PRETREAT,
+            }).lean()
+
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            const allItemsSorted = order.items.every(
+                (i) => i.sortStatus === 'complete',
+            )
+
+            const allItemsPretreated = order.items.every(
+                (i) => i.pretreatStatus === 'complete',
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: { order, allItemsSorted, allItemsPretreated },
+            })
+        } catch (error) {
+            console.log(error)
+
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch sorted order detail',
+            })
+        }
+    }
     //GET ORDERS IN WASHING STAGE
     async getWashingOrders(req) {
         try {
