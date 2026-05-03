@@ -1777,12 +1777,14 @@ class SortAndPretreatService extends BaseService {
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
-                    $set: { items: updatedItems },
-                    ...buildStageUpdate(
-                        ORDER_STATUS.SORT_AND_PRETREAT,
-                        STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                        'Released from hold',
-                    ),
+                    $set: {
+                        items: updatedItems,
+                        ...buildStageUpdate(
+                            ORDER_STATUS.SORT_AND_PRETREAT,
+                            STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                            'Released from hold',
+                        ).$set,
+                    },
                 },
             )
 

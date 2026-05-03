@@ -698,12 +698,14 @@ class PressAndIronService extends BaseService {
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
-                    $set: { items: updatedItems },
-                    ...buildStageUpdate(
-                        ORDER_STATUS.IRONING,
-                        STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                        'Released from hold',
-                    ),
+                    $set: {
+                        items: updatedItems,
+                        ...buildStageUpdate(
+                            ORDER_STATUS.IRONING,
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                            'Released from hold',
+                        ).$set,
+                    },
                 },
             )
 

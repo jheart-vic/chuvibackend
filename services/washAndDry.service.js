@@ -855,15 +855,16 @@ class WashAndDryService extends BaseService {
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
-                    $set: { items: updatedItems },
-                    ...buildStageUpdate(
-                        ORDER_STATUS.WASHING,
-                        STATION_STATUS.WASH_AND_DRY_STATION,
-                        'Released from hold',
-                    ),
+                    $set: {
+                        items: updatedItems,
+                        ...buildStageUpdate(
+                            ORDER_STATUS.WASHING,
+                            STATION_STATUS.WASH_AND_DRY_STATION,
+                            'Released from hold',
+                        ).$set,
+                    },
                 },
             )
-
             await ActivityModel.create({
                 title: 'Order Released from Hold',
                 description: `Order ${order.oscNumber} released from hold and returned to wash queue by ${user.fullName}`,
