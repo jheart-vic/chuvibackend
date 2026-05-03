@@ -58,9 +58,106 @@ const {
   ROUTE_GET_ADDRESS,
   ROUTE_NOTITICATION_PREFERENCE,
   ROUTE_GET_USER_NOTIFICATIONS,
+  ROUTE_GET_DASHBOARD,
 } = require("../util/page-route");
 const { image_uploader } = require("../util/imageUpload");
 const router = require("express").Router();
+
+/**
+ * @swagger
+ * /api/user/get-dashboard:
+ *   get:
+ *     summary: Get customer dashboard data
+ *     description: Returns wallet balance, order counts, notifications, ongoing order, and subscription details for the authenticated user.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard data fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     walletBalance:
+ *                       type: number
+ *                       example: 30000
+ *                     pastOrdersCount:
+ *                       type: integer
+ *                       example: 5
+ *                     unreadNotificationsCount:
+ *                       type: integer
+ *                       example: 2
+ *                     ongoingOrder:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "664abc123def456ghi789jkl"
+ *                         status:
+ *                           type: string
+ *                           example: "ready"
+ *                         amount:
+ *                           type: number
+ *                           example: 4500
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-11-28T14:47:00.000Z"
+ *                     subscription:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           example: "active"
+ *                         nextBillingDate:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-12-28T00:00:00.000Z"
+ *                         remainingItems:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: 8
+ *                         plan:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             name:
+ *                               type: string
+ *                               example: "Student Plan"
+ *                             monthlyLimits:
+ *                               type: integer
+ *                               example: 10
+ *       400:
+ *         description: Failed to fetch dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Unable to fetch dashboard data"
+ *       401:
+ *         description: Unauthorized — missing or invalid token
+ */
+router.get(ROUTE_GET_DASHBOARD, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.getDashboard(req, res);
+});
 
 /**
  * @swagger

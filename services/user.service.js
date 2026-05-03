@@ -1,407 +1,507 @@
-const { OAuth2Client } = require("google-auth-library");
-const sendEmail = require("../util/emailService");
-const BaseService = require("./base.service");
-const UserModel = require("../models/user.model");
-const { empty } = require("../util");
+const { OAuth2Client } = require('google-auth-library')
+const sendEmail = require('../util/emailService')
+const BaseService = require('./base.service')
+const UserModel = require('../models/user.model')
+const { empty } = require('../util')
 const jwt = require('jsonwebtoken')
-const validateData = require("../util/validate");
+const validateData = require('../util/validate')
 const {
-  generateOTP,
-  verifyRefreshToken,
-  signAccessToken,
-  formatNotificationTime,
-  getWeightImprovementTipsByWeight,
-} = require("../util/helper");
-const { uploadImage, deleteImage } = require("../util/imageUpload");
-const { EXPIRES_AT } = require("../util/constants");
-const NotificationModel = require("../models/notification.model");
-
+    generateOTP,
+    verifyRefreshToken,
+    signAccessToken,
+    formatNotificationTime,
+    getWeightImprovementTipsByWeight,
+} = require('../util/helper')
+const { uploadImage, deleteImage } = require('../util/imageUpload')
+const { EXPIRES_AT } = require('../util/constants')
+const NotificationModel = require('../models/notification.model')
+const WalletModel = require('../models/wallet.model')
+const BookOrderModel = require('../models/bookOrder.model')
+const SubscriptionModel = require('../models/subscription.model')
 
 class UserService extends BaseService {
-  async getUser(req) {
-    try {
-      const userId = req.user.id;
+    async getDashboard(req) {
+        try {
+            const userId = req.user.id
 
-      let userDetails = {};
-      userDetails = await UserModel.findById(userId).select("-password");
+            const [
+                wallet,
+                pastOrdersCount,
+                unreadNotificationsCount,
+                ongoingOrder,
+                subscription,
+            ] = await Promise.all([
 
-      if (empty(userDetails)) {
-        return BaseService.sendFailedResponse({
-          error: "Something went wrong trying to fetch your account.",
-        });
-      }
+                WalletModel.findOneAndUpdate(
+                    { userId },
 
-      return BaseService.sendSuccessResponse({ message: userDetails });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({
-        error: this.server_error_message,
-      });
+                    { $setOnInsert: { balance: 0 } },
+
+                    { upsert: true, new: true, lean: true },
+                ),
+
+                BookOrderModel.countDocuments({
+                    userId,
+                    paymentStatus: 'success',
+                }),
+
+                NotificationModel.countDocuments({ userId, read: false }),
+
+                BookOrderModel.findOne({
+                    userId,
+
+                    paymentStatus: 'success',
+
+                    status: { $nin: ['delivered', 'cancelled'] },
+                })
+
+                    .sort({ createdAt: -1 })
+
+                    .lean(),
+
+                // Active subscription with plan details
+
+                SubscriptionModel.findOne({ userId, status: 'active' })
+
+                    .populate('planId')
+
+                    .lean(),
+            ])
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    walletBalance: wallet?.balance ?? 0,
+
+                    pastOrdersCount,
+
+                    unreadNotificationsCount,
+
+                    ongoingOrder: ongoingOrder
+                        ? {
+                              id: ongoingOrder._id,
+
+                              status: ongoingOrder.status,
+
+                              amount: ongoingOrder.amount,
+
+                              createdAt: ongoingOrder.createdAt,
+                          }
+                        : null,
+
+                    subscription: subscription
+                        ? {
+                              status: subscription.status,
+
+                              nextBillingDate: subscription.nextPaymentDate,
+
+                              plan: subscription.planId
+                                  ? {
+                                        name: subscription.planId.name,
+
+                                        monthlyLimits:
+                                            subscription.planId.monthlyLimits,
+                                    }
+                                  : null,
+
+                              remainingItems:
+                                  subscription.remainingItems ?? null,
+                          }
+                        : null,
+                },
+            })
+        } catch (error) {
+            console.error('Error fetching dashboard:', error)
+
+            return BaseService.sendFailedResponse({
+                error: 'Unable to fetch dashboard data',
+            })
+        }
     }
-  }
- async updateUserProfile(req) {
-  try {
-    const { fullName, email, phoneNumber } = req.body;
-    const userId = req.user.id;
+    async getUser(req) {
+        try {
+            const userId = req.user.id
 
-    if (!fullName && !email && !phoneNumber) {
-      return BaseService.sendFailedResponse({
-        error: "Nothing to update",
-      });
+            let userDetails = {}
+            userDetails = await UserModel.findById(userId).select('-password')
+
+            if (empty(userDetails)) {
+                return BaseService.sendFailedResponse({
+                    error: 'Something went wrong trying to fetch your account.',
+                })
+            }
+
+            return BaseService.sendSuccessResponse({ message: userDetails })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: this.server_error_message,
+            })
+        }
+    }
+    async updateUserProfile(req) {
+        try {
+            const { fullName, email, phoneNumber } = req.body
+            const userId = req.user.id
+
+            if (!fullName && !email && !phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Nothing to update',
+                })
+            }
+
+            // Optional: check email uniqueness
+            if (email) {
+                const emailExists = await UserModel.findOne({
+                    email,
+                    _id: { $ne: userId },
+                })
+
+                if (emailExists) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Email already in use',
+                    })
+                }
+            }
+
+            // const updatedUser = await UserModel.findByIdAndUpdate(
+            //   userId,
+            //   {
+            //     ...(fullName && { fullName }),
+            //     ...(email && { email }),
+            //     ...(phoneNumber && { phoneNumber }),
+            //   },
+            //   { new: true }
+            // );
+
+            const updateData = {}
+
+            if (fullName !== undefined) updateData.fullName = fullName
+            if (email !== undefined) updateData.email = email
+            if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber
+
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                userId,
+                updateData,
+                { new: true },
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: 'User profile updated successfully',
+                data: updatedUser,
+            })
+        } catch (err) {
+            console.error(err)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
     }
 
-    // Optional: check email uniqueness
-    if (email) {
-      const emailExists = await UserModel.findOne({
-        email,
-        _id: { $ne: userId },
-      });
+    async profileImageUpload(req) {
+        try {
+            if (!req.file) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please provide your profile image',
+                })
+            }
 
-      if (emailExists) {
-        return BaseService.sendFailedResponse({
-          error: "Email already in use",
-        });
-      }
+            const user = await UserModel.findById(req.user.id)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User does not exist. Please register!',
+                })
+            }
+
+            // Delete old image if exists
+            if (user.image?.publicId) {
+                await deleteImage(user.image.publicId, 'image')
+            }
+
+            // Upload new image to Cloudinary
+            const result = await uploadImage(req.file)
+
+            // Save new image details
+            user.image = {
+                imageUrl: result.secure_url,
+                publicId: result.public_id,
+            }
+
+            await user.save()
+
+            return BaseService.sendSuccessResponse({
+                message: 'Profile image uploaded successfully',
+                data: user.image,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
     }
 
-    // const updatedUser = await UserModel.findByIdAndUpdate(
-    //   userId,
-    //   {
-    //     ...(fullName && { fullName }),
-    //     ...(email && { email }),
-    //     ...(phoneNumber && { phoneNumber }),
-    //   },
-    //   { new: true }
-    // );
+    async addAddress(req) {
+        try {
+            const { label, address } = req.body
 
-      const updateData = {};
+            if (!label || !address) {
+                return BaseService.sendFailedResponse({
+                    error: 'Label and address are required',
+                })
+            }
 
-      if (fullName !== undefined) updateData.fullName = fullName;
-      if (email !== undefined) updateData.email = email;
-      if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+            const user = await UserModel.findById(req.user.id)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
 
-      const updatedUser = await UserModel.findByIdAndUpdate(
-        userId,
-        updateData,
-        { new: true }
-      );
+            const exists = user.addresses.some(
+                (addr) => addr.label === label && addr.address === address,
+            )
 
-    return BaseService.sendSuccessResponse({
-      message: "User profile updated successfully",
-      data: updatedUser,
-    });
-  } catch (err) {
-    console.error(err);
-    return BaseService.sendFailedResponse({
-      error: "Something went wrong. Please try again later.",
-    });
-  }
- }
+            if (exists) {
+                return BaseService.sendFailedResponse({
+                    error: 'This address already exists',
+                })
+            }
 
-  async profileImageUpload(req) {
-    try {
-      if (!req.file) {
-        return BaseService.sendFailedResponse({
-          error: "Please provide your profile image",
-        });
-      }
+            user.addresses.push({ label, address })
+            await user.save()
 
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        return BaseService.sendFailedResponse({
-          error: "User does not exist. Please register!",
-        });
-      }
-
-      // Delete old image if exists
-      if (user.image?.publicId) {
-        await deleteImage(user.image.publicId, "image");
-      }
-
-      // Upload new image to Cloudinary
-      const result = await uploadImage(req.file);
-
-      // Save new image details
-      user.image = {
-        imageUrl: result.secure_url,
-        publicId: result.public_id,
-      };
-
-      await user.save();
-
-      return BaseService.sendSuccessResponse({
-        message: "Profile image uploaded successfully",
-        data: user.image,
-      });
-    } catch (error) {
-      console.error(error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later.",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Address added successfully',
+                data: user.addresses[user.addresses.length - 1],
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
     }
-  }
 
- async addAddress(req) {
-    try {
-      const { label, address } = req.body;
+    async updateAddress(req) {
+        try {
+            const { addressId } = req.params
+            const { label, address } = req.body
 
-      if (!label || !address) {
-        return BaseService.sendFailedResponse({
-          error: "Label and address are required",
-        });
-      }
+            if (label === undefined && address === undefined) {
+                return BaseService.sendFailedResponse({
+                    error: 'Nothing to update',
+                })
+            }
 
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        return BaseService.sendFailedResponse({
-          error: "User not found",
-        });
-      }
+            const user = await UserModel.findById(req.user.id)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
 
-      const exists = user.addresses.some(
-        addr => addr.label === label && addr.address === address
-      );
+            const addr = user.addresses.id(addressId)
+            if (!addr) {
+                return BaseService.sendFailedResponse({
+                    error: 'Address not found',
+                })
+            }
 
-      if (exists) {
-        return BaseService.sendFailedResponse({
-          error: "This address already exists",
-        });
-      }
+            if (label !== undefined) addr.label = label
+            if (address !== undefined) addr.address = address
 
-      user.addresses.push({ label, address });
-      await user.save();
+            await user.save()
 
-      return BaseService.sendSuccessResponse({
-        message: "Address added successfully",
-        data: user.addresses[user.addresses.length - 1],
-      });
-    } catch (error) {
-      console.error(error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later.",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Address updated successfully',
+                data: addr,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
     }
-  }
+    async deleteAddress(req) {
+        try {
+            const userId = req?.user?.id
+            const { addressId } = req.params
 
-  async updateAddress(req) {
-    try {
-      const { addressId } = req.params;
-      const { label, address } = req.body;
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                userId,
+                { $pull: { addresses: { _id: addressId } } },
+                { new: true },
+            )
 
-      if (label === undefined && address === undefined) {
-        return BaseService.sendFailedResponse({
-          error: "Nothing to update",
-        });
-      }
+            if (!updatedUser) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
 
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        return BaseService.sendFailedResponse({
-          error: "User not found",
-        });
-      }
-
-      const addr = user.addresses.id(addressId);
-      if (!addr) {
-        return BaseService.sendFailedResponse({
-          error: "Address not found",
-        });
-      }
-
-      if (label !== undefined) addr.label = label;
-      if (address !== undefined) addr.address = address;
-
-      await user.save();
-
-      return BaseService.sendSuccessResponse({
-        message: "Address updated successfully",
-        data: addr,
-      });
-    } catch (error) {
-      console.error(error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later.",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Address deleted successfully',
+                data: updatedUser.addresses,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
     }
-  }
-  async deleteAddress(req) {
-    try {
-      const userId = req?.user?.id;
-      const { addressId } = req.params;
 
-      const updatedUser = await UserModel.findByIdAndUpdate(
-        userId,
-        { $pull: { addresses: { _id: addressId } } },
-        { new: true }
-      );
+    async getAddresses(req) {
+        try {
+            const userId = req?.user?.id
+            const user = await UserModel.findById(userId).select('addresses')
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
 
-      if (!updatedUser) {
-        return BaseService.sendFailedResponse({
-          error: "User not found",
-        });
-      }
-
-      return BaseService.sendSuccessResponse({
-        message: "Address deleted successfully",
-        data: updatedUser.addresses,
-      });
-    } catch (error) {
-      console.error(error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later.",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Addresses fetched successfully',
+                data: user.addresses,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
     }
-  }
 
-  async getAddresses(req) {
-    try {
-      const userId = req?.user?.id;
-      const user = await UserModel.findById(userId).select("addresses");
-      if (!user) {
-        return BaseService.sendFailedResponse({
-          error: "User not found",
-        });
-      }
+    async updateNotificationPreferences(req, res) {
+        try {
+            const userId = req.user.id
 
-      return BaseService.sendSuccessResponse({
-        message: "Addresses fetched successfully",
-        data: user.addresses,
-      });
-    } catch (error) {
-      console.error(error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later.",
-      });
+            const { whatsappNotification, emailNotification } = req.body
+
+            // Only update fields that are provided
+            const update = {}
+            if (typeof whatsappNotification === 'boolean') {
+                update.whatsappNotification = whatsappNotification
+            }
+            if (typeof emailNotification === 'boolean') {
+                update.emailNotification = emailNotification
+            }
+
+            const user = await UserModel.findByIdAndUpdate(
+                userId,
+                { $set: update },
+                { new: true },
+            ).select('whatsappNotification emailNotification')
+
+            return BaseService.sendSuccessResponse({
+                success: true,
+                message: 'Notification preference updated',
+                data: user,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to update notification preference',
+            })
+        }
     }
-  }
 
-  async updateNotificationPreferences(req, res) {
-    try {
-      const userId = req.user.id;
+    async deleteUser(req, res) {
+        try {
+            const userId = req.user.id
 
-      const { whatsappNotification, emailNotification } = req.body;
+            const deletedUser = await UserModel.findByIdAndDelete(
+                userId,
+            ).select('-password -refreshToken')
 
-      // Only update fields that are provided
-      const update = {};
-      if (typeof whatsappNotification === "boolean") {
-        update.whatsappNotification = whatsappNotification;
-      }
-      if (typeof emailNotification === "boolean") {
-        update.emailNotification = emailNotification;
-      }
+            if (!deletedUser) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
 
-      const user = await UserModel.findByIdAndUpdate(
-        userId,
-        { $set: update },
-        { new: true }
-      ).select("whatsappNotification emailNotification");
-
-      return BaseService.sendSuccessResponse({
-        success: true,
-        message: "Notification preference updated",
-        data: user,
-        });
-    } catch (error) {
-      console.error(error);
-        return BaseService.sendFailedResponse({
-          error: "Failed to update notification preference",
-        });
+            return BaseService.sendSuccessResponse({
+                message: 'User profile deleted successfully',
+                data: deletedUser,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to delete user profile',
+            })
+        }
     }
-  };
+    async getUserNotifications(req) {
+        try {
+            const userId = req.user.id
 
-  async deleteUser(req, res) {
-    try {
-      const userId = req.user.id;
+            const notifications = await NotificationModel.find({ userId }).sort(
+                { createdAt: -1 },
+            )
 
-
-      const deletedUser = await UserModel.findByIdAndDelete(userId).select(
-        "-password -refreshToken"
-      );
-
-
-      if (!deletedUser) {
-        return BaseService.sendFailedResponse({
-          error: "User not found",
-        });
-      }
-
-      return BaseService.sendSuccessResponse({
-        message: "User profile deleted successfully",
-        data: deletedUser,
-      });
-    } catch (error) {
-      console.error(error);
-      return BaseService.sendFailedResponse({
-        error: "Failed to delete user profile",
-      });
+            return BaseService.sendSuccessResponse({
+                data: notifications,
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: this.server_error_message,
+            })
+        }
     }
-  }
-  async getUserNotifications(req) {
-    try {
-      const userId = req.user.id
-
-      const notifications = await NotificationModel.find({userId}).sort({createdAt: -1})
-
-      return BaseService.sendSuccessResponse({
-        data: notifications,
-      });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({
-        error: this.server_error_message,
-      });
-    }
-  }
 
     async resetPasswordInProfilePage(req, res) {
-    try {
-      const userId = req.user.id
-      const { currentPassword, newPassword } = req.body
+        try {
+            const userId = req.user.id
+            const { currentPassword, newPassword } = req.body
 
-      // Basic validation
-      if (!currentPassword || !newPassword) {
-        return BaseService.sendFailedResponse({
-          error: 'Current password and new password are required'
-        })
-      }
+            // Basic validation
+            if (!currentPassword || !newPassword) {
+                return BaseService.sendFailedResponse({
+                    error: 'Current password and new password are required',
+                })
+            }
 
-      const user = await UserModel.findById(userId).select('+password')
-      if (!user) {
-        return BaseService.sendFailedResponse({ error: 'User not found' })
-      }
+            const user = await UserModel.findById(userId).select('+password')
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
 
-      // Verify current password
-      const isMatch = await user.comparePassword(currentPassword)
-      if (!isMatch) {
-        return BaseService.sendFailedResponse({
-          error: 'Current password is incorrect'
-        })
-      }
+            // Verify current password
+            const isMatch = await user.comparePassword(currentPassword)
+            if (!isMatch) {
+                return BaseService.sendFailedResponse({
+                    error: 'Current password is incorrect',
+                })
+            }
 
-      // Prevent reuse
-      const isSamePassword = await user.comparePassword(newPassword)
-      if (isSamePassword) {
-        return BaseService.sendFailedResponse({
-          error: 'New password cannot be the same as the old password'
-        })
-      }
+            // Prevent reuse
+            const isSamePassword = await user.comparePassword(newPassword)
+            if (isSamePassword) {
+                return BaseService.sendFailedResponse({
+                    error: 'New password cannot be the same as the old password',
+                })
+            }
 
-      // Update password
-      user.password = newPassword
-      user.lastChangedPassword = new Date()
-      await user.save()
+            // Update password
+            user.password = newPassword
+            user.lastChangedPassword = new Date()
+            await user.save()
 
-      return BaseService.sendSuccessResponse({
-        message: 'Password changed successfully'
-      })
-    } catch (error) {
-      console.error(error)
-      return BaseService.sendFailedResponse({
-        error: 'Failed to change password'
-      })
+            return BaseService.sendSuccessResponse({
+                message: 'Password changed successfully',
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to change password',
+            })
+        }
     }
-  }
-
 }
 
-module.exports = UserService;
+module.exports = UserService
