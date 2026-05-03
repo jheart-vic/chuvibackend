@@ -289,7 +289,7 @@ class QCService extends BaseService {
             await ActivityModel.create({
                 title: 'Order Passed QC',
                 description: `Order ${order.oscNumber} passed QC and sent to Pack & Seal by ${user.fullName}`,
-                type: ACTIVITY_TYPE.ORDER_UPDATED,
+                type: ACTIVITY_TYPE.ORDER_QC_PASSED,
                 orderId: order._id,
                 userId,
             })
@@ -419,7 +419,7 @@ class QCService extends BaseService {
             await ActivityModel.create({
                 title: 'Order Packed & Sealed',
                 description: `Order ${order.oscNumber} packed and sealed by ${user.fullName}. Now ready for delivery.`,
-                type: ACTIVITY_TYPE.ORDER_STATUS_UPDATED,
+                type: ACTIVITY_TYPE.ORDER_PACKED_AND_SEALED,
                 orderId: order._id,
                 userId,
             })

@@ -63,6 +63,8 @@ const ACTIVITY_TYPE = {
     ORDER_RELEASED_FROM_HOLD: 'order_released_from_hold',
     ORDER_ITEM_PRESS_CONFIRMED: 'order_item_press_confirmed',
     ORDER_PRESS_COMPLETED: 'order_press_completed',
+    ORDER_QC_PASSED: 'order_qc_passed',
+    ORDER_PACKED_AND_SEALED: 'order_packed_and_sealed',
 }
 
 const STATION_STATUS = {
@@ -261,4 +263,5 @@ module.exports = {
     DELIVERY_STATUS,
     ACTIVITY_TYPE,
     STATION_STATUS,
+    WASH_DURATION_MINUTES,
 }

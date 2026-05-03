@@ -96,6 +96,26 @@ const ItemSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
         },
+        qcStatus: {
+            type: String,
+            enum: ['pending', 'passed', 'failed'],
+            default: 'pending',
+        },
+        qcDetails: {
+            startedAt: { type: Date },
+            passedAt: { type: Date },
+            packCompletedAt: { type: Date },
+            labelAttached: { type: Boolean, default: false },
+            packageSealed: { type: Boolean, default: false },
+            operatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User',
+            },
+            packOperatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User',
+            },
+        },
         pressStatus: {
             type: String,
             enum: ['pending', 'complete'],
@@ -116,7 +136,8 @@ const ItemSchema = new mongoose.Schema(
                     ROLE.SORT_AND_PRETREAT,
                     ROLE.INTAKE_AND_TAG,
                     ROLE.WASH_AND_DRY,
-                    ROLE.PRESS_AND_IRON,
+                    ROLE.PRESS,
+                    ROLE.QC,
                 ],
             },
             heldAt: { type: Date },

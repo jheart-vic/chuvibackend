@@ -7,6 +7,7 @@ const {
     STATION_STATUS,
     ACTIVITY_TYPE,
     ROLE,
+    WASH_DURATION_MINUTES,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
@@ -504,12 +505,6 @@ class WashAndDryService extends BaseService {
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt washDetails',
                 lean: true,
             })
-
-            const WASH_DURATION_MINUTES = {
-                standard: 45,
-                premium: 90,
-                express: 30,
-            }
 
             const ordersWithMeta = data.map((order) => {
                 const startedAt = order.washDetails?.startedAt
