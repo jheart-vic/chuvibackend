@@ -20,6 +20,7 @@ const {
   ROUTE_INTAKE_GET_DRAFTS,
   ROUTE_INTAKE_GENERATE_ALL_TAGS,
   ROUTE_INTAKE_COMPLETE_TAGGING,
+  ROUTE_INTAKE_GET_TAGGING_QUEUE,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -922,7 +923,7 @@ router.post(ROUTE_ADJUST_WALLET, [intakeUserAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
+router.get(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.getUserWallet(req, res);
 });
@@ -949,7 +950,7 @@ router.post(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
+router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.getPickableOrders(req, res);
 });
@@ -976,7 +977,7 @@ router.post(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
+router.get(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.getDeliverableOrders(req, res);
 });
@@ -1249,6 +1250,107 @@ router.patch(ROUTE_INTAKE_COMPLETE_TAGGING, [intakeUserAuth], (req, res) => {
 router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.getDrafts(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/tagging-queue:
+ *   get:
+ *     summary: Get all orders in tagging queue
+ *     description: Returns paginated orders with status QUEUE, ready for tagging by intake staff.
+ *     tags:
+ *       - Intake
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           example: 10
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *           example: "ORD-2024-001"
+ *         description: Search by order ID, customer name, or phone number
+ *     responses:
+ *       200:
+ *         description: Tagging queue fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           oscNumber:
+ *                             type: string
+ *                             example: "ORD-2024-001"
+ *                           fullName:
+ *                             type: string
+ *                             example: "Jude Victor"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "08012345678"
+ *                           serviceType:
+ *                             type: string
+ *                             example: "wash-and-iron"
+ *                           serviceTier:
+ *                             type: string
+ *                             example: "standard"
+ *                           amount:
+ *                             type: number
+ *                             example: 4500
+ *                           channel:
+ *                             type: string
+ *                             example: "office"
+ *                           stage:
+ *                             type: object
+ *                             properties:
+ *                               status:
+ *                                 type: string
+ *                                 example: "queue"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                           example: 12
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         limit:
+ *                           type: integer
+ *                           example: 10
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 2
+ *       400:
+ *         description: Failed to fetch tagging queue
+ *       401:
+ *         description: Unauthorized
+ */
+router.get(ROUTE_INTAKE_GET_TAGGING_QUEUE, [intakeUserAuth], (req, res) => {
+const controller = new IntakeUserController()
+  return controller.getTaggingQueue(req, res)
 })
 
 module.exports = router;

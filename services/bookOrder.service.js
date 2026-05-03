@@ -68,9 +68,6 @@ class BookOrderService extends BaseService {
 
       const oscNumber = generateOscNumber();
       let newOrder = null
-console.log('billingType from request:', post.billingType);
-console.log('PAY_FROM_SUBSCRIPTION constant:', BILLING_TYPE.PAY_FROM_SUBSCRIPTION);
-console.log('PAY_PER_ITEM constant:', BILLING_TYPE.PAY_PER_ITEM);
 
       if (post.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
         const subscription = await SubscriptionModel.findOne({

@@ -151,42 +151,42 @@ class IntakeUserService extends BaseService {
             })
         }
     }
-    async getPendingOrders(req) {
-        try {
-            const page = parseInt(req.query.page) || 1 // default to page 1
-            const limit = parseInt(req.query.limit) || 10 // default 10 per page
-            const skip = (page - 1) * limit
+    // async getPendingOrders(req) {
+    //     try {
+    //         const page = parseInt(req.query.page) || 1 // default to page 1
+    //         const limit = parseInt(req.query.limit) || 10 // default 10 per page
+    //         const skip = (page - 1) * limit
 
-            const filter = {
-                'stage.status': ORDER_STATUS.PENDING,
-            }
+    //         const filter = {
+    //             'stage.status': ORDER_STATUS.PENDING,
+    //         }
 
-            const orders = await BookOrderModel.find(filter)
-                .sort({ createdAt: -1 }) // latest first
-                .skip(skip)
-                .limit(limit)
-                .lean()
+    //         const orders = await BookOrderModel.find(filter)
+    //             .sort({ createdAt: -1 }) // latest first
+    //             .skip(skip)
+    //             .limit(limit)
+    //             .lean()
 
-            // 4️⃣ Count total for pagination meta
-            const total = await BookOrderModel.countDocuments(filter)
+    //         // 4️⃣ Count total for pagination meta
+    //         const total = await BookOrderModel.countDocuments(filter)
 
-            // 5️⃣ Send response
-            return BaseService.sendSuccessResponse({
-                message: {
-                    total,
-                    page,
-                    limit,
-                    totalPages: Math.ceil(total / limit),
-                    data: orders,
-                },
-            })
-        } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({
-                error: 'Failed to get orders',
-            })
-        }
-    }
+    //         // 5️⃣ Send response
+    //         return BaseService.sendSuccessResponse({
+    //             message: {
+    //                 total,
+    //                 page,
+    //                 limit,
+    //                 totalPages: Math.ceil(total / limit),
+    //                 data: orders,
+    //             },
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Failed to get orders',
+    //         })
+    //     }
+    // }
     async getBookOrder(req) {
         try {
             const orderId = req.params.id
@@ -966,18 +966,17 @@ class IntakeUserService extends BaseService {
         }
     }
 
-    async getDrafts(req) {
+    async getPendingOrders(req) {
         try {
-            const userId = req.user.id
-            const user = await UserModel.findById(userId)
-            if (!user)
-                return BaseService.sendFailedResponse({
-                    error: 'User not found',
-                })
+            const { page = 1, limit = 10, search = '' } = req.query
+            const skip = (Number(page) - 1) * Number(limit)
 
-            const { page = 1, limit = 20, search = '' } = req.query
-
-            const query = { 'stage.status': ORDER_STATUS.PENDING }
+            const query = {
+                'stage.status': ORDER_STATUS.PENDING,
+                channel: {
+                    $in: [ORDER_CHANNEL.WHATSAPP, ORDER_CHANNEL.WEBSITE],
+                },
+            }
 
             if (search) {
                 query.$or = [
@@ -987,7 +986,56 @@ class IntakeUserService extends BaseService {
                 ]
             }
 
+            const [orders, total] = await Promise.all([
+                BookOrderModel.find(query)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(Number(limit))
+                    .select(
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt',
+                    )
+                    .lean(),
+                BookOrderModel.countDocuments(query),
+            ])
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    data: orders,
+                    pagination: {
+                        total,
+                        page: Number(page),
+                        limit: Number(limit),
+                        totalPages: Math.ceil(total / Number(limit)),
+                    },
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to get pending orders',
+            })
+        }
+    }
+
+
+    async getDrafts(req) {
+        try {
+            const { page = 1, limit = 20, search = '' } = req.query
             const skip = (Number(page) - 1) * Number(limit)
+
+            const query = {
+                'stage.status': ORDER_STATUS.PENDING,
+                channel: ORDER_CHANNEL.OFFICE,
+            }
+
+            if (search) {
+                query.$or = [
+                    { oscNumber: { $regex: search, $options: 'i' } },
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
+
             const [orders, total] = await Promise.all([
                 BookOrderModel.find(query)
                     .sort({ createdAt: -1 })
@@ -1015,6 +1063,53 @@ class IntakeUserService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to fetch drafts',
+            })
+        }
+    }
+    async getTaggingQueue(req) {
+        try {
+            const { page = 1, limit = 10, search = '' } = req.query
+            const skip = (Number(page) - 1) * Number(limit)
+
+            const query = {
+                'stage.status': ORDER_STATUS.QUEUE,
+            }
+
+            if (search) {
+                query.$or = [
+                    { oscNumber: { $regex: search, $options: 'i' } },
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
+
+            const [orders, total] = await Promise.all([
+                BookOrderModel.find(query)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(Number(limit))
+                    .select(
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt',
+                    )
+                    .lean(),
+                BookOrderModel.countDocuments(query),
+            ])
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    data: orders,
+                    pagination: {
+                        total,
+                        page: Number(page),
+                        limit: Number(limit),
+                        totalPages: Math.ceil(total / Number(limit)),
+                    },
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch tagging queue',
             })
         }
     }

@@ -132,24 +132,35 @@ class IntakeUserController extends BaseController {
     }
 
     async generateAllTags(req, res) {
-        const result = await IntakeUserService.generateAllTags(req)
+          const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.generateAllTags(req)
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
 
     async completeTagging(req, res) {
-        const result = await IntakeUserService.completeTagging(req)
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.completeTagging(req)
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
 
     async getDrafts(req, res) {
-        const result = await IntakeUserService.getDrafts(req)
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.getDrafts(req)
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
+    }
+    async getTaggingQueue(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.getTaggingQueue(req)
+        if (!result.success) {
+            return BaseController.sendFailedResponse(res, result.data)
+        }
+        return BaseController.sendSuccessResponse(res, result.data)
     }
 }
 

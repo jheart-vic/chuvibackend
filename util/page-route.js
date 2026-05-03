@@ -45,6 +45,7 @@ exports.ROUTE_INTAKE_USER_DASHBOARD_STATS = '/dashboard-stats'
 exports.ROUTE_INTAKE_GENERATE_ALL_TAGS = '/generate-all-tags/:id'
 exports.ROUTE_INTAKE_COMPLETE_TAGGING  = '/complete-tagging/:id'
 exports.ROUTE_INTAKE_GET_DRAFTS        = '/drafts'
+exports.ROUTE_INTAKE_GET_TAGGING_QUEUE   = '/tagging-queue'
 
 
 
