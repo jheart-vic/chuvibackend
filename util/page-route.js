@@ -219,3 +219,11 @@ exports.ROUTE_START_DELIVERY_ID = '/rider/start-delivery/:id'
 exports.ROUTE_RIDER_ACTIVE_DELIVERIES = '/rider/active-deliveries'
 exports.ROUTE_RIDER_MARK_DELIVERED_ID = '/rider/mark-delivered/:id'
 exports.ROUTE_RIDER_MARK_DELIVERY_FAILED_ID = '/rider/mark-delivery-failed/:id'
+
+//Notifications
+exports.ROUTE_GET_USER_NOTIFICATIONS       = '/notifications'
+exports.ROUTE_GET_USER_NOTIFICATION        = '/notification/:id'
+exports.ROUTE_MARK_NOTIFICATION_AS_READ    = '/notification/:id/mark-read'
+exports.ROUTE_MARK_ALL_NOTIFICATIONS_AS_READ = '/notifications/mark-all-read'
+exports.ROUTE_DELETE_NOTIFICATION          = '/notification/:id'
+exports.ROUTE_DELETE_ALL_NOTIFICATIONS     = '/notifications'

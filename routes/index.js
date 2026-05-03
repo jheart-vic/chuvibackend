@@ -12,6 +12,7 @@ const washDryRouter = require('./wash-dry')
 const pressIronRouter = require('./press-iron')
 const sortPretreatRouter = require('./sort-pretreat')
 const qcUserRouter = require('./qc')
+const notificationRouter = require('./notification')
 const seedRouter = require('./seed')
 
 
@@ -28,5 +29,6 @@ router.use('/wash-dry', washDryRouter)
 router.use('/sort-pretreat', sortPretreatRouter)
 router.use('/seeds', seedRouter)
 router.use('/qc-user', qcUserRouter)
+router.use('/notifications', notificationRouter)
 
 module.exports = router
