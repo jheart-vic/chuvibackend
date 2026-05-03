@@ -17,6 +17,9 @@ const {
   ROUTE_GET_BOOK_ORDER_ID,
   ROUTE_GET_PENDING_ORDERS,
   ROUTE_INTAKE_USER_DASHBOARD_STATS,
+  ROUTE_INTAKE_GET_DRAFTS,
+  ROUTE_INTAKE_GENERATE_ALL_TAGS,
+  ROUTE_INTAKE_COMPLETE_TAGGING,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1099,5 +1102,153 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req,
   const bookOrderController = new IntakeUserController();
   return bookOrderController.assignRiderTopDeliveryOrder(req, res);
 });
+
+/**
+ * @swagger
+ * /intake-user/generate-all-tags/{id}:
+ *   patch:
+ *     summary: Auto-generate tag IDs for all untagged items in an order
+ *     description: |
+ *       Generates a unique tagId for every item that hasn't been tagged yet
+ *       and sets `tagStatus` to `complete` on each. Tag format:
+ *       `{oscNumber}-{padded index}` e.g. `OSC-20260428-321782-01`.
+ *       The order remains in the tagging queue — no stage change occurs.
+ *     tags:
+ *       - Intake & Tag
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     responses:
+ *       200:
+ *         description: All tags generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "All tags generated successfully" }
+ *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *       404:
+ *         description: Order not found or not in tagging queue
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_INTAKE_GENERATE_ALL_TAGS, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.generateAllTags(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/complete-tagging/{id}:
+ *   patch:
+ *     summary: Validate all items are tagged — confirmation gate before sending to S&P
+ *     description: |
+ *       Checks that every item on the order has `tagStatus: complete`.
+ *       Returns an error listing how many items are still untagged.
+ *       On success, confirms the order is ready for Sort & Pretreat.
+ *       **No stage change occurs** — the operator then calls
+ *       `proceed-to-sort-and-pretreat` to actually move the order.
+ *     tags:
+ *       - Intake & Tag
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     responses:
+ *       200:
+ *         description: All items tagged — ready to send to Sort & Pretreat
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "All items tagged. Ready to send to Sort & Pretreat."
+ *       400:
+ *         description: One or more items still untagged
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "3 item(s) still untagged. Please tag all items before completing."
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_INTAKE_COMPLETE_TAGGING, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.completeTagging(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/drafts:
+ *   get:
+ *     summary: Get draft orders — pending orders not yet in the tagging queue
+ *     description: |
+ *       Returns orders with `stage.status: pending`. These are orders that
+ *       have been created (from the customer app or website) but have not yet
+ *       been proceeded to the tagging queue by intake staff.
+ *     tags:
+ *       - Intake & Tag
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-001" }
+ *         description: Search by oscNumber, fullName or phoneNumber
+ *     responses:
+ *       200:
+ *         description: Paginated list of draft orders
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           oscNumber:   { type: string, example: "OSC-20260428-321782" }
+ *                           fullName:    { type: string, example: "Jude Victor" }
+ *                           phoneNumber: { type: string, example: "08081234567" }
+ *                           serviceType: { type: string, example: "wash-and-iron" }
+ *                           serviceTier: { type: string, example: "standard" }
+ *                           amount:      { type: number, example: 5000 }
+ *                           stage:
+ *                             type: object
+ *                             properties:
+ *                               status: { type: string, example: "pending" }
+ *                           createdAt:   { type: string, format: date-time }
+ *                     pagination:
+ *                       $ref: '#/components/schemas/Pagination'
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.getDrafts(req, res)
+})
 
 module.exports = router;

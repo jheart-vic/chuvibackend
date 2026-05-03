@@ -41,6 +41,9 @@ exports.ROUTE_INTAKE_USER_VERIFY_OTP = '/intake-user/verify-otp'
 exports.ROUTE_INTAKE_USER_VERIFY_EMAIL = '/intake-user/verify-email'
 exports.ROUTE_INTAKE_USER_VERIFY_RESET_PASSWORD_OTP = '/intake-user/verify-reset-password-otp'
 exports.ROUTE_INTAKE_USER_DASHBOARD_STATS = '/dashboard-stats'
+exports.ROUTE_INTAKE_GENERATE_ALL_TAGS = '/generate-all-tags/:id'
+exports.ROUTE_INTAKE_COMPLETE_TAGGING  = '/complete-tagging/:id'
+exports.ROUTE_INTAKE_GET_DRAFTS        = '/drafts'
 
 
 
