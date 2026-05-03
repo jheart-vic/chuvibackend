@@ -602,7 +602,7 @@ router.post(ROUTE_PROCEED_TO_TAG_ID, [intakeUserAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
+router.put(ROUTE_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.confirmTagItem(req, res);
 });
@@ -663,7 +663,7 @@ router.post(ROUTE_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post(ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
+router.put(ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.undoConfirmTagItem(req, res);
 });

@@ -8,10 +8,12 @@ const {
     ACTIVITY_TYPE,
     ROLE,
     WASH_DURATION_MINUTES,
+    NOTIFICATION_TYPE,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
+const NotificationModel = require('../models/notification.model')
 
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
@@ -699,6 +701,19 @@ class WashAndDryService extends BaseService {
                 title: 'Wash & Dry Completed',
                 description: `Order ${order.oscNumber} wash and dry completed. Sent to ${nextStatus}`,
                 type: ACTIVITY_TYPE.ORDER_WASH_DRY_COMPLETED,
+            })
+            await NotificationModel.create({
+                userId: order.userId,
+                title: isWashOnly
+                    ? 'Your order is getting ready'
+                    : 'Your order is being ironed',
+                body: isWashOnly
+                    ? `Order ${order.oscNumber} has been washed and is now ready for ironing.`
+                    : `Order ${order.oscNumber} has been washed and is now being ironed.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: isWashOnly
+                    ? NOTIFICATION_TYPE.ORDER_WASHING
+                    : NOTIFICATION_TYPE.ORDER_IRONING,
             })
 
             return BaseService.sendSuccessResponse({

@@ -119,6 +119,7 @@ const NOTIFICATION_TYPE = {
     ORDER_PICKED: 'order-picked',
     ORDER_WASHING: 'order-washing',
     ORDER_IRONING: 'order-ironing',
+    ORDER_READY: 'order-ready',
     ORDER_DELIVERED: 'order-delivered',
     PAYMENT_APPROVED: 'payment-approved',
     WALLET_TOP_UP: 'wallet-top-up',

@@ -13,7 +13,7 @@ const {
     getWeightImprovementTipsByWeight,
 } = require('../util/helper')
 const { uploadImage, deleteImage } = require('../util/imageUpload')
-const { EXPIRES_AT } = require('../util/constants')
+const { EXPIRES_AT, ORDER_STATUS } = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
@@ -31,78 +31,59 @@ class UserService extends BaseService {
                 ongoingOrder,
                 subscription,
             ] = await Promise.all([
-
                 WalletModel.findOneAndUpdate(
                     { userId },
-
                     { $setOnInsert: { balance: 0 } },
-
                     { upsert: true, new: true, lean: true },
                 ),
 
                 BookOrderModel.countDocuments({
                     userId,
                     paymentStatus: 'success',
+                    'stage.status': ORDER_STATUS.DELIVERED,
                 }),
 
                 NotificationModel.countDocuments({ userId, read: false }),
 
                 BookOrderModel.findOne({
                     userId,
-
                     paymentStatus: 'success',
-
-                    status: { $nin: ['delivered', 'cancelled'] },
+                    'stage.status': {
+                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PENDING],
+                    },
                 })
-
                     .sort({ createdAt: -1 })
-
                     .lean(),
 
-                // Active subscription with plan details
-
                 SubscriptionModel.findOne({ userId, status: 'active' })
-
                     .populate('planId')
-
                     .lean(),
             ])
 
             return BaseService.sendSuccessResponse({
                 message: {
                     walletBalance: wallet?.balance ?? 0,
-
                     pastOrdersCount,
-
                     unreadNotificationsCount,
-
                     ongoingOrder: ongoingOrder
                         ? {
                               id: ongoingOrder._id,
-
-                              status: ongoingOrder.status,
-
+                              status: ongoingOrder.stage.status,
                               amount: ongoingOrder.amount,
-
                               createdAt: ongoingOrder.createdAt,
                           }
                         : null,
-
                     subscription: subscription
                         ? {
                               status: subscription.status,
-
                               nextBillingDate: subscription.nextPaymentDate,
-
                               plan: subscription.planId
                                   ? {
                                         name: subscription.planId.name,
-
                                         monthlyLimits:
                                             subscription.planId.monthlyLimits,
                                     }
                                   : null,
-
                               remainingItems:
                                   subscription.remainingItems ?? null,
                           }
@@ -111,7 +92,6 @@ class UserService extends BaseService {
             })
         } catch (error) {
             console.error('Error fetching dashboard:', error)
-
             return BaseService.sendFailedResponse({
                 error: 'Unable to fetch dashboard data',
             })

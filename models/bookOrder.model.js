@@ -170,7 +170,7 @@ const bookOrderSchema = new mongoose.Schema(
     {
         userId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'BookOrderCategory',
+            ref: 'User',
             required: false,
         },
         fullName: { type: String, required: true },

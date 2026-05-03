@@ -6,55 +6,60 @@ const {
     STATION_STATUS,
     ACTIVITY_TYPE,
     ROLE,
+    NOTIFICATION_TYPE,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
+const NotificationModel = require('../models/notification.model')
 
 class QCService extends BaseService {
-
     // ── Dashboard ──────────────────────────────────────────────────────────────
     async getDashboard(req) {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-            const [qcQueue, activeQC, packing, ready, recentQueueResult] = await Promise.all([
-                // awaiting QC — no startedAt
-                BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.QC,
-                    'qcDetails.startedAt': { $exists: false },
-                }),
-                // active QC — started but not passed
-                BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.QC,
-                    'qcDetails.startedAt': { $exists: true },
-                    'qcDetails.passedAt': { $exists: false },
-                }),
-                // pack & seal — passed QC but not yet packed
-                BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.QC,
-                    'qcDetails.passedAt': { $exists: true },
-                    'qcDetails.packCompletedAt': { $exists: false },
-                }),
-                // ready for delivery
-                BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.READY,
-                }),
-                // recent queue
-                paginate(
-                    BookOrderModel,
-                    { 'stage.status': ORDER_STATUS.QC },
-                    {
-                        page: 1,
-                        limit: 5,
-                        sort: { 'stage.updatedAt': 1 },
-                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt qcDetails',
-                        lean: true,
-                    },
-                ),
-            ])
+            const [qcQueue, activeQC, packing, ready, recentQueueResult] =
+                await Promise.all([
+                    // awaiting QC — no startedAt
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.QC,
+                        'qcDetails.startedAt': { $exists: false },
+                    }),
+                    // active QC — started but not passed
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.QC,
+                        'qcDetails.startedAt': { $exists: true },
+                        'qcDetails.passedAt': { $exists: false },
+                    }),
+                    // pack & seal — passed QC but not yet packed
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.QC,
+                        'qcDetails.passedAt': { $exists: true },
+                        'qcDetails.packCompletedAt': { $exists: false },
+                    }),
+                    // ready for delivery
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.READY,
+                    }),
+                    // recent queue
+                    paginate(
+                        BookOrderModel,
+                        { 'stage.status': ORDER_STATUS.QC },
+                        {
+                            page: 1,
+                            limit: 5,
+                            sort: { 'stage.updatedAt': 1 },
+                            select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt qcDetails',
+                            lean: true,
+                        },
+                    ),
+                ])
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -64,7 +69,9 @@ class QCService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch dashboard' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch dashboard',
+            })
         }
     }
 
@@ -73,7 +80,10 @@ class QCService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20, search = '' } = req.query
 
@@ -101,13 +111,19 @@ class QCService extends BaseService {
             const ordersWithMeta = data.map((o) => ({
                 ...o,
                 itemCount: (o.items || []).length,
-                flaggedItemCount: (o.items || []).filter((i) => i.flaggedForReview).length,
+                flaggedItemCount: (o.items || []).filter(
+                    (i) => i.flaggedForReview,
+                ).length,
             }))
 
-            return BaseService.sendSuccessResponse({ message: { data: ordersWithMeta, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data: ordersWithMeta, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch QC queue' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch QC queue',
+            })
         }
     }
 
@@ -117,23 +133,38 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QC,
             }).lean()
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in QC stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in QC stage',
+                })
 
-            const allItemsPassed = order.items.every((i) => i.qcStatus === 'passed')
+            const allItemsPassed = order.items.every(
+                (i) => i.qcStatus === 'passed',
+            )
 
-            return BaseService.sendSuccessResponse({ message: { order, allItemsPassed } })
+            return BaseService.sendSuccessResponse({
+                message: { order, allItemsPassed },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch order details' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch order details',
+            })
         }
     }
 
@@ -144,21 +175,39 @@ class QCService extends BaseService {
             const itemId = req.params.itemId
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
-            if (!itemId) return BaseService.sendFailedResponse({ error: 'Item ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QC,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in QC stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in QC stage',
+                })
 
             const item = order.items.id(itemId)
-            if (!item) return BaseService.sendFailedResponse({ error: 'Item not found in order' })
-            if (item.qcStatus === 'passed') return BaseService.sendFailedResponse({ error: 'Item already passed QC' })
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
+            if (item.qcStatus === 'passed')
+                return BaseService.sendFailedResponse({
+                    error: 'Item already passed QC',
+                })
 
             const now = new Date()
 
@@ -186,7 +235,9 @@ class QCService extends BaseService {
             )
 
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allItemsPassed = updatedOrder.items.every((i) => i.qcStatus === 'passed')
+            const allItemsPassed = updatedOrder.items.every(
+                (i) => i.qcStatus === 'passed',
+            )
 
             await ActivityModel.create({
                 title: 'Item QC Passed',
@@ -197,11 +248,16 @@ class QCService extends BaseService {
             })
 
             return BaseService.sendSuccessResponse({
-                message: { message: 'Item marked as QC passed', allItemsPassed },
+                message: {
+                    message: 'Item marked as QC passed',
+                    allItemsPassed,
+                },
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to confirm item QC' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to confirm item QC',
+            })
         }
     }
 
@@ -212,21 +268,39 @@ class QCService extends BaseService {
             const itemId = req.params.itemId
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
-            if (!itemId) return BaseService.sendFailedResponse({ error: 'Item ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QC,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in QC stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in QC stage',
+                })
 
             const item = order.items.id(itemId)
-            if (!item) return BaseService.sendFailedResponse({ error: 'Item not found in order' })
-            if (item.qcStatus !== 'passed') return BaseService.sendFailedResponse({ error: 'Item is not marked as passed' })
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
+            if (item.qcStatus !== 'passed')
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not marked as passed',
+                })
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -250,10 +324,14 @@ class QCService extends BaseService {
                 userId,
             })
 
-            return BaseService.sendSuccessResponse({ message: 'Item QC status undone' })
+            return BaseService.sendSuccessResponse({
+                message: 'Item QC status undone',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to undo item QC' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to undo item QC',
+            })
         }
     }
 
@@ -263,18 +341,29 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QC,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in QC stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in QC stage',
+                })
 
-            const allItemsPassed = order.items.every((i) => i.qcStatus === 'passed')
+            const allItemsPassed = order.items.every(
+                (i) => i.qcStatus === 'passed',
+            )
             if (!allItemsPassed) {
                 return BaseService.sendFailedResponse({
                     error: 'All items must pass QC before sending to Pack & Seal',
@@ -294,10 +383,14 @@ class QCService extends BaseService {
                 userId,
             })
 
-            return BaseService.sendSuccessResponse({ message: 'Order passed QC and sent to Pack & Seal' })
+            return BaseService.sendSuccessResponse({
+                message: 'Order passed QC and sent to Pack & Seal',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to pass QC' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to pass QC',
+            })
         }
     }
 
@@ -306,7 +399,10 @@ class QCService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20, search = '' } = req.query
 
@@ -337,10 +433,14 @@ class QCService extends BaseService {
                 itemCount: (o.items || []).length,
             }))
 
-            return BaseService.sendSuccessResponse({ message: { data: ordersWithMeta, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data: ordersWithMeta, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch Pack & Seal list' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch Pack & Seal list',
+            })
         }
     }
 
@@ -350,10 +450,16 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
@@ -361,12 +467,17 @@ class QCService extends BaseService {
                 'qcDetails.passedAt': { $exists: true },
                 'qcDetails.packCompletedAt': { $exists: false },
             }).lean()
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in Pack & Seal stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in Pack & Seal stage',
+                })
 
             return BaseService.sendSuccessResponse({ message: { order } })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch Pack & Seal order' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch Pack & Seal order',
+            })
         }
     }
 
@@ -377,7 +488,10 @@ class QCService extends BaseService {
             const userId = req.user.id
             const { labelAttached, packageSealed } = req.body
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
             if (!labelAttached || !packageSealed) {
                 return BaseService.sendFailedResponse({
                     error: 'All pack & seal checklist items must be completed',
@@ -385,7 +499,10 @@ class QCService extends BaseService {
             }
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
@@ -393,7 +510,10 @@ class QCService extends BaseService {
                 'qcDetails.passedAt': { $exists: true },
                 'qcDetails.packCompletedAt': { $exists: false },
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in Pack & Seal stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in Pack & Seal stage',
+                })
 
             const now = new Date()
 
@@ -423,11 +543,22 @@ class QCService extends BaseService {
                 orderId: order._id,
                 userId,
             })
+            await NotificationModel.create({
+                userId: order.userId,
+                title: 'Your order is ready for delivery',
+                body: `Order ${order.oscNumber} has been quality-checked, packed, and sealed. It is now ready for delivery.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_READY,
+            })
 
-            return BaseService.sendSuccessResponse({ message: 'Order packed and sealed. Now ready for delivery.' })
+            return BaseService.sendSuccessResponse({
+                message: 'Order packed and sealed. Now ready for delivery.',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to complete Pack & Seal' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to complete Pack & Seal',
+            })
         }
     }
 
@@ -436,7 +567,10 @@ class QCService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20, search = '' } = req.query
 
@@ -463,10 +597,14 @@ class QCService extends BaseService {
                 itemCount: (o.items || []).length,
             }))
 
-            return BaseService.sendSuccessResponse({ message: { data: ordersWithMeta, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data: ordersWithMeta, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch ready orders' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch ready orders',
+            })
         }
     }
 
@@ -478,10 +616,22 @@ class QCService extends BaseService {
             const userId = req.user.id
             const { reason, assignTo } = req.body
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
-            if (!itemId) return BaseService.sendFailedResponse({ error: 'Item ID is required' })
-            if (!reason) return BaseService.sendFailedResponse({ error: 'A reason is required' })
-            if (!assignTo) return BaseService.sendFailedResponse({ error: 'An assignee is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!itemId)
+                return BaseService.sendFailedResponse({
+                    error: 'Item ID is required',
+                })
+            if (!reason)
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required',
+                })
+            if (!assignTo)
+                return BaseService.sendFailedResponse({
+                    error: 'An assignee is required',
+                })
 
             const allowedReasons = ['item_missing', 'item_mismatched']
 
@@ -503,16 +653,25 @@ class QCService extends BaseService {
             }
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QC,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not in QC stage' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in QC stage',
+                })
 
             const item = order.items.id(itemId)
-            if (!item) return BaseService.sendFailedResponse({ error: 'Item not found in order' })
+            if (!item)
+                return BaseService.sendFailedResponse({
+                    error: 'Item not found in order',
+                })
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -524,7 +683,8 @@ class QCService extends BaseService {
                         'items.$.holdDetails.assignTo': assignTo,
                         'items.$.holdDetails.heldAt': new Date(),
                         'items.$.holdDetails.heldByOperatorId': userId,
-                        'items.$.holdDetails.heldByStation': STATION_STATUS.QC_STATION,
+                        'items.$.holdDetails.heldByStation':
+                            STATION_STATUS.QC_STATION,
                     },
                     $push: {
                         'items.$.actionLog': {
@@ -538,7 +698,11 @@ class QCService extends BaseService {
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
-                buildStageUpdate(ORDER_STATUS.HOLD, stationMap[assignTo], reason),
+                buildStageUpdate(
+                    ORDER_STATUS.HOLD,
+                    stationMap[assignTo],
+                    reason,
+                ),
             )
 
             await ActivityModel.create({
@@ -549,10 +713,14 @@ class QCService extends BaseService {
                 userId,
             })
 
-            return BaseService.sendSuccessResponse({ message: 'Item placed on hold successfully' })
+            return BaseService.sendSuccessResponse({
+                message: 'Item placed on hold successfully',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to place item on hold' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to place item on hold',
+            })
         }
     }
 
@@ -561,7 +729,10 @@ class QCService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const { page = 1, limit = 20, search = '' } = req.query
 
@@ -571,7 +742,10 @@ class QCService extends BaseService {
                     // assigned to QC by another station
                     { stationStatus: STATION_STATUS.QC_STATION },
                     // raised by QC — sitting at another station
-                    { 'items.holdDetails.heldByStation': STATION_STATUS.QC_STATION },
+                    {
+                        'items.holdDetails.heldByStation':
+                            STATION_STATUS.QC_STATION,
+                    },
                 ],
             }
 
@@ -587,18 +761,27 @@ class QCService extends BaseService {
                 ]
             }
 
-            const { data, pagination } = await paginate(BookOrderModel, baseQuery, {
-                page,
-                limit,
-                sort: { 'stage.updatedAt': -1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus qcDetails createdAt updatedAt',
-                lean: true,
-            })
+            const { data, pagination } = await paginate(
+                BookOrderModel,
+                baseQuery,
+                {
+                    page,
+                    limit,
+                    sort: { 'stage.updatedAt': -1 },
+                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus qcDetails createdAt updatedAt',
+                    lean: true,
+                },
+            )
 
             const holdItems = data.map((order) => {
-                const assignedToUs = order.stationStatus === STATION_STATUS.QC_STATION
+                const assignedToUs =
+                    order.stationStatus === STATION_STATUS.QC_STATION
                 const flaggedItems = (order.items || [])
-                    .filter((i) => i.holdDetails?.heldByStation || i.holdDetails?.assignTo)
+                    .filter(
+                        (i) =>
+                            i.holdDetails?.heldByStation ||
+                            i.holdDetails?.assignTo,
+                    )
                     .map((i) => ({
                         itemId: i._id,
                         tagId: i.tagId,
@@ -626,10 +809,14 @@ class QCService extends BaseService {
                 }
             })
 
-            return BaseService.sendSuccessResponse({ message: { data: holdItems, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data: holdItems, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch hold queue' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch hold queue',
+            })
         }
     }
 
@@ -639,17 +826,26 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
                 stationStatus: STATION_STATUS.QC_STATION,
             })
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found or not on hold at this station' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not on hold at this station',
+                })
 
             const now = new Date()
             const updatedItems = order.items.map((item) => {
@@ -684,10 +880,14 @@ class QCService extends BaseService {
                 userId,
             })
 
-            return BaseService.sendSuccessResponse({ message: 'Order released from hold and returned to QC queue' })
+            return BaseService.sendSuccessResponse({
+                message: 'Order released from hold and returned to QC queue',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to release order from hold' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to release order from hold',
+            })
         }
     }
 
@@ -696,9 +896,18 @@ class QCService extends BaseService {
         try {
             const userId = req.user.id
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-            const { page = 1, limit = 20, search = '', startDate, endDate } = req.query
+            const {
+                page = 1,
+                limit = 20,
+                search = '',
+                startDate,
+                endDate,
+            } = req.query
 
             const query = {
                 'stageHistory.status': ORDER_STATUS.QC,
@@ -729,10 +938,14 @@ class QCService extends BaseService {
                 lean: true,
             })
 
-            return BaseService.sendSuccessResponse({ message: { data, pagination } })
+            return BaseService.sendSuccessResponse({
+                message: { data, pagination },
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch history' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch history',
+            })
         }
     }
 
@@ -742,23 +955,56 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) return BaseService.sendFailedResponse({ error: 'Order ID is required' })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
             const user = await UserModel.findById(userId)
-            if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
             const order = await BookOrderModel.findById(orderId).lean()
-            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found' })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
 
             const PIPELINE = [
-                { key: 'intake',    label: 'Intake',    status: ORDER_STATUS.PENDING },
-                { key: 'tagged',    label: 'Tagged',    status: ORDER_STATUS.QUEUE },
-                { key: 'pretreated',label: 'Pretreated',status: ORDER_STATUS.SORT_AND_PRETREAT },
-                { key: 'washed',    label: 'Washed',    status: ORDER_STATUS.WASHING },
-                { key: 'ironing',   label: 'Ironing',   status: ORDER_STATUS.IRONING },
-                { key: 'qc_passed', label: 'QC Passed', status: ORDER_STATUS.QC },
-                { key: 'ready',     label: 'Ready',     status: ORDER_STATUS.READY },
-                { key: 'delivered', label: 'Delivered', status: ORDER_STATUS.DELIVERED },
+                {
+                    key: 'intake',
+                    label: 'Intake',
+                    status: ORDER_STATUS.PENDING,
+                },
+                { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
+                {
+                    key: 'pretreated',
+                    label: 'Pretreated',
+                    status: ORDER_STATUS.SORT_AND_PRETREAT,
+                },
+                {
+                    key: 'washed',
+                    label: 'Washed',
+                    status: ORDER_STATUS.WASHING,
+                },
+                {
+                    key: 'ironing',
+                    label: 'Ironing',
+                    status: ORDER_STATUS.IRONING,
+                },
+                {
+                    key: 'qc_passed',
+                    label: 'QC Passed',
+                    status: ORDER_STATUS.QC,
+                },
+                { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
+                {
+                    key: 'delivered',
+                    label: 'Delivered',
+                    status: ORDER_STATUS.DELIVERED,
+                },
             ]
 
             const stageTimestampMap = {}
@@ -772,7 +1018,12 @@ class QCService extends BaseService {
 
             const pipeline = PIPELINE.map((step) => {
                 const timestamp = stageTimestampMap[step.status] || null
-                return { key: step.key, label: step.label, completed: !!timestamp, timestamp }
+                return {
+                    key: step.key,
+                    label: step.label,
+                    completed: !!timestamp,
+                    timestamp,
+                }
             })
 
             const itemTimeline = []
@@ -788,9 +1039,14 @@ class QCService extends BaseService {
                     })
                 }
             }
-            itemTimeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+            itemTimeline.sort(
+                (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+            )
 
-            const trackingStatus = order.stage.status === ORDER_STATUS.DELIVERED ? 'completed' : 'in_progress'
+            const trackingStatus =
+                order.stage.status === ORDER_STATUS.DELIVERED
+                    ? 'completed'
+                    : 'in_progress'
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -813,7 +1069,9 @@ class QCService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error: 'Failed to fetch order timeline' })
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch order timeline',
+            })
         }
     }
 }

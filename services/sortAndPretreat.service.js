@@ -1,5 +1,6 @@
 const ActivityModel = require('../models/activity.model')
 const BookOrderModel = require('../models/bookOrder.model')
+const NotificationModel = require('../models/notification.model')
 const UserModel = require('../models/user.model')
 const {
     ORDER_STATUS,
@@ -11,6 +12,7 @@ const {
     STATION_STATUS,
     ACTIVITY_TYPE,
     ROLE,
+    NOTIFICATION_TYPE,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const paginate = require('../util/paginate')
@@ -916,6 +918,19 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_STATUS_UPDATED,
                 orderId: order._id,
                 userId,
+            })
+            await NotificationModel.create({
+                userId: order.userId,
+                title: isIroningOnly
+                    ? 'Your order is being ironed'
+                    : 'Your order is being washed',
+                body: isIroningOnly
+                    ? `Order ${order.oscNumber} has been sorted and is now being ironed.`
+                    : `Order ${order.oscNumber} has been sorted and is now in the wash.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: isIroningOnly
+                    ? NOTIFICATION_TYPE.ORDER_IRONING
+                    : NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
             return BaseService.sendSuccessResponse({
