@@ -11,6 +11,7 @@ const intakeUserRouter = require('./intake-user')
 const washDryRouter = require('./wash-dry')
 const pressIronRouter = require('./press-iron')
 const sortPretreatRouter = require('./sort-pretreat')
+const qcUserRouter = require('./qc')
 const seedRouter = require('./seed')
 
 
@@ -26,5 +27,6 @@ router.use('/press-iron', pressIronRouter)
 router.use('/wash-dry', washDryRouter)
 router.use('/sort-pretreat', sortPretreatRouter)
 router.use('/seeds', seedRouter)
+router.use('/qc-user', qcUserRouter)
 
 module.exports = router
