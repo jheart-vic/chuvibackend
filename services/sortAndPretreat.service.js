@@ -10,6 +10,7 @@ const {
     DAMAGE_RISK_FLAGS,
     STATION_STATUS,
     ACTIVITY_TYPE,
+    ROLE,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const paginate = require('../util/paginate')

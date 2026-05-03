@@ -487,7 +487,7 @@ class QCService extends BaseService {
 
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
-                [ROLE.PRESS_AND_IRON]: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                [ROLE.PRESS]: STATION_STATUS.PRESSING_AND_IRONING_STATION,
                 [ROLE.WASH_AND_DRY]: STATION_STATUS.WASH_AND_DRY_STATION,
             }
 

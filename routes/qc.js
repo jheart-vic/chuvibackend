@@ -23,7 +23,7 @@ const {
 
 /**
  * @swagger
- * /qc/dashboard:
+ * /qc-user/dashboard:
  *   get:
  *     summary: QC dashboard overview
  *     description: |
@@ -67,7 +67,7 @@ router.get(ROUTE_QC_DASHBOARD, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/orders/queue:
+ * /qc-user/orders/queue:
  *   get:
  *     summary: Get QC queue — orders awaiting inspection
  *     tags:
@@ -108,7 +108,7 @@ router.get(ROUTE_QC_QUEUE, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/queue/{id}:
+ * /qc-user/order/queue/{id}:
  *   get:
  *     summary: Get single order details for QC inspection
  *     tags:
@@ -143,7 +143,7 @@ router.get(ROUTE_QC_QUEUE_SINGLE, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/queue/{id}/items/{itemId}/confirm:
+ * /qc-user/order/queue/{id}/items/{itemId}/confirm:
  *   patch:
  *     summary: Mark a single item as QC passed
  *     description: |
@@ -187,7 +187,7 @@ router.patch(ROUTE_QC_CONFIRM_ITEM, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/queue/{id}/items/{itemId}/undo-confirm:
+ * /qc-user/order/queue/{id}/items/{itemId}/undo-confirm:
  *   patch:
  *     summary: Undo QC pass for a single item
  *     tags:
@@ -222,7 +222,7 @@ router.patch(ROUTE_QC_UNDO_CONFIRM_ITEM, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/queue/{id}/pass:
+ * /qc-user/order/queue/{id}/pass:
  *   patch:
  *     summary: Pass QC — send order to Pack & Seal
  *     description: |
@@ -261,7 +261,7 @@ router.patch(ROUTE_QC_PASS_ORDER, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/orders/pack-and-seal:
+ * /qc-user/orders/pack-and-seal:
  *   get:
  *     summary: Get orders in Pack & Seal stage
  *     description: Orders that have passed QC but not yet been packed and sealed.
@@ -303,7 +303,7 @@ router.get(ROUTE_QC_PACK_AND_SEAL_LIST, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/pack-and-seal/{id}:
+ * /qc-user/order/pack-and-seal/{id}:
  *   get:
  *     summary: Get single order for Pack & Seal
  *     tags:
@@ -337,7 +337,7 @@ router.get(ROUTE_QC_PACK_AND_SEAL_DETAIL, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/pack-and-seal/{id}/complete:
+ * /qc-user/order/pack-and-seal/{id}/complete:
  *   patch:
  *     summary: Complete Pack & Seal — move order to Ready
  *     description: |
@@ -389,7 +389,7 @@ router.patch(ROUTE_QC_PACK_AND_SEAL_COMPLETE, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/orders/ready:
+ * /qc-user/orders/ready:
  *   get:
  *     summary: Get ready orders — packed and awaiting delivery dispatch
  *     tags:
@@ -432,7 +432,7 @@ router.get(ROUTE_QC_READY_ORDERS, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/queue/{id}/items/{itemId}/hold:
+ * /qc-user/order/queue/{id}/items/{itemId}/hold:
  *   patch:
  *     summary: Place a specific item on hold and assign to another station
  *     description: |
@@ -491,7 +491,7 @@ router.patch(ROUTE_QC_HOLD, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/orders/hold:
+ * /qc-user/orders/hold:
  *   get:
  *     summary: Get hold queue — assigned to us and raised by us
  *     description: |
@@ -568,7 +568,7 @@ router.get(ROUTE_QC_GET_HOLD, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/hold/{id}/release:
+ * /qc-user/order/hold/{id}/release:
  *   patch:
  *     summary: Release an order from hold back to QC queue
  *     description: |
@@ -608,7 +608,7 @@ router.patch(ROUTE_QC_RELEASE, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/orders/history:
+ * /qc-user/orders/history:
  *   get:
  *     summary: Get history — orders that have passed through QC
  *     description: Orders that have passed QC and Pack & Seal and moved to Ready or beyond.
@@ -656,7 +656,7 @@ router.get(ROUTE_QC_HISTORY, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc/order/history/{id}/timeline:
+ * /qc-user/order/history/{id}/timeline:
  *   get:
  *     summary: Get full order timeline — pipeline stepper + per-item audit log
  *     description: |
