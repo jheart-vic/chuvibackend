@@ -2,12 +2,12 @@ const router = require('express').Router()
 const NotificationController = require('../controllers/notification.controller')
 const auth = require('../middlewares/auth')
 const {
-    ROUTE_GET_USER_NOTIFICATIONS,
     ROUTE_GET_USER_NOTIFICATION,
     ROUTE_MARK_NOTIFICATION_AS_READ,
     ROUTE_MARK_ALL_NOTIFICATIONS_AS_READ,
     ROUTE_DELETE_NOTIFICATION,
     ROUTE_DELETE_ALL_NOTIFICATIONS,
+    ROUTE_GET_ALL_USER_NOTIFICATIONS,
 } = require('../util/page-route')
 
 // ── Get All Notifications ──────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ const {
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_GET_USER_NOTIFICATIONS, [auth], (req, res) => {
+router.get(ROUTE_GET_ALL_USER_NOTIFICATIONS, [auth], (req, res) => {
     const controller = new NotificationController()
     return controller.getNotifications(req, res)
 })

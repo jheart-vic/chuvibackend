@@ -223,7 +223,7 @@ exports.ROUTE_RIDER_MARK_DELIVERED_ID = '/rider/mark-delivered/:id'
 exports.ROUTE_RIDER_MARK_DELIVERY_FAILED_ID = '/rider/mark-delivery-failed/:id'
 
 //Notifications
-// exports.ROUTE_GET_USER_NOTIFICATIONS       = '/notifications'
+exports.ROUTE_GET_ALL_USER_NOTIFICATIONS       = '/'
 exports.ROUTE_GET_USER_NOTIFICATION        = '/:id'
 exports.ROUTE_MARK_NOTIFICATION_AS_READ    = '/:id/mark-read'
 exports.ROUTE_MARK_ALL_NOTIFICATIONS_AS_READ = '/mark-all-read'
