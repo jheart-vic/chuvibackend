@@ -76,7 +76,7 @@ class AdminController extends BaseController {
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);
     }
-    async reAssignOrderState(req, res) {
+    async reAssignOrderStation(req, res) {
       const adminService = new AdminService();
       const result = await adminService.reAssignOrderStation(req, res);
   
