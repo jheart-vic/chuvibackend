@@ -21,6 +21,8 @@ const {
   ROUTE_INTAKE_GENERATE_ALL_TAGS,
   ROUTE_INTAKE_COMPLETE_TAGGING,
   ROUTE_INTAKE_GET_TAGGING_QUEUE,
+  ROUTE_INTAKE_USER_GET_HOLD,
+  ROUTE_INTAKE_USER_RELEASE,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1351,6 +1353,105 @@ router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
 router.get(ROUTE_INTAKE_GET_TAGGING_QUEUE, [intakeUserAuth], (req, res) => {
 const controller = new IntakeUserController()
   return controller.getTaggingQueue(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/orders/hold:
+ *   get:
+ *     summary: Get hold queue — orders raised by intake user
+ *     description: |
+ *       Read-only monitoring view. Shows all orders that intake user placed on hold
+ *       and assigned to another station. Intake user cannot release these orders —
+ *       only the assigned station can release them.
+ *     tags:
+ *       - Wash & Dry
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "ORD-2024-001" }
+ *     responses:
+ *       200:
+ *         description: Paginated hold queue
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           orderId:       { type: string }
+ *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                           fullName:      { type: string, example: "Jude Victor" }
+ *                           holdType:      { type: string, enum: [raised_by_us], example: "raised_by_us" }
+ *                           holdReason:    { type: string, example: "item_missing" }
+ *                           holdTime:      { type: string, format: date-time }
+ *                           stationStatus: { type: string, example: "sort-and-pretreat-station" }
+ *                           operator:      { type: string, example: "Victor Jp", nullable: true }
+ *                           flaggedItems:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 itemId:        { type: string }
+ *                                 tagId:         { type: string, example: "Tag-2024-001-01" }
+ *                                 type:          { type: string, example: "shirt" }
+ *                                 flagNote:      { type: string }
+ *                                 holdReason:    { type: string, example: "item_missing" }
+ *                                 assignTo:      { type: string, example: "sort-and-pretreat" }
+ *                                 heldByStation: { type: string, example: "wash-and-dry-station" }
+ *                                 heldAt:        { type: string, format: date-time }
+ *                     pagination:
+ *                       $ref: '#/components/schemas/Pagination'
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.getHoldQueue(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/hold/{id}/release:
+ *   patch:
+ *     summary: Release an order from hold back to wash queue
+ *     tags:
+ *       - Wash & Dry
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     responses:
+ *       200:
+ *         description: Order released from hold and returned to wash queue
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string, example: "Order released from hold and returned to wash queue" }
+ *       404:
+ *         description: Order not found or not on hold
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_INTAKE_USER_RELEASE, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.releaseFromHold(req, res)
 })
 
 module.exports = router;

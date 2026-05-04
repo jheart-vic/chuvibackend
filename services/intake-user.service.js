@@ -15,7 +15,8 @@ const {
     DELIVERY_SPEED,
     NOTIFICATION_TYPE,
 } = require('../util/constants')
-const { generateOscNumber } = require('../util/helper')
+const { generateOscNumber, buildStageUpdate } = require('../util/helper')
+const paginate = require('../util/paginate')
 const validateData = require('../util/validate')
 const BaseService = require('./base.service')
 
@@ -1016,16 +1017,17 @@ class IntakeUserService extends BaseService {
             })
         }
     }
-
-
     async getDrafts(req) {
         try {
             const { page = 1, limit = 20, search = '' } = req.query
             const skip = (Number(page) - 1) * Number(limit)
 
+            // Drafts = orders in tagging queue with at least one untagged item
             const query = {
-                'stage.status': ORDER_STATUS.PENDING,
-                channel: ORDER_CHANNEL.OFFICE,
+                'stage.status': ORDER_STATUS.QUEUE,
+                items: {
+                    $elemMatch: { tagStatus: { $ne: 'complete' } },
+                },
             }
 
             if (search) {
@@ -1038,19 +1040,30 @@ class IntakeUserService extends BaseService {
 
             const [orders, total] = await Promise.all([
                 BookOrderModel.find(query)
-                    .sort({ createdAt: -1 })
+                    .sort({ updatedAt: -1 })
                     .skip(skip)
                     .limit(Number(limit))
                     .select(
-                        'oscNumber fullName phoneNumber serviceType serviceTier items amount stage createdAt',
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt updatedAt',
                     )
                     .lean(),
                 BookOrderModel.countDocuments(query),
             ])
 
+            const ordersWithMeta = orders.map((order) => ({
+                ...order,
+                itemCount: order.items.length,
+                taggedCount: order.items.filter(
+                    (i) => i.tagStatus === 'complete',
+                ).length,
+                untaggedCount: order.items.filter(
+                    (i) => i.tagStatus !== 'complete',
+                ).length,
+            }))
+
             return BaseService.sendSuccessResponse({
                 message: {
-                    data: orders,
+                    data: ordersWithMeta,
                     pagination: {
                         total,
                         page: Number(page),
@@ -1110,6 +1123,174 @@ class IntakeUserService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to fetch tagging queue',
+            })
+        }
+    }
+
+    async getHoldQueue(req) {
+        try {
+            const userId = req.user.id
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const { page = 1, limit = 20, search = '' } = req.query
+
+            const baseQuery = {
+                'stage.status': ORDER_STATUS.HOLD,
+                $or: [
+                    { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
+                    {
+                        'items.holdDetails.heldByStation':
+                            STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    },
+                ],
+            }
+
+            if (search) {
+                baseQuery.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
+                ]
+            }
+
+            const { data, pagination } = await paginate(
+                BookOrderModel,
+                baseQuery,
+                {
+                    page,
+                    limit,
+                    sort: { 'stage.updatedAt': -1 },
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
+                    populate: {
+                        path: 'intakeStaffId washDetails.operatorId',
+                        select: 'fullName',
+                    },
+                    lean: true,
+                },
+            )
+
+            const holdItems = data.map((order) => {
+                const assignedToUs =
+                    order.stationStatus ===
+                    STATION_STATUS.INTAKE_AND_TAG_STATION
+                const flaggedItems = (order.items || [])
+                    .filter(
+                        (i) =>
+                            i.holdDetails?.heldByStation ||
+                            i.holdDetails?.assignTo,
+                    )
+                    .map((i) => ({
+                        itemId: i._id,
+                        tagId: i.tagId,
+                        type: i.type,
+                        flagNote: i.flagNote,
+                        holdReason: i.holdDetails?.reason,
+                        assignTo: i.holdDetails?.assignTo,
+                        heldByStation: i.holdDetails?.heldByStation,
+                        heldAt: i.holdDetails?.heldAt,
+                    }))
+
+                return {
+                    orderId: order._id,
+                    oscNumber: order.oscNumber,
+                    fullName: order.fullName,
+                    phoneNumber: order.phoneNumber,
+                    serviceType: order.serviceType,
+                    serviceTier: order.serviceTier,
+                    operator: order.washDetails?.operatorId?.fullName || null,
+                    stage: order.stage,
+                    stationStatus: order.stationStatus,
+                    holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
+                    holdReason: order.stage.note || '',
+                    holdTime: order.stage.updatedAt,
+                    flaggedItems,
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: holdItems, pagination },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch hold queue',
+            })
+        }
+    }
+
+    async releaseFromHold(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.HOLD,
+                stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not on hold at this station',
+                })
+
+            // stamp release details on all held items
+            const now = new Date()
+            const updatedItems = order.items.map((item) => {
+                if (item.holdDetails?.assignTo) {
+                    item.holdDetails.releasedAt = now
+                    item.holdDetails.releasedByOperatorId = userId
+                }
+                return item
+            })
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: {
+                        items: updatedItems,
+                        ...buildStageUpdate(
+                            ORDER_STATUS.QUEUE,
+                            STATION_STATUS.INTAKE_AND_TAG_STATION,
+                            'Released from hold',
+                        ).$set,
+                    },
+                },
+            )
+            await ActivityModel.create({
+                title: 'Order Released from Hold',
+                description: `Order ${order.oscNumber} released from hold and returned to tagging queue by ${user.fullName}`,
+                type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
+                orderId: order._id,
+                userId,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message:
+                    'Order released from hold and returned to tagging queue',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to release order from hold',
             })
         }
     }

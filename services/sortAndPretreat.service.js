@@ -920,7 +920,7 @@ class SortAndPretreatService extends BaseService {
                 userId,
             })
             await NotificationModel.create({
-                userId: order.userId,
+                userId,
                 title: isIroningOnly
                     ? 'Your order is being ironed'
                     : 'Your order is being washed',

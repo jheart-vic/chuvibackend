@@ -154,6 +154,22 @@ class IntakeUserController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async getHoldQueue(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.getHoldQueue(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async releaseFromHold(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.releaseFromHold(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
     async getTaggingQueue(req, res) {
         const intakeUserService = new IntakeUserService()
         const result = await intakeUserService.getTaggingQueue(req)

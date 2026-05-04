@@ -703,7 +703,7 @@ class WashAndDryService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_WASH_DRY_COMPLETED,
             })
             await NotificationModel.create({
-                userId: order.userId,
+                userId,
                 title: isWashOnly
                     ? 'Your order is getting ready'
                     : 'Your order is being ironed',
