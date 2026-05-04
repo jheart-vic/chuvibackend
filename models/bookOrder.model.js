@@ -101,21 +101,6 @@ const ItemSchema = new mongoose.Schema(
             enum: ['pending', 'passed', 'failed'],
             default: 'pending',
         },
-        qcDetails: {
-            startedAt: { type: Date },
-            passedAt: { type: Date },
-            packCompletedAt: { type: Date },
-            labelAttached: { type: Boolean, default: false },
-            packageSealed: { type: Boolean, default: false },
-            operatorId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'User',
-            },
-            packOperatorId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'User',
-            },
-        },
         pressStatus: {
             type: String,
             enum: ['pending', 'complete'],
@@ -287,6 +272,21 @@ const bookOrderSchema = new mongoose.Schema(
             startedAt: { type: Date },
             completedAt: { type: Date },
             operatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User',
+            },
+        },
+        qcDetails: {
+            startedAt: { type: Date },
+            passedAt: { type: Date },
+            packCompletedAt: { type: Date },
+            labelAttached: { type: Boolean, default: false },
+            packageSealed: { type: Boolean, default: false },
+            operatorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User',
+            },
+            packOperatorId: {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: 'User',
             },
