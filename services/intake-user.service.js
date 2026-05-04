@@ -599,7 +599,7 @@ class IntakeUserService extends BaseService {
             //   send message either SMS or Whatsapp to a user
             await ActivityModel.create({
                 title: 'Wallet Adjustment request',
-                description: `Credit ${amount} to ${order.userId.fullName} with ${order.userId.phoneNumber}`,
+                description: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
                 type: ACTIVITY_TYPE.TOP_UP_REQUEST,
             })
 
