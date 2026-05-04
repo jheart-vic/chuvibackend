@@ -1365,7 +1365,7 @@ const controller = new IntakeUserController()
  *       and assigned to another station. Intake user cannot release these orders —
  *       only the assigned station can release them.
  *     tags:
- *       - Wash & Dry
+ *       - Intake
  *     parameters:
  *       - in: query
  *         name: page
@@ -1429,7 +1429,7 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  *   patch:
  *     summary: Release an order from hold back to wash queue
  *     tags:
- *       - Wash & Dry
+ *       - Intake
  *     parameters:
  *       - in: path
  *         name: id
