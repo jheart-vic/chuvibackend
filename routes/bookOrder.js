@@ -59,7 +59,7 @@ const {
  *                 type: string
  *                 example: "10am-12pm"
  *                 description: Required if isPickupAndDelivery is true
- *               isPickupAndDelivery:
+ *               isPickUpAndDelivery:
  *                 type: boolean
  *                 example: true
  *               serviceType:
@@ -69,7 +69,10 @@ const {
  *               serviceTier:
  *                 type: string
  *                 enum: [standard, premium]
- *                 example: premium
+ *               billingType:
+ *                 type: string
+ *                 enum: [pay-per-item, pay-from-subscription]
+ *                 example: pay-per-item
  *               deliverySpeed:
  *                 type: string
  *                 enum: [normal, express]
