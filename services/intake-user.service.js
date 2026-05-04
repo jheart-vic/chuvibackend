@@ -34,6 +34,10 @@ class IntakeUserService extends BaseService {
                 })
             }
 
+            const customer = await UserModel.findOne({fullName: post.fullName})
+
+            const customerId = customer ? customer._id : null
+
             const validateRule = {
                 fullName: 'string|required',
                 phoneNumber: 'string|required',
@@ -100,6 +104,7 @@ class IntakeUserService extends BaseService {
                         note: 'Order Created',
                     },
                 ],
+                ...(customerId && { userId: customerId }),
                 ...post,
             }
             const newOrder = new BookOrderModel(newOrderItem)
