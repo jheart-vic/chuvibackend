@@ -467,6 +467,12 @@ class AdminService extends BaseService {
     try {
       const { type, page = 1, limit = 10 } = req.query;
 
+      if(!type){
+        return BaseService.sendFailedResponse({
+          error: "Type query parameter is required",
+        });
+      }
+
       const skip = (page - 1) * limit;
 
       const now = new Date();
@@ -911,6 +917,12 @@ class AdminService extends BaseService {
       const { type, page = 1, limit = 10 } = req.query;
 
       const now = new Date();
+
+      if(!type){
+        return BaseService.sendFailedResponse({
+          error: "Type query parameter is required",
+        });
+      }
 
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
