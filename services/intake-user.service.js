@@ -595,6 +595,7 @@ class IntakeUserService extends BaseService {
             }
 
             const { amount } = post
+            console.log({order})
             //   send message either SMS or Whatsapp to a user
             await ActivityModel.create({
                 title: 'Wallet Adjustment request',
@@ -608,7 +609,7 @@ class IntakeUserService extends BaseService {
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to flag order',
+                error: 'Failed to send top up',
             })
         }
     }

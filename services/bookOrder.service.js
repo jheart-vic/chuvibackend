@@ -15,6 +15,7 @@ const {
     ACTIVITY_TYPE,
     STATION_STATUS,
     ORDER_CHANNEL,
+    PAYMENT_ORDER_STATUS,
 } = require('../util/constants')
 const ActivityModel = require('../models/activity.model')
 
@@ -144,17 +145,18 @@ class BookOrderService extends BaseService {
                     return sum + price * quantity
                 }, 0)
 
+                
                 let extraDeliveryCost = 0
-
+                
                 totalPrice += extraDeliveryCost
                 const stage = {
-                    status: ORDER_STATUS.PENDING,
-                    updatedAt: new Date(),
+                  status: ORDER_STATUS.PENDING,
+                  updatedAt: new Date(),
                 }
                 const stageHistory = {
-                    status: ORDER_STATUS.PENDING,
-                    note: 'Order created',
-                    updatedAt: new Date(),
+                  status: ORDER_STATUS.PENDING,
+                  note: 'Order created',
+                  updatedAt: new Date(),
                 }
 
                 const newOrderItem = {
@@ -164,8 +166,10 @@ class BookOrderService extends BaseService {
                     stage,
                     stageHistory: [stageHistory],
                     stationStatus: STATION_STATUS.PENDING,
+                    paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     ...post,
                 }
+                
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
 
@@ -210,6 +214,8 @@ class BookOrderService extends BaseService {
                     updatedAt: new Date(),
                 }
 
+                console.log({totalPrice, extraDeliveryCost})
+
                 const newOrderItem = {
                     oscNumber,
                     amount: totalPrice,
@@ -230,11 +236,11 @@ class BookOrderService extends BaseService {
                 })
             }
             // update the capacity in admin order settings
-            if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+            if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY && adminOrderSettings.sameDayCapacity > 0) {
                 adminOrderSettings.sameDayCapacity -= post.items.length
-            } else if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+            } else if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS && adminOrderSettings.expressCapacity > 0) {
                 adminOrderSettings.expressCapacity -= post.items.length
-            } else if (post.deliverySpeed === DELIVERY_SPEED.STANDARD) {
+            } else if (post.deliverySpeed === DELIVERY_SPEED.STANDARD && adminOrderSettings.standardCapacity > 0) {
                 adminOrderSettings.standardCapacity -= post.items.length
             }
             await adminOrderSettings.save()

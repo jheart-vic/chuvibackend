@@ -2,7 +2,6 @@ const AdminController = require("../controllers/admin.controller");
 const adminAuth = require("../middlewares/adminAuth");
 const auth = require("../middlewares/auth");
 const {
-    ROUTE_DASHBOARD_STATS,
     ROUTE_ADMIN_DASHBOARD_STATS,
     ROUTE_ADMIN_ORDER_MANAGEMENT,
     ROUTE_ADMIN_ORDER_ORDERID,
