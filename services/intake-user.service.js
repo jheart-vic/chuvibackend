@@ -595,7 +595,6 @@ class IntakeUserService extends BaseService {
             }
 
             const { amount } = post
-            console.log({order})
             //   send message either SMS or Whatsapp to a user
             await ActivityModel.create({
                 title: 'Wallet Adjustment request',

@@ -427,6 +427,7 @@ class QCService extends BaseService {
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt qcDetails',
                 lean: true,
             })
+            console.log({data, pagination})
 
             const ordersWithMeta = data.map((o) => ({
                 ...o,

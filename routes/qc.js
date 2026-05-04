@@ -8,7 +8,6 @@ const {
     ROUTE_QC_CONFIRM_ITEM,
     ROUTE_QC_UNDO_CONFIRM_ITEM,
     ROUTE_QC_PASS_ORDER,
-    ROUTE_QC_PACK_AND_SEAL_LIST,
     ROUTE_QC_PACK_AND_SEAL_DETAIL,
     ROUTE_QC_PACK_AND_SEAL_COMPLETE,
     ROUTE_QC_READY_ORDERS,
@@ -17,6 +16,7 @@ const {
     ROUTE_QC_RELEASE,
     ROUTE_QC_HISTORY,
     ROUTE_QC_HISTORY_TIMELINE,
+    ROUTE_QC_PACK_AND_SEAL,
 } = require('../util/page-route')
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ router.patch(ROUTE_QC_PASS_ORDER, [qcAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_QC_PACK_AND_SEAL_LIST, [qcAuth], (req, res) => {
+router.get(ROUTE_QC_PACK_AND_SEAL, [qcAuth], (req, res) => {
     const controller = new QCController()
     return controller.getPackAndSealList(req, res)
 })
