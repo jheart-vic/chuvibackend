@@ -742,15 +742,15 @@ class AdminService extends BaseService {
   }
   async rejectPaymentVerification(req, res) {
     try {
-      const { paymentId } = req.params;
+      const { id } = req.params;
       const adminId = req.user.id;
-      if (!paymentId) {
+      if (!id) {
         return BaseService.sendFailedResponse({
           error: "Payment ID is required",
         });
       }
 
-      const payment = await PaymentModel.findById(paymentId);
+      const payment = await PaymentModel.findById(id);
 
       if (!payment) {
         return BaseService.sendFailedResponse({
