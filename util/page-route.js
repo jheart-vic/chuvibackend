@@ -150,8 +150,8 @@ exports.ROUTE_PRESS_IRON_HISTORY                 = '/orders/history'
 exports.ROUTE_PRESS_IRON_HISTORY_TIMELINE        = '/order/history/:id/timeline'
 
 // Admin
-exports.ROUTE_ADMIN_REGISTER = '/register'
-exports.ROUTE_ADMIN_LOGIN = '/login'
+exports.ROUTE_ADMIN_REGISTER = '/admin/register'
+exports.ROUTE_ADMIN_LOGIN = '/admin/login'
 exports.ROUTE_ADMIN_DASHBOARD_STATS = '/dashboard-stats'
 exports.ROUTE_ADMIN_ORDER_MANAGEMENT = '/order-management'
 exports.ROUTE_ADMIN_ORDER_ORDERID = '/order/:id'
