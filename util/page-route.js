@@ -217,12 +217,12 @@ exports.ROUTE_IMAGE_UPLOAD_SINGLE = '/image-upload-single'
 
 
 //rider
-exports.ROUTE_RIDER_ASSIGNED_DELIVERIES = '/rider/assigned-deliveries'
-exports.ROUTE_RIDER_ORDER_ID = '/rider/order/:id'
-exports.ROUTE_START_DELIVERY_ID = '/rider/start-delivery/:id'
-exports.ROUTE_RIDER_ACTIVE_DELIVERIES = '/rider/active-deliveries'
-exports.ROUTE_RIDER_MARK_DELIVERED_ID = '/rider/mark-delivered/:id'
-exports.ROUTE_RIDER_MARK_DELIVERY_FAILED_ID = '/rider/mark-delivery-failed/:id'
+exports.ROUTE_RIDER_ASSIGNED_DELIVERIES = '/assigned-deliveries'
+exports.ROUTE_RIDER_ORDER_ID = '/order/:id'
+exports.ROUTE_START_DELIVERY_ID = '/start-delivery/:id'
+exports.ROUTE_RIDER_ACTIVE_DELIVERIES = '/active-deliveries'
+exports.ROUTE_RIDER_MARK_DELIVERED_ID = '/mark-delivered/:id'
+exports.ROUTE_RIDER_MARK_DELIVERY_FAILED_ID = '/mark-delivery-failed/:id'
 
 //Notifications
 exports.ROUTE_GET_ALL_USER_NOTIFICATIONS       = '/'

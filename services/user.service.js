@@ -46,10 +46,16 @@ class UserService extends BaseService {
                 NotificationModel.countDocuments({ userId, read: false }),
 
                 BookOrderModel.findOne({
-                    userId,
-                    paymentStatus: 'success',
+                    $or: [
+                        { userId },
+                        { phoneNumber: req.user.phoneNumber }, // fallback if no userId linked
+                    ],
                     'stage.status': {
-                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PENDING],
+                        $nin: [
+                            ORDER_STATUS.DELIVERED,
+                            ORDER_STATUS.PENDING,
+                            ORDER_STATUS.HOLD,
+                        ],
                     },
                 })
                     .sort({ createdAt: -1 })

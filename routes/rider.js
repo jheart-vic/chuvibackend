@@ -1,6 +1,6 @@
 const RiderController = require('../controllers/rider.controller');
 const riderAuth = require('../middlewares/riderAuth');
-const { ROUTE_RIDER_ASSIGNED_DELIVERIES, ROUTE_RIDER_ORDER_ID, ROUTE_START_DELIVERY_ID, ROUTE_RIDER_ACTIVE_DELIVERIES, ROUTE_RIDER_MARK_DELIVERED_ID } = require('../util/page-route');
+const { ROUTE_RIDER_ASSIGNED_DELIVERIES, ROUTE_RIDER_ORDER_ID, ROUTE_START_DELIVERY_ID, ROUTE_RIDER_ACTIVE_DELIVERIES, ROUTE_RIDER_MARK_DELIVERED_ID, ROUTE_RIDER_MARK_DELIVERY_FAILED_ID } = require('../util/page-route');
 
 const router = require('express').Router();
 
