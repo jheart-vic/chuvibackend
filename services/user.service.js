@@ -490,7 +490,7 @@ class UserService extends BaseService {
     }
     async getUsersByType(req) {
         try {
-            const { userType } = req.params
+            const { userType } = req.query
 
             if (!userType) {
                 return BaseService.sendFailedResponse({
