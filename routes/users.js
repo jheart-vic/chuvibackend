@@ -59,6 +59,7 @@ const {
   ROUTE_NOTITICATION_PREFERENCE,
   ROUTE_GET_USER_NOTIFICATIONS,
   ROUTE_GET_DASHBOARD,
+  ROUTE_GET_USERS_BY_TYPE,
 } = require("../util/page-route");
 const { image_uploader } = require("../util/imageUpload");
 const router = require("express").Router();
@@ -864,5 +865,32 @@ router.patch(ROUTE_CHANGE_PASSWORD, auth, (req, res) => {
   return userController.resetPasswordInProfilePage(req, res)
 })
 
+/**
+ * @swagger
+ * /get-users-by-type/:userType:
+ *   get:
+ *     summary: Get active users filtered by type
+ *     tags:
+ *       - Users
+ *     parameters:
+ *       - in: query
+ *         name: userType
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [rider, admin, qc, press, wash-and-dry, sort-and-pretreat, intake-and-tag, user]
+ *         example: rider
+ *     responses:
+ *       200:
+ *         description: List of active users of the given type
+ *       400:
+ *         description: userType missing or invalid
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_USERS_BY_TYPE, [auth], (req, res) => {
+    const userController = new UserController()
+    return userController.getUsersByType(req, res)
+})
 
 module.exports = router;

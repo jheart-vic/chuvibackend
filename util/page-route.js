@@ -27,6 +27,7 @@ exports.ROUTE_INITIALIZE_ORDER_PAYMENT = '/initialize-order-payment'
 exports.ROUTE_GET_USER_NOTIFICATIONS = '/get-user-notifications'
 exports.ROUTE_GET_DASHBOARD = '/get-dashboard'
 exports.ROUTE_VERIFY_RESET_PASSWORD_OTP = '/verify-reset-password-otp'
+exports.ROUTE_GET_USERS_BY_TYPE = '/get-users-by-type/:userType'
 
 // Intake User
 exports.ROUTE_INTAKE_USER_REFRESH_TOKEN = '/intake-user/refresh-token'

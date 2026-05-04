@@ -13,7 +13,7 @@ const {
     getWeightImprovementTipsByWeight,
 } = require('../util/helper')
 const { uploadImage, deleteImage } = require('../util/imageUpload')
-const { EXPIRES_AT, ORDER_STATUS } = require('../util/constants')
+const { EXPIRES_AT, ORDER_STATUS, ROLE, GENERAL_STATUS } = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
@@ -485,6 +485,37 @@ class UserService extends BaseService {
             console.error(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to change password',
+            })
+        }
+    }
+    async getUsersByType(req) {
+        try {
+            const { userType } = req.params
+
+            if (!userType) {
+                return BaseService.sendFailedResponse({
+                    error: 'userType is required',
+                })
+            }
+
+            if (!Object.values(ROLE).includes(userType)) {
+                return BaseService.sendFailedResponse({
+                    error: `userType must be one of: ${Object.values(ROLE).join(', ')}`,
+                })
+            }
+
+            const users = await UserModel.find({
+                userType,
+                status: GENERAL_STATUS.ACTIVE,
+            })
+                .select('_id fullName phoneNumber image email userType')
+                .lean()
+
+            return BaseService.sendSuccessResponse({ message: users })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch users',
             })
         }
     }

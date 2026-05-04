@@ -134,6 +134,15 @@ class UserController extends BaseController {
         }
         return BaseController.sendSuccessResponse(res, resetPassword.data)
     }
+
+    async getUsersByType(req, res) {
+        const userService = new UserService()
+        const result = await userService.getUsersByType(req)
+        if (!result.success) {
+            return BaseController.sendFailedResponse(res, result.data)
+        }
+        return BaseController.sendSuccessResponse(res, result.data)
+    }
 }
 
 module.exports = UserController
