@@ -160,6 +160,7 @@ class BookOrderService extends BaseService {
                 }
 
                 const newOrderItem = {
+                    userId,
                     oscNumber,
                     amount: totalPrice,
                     deliveryAmount: extraDeliveryCost,
@@ -169,7 +170,7 @@ class BookOrderService extends BaseService {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     ...post,
                 }
-                
+
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
 
@@ -217,6 +218,7 @@ class BookOrderService extends BaseService {
                 console.log({totalPrice, extraDeliveryCost})
 
                 const newOrderItem = {
+                    userId,
                     oscNumber,
                     amount: totalPrice,
                     deliveryAmount: extraDeliveryCost,
