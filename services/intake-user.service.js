@@ -894,7 +894,7 @@ class IntakeUserService extends BaseService {
                 if (item.tagStatus === 'complete') return item
                 const paddedIndex = String(index + 1).padStart(2, '0')
                 item.tagId = `${order.oscNumber}-${paddedIndex}`
-                item.tagStatus = 'complete'
+                // item.tagStatus = 'complete'
                 return item
             })
 

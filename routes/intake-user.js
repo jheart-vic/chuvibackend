@@ -1117,7 +1117,7 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req,
  *       `{oscNumber}-{padded index}` e.g. `OSC-20260428-321782-01`.
  *       The order remains in the tagging queue — no stage change occurs.
  *     tags:
- *       - Intake & Tag
+ *       - Intake User
  *     parameters:
  *       - in: path
  *         name: id
@@ -1158,7 +1158,7 @@ router.patch(ROUTE_INTAKE_GENERATE_ALL_TAGS, [intakeUserAuth], (req, res) => {
  *       **No stage change occurs** — the operator then calls
  *       `proceed-to-sort-and-pretreat` to actually move the order.
  *     tags:
- *       - Intake & Tag
+ *       - Intake User
  *     parameters:
  *       - in: path
  *         name: id
@@ -1205,7 +1205,7 @@ router.patch(ROUTE_INTAKE_COMPLETE_TAGGING, [intakeUserAuth], (req, res) => {
  *       have been created (from the customer app or website) but have not yet
  *       been proceeded to the tagging queue by intake staff.
  *     tags:
- *       - Intake & Tag
+ *       - Intake User
  *     parameters:
  *       - in: query
  *         name: page
@@ -1261,7 +1261,7 @@ router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
  *     summary: Get all orders in tagging queue
  *     description: Returns paginated orders with status QUEUE, ready for tagging by intake staff.
  *     tags:
- *       - Intake
+ *       - Intake User
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1365,7 +1365,7 @@ const controller = new IntakeUserController()
  *       and assigned to another station. Intake user cannot release these orders —
  *       only the assigned station can release them.
  *     tags:
- *       - Intake
+ *       - Intake User
  *     parameters:
  *       - in: query
  *         name: page
@@ -1429,7 +1429,7 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  *   patch:
  *     summary: Release an order from hold back to wash queue
  *     tags:
- *       - Intake
+ *       - Intake User
  *     parameters:
  *       - in: path
  *         name: id
