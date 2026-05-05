@@ -34,7 +34,9 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            const customer = await UserModel.findOne({fullName: post.fullName})
+            const customer = await UserModel.findOne({
+                fullName: post.fullName,
+            })
 
             const customerId = customer ? customer._id : null
 
@@ -1296,6 +1298,196 @@ class IntakeUserService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to release order from hold',
+            })
+        }
+    }
+
+    async getHistoryList(req) {
+        try {
+            const userId = req.user.id
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const {
+                page = 1,
+                limit = 20,
+                search = '',
+                startDate,
+                endDate,
+            } = req.query
+
+            const query = {
+                'stageHistory.status': ORDER_STATUS.QUEUE,
+                'stage.status': {
+                    $nin: [
+                        ORDER_STATUS.PENDING,
+                        ORDER_STATUS.QUEUE,
+                        ORDER_STATUS.HOLD,
+                    ],
+                },
+            }
+
+            if (search) {
+                query.$or = [
+                    { oscNumber: { $regex: search, $options: 'i' } },
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
+
+            if (startDate || endDate) {
+                query.createdAt = {}
+                if (startDate) query.createdAt.$gte = new Date(startDate)
+                if (endDate) query.createdAt.$lte = new Date(endDate)
+            }
+
+            const { data, pagination } = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+                sort: { updatedAt: -1 },
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount channel stage stationStatus stageHistory createdAt updatedAt',
+                lean: true,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data, pagination },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch history',
+            })
+        }
+    }
+
+    async getOrderTimeline(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findById(orderId).lean()
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            const PIPELINE = [
+                {
+                    key: 'intake',
+                    label: 'Intake',
+                    status: ORDER_STATUS.PENDING,
+                },
+                { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
+                {
+                    key: 'pretreated',
+                    label: 'Pretreated',
+                    status: ORDER_STATUS.SORT_AND_PRETREAT,
+                },
+                {
+                    key: 'washed',
+                    label: 'Washed',
+                    status: ORDER_STATUS.WASHING,
+                },
+                {
+                    key: 'ironing',
+                    label: 'Ironing',
+                    status: ORDER_STATUS.IRONING,
+                },
+                {
+                    key: 'qc_passed',
+                    label: 'QC Passed',
+                    status: ORDER_STATUS.QC,
+                },
+                { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
+                {
+                    key: 'delivered',
+                    label: 'Delivered',
+                    status: ORDER_STATUS.DELIVERED,
+                },
+            ]
+
+            const stageTimestampMap = {}
+            for (const entry of order.stageHistory || []) {
+                if (!stageTimestampMap[entry.status]) {
+                    stageTimestampMap[entry.status] = entry.updatedAt
+                }
+            }
+            stageTimestampMap[ORDER_STATUS.PENDING] =
+                stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
+
+            const pipeline = PIPELINE.map((step) => {
+                const timestamp = stageTimestampMap[step.status] || null
+                return {
+                    key: step.key,
+                    label: step.label,
+                    completed: !!timestamp,
+                    timestamp,
+                }
+            })
+
+            // Per-item action log
+            const itemTimeline = []
+            for (const item of order.items || []) {
+                for (const log of item.actionLog || []) {
+                    itemTimeline.push({
+                        itemId: item._id,
+                        itemType: item.type,
+                        tagId: item.tagId,
+                        action: log.action,
+                        note: log.note || '',
+                        timestamp: log.timestamp,
+                    })
+                }
+            }
+            itemTimeline.sort(
+                (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+            )
+
+            const trackingStatus =
+                order.stage.status === ORDER_STATUS.DELIVERED
+                    ? 'completed'
+                    : 'in_progress'
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    order: {
+                        _id: order._id,
+                        oscNumber: order.oscNumber,
+                        fullName: order.fullName,
+                        phoneNumber: order.phoneNumber,
+                        pickupAddress: order.pickupAddress,
+                        serviceType: order.serviceType,
+                        serviceTier: order.serviceTier,
+                        amount: order.amount,
+                        channel: order.channel,
+                        stage: order.stage,
+                        stationStatus: order.stationStatus,
+                        trackingStatus,
+                        intakeStaffId: order.intakeStaffId,
+                        createdAt: order.createdAt,
+                    },
+                    pipeline,
+                    itemTimeline,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch order timeline',
             })
         }
     }

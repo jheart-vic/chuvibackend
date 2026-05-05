@@ -23,6 +23,8 @@ const {
   ROUTE_INTAKE_GET_TAGGING_QUEUE,
   ROUTE_INTAKE_USER_GET_HOLD,
   ROUTE_INTAKE_USER_RELEASE,
+  ROUTE_INTAKE_HISTORY_TIMELINE,
+  ROUTE_INTAKE_HISTORY,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1452,6 +1454,157 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
 router.patch(ROUTE_INTAKE_USER_RELEASE, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.releaseFromHold(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/orders/history:
+ *   get:
+ *     summary: Get intake history — orders that have passed through intake and moved on
+ *     description: Returns paginated orders that were tagged at intake and are now in downstream stages (sort, wash, iron, QC, ready, delivered).
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-001" }
+ *         description: Search by oscNumber, fullName or phoneNumber
+ *       - in: query
+ *         name: startDate
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: endDate
+ *         schema: { type: string, format: date, example: "2026-04-30" }
+ *     responses:
+ *       200:
+ *         description: Paginated history list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                           fullName:      { type: string, example: "Jude Victor" }
+ *                           phoneNumber:   { type: string, example: "08012345678" }
+ *                           serviceType:   { type: string, example: "wash-and-iron" }
+ *                           serviceTier:   { type: string, example: "standard" }
+ *                           amount:        { type: number, example: 4500 }
+ *                           channel:       { type: string, example: "website" }
+ *                           stage:
+ *                             type: object
+ *                             properties:
+ *                               status: { type: string, example: "washing" }
+ *                           stationStatus: { type: string, example: "wash-and-dry-station" }
+ *                           createdAt:     { type: string, format: date-time }
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total:      { type: integer, example: 42 }
+ *                         page:       { type: integer, example: 1 }
+ *                         limit:      { type: integer, example: 20 }
+ *                         totalPages: { type: integer, example: 3 }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.getHistoryList(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/order/history/{id}/timeline:
+ *   get:
+ *     summary: Get full order timeline — pipeline stepper + per-item audit log
+ *     description: |
+ *       Returns the 8-step pipeline stepper (Intake → Tagged → Pretreated →
+ *       Washed → Ironing → QC Passed → Ready → Delivered) with timestamps,
+ *       plus a granular per-item action log sorted chronologically.
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Order timeline
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     order:
+ *                       type: object
+ *                       properties:
+ *                         oscNumber:      { type: string, example: "OSC-20260428-321782" }
+ *                         fullName:       { type: string, example: "Jude Victor" }
+ *                         phoneNumber:    { type: string, example: "08012345678" }
+ *                         pickupAddress:  { type: string, example: "12 Lagos Street, Yaba" }
+ *                         serviceType:    { type: string, example: "wash-and-iron" }
+ *                         serviceTier:    { type: string, example: "standard" }
+ *                         amount:         { type: number, example: 4500 }
+ *                         channel:        { type: string, example: "website" }
+ *                         trackingStatus: { type: string, enum: [in_progress, completed], example: "in_progress" }
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status: { type: string, example: "washing" }
+ *                         stationStatus:  { type: string, example: "wash-and-dry-station" }
+ *                         createdAt:      { type: string, format: date-time }
+ *                     pipeline:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           key:       { type: string, example: "tagged" }
+ *                           label:     { type: string, example: "Tagged" }
+ *                           completed: { type: boolean, example: true }
+ *                           timestamp: { type: string, format: date-time, nullable: true }
+ *                     itemTimeline:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           itemId:   { type: string }
+ *                           itemType: { type: string, example: "shirt" }
+ *                           tagId:    { type: string, example: "OSC-20260428-321782-01" }
+ *                           action:   { type: string, example: "tag_confirmed" }
+ *                           note:     { type: string }
+ *                           timestamp: { type: string, format: date-time }
+ *       400:
+ *         description: Failed to fetch order timeline
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ */
+router.get(ROUTE_INTAKE_HISTORY_TIMELINE, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.getOrderTimeline(req, res)
 })
 
 module.exports = router;

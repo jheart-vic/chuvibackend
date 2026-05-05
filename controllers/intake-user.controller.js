@@ -132,7 +132,7 @@ class IntakeUserController extends BaseController {
     }
 
     async generateAllTags(req, res) {
-          const intakeUserService = new IntakeUserService()
+        const intakeUserService = new IntakeUserService()
         const result = await intakeUserService.generateAllTags(req)
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
@@ -177,6 +177,22 @@ class IntakeUserController extends BaseController {
             return BaseController.sendFailedResponse(res, result.data)
         }
         return BaseController.sendSuccessResponse(res, result.data)
+    }
+
+    async getHistoryList(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.getHistoryList(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async getOrderTimeline(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.getOrderTimeline(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
     }
 }
 
