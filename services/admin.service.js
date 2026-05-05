@@ -1,7 +1,10 @@
 const ActivityModel = require("../models/activity.model");
 const BookOrderModel = require("../models/bookOrder.model");
+const NotificationModel = require("../models/notification.model");
 const PaymentModel = require("../models/payment.model");
 const SubscriptionModel = require("../models/subscription.model");
+const UpdateFundModel = require("../models/updateFund.model");
+const WalletModel = require("../models/wallet.model");
 const WalletTransactionModel = require("../models/walletTransaction.model");
 const {
   ORDER_STATUS,
@@ -9,6 +12,7 @@ const {
   DELIVERY_STATUS,
   PICKUP_STATUS,
   STATION_STATUS,
+  NOTIFICATION_TYPE,
 } = require("../util/constants");
 const paginate = require("../util/paginate");
 const BaseService = require("./base.service");
@@ -1069,6 +1073,148 @@ class AdminService extends BaseService {
       console.log(error);
       return BaseService.sendFailedResponse({
         error: "Failed to assign rider to order",
+      });
+    }
+  }
+
+  async addFund(req){
+    try {
+      const message = req.body.message;
+      const userId = req.params.id;
+      const amount = req.body.amount;
+
+      if(!amount){
+        return BaseService.sendFailedResponse({
+          error: "Amount is required to add fund to wallet",
+        });
+      }
+
+      if(amount <= 0){
+        return BaseService.sendFailedResponse({
+          error: "Amount must be greater than zero",
+        });
+      }
+
+      if(!userId){
+        return BaseService.sendFailedResponse({
+          error: "User ID is required to add fund to wallet",
+        });
+      }
+
+      await UpdateFundModel.create({
+        userId,
+        amount,
+        type: "credit",
+        ...(message && { message })
+      })
+
+      const wallet = await WalletModel.findOne({userId});
+
+      if(!wallet){
+        return BaseService.sendFailedResponse({
+          error: "Wallet not found for user",
+        });
+      }
+      wallet.balance += amount;
+      await wallet.save();
+
+      await WalletTransactionModel.create({
+        userId,
+        type: "credit",
+        amount,
+        status: "success",
+        description: message || "Admin added fund to wallet"
+      })
+
+
+      await NotificationModel.create({
+        userId: userId,
+        title: 'Wallet addition',
+        body: `${req.body.amount} has been added to your wallet`,
+        // subBody: `Order ID: ${oscNumber}.`,
+        type: NOTIFICATION_TYPE.WALLET_UPDATE,
+    })
+
+      return BaseService.sendSuccessResponse({
+        message: "Fund added to wallet successfully",
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({
+        error: "Failed to add fund to wallet",
+      });
+    }
+  }
+  async deductFund(req){
+    try {
+      const message = req.body.message;
+      const userId = req.params.id;
+      const amount = req.body.amount;
+
+      if(!amount){
+        return BaseService.sendFailedResponse({
+          error: "Amount is required to remove fund from wallet",
+        });
+      }
+
+      if(amount <= 0){
+        return BaseService.sendFailedResponse({
+          error: "Amount must be greater than zero",
+        });
+      }
+
+      if(!userId){
+        return BaseService.sendFailedResponse({
+          error: "User ID is required to add fund to wallet",
+        });
+      }
+
+      await UpdateFundModel.create({
+        userId,
+        amount,
+        type: "debit",
+        ...(message && { message })
+      })
+
+      const wallet = await WalletModel.findOne({userId});
+
+      if(!wallet){
+        return BaseService.sendFailedResponse({
+          error: "Wallet not found for user",
+        });
+      }
+      if(wallet.balance < amount){
+        return BaseService.sendFailedResponse({
+          error: "Insufficient balance in wallet",
+        });
+      }
+
+      wallet.balance -= amount;
+      await wallet.save();
+
+      await WalletTransactionModel.create({
+        userId,
+        type: "debit",
+        amount,
+        status: "success",
+        description: message || "Admin deducted fund from wallet"
+      })
+
+      await NotificationModel.create({
+        userId: userId,
+        title: 'Wallet deduction',
+        body: `${req.body.amount} has been deducted from your wallet`,
+        // subBody: `Order ID: ${oscNumber}.`,
+        type: NOTIFICATION_TYPE.WALLET_UPDATE,
+    })
+
+      return BaseService.sendSuccessResponse({
+        message: "Fund deducted from wallet successfully",
+      });
+    } catch (error) {
+      console.log(error);
+      return BaseService.sendFailedResponse({
+        error: "Failed to add fund to wallet",
       });
     }
   }

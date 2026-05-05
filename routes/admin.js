@@ -11,7 +11,9 @@ const {
     ROUTE_ADMIN_ORDER_BY_STATE,
     ROUTE_ADMIN_DISPATCH_DATA_COUNT,
     ROUTE_HOLD_ORDERS,
-    ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION
+    ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION,
+    ROUTE_ADMIN_WALLET_ID_ADD_FUND,
+    ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -881,6 +883,112 @@ router.get(ROUTE_HOLD_ORDERS, adminAuth, (req, res)=>{
 router.put(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res)=>{
     const adminController = new AdminController();
     return adminController.reAssignOrderStation(req, res);
+});
+
+/**
+ * @swagger
+ * /admin/wallet/{id}/add-fund:
+ *   put:
+ *     summary: Add funds to a user's wallet
+ *     tags:
+ *       - Admin
+ *     description: Credits a specified amount to a user's wallet, logs the transaction, and sends a notification.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique user ID
+ *       - in: body
+ *         name: body
+ *         required: true
+ *         schema:
+ *           type: object
+ *           required:
+ *             - amount
+ *           properties:
+ *             amount:
+ *               type: number
+ *               example: 5000
+ *             message:
+ *               type: string
+ *               example: "Admin top-up"
+ *         description: Amount to add and optional message
+ *     responses:
+ *       200:
+ *         description: Fund added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Fund added to wallet successfully"
+ *       400:
+ *         description: Invalid input (missing or invalid amount/userId)
+ *       404:
+ *         description: Wallet not found
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_ADMIN_WALLET_ID_ADD_FUND, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.addFund(req, res);
+});
+
+/**
+ * @swagger
+ * /admin/wallet/{id}/deduct-fund:
+ *   put:
+ *     summary: Deduct funds from a user's wallet
+ *     tags:
+ *       - Admin
+ *     description: Debits a specified amount from a user's wallet, logs the transaction, and sends a notification.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique user ID
+ *       - in: body
+ *         name: body
+ *         required: true
+ *         schema:
+ *           type: object
+ *           required:
+ *             - amount
+ *           properties:
+ *             amount:
+ *               type: number
+ *               example: 2000
+ *             message:
+ *               type: string
+ *               example: "Service charge deduction"
+ *         description: Amount to deduct and optional message
+ *     responses:
+ *       200:
+ *         description: Fund deducted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Fund deducted from wallet successfully"
+ *       400:
+ *         description: Invalid input (missing amount, insufficient balance, or invalid userId)
+ *       404:
+ *         description: Wallet not found
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.deductFund(req, res);
 });
 
 
