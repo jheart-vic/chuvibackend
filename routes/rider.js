@@ -9,6 +9,10 @@ const {
     ROUTE_RIDER_MARK_DELIVERY_FAILED_ID,
     ROUTE_RIDER_HISTORY_TIMELINE,
     ROUTE_RIDER_HISTORY,
+    ROUTE_RIDER_ACTIVE_PICKUPS,
+    ROUTE_RIDER_ASSIGNED_PICKUPS,
+    ROUTE_RIDER_MARK_PICKUP_FAILED_ID,
+    ROUTE_RIDER_START_PICKUP_ID,
 } = require('../util/page-route')
 
 const router = require('express').Router()
@@ -450,7 +454,8 @@ router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res) => {
  * @swagger
  * /rider/start-delivery/{id}:
  *   put:
- *     summary: Start delivery for an assigned order (verify customer and mark as picked up)
+ *     summary: Start delivery — rider departs facility towards customer
+ *     description: Marks the delivery status as out-for-delivery. No phone verification needed at this step.
  *     tags:
  *       - Rider
  *     security:
@@ -459,23 +464,10 @@ router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         description: The ID of the order
  *         schema:
  *           type: string
  *           example: "64d3c9c0f1b2a8e9d0f12345"
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - phoneNumber
- *             properties:
- *               phoneNumber:
- *                 type: string
- *                 example: "08123456789"
- *                 description: Customer's phone number for verification
+ *         description: The order ID
  *     responses:
  *       200:
  *         description: Delivery started successfully
@@ -498,32 +490,18 @@ router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res) => {
  *                   summary: Missing order ID
  *                   value:
  *                     error: "Order ID is required"
- *                 missingPhone:
- *                   summary: Missing phone number
+ *                 notReady:
+ *                   summary: Order not ready for delivery
  *                   value:
- *                     error: "Customer phone number is required"
- *                 alreadyPicked:
- *                   summary: Delivery already started
- *                   value:
- *                     error: "Delivery is already picked up"
+ *                     error: "Order is not ready for delivery"
  *                 wrongRider:
  *                   summary: Unauthorized rider
  *                   value:
  *                     error: "You are not assigned to this delivery"
- *                 phoneMismatch:
- *                   summary: Phone number mismatch
- *                   value:
- *                     error: "Provided phone number does not match customer's phone number"
  *       401:
- *         description: Unauthorized - Rider not authenticated
+ *         description: Unauthorized
  *       404:
  *         description: Order not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               example:
- *                 error: "Order not found"
  *       500:
  *         description: Server error
  */
@@ -828,7 +806,7 @@ router.put(ROUTE_RIDER_MARK_DELIVERY_FAILED_ID, riderAuth, (req, res) => {
  */
 router.get(ROUTE_RIDER_HISTORY, [riderAuth], (req, res) => {
     const riderController = new RiderController()
-    return riderController.getHistoryList(req, res)
+    return riderController.getRiderHistory(req, res)
 })
 
 /**
@@ -962,4 +940,413 @@ router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
     return riderController.getOrderTimeline(req, res)
 })
 
+/**
+ * @swagger
+ * /rider/assigned-pickups:
+ *   get:
+ *     summary: Get pickups assigned to the logged-in rider
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           example: 10
+ *         description: Number of records per page
+ *     responses:
+ *       200:
+ *         description: List of pickups assigned to the rider
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             example: "64d3c9c0f1b2a8e9d0f12345"
+ *                           fullName:
+ *                             type: string
+ *                             example: "John Doe"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "08123456789"
+ *                           pickupAddress:
+ *                             type: string
+ *                             example: "12 Allen Avenue, Ikeja"
+ *                           pickupDate:
+ *                             type: string
+ *                             format: date
+ *                             example: "2026-01-13"
+ *                           deliveryDate:
+ *                             type: string
+ *                             format: date
+ *                             example: "2026-01-15"
+ *                           serviceType:
+ *                             type: string
+ *                             example: "wash-and-iron"
+ *                           serviceTier:
+ *                             type: string
+ *                             example: "premium"
+ *                           deliverySpeed:
+ *                             type: string
+ *                             example: "express"
+ *                           amount:
+ *                             type: number
+ *                             example: 1500
+ *                           paymentStatus:
+ *                             type: string
+ *                             example: "pending"
+ *                           dispatchDetails:
+ *                             type: object
+ *                             properties:
+ *                               pickup:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "pending"
+ *                                   rider:
+ *                                     type: string
+ *                                     example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                   isVerified:
+ *                                     type: boolean
+ *                                     example: false
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                               delivery:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "ready"
+ *                                   rider:
+ *                                     type: string
+ *                                     example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                   note:
+ *                                     type: string
+ *                                     example: "Handle with care"
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                           example: 25
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         limit:
+ *                           type: integer
+ *                           example: 10
+ *                         pages:
+ *                           type: integer
+ *                           example: 3
+ *       401:
+ *         description: Unauthorized - Rider not authenticated
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_RIDER_ASSIGNED_PICKUPS, [riderAuth], (req, res) => {
+    const riderController = new RiderController()
+    return riderController.getRiderAssignedPickups(req, res)
+})
+
+/**
+ * @swagger
+ * /rider/active-pickups:
+ *   get:
+ *     summary: Get all active (in-progress) pickups assigned to the logged-in rider
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           example: 10
+ *         description: Number of records per page
+ *     responses:
+ *       200:
+ *         description: List of activepickups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             example: "64d3c9c0f1b2a8e9d0f12345"
+ *                           fullName:
+ *                             type: string
+ *                             example: "John Doe"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "08123456789"
+ *                           pickupAddress:
+ *                             type: string
+ *                             example: "12 Allen Avenue, Ikeja"
+ *                           deliveryDate:
+ *                             type: string
+ *                             format: date
+ *                             example: "2026-01-15"
+ *                           serviceType:
+ *                             type: string
+ *                             example: "wash-and-iron"
+ *                           serviceTier:
+ *                             type: string
+ *                             example: "premium"
+ *                           amount:
+ *                             type: number
+ *                             example: 1500
+ *                           paymentStatus:
+ *                             type: string
+ *                             example: "pending"
+ *                           dispatchDetails:
+ *                             type: object
+ *                             properties:
+ *                               delivery:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "picked_up"
+ *                                   rider:
+ *                                     type: string
+ *                                     example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                   note:
+ *                                     type: string
+ *                                     example: "On the way"
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                           example: 12
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         limit:
+ *                           type: integer
+ *                           example: 10
+ *                         pages:
+ *                           type: integer
+ *                           example: 2
+ *       401:
+ *         description: Unauthorized - Rider not authenticated
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_RIDER_ACTIVE_PICKUPS, [riderAuth], (req, res) => {
+    const riderController = new RiderController()
+    return riderController.getActivePickups(req, res)
+})
+
+/**
+ * @swagger
+ * /rider/start-pickup/{id}:
+ *   put:
+ *     summary: Start a pickup — rider collects order from customer
+ *     description: Verifies the customer's phone number and marks the pickup as picked-up.
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *         description: The order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "08123456789"
+ *                 description: Customer phone number for verification
+ *     responses:
+ *       200:
+ *         description: Pickup started successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Pickup started successfully"
+ *       400:
+ *         description: Validation or business logic error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               examples:
+ *                 missingOrderId:
+ *                   summary: Missing order ID
+ *                   value:
+ *                     error: "Order ID is required"
+ *                 missingPhone:
+ *                   summary: Missing phone number
+ *                   value:
+ *                     error: "Customer phone number is required"
+ *                 alreadyPickedUp:
+ *                   summary: Already picked up
+ *                   value:
+ *                     error: "Order has already been picked up"
+ *                 wrongRider:
+ *                   summary: Unauthorized rider
+ *                   value:
+ *                     error: "You are not assigned to this pickup"
+ *                 phoneMismatch:
+ *                   summary: Phone number mismatch
+ *                   value:
+ *                     error: "Provided phone number does not match customer's phone number"
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
+    const riderController = new RiderController()
+    return riderController.startPickup(req, res)
+})
+
+/**
+ * @swagger
+ * /rider/mark-pickup-failed/{id}:
+ *   put:
+ *     summary: Mark a pickup as failed
+ *     description: Marks the pickup as failed with an optional note. Only pending pickups can be marked as failed.
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *         description: The order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "08123456789"
+ *                 description: Customer phone number for verification
+ *               note:
+ *                 type: string
+ *                 example: "Customer was not at the pickup address"
+ *                 description: Optional note explaining why pickup failed
+ *     responses:
+ *       200:
+ *         description: Pickup marked as failed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Pickup marked as failed successfully"
+ *       400:
+ *         description: Validation or business logic error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               examples:
+ *                 missingOrderId:
+ *                   summary: Missing order ID
+ *                   value:
+ *                     error: "Order ID is required"
+ *                 missingPhone:
+ *                   summary: Missing phone number
+ *                   value:
+ *                     error: "Customer phone number is required"
+ *                 notPending:
+ *                   summary: Pickup not in pending state
+ *                   value:
+ *                     error: "Only pending pickups can be marked as failed"
+ *                 wrongRider:
+ *                   summary: Unauthorized rider
+ *                   value:
+ *                     error: "You are not assigned to this pickup"
+ *                 phoneMismatch:
+ *                   summary: Phone number mismatch
+ *                   value:
+ *                     error: "Provided phone number does not match customer's phone number"
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_RIDER_MARK_PICKUP_FAILED_ID, riderAuth, (req, res) => {
+    const riderController = new RiderController()
+    return riderController.markPickupAsFailed(req, res)
+})
 module.exports = router
