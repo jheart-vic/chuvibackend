@@ -51,6 +51,22 @@ class RiderController extends BaseController {
       ? BaseController.sendSuccessResponse(res, result.data)
       : BaseController.sendFailedResponse(res, result.data);
   }
+  async getRiderHistory(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.getHistoryList(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+  async getOrderTimeline(req, res) {
+    const riderService = new RiderService();
+    const result = await riderService.getOrderTimeline(req);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
 }
 
 module.exports = RiderController;

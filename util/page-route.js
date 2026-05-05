@@ -224,6 +224,8 @@ exports.ROUTE_START_DELIVERY_ID = '/start-delivery/:id'
 exports.ROUTE_RIDER_ACTIVE_DELIVERIES = '/active-deliveries'
 exports.ROUTE_RIDER_MARK_DELIVERED_ID = '/mark-delivered/:id'
 exports.ROUTE_RIDER_MARK_DELIVERY_FAILED_ID = '/mark-delivery-failed/:id'
+exports.ROUTE_RIDER_HISTORY                = '/orders/history'
+exports.ROUTE_RIDER_HISTORY_TIMELINE       = '/order/history/:id/timeline'
 
 //Notifications
 exports.ROUTE_GET_ALL_USER_NOTIFICATIONS       = '/'

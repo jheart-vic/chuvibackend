@@ -1,8 +1,17 @@
-const RiderController = require('../controllers/rider.controller');
-const riderAuth = require('../middlewares/riderAuth');
-const { ROUTE_RIDER_ASSIGNED_DELIVERIES, ROUTE_RIDER_ORDER_ID, ROUTE_START_DELIVERY_ID, ROUTE_RIDER_ACTIVE_DELIVERIES, ROUTE_RIDER_MARK_DELIVERED_ID, ROUTE_RIDER_MARK_DELIVERY_FAILED_ID } = require('../util/page-route');
+const RiderController = require('../controllers/rider.controller')
+const riderAuth = require('../middlewares/riderAuth')
+const {
+    ROUTE_RIDER_ASSIGNED_DELIVERIES,
+    ROUTE_RIDER_ORDER_ID,
+    ROUTE_START_DELIVERY_ID,
+    ROUTE_RIDER_ACTIVE_DELIVERIES,
+    ROUTE_RIDER_MARK_DELIVERED_ID,
+    ROUTE_RIDER_MARK_DELIVERY_FAILED_ID,
+    ROUTE_RIDER_HISTORY_TIMELINE,
+    ROUTE_RIDER_HISTORY,
+} = require('../util/page-route')
 
-const router = require('express').Router();
+const router = require('express').Router()
 
 /**
  * @swagger
@@ -132,7 +141,7 @@ const router = require('express').Router();
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_RIDER_ASSIGNED_DELIVERIES, riderAuth, (req, res)=>{
+router.get(ROUTE_RIDER_ASSIGNED_DELIVERIES, riderAuth, (req, res) => {
     const riderController = new RiderController()
     return riderController.getRiderAssignedDeliveries(req, res)
 })
@@ -321,7 +330,7 @@ router.get(ROUTE_RIDER_ASSIGNED_DELIVERIES, riderAuth, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_RIDER_ORDER_ID, riderAuth, (req, res)=>{
+router.get(ROUTE_RIDER_ORDER_ID, riderAuth, (req, res) => {
     const riderController = new RiderController()
     return riderController.getOrderDetails(req, res)
 })
@@ -432,7 +441,7 @@ router.get(ROUTE_RIDER_ORDER_ID, riderAuth, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res)=>{
+router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res) => {
     const riderController = new RiderController()
     return riderController.getActiveDeliveries(req, res)
 })
@@ -518,7 +527,7 @@ router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.put(ROUTE_START_DELIVERY_ID, riderAuth, (req, res)=>{
+router.put(ROUTE_START_DELIVERY_ID, riderAuth, (req, res) => {
     const riderController = new RiderController()
     return riderController.startDelivery(req, res)
 })
@@ -604,7 +613,7 @@ router.put(ROUTE_START_DELIVERY_ID, riderAuth, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.put(ROUTE_RIDER_MARK_DELIVERED_ID, riderAuth, (req, res)=>{
+router.put(ROUTE_RIDER_MARK_DELIVERED_ID, riderAuth, (req, res) => {
     const riderController = new RiderController()
     return riderController.markOrderAsDelivered(req, res)
 })
@@ -694,9 +703,263 @@ router.put(ROUTE_RIDER_MARK_DELIVERED_ID, riderAuth, (req, res)=>{
  *       500:
  *         description: Server error
  */
-router.put(ROUTE_RIDER_MARK_DELIVERY_FAILED_ID, riderAuth, (req, res)=>{
+router.put(ROUTE_RIDER_MARK_DELIVERY_FAILED_ID, riderAuth, (req, res) => {
     const riderController = new RiderController()
     return riderController.markOrderDeliveryAsFailed(req, res)
+})
+
+/**
+ * @swagger
+ * /rider/orders/history:
+ *   get:
+ *     summary: Get rider delivery history
+ *     description: Returns paginated deliveries assigned to the rider that are completed (delivered or failed).
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-001" }
+ *         description: Search by order ID, customer name, or phone number
+ *       - in: query
+ *         name: startDate
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *         description: Filter by delivery completion date (from)
+ *       - in: query
+ *         name: endDate
+ *         schema: { type: string, format: date, example: "2026-04-30" }
+ *         description: Filter by delivery completion date (to)
+ *     responses:
+ *       200:
+ *         description: Paginated delivery history
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           oscNumber:
+ *                             type: string
+ *                             example: "OSC-20260428-321782"
+ *                           fullName:
+ *                             type: string
+ *                             example: "Jude Victor"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "08012345678"
+ *                           serviceType:
+ *                             type: string
+ *                             example: "wash-and-iron"
+ *                           serviceTier:
+ *                             type: string
+ *                             example: "standard"
+ *                           amount:
+ *                             type: number
+ *                             example: 4500
+ *                           pickupAddress:
+ *                             type: string
+ *                             example: "12 Lagos Street, Yaba"
+ *                           stage:
+ *                             type: object
+ *                             properties:
+ *                               status:
+ *                                 type: string
+ *                                 example: "delivered"
+ *                           dispatchDetails:
+ *                             type: object
+ *                             properties:
+ *                               pickup:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "picked-up"
+ *                                   isVerified:
+ *                                     type: boolean
+ *                                     example: true
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                               delivery:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     enum: [delivered, failed]
+ *                                     example: "delivered"
+ *                                   note:
+ *                                     type: string
+ *                                     nullable: true
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total: { type: integer, example: 42 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 20 }
+ *                         pages: { type: integer, example: 3 }
+ *       400:
+ *         description: Failed to fetch delivery history
+ *       401:
+ *         description: Unauthorized
+ */
+router.get(ROUTE_RIDER_HISTORY, [riderAuth], (req, res) => {
+    const riderController = new RiderController()
+    return riderController.getHistoryList(req, res)
+})
+
+/**
+ * @swagger
+ * /rider/order/history/{id}/timeline:
+ *   get:
+ *     summary: Get order timeline for a rider's assigned delivery
+ *     description: |
+ *       Returns the 8-step pipeline stepper (Intake → Tagged → Pretreated →
+ *       Washed → Ironing → QC Passed → Ready → Delivered) with timestamps,
+ *       plus dispatch details. Only accessible to the rider assigned to the order.
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Order timeline
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     order:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         oscNumber:
+ *                           type: string
+ *                           example: "OSC-20260428-321782"
+ *                         fullName:
+ *                           type: string
+ *                           example: "Jude Victor"
+ *                         phoneNumber:
+ *                           type: string
+ *                           example: "08012345678"
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "12 Lagos Street, Yaba"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "standard"
+ *                         amount:
+ *                           type: number
+ *                           example: 4500
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status:
+ *                               type: string
+ *                               example: "delivered"
+ *                         trackingStatus:
+ *                           type: string
+ *                           enum: [in_progress, completed, failed]
+ *                           example: "completed"
+ *                         dispatchDetails:
+ *                           type: object
+ *                           properties:
+ *                             pickup:
+ *                               type: object
+ *                               properties:
+ *                                 status:
+ *                                   type: string
+ *                                   example: "picked-up"
+ *                                 isVerified:
+ *                                   type: boolean
+ *                                   example: true
+ *                                 updatedAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                             delivery:
+ *                               type: object
+ *                               properties:
+ *                                 status:
+ *                                   type: string
+ *                                   enum: [ready, out-for-delivery, delivered, failed]
+ *                                   example: "delivered"
+ *                                 note:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 updatedAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                     pipeline:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           key:
+ *                             type: string
+ *                             example: "qc_passed"
+ *                           label:
+ *                             type: string
+ *                             example: "QC Passed"
+ *                           completed:
+ *                             type: boolean
+ *                             example: true
+ *                           timestamp:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *       400:
+ *         description: Failed to fetch order timeline or rider not assigned to this order
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ */
+router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
+    const riderController = new RiderController()
+    return riderController.getOrderTimeline(req, res)
 })
 
 module.exports = router

@@ -43,7 +43,7 @@ class UserService extends BaseService {
                     'stage.status': ORDER_STATUS.DELIVERED,
                 }),
 
-                NotificationModel.countDocuments({ userId, read: false }),
+                NotificationModel.countDocuments({ userId, isRead: false }),
 
                 BookOrderModel.findOne({
                     $or: [

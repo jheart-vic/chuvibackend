@@ -1,336 +1,537 @@
-const BookOrderModel = require("../models/bookOrder.model");
-const { PICKUP_STATUS, DELIVERY_STATUS } = require("../util/constants");
-const paginate = require("../util/paginate");
-const BaseService = require("./base.service");
+const BookOrderModel = require('../models/bookOrder.model')
+const UserModel = require('../models/user.model')
+const { PICKUP_STATUS, DELIVERY_STATUS, ORDER_STATUS } = require('../util/constants')
+const paginate = require('../util/paginate')
+const BaseService = require('./base.service')
 
 class RiderService extends BaseService {
-  async getRiderAssignedDeliveries(req) {
-    try {
-      const riderId = req.user.id;
-      const { page = 1, limit = 10 } = req.query;
+    async getRiderAssignedDeliveries(req) {
+        try {
+            const riderId = req.user.id
+            const { page = 1, limit = 10 } = req.query
 
-      const query = {
-        "dispatchDetails.pickup.rider": riderId,
-      };
+            const query = {
+                'dispatchDetails.pickup.rider': riderId,
+            }
 
-      const result = await paginate(BookOrderModel, query, {
-        page,
-        limit,
-      });
+            const result = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+            })
 
-      return BaseService.sendSuccessResponse({
-        message: result,
-      });
-    } catch (error) {
-      console.error("Error in getRiderAssignedDeliveries:", error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later",
-      });
+            return BaseService.sendSuccessResponse({
+                message: result,
+            })
+        } catch (error) {
+            console.error('Error in getRiderAssignedDeliveries:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
     }
-  }
 
-  async getOrderDetails(req) {
-    try {
-      const orderId = req.params.id;
-      if (!orderId) {
-        return BaseService.sendFailedResponse({
-          error: "Order ID is required",
-        });
-      }
-      const order = await BookOrderModel.findById(orderId).populate(
-        "userId",
-        "fullName email phoneNumber"
-      );
+    async getOrderDetails(req) {
+        try {
+            const orderId = req.params.id
+            if (!orderId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            }
+            const order = await BookOrderModel.findById(orderId).populate(
+                'userId',
+                'fullName email phoneNumber',
+            )
 
-      return BaseService.sendSuccessResponse({
-        message: order,
-      });
-    } catch (error) {
-      console.log("Error in getOrderDetails:", error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later",
-      });
+            return BaseService.sendSuccessResponse({
+                message: order,
+            })
+        } catch (error) {
+            console.log('Error in getOrderDetails:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
     }
-  }
 
-  async startDelivery(req) {
-    try {
-      const orderId = req.params.id;
-      const phoneNumber = req.body.phoneNumber;
+    async startDelivery(req) {
+        try {
+            const orderId = req.params.id
+            const phoneNumber = req.body.phoneNumber
 
-      if (!orderId) {
-        return BaseService.sendFailedResponse({
-          error: "Order ID is required",
-        });
-      }
+            if (!orderId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            }
 
-      if (!phoneNumber) {
-        return BaseService.sendFailedResponse({
-          error: "Customer phone number is required",
-        });
-      }
+            if (!phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number is required',
+                })
+            }
 
-      const order = await BookOrderModel.findById(orderId).populate(
-        "userId",
-        "phoneNumber"
-      );
+            const order = await BookOrderModel.findById(orderId).populate(
+                'userId',
+                'phoneNumber',
+            )
 
-      if (!order) {
-        return BaseService.sendFailedResponse({
-          error: "Order not found",
-        });
-      }
+            if (!order) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+            }
 
-      if (order.dispatchDetails.delivery.status === PICKUP_STATUS.PICKED_UP) {
-        return BaseService.sendFailedResponse({
-          error: "Delivery is already picked up",
-        });
-      }
+            if (
+                order.dispatchDetails.delivery.status ===
+                PICKUP_STATUS.PICKED_UP
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Delivery is already picked up',
+                })
+            }
 
-      if (order.dispatchDetails.pickup.rider.toString() !== req.user.id) {
-        return BaseService.sendFailedResponse({
-          error: "You are not assigned to this delivery",
-        });
-      }
+            if (order.dispatchDetails.pickup.rider.toString() !== req.user.id) {
+                return BaseService.sendFailedResponse({
+                    error: 'You are not assigned to this delivery',
+                })
+            }
 
-      if (order.userId.phoneNumber !== phoneNumber) {
-        return BaseService.sendFailedResponse({
-          error: "Provided phone number does not match customer's phone number",
-        });
-      }
+            if (order.userId.phoneNumber !== phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: "Provided phone number does not match customer's phone number",
+                })
+            }
 
-      order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP;
-      order.dispatchDetails.pickup.updatedAt = new Date();
-      order.dispatchDetails.pickup.isVerified = true;
+            order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP
+            order.dispatchDetails.pickup.updatedAt = new Date()
+            order.dispatchDetails.pickup.isVerified = true
 
-      await order.save();
+            await order.save()
 
-      return BaseService.sendSuccessResponse({
-        message: "Delivery started successfully",
-      });
-    } catch (error) {
-      console.error("Error in startDelivery:", error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Delivery started successfully',
+            })
+        } catch (error) {
+            console.error('Error in startDelivery:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
     }
-  }
 
-  async getActiveDeliveries(req) {
-    try {
-      const riderId = req.user.id;
-      const { page = 1, limit = 10 } = req.query;
+    async getActiveDeliveries(req) {
+        try {
+            const riderId = req.user.id
+            const { page = 1, limit = 10 } = req.query
 
-      const query = {
-        "dispatchDetails.delivery.rider": riderId,
-        "dispatchDetails.delivery.status": PICKUP_STATUS.PICKED_UP,
-      };
+            const query = {
+                'dispatchDetails.delivery.rider': riderId,
+                'dispatchDetails.delivery.status': PICKUP_STATUS.PICKED_UP,
+            }
 
-      const result = await paginate(BookOrderModel, query, {
-        page,
-        limit,
-      });
+            const result = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+            })
 
-      return BaseService.sendSuccessResponse({
-        message: result,
-      });
-    } catch (error) {
-      console.error("Error in getActiveDeliveries:", error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later",
-      });
+            return BaseService.sendSuccessResponse({
+                message: result,
+            })
+        } catch (error) {
+            console.error('Error in getActiveDeliveries:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
     }
-  }
 
-  //   async verifyPickup(req) {
-  //     try {
-  //       const orderId = req.params.id;
-  //       const { phoneNumber } = req.body;
-  //       const userId = req.user.id;
+    //   async verifyPickup(req) {
+    //     try {
+    //       const orderId = req.params.id;
+    //       const { phoneNumber } = req.body;
+    //       const userId = req.user.id;
 
-  //       if (!orderId) {
-  //         return BaseService.sendFailedResponse({
-  //           error: "Order ID is required",
-  //         });
-  //       }
+    //       if (!orderId) {
+    //         return BaseService.sendFailedResponse({
+    //           error: "Order ID is required",
+    //         });
+    //       }
 
-  //       if (!phoneNumber) {
-  //         return BaseService.sendFailedResponse({
-  //           error: "Customer phone number is required",
-  //         });
-  //       }
+    //       if (!phoneNumber) {
+    //         return BaseService.sendFailedResponse({
+    //           error: "Customer phone number is required",
+    //         });
+    //       }
 
-  //       const order = await BookOrderModel.findById(orderId).populate(
-  //         "userId",
-  //         "phoneNumber"
-  //       );
+    //       const order = await BookOrderModel.findById(orderId).populate(
+    //         "userId",
+    //         "phoneNumber"
+    //       );
 
-  //       if (!order) {
-  //         return BaseService.sendFailedResponse({
-  //           error: "Order not found",
-  //         });
-  //       }
+    //       if (!order) {
+    //         return BaseService.sendFailedResponse({
+    //           error: "Order not found",
+    //         });
+    //       }
 
-  //       if (
-  //         order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED &&
-  //         order.dispatchDetails.pickup.rider.toString() !== userId
-  //       ) {
-  //         return BaseService.sendFailedResponse({
-  //           error:
-  //             "Delivery is not scheduled for pickup or you are not assigned to this delivery",
-  //         });
-  //       }
+    //       if (
+    //         order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED &&
+    //         order.dispatchDetails.pickup.rider.toString() !== userId
+    //       ) {
+    //         return BaseService.sendFailedResponse({
+    //           error:
+    //             "Delivery is not scheduled for pickup or you are not assigned to this delivery",
+    //         });
+    //       }
 
-  //       if (order.userId.phoneNumber !== phoneNumber) {
-  //         return BaseService.sendFailedResponse({
-  //           error: "Provided phone number does not match customer's phone number",
-  //         });
-  //       }
+    //       if (order.userId.phoneNumber !== phoneNumber) {
+    //         return BaseService.sendFailedResponse({
+    //           error: "Provided phone number does not match customer's phone number",
+    //         });
+    //       }
 
-  //       order.dispatchDetails.pickup.status = DELIVERY_STATUS.DELIVERED;
-  //       order.dispatchDetails.delivery.updatedAt = new Date();
+    //       order.dispatchDetails.pickup.status = DELIVERY_STATUS.DELIVERED;
+    //       order.dispatchDetails.delivery.updatedAt = new Date();
 
-  //       await order.save();
+    //       await order.save();
 
-  //       return BaseService.sendSuccessResponse({
-  //         message: "Order pickup verified successfully",
-  //       });
-  //     } catch (error) {
-  //       console.error("Error in verifyPickup:", error);
-  //       return BaseService.sendFailedResponse({
-  //         error: "Something went wrong. Please try again later",
-  //       });
-  //     }
-  //   }
+    //       return BaseService.sendSuccessResponse({
+    //         message: "Order pickup verified successfully",
+    //       });
+    //     } catch (error) {
+    //       console.error("Error in verifyPickup:", error);
+    //       return BaseService.sendFailedResponse({
+    //         error: "Something went wrong. Please try again later",
+    //       });
+    //     }
+    //   }
 
-  async markOrderAsDelivered(req) {
-    try {
-      const orderId = req.params.id;
-      const { phoneNumber } = req.body;
-      const userId = req.user.id;
+    async markOrderAsDelivered(req) {
+        try {
+            const orderId = req.params.id
+            const { phoneNumber } = req.body
+            const userId = req.user.id
 
-      if (!orderId) {
-        return BaseService.sendFailedResponse({
-          error: "Order ID is required",
-        });
-      }
+            if (!orderId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            }
 
-      if (!phoneNumber) {
-        return BaseService.sendFailedResponse({
-          error: "Customer phone number is required",
-        });
-      }
+            if (!phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number is required',
+                })
+            }
 
-      const order = await BookOrderModel.findById(orderId).populate(
-        "userId",
-        "phoneNumber"
-      );
+            const order = await BookOrderModel.findById(orderId).populate(
+                'userId',
+                'phoneNumber',
+            )
 
-      if (!order) {
-        return BaseService.sendFailedResponse({
-          error: "Order not found",
-        });
-      }
+            if (!order) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+            }
 
-      if (order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP) {
-        return BaseService.sendFailedResponse({
-          error:
-            "Delivery must be picked up before it can be marked as delivered",
-        });
-      }
+            if (
+                order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Delivery must be picked up before it can be marked as delivered',
+                })
+            }
 
-      if (order.dispatchDetails.pickup.rider.toString() !== userId) {
-        return BaseService.sendFailedResponse({
-          error: "You are not assigned to this delivery",
-        });
-      }
+            if (order.dispatchDetails.pickup.rider.toString() !== userId) {
+                return BaseService.sendFailedResponse({
+                    error: 'You are not assigned to this delivery',
+                })
+            }
 
-      if (order.userId.phoneNumber !== phoneNumber) {
-        return BaseService.sendFailedResponse({
-          error: "Provided phone number does not match customer's phone number",
-        });
-      }
+            if (order.userId.phoneNumber !== phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: "Provided phone number does not match customer's phone number",
+                })
+            }
 
-      order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED;
-      order.dispatchDetails.delivery.updatedAt = new Date();
+            order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED
+            order.dispatchDetails.delivery.updatedAt = new Date()
 
-      await order.save();
+            await order.save()
 
-      return BaseService.sendSuccessResponse({
-        message: "Order marked as delivered successfully",
-      });
-    } catch (error) {
-      console.error("Error in markOrderAsDelivered:", error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Order marked as delivered successfully',
+            })
+        } catch (error) {
+            console.error('Error in markOrderAsDelivered:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
     }
-  }
 
-  async markOrderDeliveryAsFailed(req) {
-    try {
-      const orderId = req.params.id;
-      const { phoneNumber } = req.body;
-      const note = req.body.note || "";
-      const userId = req.user.id;
+    async markOrderDeliveryAsFailed(req) {
+        try {
+            const orderId = req.params.id
+            const { phoneNumber } = req.body
+            const note = req.body.note || ''
+            const userId = req.user.id
 
-      if (!orderId) {
-        return BaseService.sendFailedResponse({
-          error: "Order ID is required",
-        });
-      }
+            if (!orderId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            }
 
-      if (!phoneNumber) {
-        return BaseService.sendFailedResponse({
-          error: "Customer phone number is required",
-        });
-      }
+            if (!phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number is required',
+                })
+            }
 
-      const order = await BookOrderModel.findById(orderId).populate(
-        "userId",
-        "phoneNumber"
-      );
+            const order = await BookOrderModel.findById(orderId).populate(
+                'userId',
+                'phoneNumber',
+            )
 
-      if (!order) {
-        return BaseService.sendFailedResponse({
-          error: "Order not found",
-        });
-      }
+            if (!order) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+            }
 
-      if (order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP) {
-        return BaseService.sendFailedResponse({
-          error: "Delivery must be picked up before it can be marked as failed",
-        });
-      }
+            if (
+                order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Delivery must be picked up before it can be marked as failed',
+                })
+            }
 
-      if (order.dispatchDetails.pickup.rider.toString() !== userId) {
-        return BaseService.sendFailedResponse({
-          error: "You are not assigned to this delivery",
-        });
-      }
+            if (order.dispatchDetails.pickup.rider.toString() !== userId) {
+                return BaseService.sendFailedResponse({
+                    error: 'You are not assigned to this delivery',
+                })
+            }
 
-      if (order.userId.phoneNumber !== phoneNumber) {
-        return BaseService.sendFailedResponse({
-          error: "Provided phone number does not match customer's phone number",
-        });
-      }
+            if (order.userId.phoneNumber !== phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: "Provided phone number does not match customer's phone number",
+                })
+            }
 
-      order.dispatchDetails.delivery.status = DELIVERY_STATUS.FAILED;
-      order.dispatchDetails.delivery.updatedAt = new Date();
-      order.dispatchDetails.delivery.note = note;
+            order.dispatchDetails.delivery.status = DELIVERY_STATUS.FAILED
+            order.dispatchDetails.delivery.updatedAt = new Date()
+            order.dispatchDetails.delivery.note = note
 
-      await order.save();
+            await order.save()
 
-      return BaseService.sendSuccessResponse({
-        message: "Order marked as failed successfully",
-      });
-    } catch (error) {
-      console.error("Error in markOrderDeliveryAsFailed:", error);
-      return BaseService.sendFailedResponse({
-        error: "Something went wrong. Please try again later",
-      });
+            return BaseService.sendSuccessResponse({
+                message: 'Order marked as failed successfully',
+            })
+        } catch (error) {
+            console.error('Error in markOrderDeliveryAsFailed:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
     }
-  }
+
+    async getHistoryList(req) {
+        try {
+            const riderId = req.user.id
+            const user = await UserModel.findById(riderId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const {
+                page = 1,
+                limit = 20,
+                search = '',
+                startDate,
+                endDate,
+            } = req.query
+
+            // Rider history = deliveries they handled that are now completed or failed
+            const query = {
+                $or: [
+                    { 'dispatchDetails.pickup.rider': riderId },
+                    { 'dispatchDetails.delivery.rider': riderId },
+                ],
+                'dispatchDetails.delivery.status': {
+                    $in: [DELIVERY_STATUS.DELIVERED, DELIVERY_STATUS.FAILED],
+                },
+            }
+
+            if (search) {
+                query.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
+                ]
+            }
+
+            if (startDate || endDate) {
+                query['dispatchDetails.delivery.updatedAt'] = {}
+                if (startDate)
+                    query['dispatchDetails.delivery.updatedAt'].$gte = new Date(
+                        startDate,
+                    )
+                if (endDate)
+                    query['dispatchDetails.delivery.updatedAt'].$lte = new Date(
+                        endDate,
+                    )
+            }
+
+            const { data, pagination } = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+                sort: { 'dispatchDetails.delivery.updatedAt': -1 },
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage pickupAddress dispatchDetails createdAt updatedAt',
+                lean: true,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data, pagination },
+            })
+        } catch (error) {
+            console.error('Error in getHistoryList:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch delivery history',
+            })
+        }
+    }
+
+    async getOrderTimeline(req) {
+        try {
+            const orderId = req.params.id
+            const riderId = req.user.id
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const user = await UserModel.findById(riderId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findById(orderId).lean()
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            // Verify this rider is assigned to this order
+            const isAssigned =
+                order.dispatchDetails?.pickup?.rider?.toString() === riderId ||
+                order.dispatchDetails?.delivery?.rider?.toString() === riderId
+
+            if (!isAssigned) {
+                return BaseService.sendFailedResponse({
+                    error: 'You are not assigned to this order',
+                })
+            }
+
+            const PIPELINE = [
+                {
+                    key: 'intake',
+                    label: 'Intake',
+                    status: ORDER_STATUS.PENDING,
+                },
+                { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
+                {
+                    key: 'pretreated',
+                    label: 'Pretreated',
+                    status: ORDER_STATUS.SORT_AND_PRETREAT,
+                },
+                {
+                    key: 'washed',
+                    label: 'Washed',
+                    status: ORDER_STATUS.WASHING,
+                },
+                {
+                    key: 'ironing',
+                    label: 'Ironing',
+                    status: ORDER_STATUS.IRONING,
+                },
+                {
+                    key: 'qc_passed',
+                    label: 'QC Passed',
+                    status: ORDER_STATUS.QC,
+                },
+                { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
+                {
+                    key: 'delivered',
+                    label: 'Delivered',
+                    status: ORDER_STATUS.DELIVERED,
+                },
+            ]
+
+            const stageTimestampMap = {}
+            for (const entry of order.stageHistory || []) {
+                if (!stageTimestampMap[entry.status]) {
+                    stageTimestampMap[entry.status] = entry.updatedAt
+                }
+            }
+            stageTimestampMap[ORDER_STATUS.PENDING] =
+                stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
+
+            const pipeline = PIPELINE.map((step) => {
+                const timestamp = stageTimestampMap[step.status] || null
+                return {
+                    key: step.key,
+                    label: step.label,
+                    completed: !!timestamp,
+                    timestamp,
+                }
+            })
+
+            const trackingStatus =
+                order.dispatchDetails?.delivery?.status ===
+                DELIVERY_STATUS.DELIVERED
+                    ? 'completed'
+                    : order.dispatchDetails?.delivery?.status ===
+                        DELIVERY_STATUS.FAILED
+                      ? 'failed'
+                      : 'in_progress'
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    order: {
+                        _id: order._id,
+                        oscNumber: order.oscNumber,
+                        fullName: order.fullName,
+                        phoneNumber: order.phoneNumber,
+                        pickupAddress: order.pickupAddress,
+                        serviceType: order.serviceType,
+                        serviceTier: order.serviceTier,
+                        amount: order.amount,
+                        stage: order.stage,
+                        trackingStatus,
+                        dispatchDetails: order.dispatchDetails,
+                        createdAt: order.createdAt,
+                    },
+                    pipeline,
+                },
+            })
+        } catch (error) {
+            console.error('Error in getOrderTimeline:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch order timeline',
+            })
+        }
+    }
 }
 
-module.exports = RiderService;
+module.exports = RiderService
