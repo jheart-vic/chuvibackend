@@ -84,6 +84,22 @@ class AdminController extends BaseController {
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);
     }
+    async addFund(req, res) {
+      const adminService = new AdminService();
+      const result = await adminService.addFund(req, res);
+  
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+    async deductFund(req, res) {
+      const adminService = new AdminService();
+      const result = await adminService.deductFund(req, res);
+  
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
 }
 
 module.exports = AdminController;

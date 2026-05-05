@@ -123,6 +123,7 @@ const NOTIFICATION_TYPE = {
     ORDER_DELIVERED: 'order-delivered',
     PAYMENT_APPROVED: 'payment-approved',
     WALLET_TOP_UP: 'wallet-top-up',
+    WALLET_UPDATE: 'wallet-update',
 }
 
 const ORDER_SERVICE_TYPE = {
