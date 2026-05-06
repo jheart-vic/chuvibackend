@@ -14,7 +14,6 @@ const {
     STANDARD_ITEMS_ENUM_TYPES,
     ACTIVITY_TYPE,
     STATION_STATUS,
-    ORDER_CHANNEL,
     PAYMENT_ORDER_STATUS,
 } = require('../util/constants')
 const ActivityModel = require('../models/activity.model')
@@ -95,15 +94,25 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                const isAllStandard = post.items.every((item) =>
-                    STANDARD_ITEMS_ENUM_TYPES.includes(item.type),
-                )
+                // const isAllStandard = post.items.every((item) =>
+                //     STANDARD_ITEMS_ENUM_TYPES.includes(item.type),
+                // )
 
-                if (!isAllStandard) {
+                // if (!isAllStandard) {
+                //     return BaseService.sendFailedResponse({
+                //         error: 'Your subscription plan only allows standard items. Please remove any non-standard items from your order.',
+                //     })
+                // }
+
+                const invalidItem = post.items.find(
+                    (item) => !STANDARD_ITEMS_ENUM_TYPES.includes(item.type)
+                  );
+                  
+                  if (invalidItem) {
                     return BaseService.sendFailedResponse({
-                        error: 'Your subscription plan only allows standard items. Please remove any non-standard items from your order.',
-                    })
-                }
+                      error: `Your subscription plan only allows standard items. "${invalidItem.type}" is not supported. Please remove it from your order.`,
+                    });
+                  }
 
                 if (
                     post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
