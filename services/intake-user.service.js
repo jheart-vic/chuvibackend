@@ -124,6 +124,9 @@ class IntakeUserService extends BaseService {
                 title: 'New Order Registered',
                 description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
                 type: ACTIVITY_TYPE.ORDER_CREATED,
+                orderId: newOrder._id,
+                userId,
+                reference: oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -283,6 +286,9 @@ class IntakeUserService extends BaseService {
                 title: 'Order Flagged',
                 description: `Order ${order.oscNumber} has been flagged with the following message: ${message}`,
                 type: ACTIVITY_TYPE.ORDER_FLAGGED,
+                orderId: order._id,
+                userId: userId || null,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -335,6 +341,9 @@ class IntakeUserService extends BaseService {
                 title: 'Order moved to tag and queue',
                 description: `A order ${order.oscNumber} has been moved to tag and queue`,
                 type: ACTIVITY_TYPE.TAG_AND_QUEUE,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -421,6 +430,9 @@ class IntakeUserService extends BaseService {
                 title: 'Order Item Tagged',
                 description: `An item with ${tagId} order ${order.oscNumber} has been tagged`,
                 type: ACTIVITY_TYPE.ORDER_CONFIRM,
+                orderId: order._id,
+                userId: userId || null,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -480,6 +492,9 @@ class IntakeUserService extends BaseService {
                 title: 'Order Item Tag Undone',
                 description: `An item with ${itemId} order ${order.oscNumber} has been undone from tagging`,
                 type: ACTIVITY_TYPE.ORDER_CONFIRM,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -540,6 +555,9 @@ class IntakeUserService extends BaseService {
                 title: 'Order moved to sort and pretreat',
                 description: `A order ${order.oscNumber} has been moved to sort and pretreat`,
                 type: ACTIVITY_TYPE.SORT_AND_PRETREAT,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -812,6 +830,9 @@ class IntakeUserService extends BaseService {
                 title: 'Dispach Run Created',
                 description: `Order ${order.oscNumber}: ${order.items.length} assigned for pickup`,
                 type: ACTIVITY_TYPE.ORDER_PICKED,
+                orderId: order._id,
+                userId: userId || null,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -857,6 +878,9 @@ class IntakeUserService extends BaseService {
                 title: 'Dispach Run Created',
                 description: `Order ${order.oscNumber}: ${order.items.length} assigned for delivery`,
                 type: ACTIVITY_TYPE.ORDER_DELIVERED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -909,6 +933,9 @@ class IntakeUserService extends BaseService {
                 title: 'All Tags Generated',
                 description: `All tags auto-generated for order ${order.oscNumber} by ${user.fullName}`,
                 type: ACTIVITY_TYPE.TAG_AND_QUEUE,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
@@ -961,6 +988,9 @@ class IntakeUserService extends BaseService {
                 title: 'Tagging Completed',
                 description: `All items on order ${order.oscNumber} confirmed tagged by ${user.fullName}`,
                 type: ACTIVITY_TYPE.TAG_AND_QUEUE,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -1288,6 +1318,7 @@ class IntakeUserService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({

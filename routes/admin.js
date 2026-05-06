@@ -13,7 +13,8 @@ const {
     ROUTE_HOLD_ORDERS,
     ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION,
     ROUTE_ADMIN_WALLET_ID_ADD_FUND,
-    ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND
+    ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND,
+    ROUTE_ADMIN_AUDIT_LITE
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -990,6 +991,102 @@ router.put(ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND, adminAuth, (req, res)=>{
     const adminController = new AdminController();
     return adminController.deductFund(req, res);
 });
+
+/**
+ * @swagger
+ * /admin/audit-lite:
+ *   get:
+ *     summary: Get audit log — paginated activity feed with filtering
+ *     description: Returns a timestamped log of all system events. Filterable by event type, date range, and search term. Supports CSV export via client.
+ *     tags:
+ *       - Admin
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 10 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "ORD-2024-001" }
+ *         description: Search by reference, event title, or description
+ *       - in: query
+ *         name: type
+ *         schema: { type: string, example: "wallet-top-up" }
+ *         description: Filter by event type (use eventTypes array from response)
+ *       - in: query
+ *         name: startDate
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: endDate
+ *         schema: { type: string, format: date, example: "2026-04-30" }
+ *     responses:
+ *       200:
+ *         description: Paginated audit log
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                           timestamp:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2026-03-23T09:45:00.000Z"
+ *                           event:
+ *                             type: string
+ *                             example: "Dispatch Run Created"
+ *                           type:
+ *                             type: string
+ *                             example: "dispatch-delivery"
+ *                           reference:
+ *                             type: string
+ *                             nullable: true
+ *                             example: "OSC-20260428-321782"
+ *                           by:
+ *                             type: string
+ *                             nullable: true
+ *                             example: "Ben Gerald"
+ *                           notes:
+ *                             type: string
+ *                             example: "ORD-2024-001 order assigned to rider"
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total: { type: integer, example: 50 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 10 }
+ *                         pages: { type: integer, example: 5 }
+ *                     eventTypes:
+ *                       type: array
+ *                       description: All available event types for the filter dropdown
+ *                       items:
+ *                         type: string
+ *                       example: ["order-created", "dispatch-delivery", "wallet-top-up"]
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_ADMIN_AUDIT_LITE, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getAuditLite(req, res)
+})
 
 
 module.exports = router;

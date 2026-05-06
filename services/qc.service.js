@@ -245,6 +245,7 @@ class QCService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -322,6 +323,7 @@ class QCService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -381,6 +383,7 @@ class QCService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_QC_PASSED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -543,6 +546,7 @@ class QCService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_PACKED_AND_SEALED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
             await NotificationModel.create({
                 userId: order.userId,
@@ -712,6 +716,7 @@ class QCService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -879,6 +884,7 @@ class QCService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({

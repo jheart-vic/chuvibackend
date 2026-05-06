@@ -145,18 +145,17 @@ class BookOrderService extends BaseService {
                     return sum + price * quantity
                 }, 0)
 
-                
                 let extraDeliveryCost = 0
-                
+
                 totalPrice += extraDeliveryCost
                 const stage = {
-                  status: ORDER_STATUS.PENDING,
-                  updatedAt: new Date(),
+                    status: ORDER_STATUS.PENDING,
+                    updatedAt: new Date(),
                 }
                 const stageHistory = {
-                  status: ORDER_STATUS.PENDING,
-                  note: 'Order created',
-                  updatedAt: new Date(),
+                    status: ORDER_STATUS.PENDING,
+                    note: 'Order created',
+                    updatedAt: new Date(),
                 }
 
                 const newOrderItem = {
@@ -215,7 +214,7 @@ class BookOrderService extends BaseService {
                     updatedAt: new Date(),
                 }
 
-                console.log({totalPrice, extraDeliveryCost})
+                console.log({ totalPrice, extraDeliveryCost })
 
                 const newOrderItem = {
                     userId,
@@ -238,19 +237,31 @@ class BookOrderService extends BaseService {
                 })
             }
             // update the capacity in admin order settings
-            if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY && adminOrderSettings.sameDayCapacity > 0) {
+            if (
+                post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
+                adminOrderSettings.sameDayCapacity > 0
+            ) {
                 adminOrderSettings.sameDayCapacity -= post.items.length
-            } else if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS && adminOrderSettings.expressCapacity > 0) {
+            } else if (
+                post.deliverySpeed === DELIVERY_SPEED.EXPRESS &&
+                adminOrderSettings.expressCapacity > 0
+            ) {
                 adminOrderSettings.expressCapacity -= post.items.length
-            } else if (post.deliverySpeed === DELIVERY_SPEED.STANDARD && adminOrderSettings.standardCapacity > 0) {
+            } else if (
+                post.deliverySpeed === DELIVERY_SPEED.STANDARD &&
+                adminOrderSettings.standardCapacity > 0
+            ) {
                 adminOrderSettings.standardCapacity -= post.items.length
             }
             await adminOrderSettings.save()
 
             await ActivityModel.create({
                 title: 'New Order Registered',
-                description: `Order ${oscNumber} created for a customer ${user.fullName}.`,
+                description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
                 type: ACTIVITY_TYPE.ORDER_CREATED,
+                orderId: newOrder._id,
+                userId: userId || null,
+                reference: oscNumber,
             })
             return BaseService.sendSuccessResponse({
                 message: finalMessage,

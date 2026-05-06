@@ -167,6 +167,7 @@ exports.ROUTE_HOLD_ORDERS = '/hold-orders'
 exports.ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION = '/orders/:id/reassign-station'
 exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/:id/add-fund'
 exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/:id/deduct-fund'
+exports.ROUTE_ADMIN_AUDIT_LITE = '/audit-lite'
 
 
 

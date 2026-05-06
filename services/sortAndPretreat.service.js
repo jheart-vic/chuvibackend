@@ -382,6 +382,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -461,6 +462,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -537,6 +539,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -596,6 +599,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -682,6 +686,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -755,6 +760,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -833,6 +839,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_FLAGGED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -918,6 +925,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_STATUS_UPDATED,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
             await NotificationModel.create({
                 userId,
@@ -1653,6 +1661,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -1811,6 +1820,7 @@ class SortAndPretreatService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({

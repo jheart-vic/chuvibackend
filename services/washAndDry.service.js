@@ -274,6 +274,9 @@ class WashAndDryService extends BaseService {
                 title: 'Item Confirmed for Washing',
                 description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} confirmed as present and ready for washing`,
                 type: ACTIVITY_TYPE.ORDER_ITEM_WASH_CONFIRMED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -469,6 +472,7 @@ class WashAndDryService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -594,6 +598,9 @@ class WashAndDryService extends BaseService {
                 title: 'Moved to Drying',
                 description: `Order ${order.oscNumber} has been transferred to the dryer`,
                 type: ACTIVITY_TYPE.ORDER_MOVED_TO_DRYING,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -701,6 +708,9 @@ class WashAndDryService extends BaseService {
                 title: 'Wash & Dry Completed',
                 description: `Order ${order.oscNumber} wash and dry completed. Sent to ${nextStatus}`,
                 type: ACTIVITY_TYPE.ORDER_WASH_DRY_COMPLETED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
             await NotificationModel.create({
                 userId,
@@ -881,6 +891,7 @@ class WashAndDryService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({

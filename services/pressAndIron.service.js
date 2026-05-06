@@ -243,6 +243,9 @@ class PressAndIronService extends BaseService {
                 title: 'Item Confirmed for Pressing',
                 description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} confirmed as present and ready for pressing`,
                 type: ACTIVITY_TYPE.ORDER_ITEM_PRESS_CONFIRMED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -444,6 +447,7 @@ class PressAndIronService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -545,6 +549,9 @@ class PressAndIronService extends BaseService {
                 title: 'Pressing Completed',
                 description: `Order ${order.oscNumber} pressing has been completed and sent to QC`,
                 type: ACTIVITY_TYPE.ORDER_PRESS_COMPLETED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
@@ -715,6 +722,7 @@ class PressAndIronService extends BaseService {
                 type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
                 orderId: order._id,
                 userId,
+                reference: order.oscNumber,
             })
 
             return BaseService.sendSuccessResponse({
