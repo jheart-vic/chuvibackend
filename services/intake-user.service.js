@@ -869,7 +869,7 @@ class IntakeUserService extends BaseService {
 
             order.dispatchDetails.delivery.rider = riderId
             order.dispatchDetails.delivery.status =
-                DELIVERY_STATUS.OUT_FOR_DELIVERY
+                DELIVERY_STATUS.READY
             order.dispatchDetails.delivery.updatedAt = new Date()
 
             await order.save()
