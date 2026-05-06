@@ -165,8 +165,8 @@ exports.ROUTE_ADMIN_ORDER_BY_STATE = '/orders/by-state'
 exports.ROUTE_ADMIN_DISPATCH_DATA_COUNT = '/dispatch/data-count'
 exports.ROUTE_HOLD_ORDERS = '/hold-orders'
 exports.ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION = '/orders/:id/reassign-station'
-exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/{id}/add-fund'
-exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/{id}/deduct-fund'
+exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/:id/add-fund'
+exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/:id/deduct-fund'
 
 
 
