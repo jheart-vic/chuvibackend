@@ -172,6 +172,12 @@ class BookOrderService extends BaseService {
 
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
+                // guard against unrecognised billingType
+                if (!newOrder) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Invalid billing type',
+                    })
+                }
 
                 await NotificationModel.create({
                     userId: userId,

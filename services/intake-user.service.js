@@ -1059,12 +1059,16 @@ class IntakeUserService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
             const skip = (Number(page) - 1) * Number(limit)
 
-            // Drafts = orders in tagging queue with at least one untagged item
             const query = {
                 'stage.status': ORDER_STATUS.QUEUE,
-                items: {
-                    $elemMatch: { tagStatus: { $ne: 'complete' } },
-                },
+                $and: [
+                    { items: { $elemMatch: { tagStatus: 'complete' } } },
+                    {
+                        items: {
+                            $elemMatch: { tagStatus: { $ne: 'complete' } },
+                        },
+                    },
+                ],
             }
 
             if (search) {
@@ -1123,6 +1127,9 @@ class IntakeUserService extends BaseService {
 
             const query = {
                 'stage.status': ORDER_STATUS.QUEUE,
+                items: {
+                    $not: { $elemMatch: { tagStatus: 'complete' } },
+                },
             }
 
             if (search) {
