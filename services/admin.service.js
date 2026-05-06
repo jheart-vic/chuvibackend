@@ -1214,7 +1214,7 @@ class AdminService extends BaseService {
     } catch (error) {
       console.log(error);
       return BaseService.sendFailedResponse({
-        error: "Failed to add fund to wallet",
+        error: "Failed to deduct fund from wallet",
       });
     }
   }
