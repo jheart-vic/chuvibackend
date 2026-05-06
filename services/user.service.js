@@ -214,11 +214,11 @@ class UserService extends BaseService {
                 publicId: req.file.filename,
             }
 
-            // Save new image details
-            user.image = {
-                imageUrl: result.secure_url,
-                publicId: result.public_id,
-            }
+            // // Save new image details
+            // user.image = {
+            //     imageUrl: result.secure_url,
+            //     publicId: result.public_id,
+            // }
 
             await user.save()
 
