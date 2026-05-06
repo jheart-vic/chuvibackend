@@ -549,7 +549,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
             await NotificationModel.create({
-                userId: order.userId,
+                userId: order.userId || userId,
                 title: 'Your order is ready for delivery',
                 body: `Order ${order.oscNumber} has been quality-checked, packed, and sealed. It is now ready for delivery.`,
                 subBody: `Order ID: ${order.oscNumber}`,
