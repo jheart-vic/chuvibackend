@@ -172,12 +172,6 @@ class BookOrderService extends BaseService {
 
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
-                // guard against unrecognised billingType
-                if (!newOrder) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Invalid billing type',
-                    })
-                }
 
                 await NotificationModel.create({
                     userId: userId,
@@ -261,6 +255,12 @@ class BookOrderService extends BaseService {
             }
             await adminOrderSettings.save()
 
+                // guard against unrecognised billingType
+                if (!newOrder) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Invalid billing type',
+                    })
+                }
             await ActivityModel.create({
                 title: 'New Order Registered',
                 description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
