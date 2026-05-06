@@ -99,7 +99,14 @@ class RiderService extends BaseService {
                 })
             }
 
-            if (order.userId.phoneNumber !== phoneNumber) {
+            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            if (!customerPhone) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number not found on order',
+                })
+            }
+
+            if (customerPhone !== phoneNumber) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -109,13 +116,15 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.updatedAt = new Date()
             await order.save()
 
-            await NotificationModel.create({
-                userId: order.userId._id,
-                title: 'Your order has been delivered',
-                body: `Order ${order.oscNumber} has been delivered successfully.`,
-                subBody: `Order ID: ${order.oscNumber}`,
-                type: NOTIFICATION_TYPE.ORDER_DELIVERED,
-            })
+            if (order.userId?._id) {
+                await NotificationModel.create({
+                    userId: order.userId._id,
+                    title: 'Your order has been delivered',
+                    body: `Order ${order.oscNumber} has been delivered successfully.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_DELIVERED,
+                })
+            }
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as delivered successfully',
@@ -147,12 +156,12 @@ class RiderService extends BaseService {
                 'userId',
                 'phoneNumber',
             )
+
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found',
                 })
 
-            // ✅ fix: check delivery.rider not pickup.rider
             if (order.dispatchDetails.delivery.rider?.toString() !== userId) {
                 return BaseService.sendFailedResponse({
                     error: 'You are not assigned to this delivery',
@@ -168,7 +177,14 @@ class RiderService extends BaseService {
                 })
             }
 
-            if (order.userId.phoneNumber !== phoneNumber) {
+            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            if (!customerPhone) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number not found on order',
+                })
+            }
+
+            if (customerPhone !== phoneNumber) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -274,7 +290,14 @@ class RiderService extends BaseService {
                 })
             }
 
-            if (order.userId.phoneNumber !== phoneNumber) {
+            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            if (!customerPhone) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number not found on order',
+                })
+            }
+
+            if (customerPhone !== phoneNumber) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -285,13 +308,15 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.isVerified = true
             await order.save()
 
-            await NotificationModel.create({
-                userId: order.userId._id,
-                title: 'Your order has been picked up',
-                body: `Order ${order.oscNumber} has been picked up by our rider and is on the way to our facility.`,
-                subBody: `Order ID: ${order.oscNumber}`,
-                type: NOTIFICATION_TYPE.ORDER_PICKED,
-            })
+            if (order.userId?._id) {
+                await NotificationModel.create({
+                    userId: order.userId._id,
+                    title: 'Your order has been delivered',
+                    body: `Order ${order.oscNumber} has been delivered successfully.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_DELIVERED,
+                })
+            }
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup started successfully',
