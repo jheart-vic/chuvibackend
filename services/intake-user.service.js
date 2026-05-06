@@ -831,7 +831,7 @@ class IntakeUserService extends BaseService {
                 description: `Order ${order.oscNumber}: ${order.items.length} assigned for pickup`,
                 type: ACTIVITY_TYPE.ORDER_PICKED,
                 orderId: order._id,
-                userId: userId || null,
+                userId: riderId,
                 reference: order.oscNumber,
             })
 
@@ -879,7 +879,7 @@ class IntakeUserService extends BaseService {
                 description: `Order ${order.oscNumber}: ${order.items.length} assigned for delivery`,
                 type: ACTIVITY_TYPE.ORDER_DELIVERED,
                 orderId: order._id,
-                userId,
+                userId: riderId,
                 reference: order.oscNumber,
             })
 
