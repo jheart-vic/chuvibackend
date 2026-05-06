@@ -209,10 +209,16 @@ class UserService extends BaseService {
             }
 
             // Upload new image to Cloudinary
-            user.image = {
-                imageUrl: req.file.path,
-                publicId: req.file.filename,
-            }
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                req.user.id,
+                {
+                    $set: {
+                        'image.imageUrl': req.file.path,
+                        'image.publicId': req.file.filename,
+                    },
+                },
+                { new: true },
+            )
 
             // // Save new image details
             // user.image = {
@@ -254,19 +260,22 @@ class UserService extends BaseService {
             const exists = user.addresses.some(
                 (addr) => addr.label === label && addr.address === address,
             )
-
             if (exists) {
                 return BaseService.sendFailedResponse({
                     error: 'This address already exists',
                 })
             }
 
-            user.addresses.push({ label, address })
-            await user.save()
+            // ✅ use $push instead of push + save
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                req.user.id,
+                { $push: { addresses: { label, address } } },
+                { new: true },
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Address added successfully',
-                data: user.addresses[user.addresses.length - 1],
+                data: updatedUser.addresses[updatedUser.addresses.length - 1],
             })
         } catch (error) {
             console.error(error)
@@ -301,14 +310,23 @@ class UserService extends BaseService {
                 })
             }
 
-            if (label !== undefined) addr.label = label
-            if (address !== undefined) addr.address = address
+            // ✅ build $set dynamically with positional operator
+            const updateFields = {}
+            if (label !== undefined) updateFields['addresses.$.label'] = label
+            if (address !== undefined)
+                updateFields['addresses.$.address'] = address
 
-            await user.save()
+            const updatedUser = await UserModel.findOneAndUpdate(
+                { _id: req.user.id, 'addresses._id': addressId },
+                { $set: updateFields },
+                { new: true },
+            )
+
+            const updatedAddr = updatedUser.addresses.id(addressId)
 
             return BaseService.sendSuccessResponse({
                 message: 'Address updated successfully',
-                data: addr,
+                data: updatedAddr,
             })
         } catch (error) {
             console.error(error)
