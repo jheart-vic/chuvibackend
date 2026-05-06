@@ -12,8 +12,13 @@ const {
     formatNotificationTime,
     getWeightImprovementTipsByWeight,
 } = require('../util/helper')
-const { uploadImage, deleteImage } = require('../util/imageUpload')
-const { EXPIRES_AT, ORDER_STATUS, ROLE, GENERAL_STATUS } = require('../util/constants')
+const { deleteImage } = require('../util/imageUpload')
+const {
+    EXPIRES_AT,
+    ORDER_STATUS,
+    ROLE,
+    GENERAL_STATUS,
+} = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
@@ -204,7 +209,10 @@ class UserService extends BaseService {
             }
 
             // Upload new image to Cloudinary
-            const result = await uploadImage(req.file)
+            user.image = {
+                imageUrl: req.file.path,
+                publicId: req.file.filename,
+            }
 
             // Save new image details
             user.image = {
