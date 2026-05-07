@@ -43,10 +43,11 @@ class IntakeUserService extends BaseService {
             const validateRule = {
                 fullName: 'string|required',
                 phoneNumber: 'string|required',
-                pickupAddress: 'string|required',
+                // pickupAddress: 'string|required',
                 serviceType: 'string|required',
                 serviceTier: 'string|required',
-                isPickUpAndDelivery: 'boolean|required',
+                isPickUp: 'boolean|required',
+                isDelivery: 'boolean|required',
                 deliverySpeed: 'string|required',
                 items: 'array|required',
                 'items.*.type': 'string|required',
@@ -324,6 +325,10 @@ class IntakeUserService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
                 })
+            }
+
+            if(order.isPickUp && order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP){
+                return BaseService.sendFailedResponse({error: "Order is yet to be picked up. Please wait"})
             }
 
             order.stage.status = ORDER_STATUS.QUEUE

@@ -131,3 +131,8 @@ module.exports.buildStageUpdate = (status, stationStatus, note = '') => ({
         stageHistory: { status, note, updatedAt: new Date() },
     },
 })
+
+module.exports.generateReferenceId = ()=>{
+  const reference = `pay_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  return reference;
+}

@@ -8,6 +8,9 @@ const paystackAxios = require("./paystack.client.service");
 const SubscriptionModel = require("../models/subscription.model");
 const PlanModel = require("../models/plan.model");
 const BookOrderModel = require("../models/bookOrder.model");
+const { generateReferenceId } = require("../util/helper");
+const PaymentModel = require("../models/payment.model");
+
 
 class PaystackService extends BaseService {
 
@@ -76,9 +79,27 @@ class PaystackService extends BaseService {
         }
       }
 
+      const reference = generateReferenceId()
       let amount = 0
-
       amount = transactionType === 'subscription' ? plan.price * 100 : order.amount * 100
+
+      if(transactionType == 'order' && orderId){
+        const orderPaymentExists = await PaymentModel.findOne({userId, order: orderId})
+        if(orderPaymentExists.status == 'success'){
+          return BaseService.sendFailedResponse({error: "You have already made a payment for this order."})
+        }
+      }
+
+      await PaymentModel.create({
+        userId: userId,
+        amount: amount,
+        reference,
+        status: 'pending',
+        ...(subExists && {subscription: subExists?._id}),
+        ...(orderId && {order: orderId}),
+        type: transactionType,
+        ...(transactionType == 'wallet-top-up' && {alertType: 'credit'}),
+    })
 
 
       const response = await paystackAxios.post(
@@ -86,6 +107,7 @@ class PaystackService extends BaseService {
         {
           email,
           amount,
+          reference,
           ...(plan && {plan: plan.paystackPlanCode}),
           metadata: {
             userId,

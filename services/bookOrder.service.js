@@ -35,14 +35,15 @@ class BookOrderService extends BaseService {
             const validateRule = {
                 fullName: 'string|required',
                 phoneNumber: 'string|required',
-                pickupAddress: 'string|required',
+                // pickupAddress: 'string|required',
                 // pickupDate: "date|required",
                 // pickupTime: "string|required",
                 serviceType: 'string|required',
                 serviceTier: 'string|required',
                 billingType: 'string|required',
                 deliverySpeed: 'string|required:in:express,standard,same-day',
-                isPickUpAndDelivery: 'boolean|required',
+                isDelivery: 'boolean|required',
+                isPickUp: 'boolean|required',
                 items: 'array|required',
                 'items.*.type': 'string|required',
                 'items.*.price': 'integer|required',
@@ -222,8 +223,6 @@ class BookOrderService extends BaseService {
                     note: 'Order created',
                     updatedAt: new Date(),
                 }
-
-                console.log({ totalPrice, extraDeliveryCost })
 
                 const newOrderItem = {
                     userId,

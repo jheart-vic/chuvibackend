@@ -9,6 +9,7 @@ const paystackAxios = require("./paystack.client.service");
 const PaymentModel = require("../models/payment.model");
 const  mongoose = require("mongoose");
 const paginate = require("../util/paginate");
+const { generateReferenceId } = require("../util/helper");
 
 class WalletService extends BaseService {
   async walletTopUp(req, res) {
@@ -42,10 +43,12 @@ class WalletService extends BaseService {
 
       let { amount } = post;
       amount = amount * 100;
+      const reference = generateReferenceId();
 
       const response = await paystackAxios.post("/transaction/initialize", {
         email,
         amount, // e.g. 4500000 for ₦45,000.00
+        reference,
         metadata: {
           userId,
           transactionType: "wallet-top-up",
