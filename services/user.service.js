@@ -203,12 +203,10 @@ class UserService extends BaseService {
                 })
             }
 
-            // Delete old image if exists
             if (user.image?.publicId) {
                 await deleteImage(user.image.publicId, 'image')
             }
 
-            // Upload new image to Cloudinary
             const updatedUser = await UserModel.findByIdAndUpdate(
                 req.user.id,
                 {
@@ -220,17 +218,9 @@ class UserService extends BaseService {
                 { new: true },
             )
 
-            // // Save new image details
-            // user.image = {
-            //     imageUrl: result.secure_url,
-            //     publicId: result.public_id,
-            // }
-
-            await user.save()
-
             return BaseService.sendSuccessResponse({
                 message: 'Profile image uploaded successfully',
-                data: user.image,
+                data: updatedUser.image,
             })
         } catch (error) {
             console.error(error)
