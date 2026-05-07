@@ -46,7 +46,8 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *               - phoneNumber
  *               - serviceType
  *               - serviceTier
- *               - isPickUpAndDelivery
+ *               - isDelivery
+ *               - isPickUp
  *               - items
  *             properties:
  *               fullName:
@@ -65,7 +66,10 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *               pickupTime:
  *                 type: string
  *                 example: "10am-12pm | 4pm-6pm"
- *               isPickUpAndDelivery:
+ *               isPickUp:
+ *                 type: boolean
+ *                 example: false
+ *               isDelivery:
  *                 type: boolean
  *                 example: false
  *               serviceType:

@@ -30,10 +30,10 @@ async function handleChargeSuccess(data) {
 
         // 2️⃣ Prevent duplicate payments
         const existingPayment = await PaymentModel.findOne({ reference })
-        if (existingPayment) {
-            console.log('Payment already recorded:', reference)
-            return
-        }
+        // if (existingPayment) {
+        //     console.log('Payment already recorded:', reference)
+        //     return
+        // }
 
         // 3️⃣ Save payment
         console.log(metadata, 'metadata')
@@ -43,22 +43,33 @@ async function handleChargeSuccess(data) {
             )
             return
         }
-        await PaymentModel.create({
-            userId: user._id,
-            amount: data.amount / 100,
-            reference,
-            status: 'success',
-            subscription: metadata.subscriptionId || null,
-            order: metadata.orderId || null,
-            type: metadata.transactionType,
-            channel: data.channel,
-            paidAt: new Date(data.paid_at),
-            alertType:
-                metadata.transactionType === 'wallet-top-up'
-                    ? 'credit'
-                    : 'debit',
-            metadata,
-        })
+        // await PaymentModel.create({
+        //     userId: user._id,
+        //     amount: data.amount / 100,
+        //     reference,
+        //     status: 'success',
+        //     subscription: metadata.subscriptionId || null,
+        //     order: metadata.orderId || null,
+        //     type: metadata.transactionType,
+        //     channel: data.channel,
+        //     paidAt: new Date(data.paid_at),
+        //     alertType:
+        //         metadata.transactionType === 'wallet-top-up'
+        //             ? 'credit'
+        //             : 'debit',
+        //     metadata,
+        // })
+
+        if(existingPayment.status == 'success'){
+            console.log('Payment already made')
+            return
+        }
+
+            existingPayment.paidAt = new Date(data.paid_at)
+            existingPayment.metadata = metadata
+            existingPayment.status = 'success'
+            existingPayment.channel = data.channel
+            await existingPayment.save()
 
         // ==========================
         // 🛒 ORDER PAYMENT FLOW
@@ -84,36 +95,6 @@ async function handleChargeSuccess(data) {
             let subscription = await SubscriptionModel.findOne({
                 subscriptionCode,
             })
-
-            // 4️⃣ Create subscription if it doesn't exist
-            // if (!subscription) {
-            //   console.log("Creating new subscription");
-
-            //   subscription = await SubscriptionModel.create({
-            //     userId: metadata.payerId || user._id,
-            //     planId: metadata.planId,
-            //     status: "active",
-            //     startDate: new Date(data.paid_at),
-            //     subscriptionCode: subscriptionCode,
-            //     paystackSubscriptionId: data.subscription.id,
-            //     lastPaymentAt: new Date(data.paid_at),
-            //     currentPeriodEnd: new Date(data.subscription.next_payment_date),
-            //     nextPaymentDate: new Date(data.subscription.next_payment_date),
-            //   });
-
-            //   return;
-            // }
-
-            // subscription.status = "active";
-            // subscription.lastPaymentAt = new Date(data.paid_at);
-            // subscription.currentPeriodEnd = new Date(
-            //   data.subscription.next_payment_date
-            // );
-            // subscription.nextPaymentDate = new Date(
-            //   data.subscription.next_payment_date
-            // );
-
-            // await subscription.save();
         }
     } catch (error) {
         console.error('Error in handleChargeSuccess:', error)

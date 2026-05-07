@@ -37,7 +37,8 @@ const {
  *               - phoneNumber
  *               - serviceType
  *               - serviceTier
- *               - isPickupAndDelivery
+ *               - isPickup
+ *               - isDelivery
  *               - items
  *             properties:
  *               fullName:
@@ -59,7 +60,10 @@ const {
  *                 type: string
  *                 example: "10am-12pm"
  *                 description: Required if isPickupAndDelivery is true
- *               isPickUpAndDelivery:
+ *               isPickUp:
+ *                 type: boolean
+ *                 example: true
+ *               isDelivery:
  *                 type: boolean
  *                 example: true
  *               serviceType:

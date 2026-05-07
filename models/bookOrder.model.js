@@ -247,7 +247,8 @@ const bookOrderSchema = new mongoose.Schema(
             enum: Object.values(PAYMENT_ORDER_STATUS),
             default: PAYMENT_ORDER_STATUS.PENDING,
         },
-        isPickUpAndDelivery: { type: Boolean, default: false },
+        isPickUp: { type: Boolean, default: false },
+        isDelivery: { type: Boolean, default: false },
         reference: { type: String },
         paymentDate: { type: Date },
         adjustWallet: {
