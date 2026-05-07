@@ -85,7 +85,7 @@ class PaystackService extends BaseService {
 
       if(transactionType == 'order' && orderId){
         const orderPaymentExists = await PaymentModel.findOne({userId, order: orderId})
-        if(orderPaymentExists.status == 'success'){
+        if(orderPaymentExists && orderPaymentExists.status == 'success'){
           return BaseService.sendFailedResponse({error: "You have already made a payment for this order."})
         }
       }
