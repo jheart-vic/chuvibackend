@@ -293,6 +293,14 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId: order.userId,
+                title: 'Order Flagged',
+                body: `Your order ${order.oscNumber} has been flagged by our team.`,
+                subBody: `Reason: ${message}`,
+                type: NOTIFICATION_TYPE.ORDER_FLAGGED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Order flagged successfully',
             })
@@ -350,6 +358,14 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Order in Tagging Queue',
+                body: `Order ${order.oscNumber} is now in the tagging queue.`,
+                subBody: `Please proceed to tag the items in the order.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -441,6 +457,14 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'Order Item Tagged',
+                body: `An item with ${tagId} order ${order.oscNumber} has been tagged`,
+                subBody: `Please proceed to tag the remaining items in the order.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Tag successfully confirmed',
             })
@@ -501,6 +525,14 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Order Item Tag Undone',
+                body: `An item with ${itemId} order ${order.oscNumber} has been undone from tagging`,
+                subBody: `Please proceed to tag the item again.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -564,6 +596,14 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Order in Sort & Pretreat',
+                body: `Order ${order.oscNumber} is now in the Sort & Pretreat station.`,
+                subBody: `Please proceed to sort and pretreat the items in the order.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -631,6 +671,14 @@ class IntakeUserService extends BaseService {
                 title: 'Wallet Adjustment request',
                 description: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
                 type: ACTIVITY_TYPE.TOP_UP_REQUEST,
+            })
+
+            await createNotification({
+                userId: order.userId._id,
+                title: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
+                body: `A top up request of ${amount} has been initiated for you. Please contact support for more details.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
             })
 
             return BaseService.sendSuccessResponse({
@@ -725,9 +773,16 @@ class IntakeUserService extends BaseService {
                 type: ACTIVITY_TYPE.WALLET_ADJUSTMENT,
             })
 
+            await createNotification({
+                userId,
+                title: `Wallet ${type === 'credit' ? 'Credit' : 'Debit'} Notification`,
+                body: `Your wallet has been ${type === 'credit' ? 'credited' : 'debited'} with ${amount}.`,
+                subBody: `Reason: ${message}`,
+                type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
+            })
+
             return BaseService.sendSuccessResponse({
-                message: `Wallet ${type} request successful of ${amount}
-        Reason: ${message}`,
+                message: `Wallet ${type} request successful of ${amount} Reason: ${message}`,
             })
         } catch (error) {
             console.log(error)
@@ -844,6 +899,14 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId: riderId,
+                title: 'New Pickup Assignment',
+                body: `You have been assigned to pick up order ${order.oscNumber}.`,
+                subBody: `Please check your dispatch dashboard for details.`,
+                type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
             })
@@ -890,6 +953,14 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
                 userId: riderId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId: riderId,
+                title: 'New Delivery Assignment',
+                body: `You have been assigned to deliver order ${order.oscNumber}.`,
+                subBody: `Please check your dispatch dashboard for details.`,
+                type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
 
             return BaseService.sendSuccessResponse({
@@ -947,6 +1018,14 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'All Tags Generated',
+                body: `All tags have been auto-generated for order ${order.oscNumber}.`,
+                subBody: `Please review the tags and proceed to complete tagging.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
             return BaseService.sendSuccessResponse({
                 message: {
@@ -1000,6 +1079,14 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Tagging Completed',
+                body: `All items on order ${order.oscNumber} have been confirmed tagged.`,
+                subBody: `Please proceed to send the order to Sort & Pretreat station.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -1335,6 +1422,14 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Order Released from Hold',
+                body: `Order ${order.oscNumber} has been released from hold and returned to tagging queue.`,
+                subBody: `Please proceed to tag the items in the order.`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({

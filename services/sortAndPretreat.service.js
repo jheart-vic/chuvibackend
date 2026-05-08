@@ -474,6 +474,13 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'Item Sorted',
+                body: `An item on your order ${order.oscNumber} was marked as sorted. We are getting it ready for the next steps!`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
             return BaseService.sendSuccessResponse({
                 message: { message: 'Item marked as sorted', allItemsSorted },
             })
@@ -551,6 +558,14 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'Item Sort Undone',
+                body: `The sorted status for an item on your order ${order.oscNumber} was undone. We are reviewing it again.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Item sort undone successfully',
             })
@@ -609,6 +624,14 @@ class SortAndPretreatService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'All Items Sorted',
+                body: `All items on your order ${order.oscNumber} have been marked as sorted. We are getting them ready for the next steps!`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -698,6 +721,14 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'Item Pretreated',
+                body: `An item on your order ${order.oscNumber} was marked as pretreated. We are getting it ready for the next steps!`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: {
                     message: 'Item marked as pretreated',
@@ -770,6 +801,14 @@ class SortAndPretreatService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Item Pretreat Undone',
+                body: `The pretreated status for an item on your order ${order.oscNumber} was undone. We are reviewing it again.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -849,6 +888,14 @@ class SortAndPretreatService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Item Flagged for Review',
+                body: `An item on your order ${order.oscNumber} was flagged for review. Reason: ${note}. We will get back to you with more details.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_FLAGGED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -1673,6 +1720,14 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'Item Placed on Hold',
+                body: `An item on your order ${order.oscNumber} was placed on hold. Reason: ${reason}. We are working to resolve this as quickly as possible.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
             })
@@ -1830,6 +1885,14 @@ class SortAndPretreatService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Order Released from Hold',
+                body: `Your order ${order.oscNumber} has been released from hold and is back in the sort & pretreat queue. We are working to get it processed as quickly as possible!`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({

@@ -196,6 +196,13 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.note = note
             await order.save()
 
+            await createNotification({
+                userId: userId,
+                title: 'Delivery Update',
+                body: `Delivery for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Delivery marked as failed successfully',
             })
@@ -315,9 +322,17 @@ class RiderService extends BaseService {
                     title: 'Your order has been delivered',
                     body: `Order ${order.oscNumber} has been delivered successfully.`,
                     subBody: `Order ID: ${order.oscNumber}`,
-                    type: NOTIFICATION_TYPE.ORDER_DELIVERED,
+                    type: NOTIFICATION_TYPE.PICKUP_STARTED,
                 })
             }
+
+            await createNotification({
+                userId: userId,
+                title: 'Pickup Started',
+                body: `Pickup for order ${order.oscNumber} has been started.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.PICKUP_STARTED,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup started successfully',
@@ -377,6 +392,14 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.note = note
             await order.save()
 
+            await createNotification({
+                userId: userId,
+                title: 'Pickup Update',
+                body: `Pickup for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.PICKUP_FAILED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Pickup marked as failed successfully',
             })
@@ -422,6 +445,14 @@ class RiderService extends BaseService {
                 DELIVERY_STATUS.OUT_FOR_DELIVERY
             order.dispatchDetails.delivery.updatedAt = new Date()
             await order.save()
+
+            await createNotification({
+                userId: userId,
+                title: 'Delivery Started',
+                body: `Delivery for order ${order.oscNumber} has been started.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.DELIVERY_STARTED,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery started successfully',
