@@ -160,15 +160,13 @@ const bookOrderSchema = new mongoose.Schema(
         },
         fullName: { type: String, required: true },
         phoneNumber: { type: String, required: true },
-        pickupAddress: { type: String, required: true },
+        pickupAddress: { type: String },
         // deliveryAddress: { type: String, required: true },
-        pickupDate: { type: Date, required: true },
+        pickupDate: { type: Date },
         deliveryDate: { type: Date },
         isVerified: { type: Boolean, default: false },
         pickupTime: {
             type: String,
-            required: true,
-            trim: true,
             enum: Object.values(PICK_UP_TIME),
         },
         serviceType: {
