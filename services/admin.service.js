@@ -14,6 +14,7 @@ const {
     STATION_STATUS,
     NOTIFICATION_TYPE,
 } = require('../util/constants')
+const createNotification = require('../util/createNotification')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
 
@@ -1145,7 +1146,7 @@ class AdminService extends BaseService {
                 description: message || 'Admin added fund to wallet',
             })
 
-            await NotificationModel.create({
+            await createNotification({
                 userId: userId,
                 title: 'Wallet addition',
                 body: `${req.body.amount} has been added to your wallet`,
@@ -1212,7 +1213,7 @@ class AdminService extends BaseService {
                 description: message || 'Admin deducted fund from wallet',
             })
 
-            await NotificationModel.create({
+            await createNotification({
                 userId,
                 title: 'Wallet deduction',
                 body: `₦${amount} has been deducted from your wallet`,

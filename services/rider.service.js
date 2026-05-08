@@ -10,6 +10,7 @@ const {
 const paginate = require('../util/paginate')
 
 const BaseService = require('./base.service')
+const createNotification = require('../util/createNotification')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -117,7 +118,7 @@ class RiderService extends BaseService {
             await order.save()
 
             if (order.userId?._id) {
-                await NotificationModel.create({
+                await createNotification({
                     userId: order.userId._id,
                     title: 'Your order has been delivered',
                     body: `Order ${order.oscNumber} has been delivered successfully.`,
@@ -213,7 +214,7 @@ class RiderService extends BaseService {
 
             const query = {
                 'dispatchDetails.pickup.rider': riderId,
-                'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
+                'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
             }
 
             const result = await paginate(BookOrderModel, query, {
@@ -309,7 +310,7 @@ class RiderService extends BaseService {
             await order.save()
 
             if (order.userId?._id) {
-                await NotificationModel.create({
+                await createNotification({
                     userId: order.userId._id,
                     title: 'Your order has been delivered',
                     body: `Order ${order.oscNumber} has been delivered successfully.`,

@@ -15,6 +15,7 @@ const {
     DELIVERY_SPEED,
     NOTIFICATION_TYPE,
 } = require('../util/constants')
+const createNotification = require('../util/createNotification')
 const { generateOscNumber, buildStageUpdate } = require('../util/helper')
 const paginate = require('../util/paginate')
 const validateData = require('../util/validate')
@@ -113,7 +114,7 @@ class IntakeUserService extends BaseService {
             const newOrder = new BookOrderModel(newOrderItem)
             await newOrder.save()
 
-            await NotificationModel.create({
+            await createNotification({
                 userId: userId,
                 title: 'Order Created Successfully',
                 body: `Your have successfully created an order for ${post.fullName}.`,

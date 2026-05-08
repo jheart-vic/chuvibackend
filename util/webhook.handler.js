@@ -8,6 +8,7 @@ const { NOTIFICATION_TYPE } = require('./constants')
 const PlanModel = require('../models/plan.model')
 const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
+const createNotification = require('./createNotification')
 
 async function handleChargeSuccess(data) {
     try {
@@ -43,22 +44,6 @@ async function handleChargeSuccess(data) {
             )
             return
         }
-        // await PaymentModel.create({
-        //     userId: user._id,
-        //     amount: data.amount / 100,
-        //     reference,
-        //     status: 'success',
-        //     subscription: metadata.subscriptionId || null,
-        //     order: metadata.orderId || null,
-        //     type: metadata.transactionType,
-        //     channel: data.channel,
-        //     paidAt: new Date(data.paid_at),
-        //     alertType:
-        //         metadata.transactionType === 'wallet-top-up'
-        //             ? 'credit'
-        //             : 'debit',
-        //     metadata,
-        // })
 
         if(existingPayment.status == 'success'){
             console.log('Payment already made')
@@ -317,7 +302,7 @@ async function handleOrderPayment(metadata, reference) {
         await order.save()
 
         // 🔔 Optional notification
-        await NotificationModel.create({
+        await createNotification({
             userId: order.userId,
             title: 'Payment Successful',
             body: 'Your order payment was successful and is being processed.',
@@ -374,7 +359,7 @@ async function handleWalletTopUp(metadata) {
         })
 
         // 🔔 Optional notification
-        await NotificationModel.create({
+        await createNotification({
             userId: userId,
             title: 'Wallet top up Successful',
             body: 'Your wallet top up is successful.',

@@ -14,6 +14,7 @@ const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
+const createNotification = require('../util/createNotification')
 
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
@@ -279,6 +280,13 @@ class WashAndDryService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId,
+                title: 'Item Confirmed for Washing',
+                body: "Item confirmed for washing",
+                type: NOTIFICATION_TYPE.ORDER_WASHING,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: {
                     message: 'Item confirmed for washing',
@@ -356,6 +364,13 @@ class WashAndDryService extends BaseService {
                     },
                 },
             )
+
+            await createNotification({
+                userId,
+                title: 'Item Wash Confirmation Undone',
+                body: "Item wash confirmation has been undone",
+                type: NOTIFICATION_TYPE.ORDER_WASHING,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item wash confirmation undone',
@@ -473,6 +488,13 @@ class WashAndDryService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Item Placed on Hold',
+                body: `An item has been placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`,
+                type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
             return BaseService.sendSuccessResponse({
@@ -603,6 +625,13 @@ class WashAndDryService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            createNotification({
+                userId,
+                title: 'Order Moved to Drying',
+                body: `Order ${order.oscNumber} has been transferred to the dryer.`,
+                type: NOTIFICATION_TYPE.ORDER_WASHING,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been transferred to the dryer`,
             })
@@ -712,7 +741,7 @@ class WashAndDryService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
-            await NotificationModel.create({
+            await createNotification({
                 userId,
                 title: isWashOnly
                     ? 'Your order is getting ready'
@@ -892,6 +921,13 @@ class WashAndDryService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Order Released from Hold',
+                body: `Order ${order.oscNumber} has been released from hold and returned to the wash queue.`,
+                type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
             return BaseService.sendSuccessResponse({
