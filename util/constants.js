@@ -133,6 +133,7 @@ const NOTIFICATION_TYPE = {
     TOP_UP_REQUEST: 'top-up-request',
     WALLET_ADJUSTMENT: 'wallet-adjustment',
     DISPATCH_ASSIGNMENT: 'dispatch-assignment',
+    PAYMENT_UPDATE: 'payment-update',
 }
 
 const ORDER_SERVICE_TYPE = {

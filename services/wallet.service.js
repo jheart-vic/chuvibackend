@@ -10,6 +10,8 @@ const PaymentModel = require("../models/payment.model");
 const  mongoose = require("mongoose");
 const paginate = require("../util/paginate");
 const { generateReferenceId } = require("../util/helper");
+const createNotification = require("../util/createNotification");
+const { NOTIFICATION_TYPE } = require("../util/constants");
 
 class WalletService extends BaseService {
   async walletTopUp(req, res) {
@@ -65,6 +67,13 @@ class WalletService extends BaseService {
           paymentMethod,
         },
       });
+
+      await createNotification({
+        userId,
+        title: "Wallet Top-Up Initiated",
+        body: `Your wallet top-up of ₦${amount / 100} has been initiated. Please complete the payment to add funds to your wallet.`,
+        type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
+      })
 
       return BaseService.sendSuccessResponse({
         message: response.data,
@@ -143,6 +152,13 @@ class WalletService extends BaseService {
         status: "success",
         description,
       });
+
+      await createNotification({
+        userId,
+        title: "Payment Successful",
+        body: `Your payment of ₦${bookOrder.amount} for Order #${bookOrder._id} was successful. Thank you for using your wallet!`,
+        type: NOTIFICATION_TYPE.PAYMENT_APPROVED,
+      })
 
       return BaseService.sendSuccessResponse({
         message: "Payment made successfully from wallet.",
@@ -350,6 +366,13 @@ class WalletService extends BaseService {
         alertType: "credit",
         paymentMethod: "bank-transfer",
         proofOfPayment
+      })
+
+      await createNotification({
+        userId,
+        title: "Payment Proof Uploaded",
+        body: `Your payment proof for ₦${amount} has been uploaded successfully. Our team will verify it shortly.`,
+        type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
       })
 
       return BaseService.sendSuccessResponse({message: 'Payment proof uploaded successfully. Awaiting verification.'})

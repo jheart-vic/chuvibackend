@@ -747,6 +747,13 @@ class AdminService extends BaseService {
                 })
             }
 
+            await createNotification({
+                userId: payment.userId,
+                title: 'Payment Approved',
+                body: `Your payment of ${payment.amount} has been approved.`,
+                type: NOTIFICATION_TYPE.PAYMENT_UPDATE,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Payment verified successfully',
             })
@@ -793,6 +800,12 @@ class AdminService extends BaseService {
                 })
             }
 
+            await createNotification({
+                userId: payment.userId,
+                title: 'Payment Rejected',
+                body: `Your payment of ${payment.amount} has been rejected. Please contact support for more details.`,
+                type: NOTIFICATION_TYPE.PAYMENT_UPDATE,
+            })
             return BaseService.sendSuccessResponse({
                 message: 'Payment rejected successfully',
             })
@@ -1085,6 +1098,13 @@ class AdminService extends BaseService {
             }
 
             await order.save()
+
+            await createNotification({
+                userId: userId,
+                title: 'Order Reassigned',
+                body: `You have reassigned order ${order.oscNumber} to ${type.replace(/-/g, ' ')}. Note: ${note}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATE,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been assigned and sent to be resolved`,
