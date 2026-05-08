@@ -17,6 +17,7 @@ const {
     PAYMENT_ORDER_STATUS,
 } = require('../util/constants')
 const ActivityModel = require('../models/activity.model')
+const createNotification = require('../util/createNotification')
 
 class BookOrderService extends BaseService {
     async postBookOrder(req, res) {
@@ -183,7 +184,7 @@ class BookOrderService extends BaseService {
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
 
-                await NotificationModel.create({
+                await createNotification({
                     userId: userId,
                     title: 'Order Created Successfully',
                     body: `Your laundry order has been received. We will pick it up shortly.`,
@@ -236,7 +237,7 @@ class BookOrderService extends BaseService {
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
 
-                await NotificationModel.create({
+                await createNotification({
                     userId: userId,
                     title: 'Order Created Successfully',
                     body: `Your laundry order has been received. We will pick it up shortly.`,
@@ -323,7 +324,7 @@ class BookOrderService extends BaseService {
             }
 
             if (status === 'success') {
-                await NotificationModel.create({
+                await createNotification({
                     userId: bookOrder.userId,
                     title: 'Payment Successful Approved',
                     body: `Your payment of ${bookOrder.amount} has been successfully approved.`,
@@ -418,7 +419,7 @@ class BookOrderService extends BaseService {
                     message = 'Status updated'
             }
 
-            await NotificationModel.create({
+            await createNotification({
                 userId: bookOrder.userId,
                 title: title,
                 body: message,

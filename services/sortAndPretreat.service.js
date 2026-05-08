@@ -14,6 +14,7 @@ const {
     ROLE,
     NOTIFICATION_TYPE,
 } = require('../util/constants')
+const createNotification = require('../util/createNotification')
 const { buildStageUpdate } = require('../util/helper')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
@@ -383,6 +384,14 @@ class SortAndPretreatService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Item Details Updated',
+                body: `Details for an item on your order ${order.oscNumber} were updated by our team. If you have any questions, please contact support.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -927,7 +936,7 @@ class SortAndPretreatService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
-            await NotificationModel.create({
+            await createNotification({
                 userId,
                 title: isIroningOnly
                     ? 'Your order is being ironed'

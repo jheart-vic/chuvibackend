@@ -12,6 +12,7 @@ const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
+const createNotification = require('../util/createNotification')
 
 class QCService extends BaseService {
     // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -548,7 +549,7 @@ class QCService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
-            await NotificationModel.create({
+            await createNotification({
                 userId: order.userId || userId,
                 title: 'Your order is ready for delivery',
                 body: `Order ${order.oscNumber} has been quality-checked, packed, and sealed. It is now ready for delivery.`,
