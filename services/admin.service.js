@@ -811,8 +811,11 @@ class AdminService extends BaseService {
             switch (type) {
                 case 'all':
                     filter = {
-                        isPickUpAndDelivery: true,
-                    }
+                        $or: [
+                          { isPickUp: true },
+                          { isDelivery: true }
+                        ]
+                      }
                     break
                 case 'delivery':
                     filter = {
@@ -890,12 +893,12 @@ class AdminService extends BaseService {
     async getDispatchAdminDataCount(req, res) {
         try {
             const pendingPickupOrders = await BookOrderModel.countDocuments({
-                isPickUpAndDelivery: true,
+                isPickUp: true,
                 'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
             })
 
             const assignedOrders = await BookOrderModel.countDocuments({
-                isPickUpAndDelivery: true,
+                isPickUp: true,
                 $or: [
                     {
                         'dispatchDetails.pickup.rider': { $ne: null },
@@ -913,7 +916,7 @@ class AdminService extends BaseService {
             })
 
             const deliveredOrders = await BookOrderModel.countDocuments({
-                isPickUpAndDelivery: true,
+                isPickUp: true,
                 'stage.status': ORDER_STATUS.DELIVERED,
             })
 
