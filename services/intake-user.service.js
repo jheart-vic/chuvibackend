@@ -774,7 +774,7 @@ class IntakeUserService extends BaseService {
     async getPickableOrders(req) {
         try {
             const orders = await BookOrderModel.find({
-                isPickUpAndDelivery: true,
+                isPickUp: true,
                 'stage.status': ORDER_STATUS.PENDING,
             })
 
@@ -790,7 +790,10 @@ class IntakeUserService extends BaseService {
     async getDeliverableOrders(req) {
         try {
             const orders = await BookOrderModel.find({
-                isPickUpAndDelivery: true,
+                $or: [
+                    { isPickUp: true },
+                    { isDelivery: true }
+                  ],
                 'stage.status': ORDER_STATUS.READY,
             })
 
