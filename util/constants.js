@@ -124,6 +124,16 @@ const NOTIFICATION_TYPE = {
     PAYMENT_APPROVED: 'payment-approved',
     WALLET_TOP_UP: 'wallet-top-up',
     WALLET_UPDATE: 'wallet-update',
+    PICKUP_STARTED: 'pickup-started',
+    PICKUP_FAILED: 'pickup-failed',
+    DELIVERY_STARTED: 'delivery-started',
+    ORDER_UPDATED: 'order-updated',
+    ORDER_FLAGGED: 'order-flagged',
+    ORDER_ON_HOLD: 'order_on_hold',
+    TOP_UP_REQUEST: 'top-up-request',
+    WALLET_ADJUSTMENT: 'wallet-adjustment',
+    DISPATCH_ASSIGNMENT: 'dispatch-assignment',
+    PAYMENT_UPDATE: 'payment-update',
 }
 
 const ORDER_SERVICE_TYPE = {

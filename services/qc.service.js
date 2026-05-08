@@ -249,6 +249,14 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId: userId,
+                title: 'Item QC Passed',
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has passed quality control.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: {
                     message: 'Item marked as QC passed',
@@ -327,6 +335,14 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId: userId,
+                title: 'Item QC Status Undone',
+                body: `The QC status for item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been undone. Please review the item again.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Item QC status undone',
             })
@@ -385,6 +401,14 @@ class QCService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId: userId,
+                title: 'Your order passed QC',
+                body: `Order ${order.oscNumber} has passed quality control and is now being prepared for packing and sealing.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -720,6 +744,14 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            await createNotification({
+                userId: userId,
+                title: 'An item on your order has been placed on hold',
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been placed on hold. Reason: ${reason}. Assigned to: ${assignTo}. Please contact support for more details.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
             })
@@ -886,6 +918,14 @@ class QCService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId: userId,
+                title: 'Your order has been released from hold',
+                body: `Order ${order.oscNumber} has been released from hold and is now back in the QC queue for processing.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
