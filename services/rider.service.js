@@ -667,8 +667,13 @@ class RiderService extends BaseService {
                     stageTimestampMap[entry.status] = entry.updatedAt
                 }
             }
-            stageTimestampMap[ORDER_STATUS.PENDING] =
-                stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
+            const hasProgressedBeyondPending = order.stageHistory?.some(
+                (s) => s.status !== ORDER_STATUS.PENDING,
+            )
+
+            stageTimestampMap[ORDER_STATUS.PENDING] = hasProgressedBeyondPending
+                ? stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
+                : null
 
             const pipeline = PIPELINE.map((step) => {
                 const timestamp = stageTimestampMap[step.status] || null
@@ -680,14 +685,25 @@ class RiderService extends BaseService {
                 }
             })
 
+            // const trackingStatus =
+            //     order.dispatchDetails?.delivery?.status ===
+            //     DELIVERY_STATUS.DELIVERED
+            //         ? 'completed'
+            //         : order.dispatchDetails?.delivery?.status ===
+            //             DELIVERY_STATUS.FAILED
+            //           ? 'failed'
+            //           : 'in_progress'
+
             const trackingStatus =
-                order.dispatchDetails?.delivery?.status ===
-                DELIVERY_STATUS.DELIVERED
+                order.stage.status === ORDER_STATUS.DELIVERED
                     ? 'completed'
                     : order.dispatchDetails?.delivery?.status ===
                         DELIVERY_STATUS.FAILED
-                      ? 'failed'
-                      : 'in_progress'
+                      ? 'delivery_failed'
+                      : order.dispatchDetails?.pickup?.status ===
+                          PICKUP_STATUS.FAILED
+                        ? 'pickup_failed'
+                        : 'in_progress'
 
             return BaseService.sendSuccessResponse({
                 message: {
