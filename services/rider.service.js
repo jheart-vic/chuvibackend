@@ -375,9 +375,9 @@ class RiderService extends BaseService {
                 })
             }
 
-            if (order.dispatchDetails.pickup.status !== PICKUP_STATUS.PENDING) {
+            if (order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED) {
                 return BaseService.sendFailedResponse({
-                    error: 'Only pending pickups can be marked as failed',
+                    error: 'Only scheduled pickups can be marked as failed',
                 })
             }
 
