@@ -19,6 +19,7 @@ class RiderService extends BaseService {
             const { page = 1, limit = 10 } = req.query
 
             const query = {
+                isDelivery: true,
                 'dispatchDetails.delivery.rider': riderId,
                 'dispatchDetails.delivery.status': DELIVERY_STATUS.READY,
             }
@@ -42,6 +43,7 @@ class RiderService extends BaseService {
             const { page = 1, limit = 10 } = req.query
 
             const query = {
+                isDelivery: true,
                 'dispatchDetails.delivery.rider': riderId,
                 'dispatchDetails.delivery.status':
                     DELIVERY_STATUS.OUT_FOR_DELIVERY,
@@ -220,6 +222,7 @@ class RiderService extends BaseService {
             const { page = 1, limit = 10 } = req.query
 
             const query = {
+                isPickUp: true,
                 'dispatchDetails.pickup.rider': riderId,
                 'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
             }
@@ -243,6 +246,7 @@ class RiderService extends BaseService {
             const { page = 1, limit = 10 } = req.query
 
             const query = {
+                isDelivery: true,
                 'dispatchDetails.pickup.rider': riderId,
                 'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
             }
@@ -283,6 +287,18 @@ class RiderService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found',
                 })
+
+            if(!order.isPickUp) {
+                return BaseService.sendFailedResponse({
+                    error: 'This order does not require pickup',
+                })
+            }
+
+            if(order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED) {
+                return BaseService.sendFailedResponse({
+                    error: 'Pickup is not in a scheduled state',
+                })
+            }
 
             if (order.dispatchDetails.pickup.rider?.toString() !== userId) {
                 return BaseService.sendFailedResponse({
@@ -434,7 +450,7 @@ class RiderService extends BaseService {
             }
 
             if (
-                order.dispatchDetails.delivery.status !== DELIVERY_STATUS.READY
+                order.isDelivery && order.dispatchDetails.delivery.status !== DELIVERY_STATUS.READY
             ) {
                 return BaseService.sendFailedResponse({
                     error: 'Order is not ready for delivery',
