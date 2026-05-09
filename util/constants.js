@@ -75,6 +75,7 @@ const STATION_STATUS = {
     QC_STATION: 'qc-station',
     PENDING: 'pending',
     ADMIN_STATION: 'admin-station',
+    RIDER_STATION: 'rider-station',
 }
 
 const WASH_DURATION_MINUTES = {

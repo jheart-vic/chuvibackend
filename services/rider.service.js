@@ -6,11 +6,13 @@ const {
     DELIVERY_STATUS,
     ORDER_STATUS,
     NOTIFICATION_TYPE,
+    STATION_STATUS,
 } = require('../util/constants')
 const paginate = require('../util/paginate')
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
+const { buildStageUpdate } = require('../util/helper')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -117,6 +119,12 @@ class RiderService extends BaseService {
 
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED
             order.dispatchDetails.delivery.updatedAt = new Date()
+
+            const stageUpdate = buildStageUpdate(
+                ORDER_STATUS.READY,
+                STATION_STATUS.RIDER_STATION,
+                'Delivery complete',
+            )
             await order.save()
 
             if (order.userId?._id) {
