@@ -120,12 +120,15 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED
             order.dispatchDetails.delivery.updatedAt = new Date()
 
-            const stageUpdate = buildStageUpdate(
-                ORDER_STATUS.READY,
-                STATION_STATUS.RIDER_STATION,
-                'Delivery complete',
-            )
             await order.save()
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                buildStageUpdate(
+                    ORDER_STATUS.DELIVERED,
+                    STATION_STATUS.RIDER_STATION,
+                    'Delivery complete',
+                ),
+            )
 
             if (order.userId?._id) {
                 await createNotification({
@@ -296,13 +299,15 @@ class RiderService extends BaseService {
                     error: 'Order not found',
                 })
 
-            if(!order.isPickUp) {
+            if (!order.isPickUp) {
                 return BaseService.sendFailedResponse({
                     error: 'This order does not require pickup',
                 })
             }
 
-            if(order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED) {
+            if (
+                order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED
+            ) {
                 return BaseService.sendFailedResponse({
                     error: 'Pickup is not in a scheduled state',
                 })
@@ -399,7 +404,9 @@ class RiderService extends BaseService {
                 })
             }
 
-            if (order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED) {
+            if (
+                order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED
+            ) {
                 return BaseService.sendFailedResponse({
                     error: 'Only scheduled pickups can be marked as failed',
                 })
@@ -458,7 +465,8 @@ class RiderService extends BaseService {
             }
 
             if (
-                order.isDelivery && order.dispatchDetails.delivery.status !== DELIVERY_STATUS.READY
+                order.isDelivery &&
+                order.dispatchDetails.delivery.status !== DELIVERY_STATUS.READY
             ) {
                 return BaseService.sendFailedResponse({
                     error: 'Order is not ready for delivery',
