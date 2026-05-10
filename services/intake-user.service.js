@@ -336,8 +336,13 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            if(order.isPickUp && order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP){
-                return BaseService.sendFailedResponse({error: "Order is yet to be picked up. Please wait"})
+            if (
+                order.isPickUp &&
+                order.dispatchDetails.pickup.status !== PICKUP_STATUS.PICKED_UP
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order is yet to be picked up. Please wait',
+                })
             }
 
             order.stage.status = ORDER_STATUS.QUEUE
@@ -846,10 +851,7 @@ class IntakeUserService extends BaseService {
     async getDeliverableOrders(req) {
         try {
             const orders = await BookOrderModel.find({
-                $or: [
-                    { isPickUp: true },
-                    { isDelivery: true }
-                  ],
+                isDelivery: true,
                 'stage.status': ORDER_STATUS.READY,
             })
 
@@ -940,8 +942,7 @@ class IntakeUserService extends BaseService {
             }
 
             order.dispatchDetails.delivery.rider = riderId
-            order.dispatchDetails.delivery.status =
-                DELIVERY_STATUS.READY
+            order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
             order.dispatchDetails.delivery.updatedAt = new Date()
 
             await order.save()
