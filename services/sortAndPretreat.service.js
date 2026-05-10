@@ -1489,6 +1489,132 @@ class SortAndPretreatService extends BaseService {
     }
 
     //GET ORDER TIMELINE
+    // async getOrderTimeline(req) {
+    //     try {
+    //         const orderId = req.params.id
+    //         const userId = req.user.id
+
+    //         if (!orderId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order ID is required',
+    //             })
+
+    //         const user = await UserModel.findById(userId)
+    //         if (!user)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'User not found',
+    //             })
+
+    //         const order = await BookOrderModel.findById(orderId).lean()
+    //         if (!order)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order not found',
+    //             })
+
+    //         const PIPELINE = [
+    //             {
+    //                 key: 'intake',
+    //                 label: 'Intake',
+    //                 status: ORDER_STATUS.PENDING,
+    //             },
+    //             { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
+    //             {
+    //                 key: 'pretreated',
+    //                 label: 'Pretreated',
+    //                 status: ORDER_STATUS.SORT_AND_PRETREAT,
+    //             },
+    //             {
+    //                 key: 'washing',
+    //                 label: 'Washing',
+    //                 status: ORDER_STATUS.WASHING,
+    //             },
+    //             {
+    //                 key: 'ironed',
+    //                 label: 'Ironed',
+    //                 status: ORDER_STATUS.IRONING,
+    //             },
+    //             {
+    //                 key: 'qc_passed',
+    //                 label: 'QC Passed',
+    //                 status: ORDER_STATUS.QC,
+    //             },
+    //             { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
+    //             {
+    //                 key: 'delivered',
+    //                 label: 'Delivered',
+    //                 status: ORDER_STATUS.DELIVERED,
+    //             },
+    //         ]
+
+    //         // Build status → earliest timestamp lookup from stageHistory
+    //         const stageTimestampMap = {}
+    //         for (const entry of order.stageHistory || []) {
+    //             if (!stageTimestampMap[entry.status]) {
+    //                 stageTimestampMap[entry.status] = entry.updatedAt
+    //             }
+    //         }
+    //         stageTimestampMap[ORDER_STATUS.PENDING] =
+    //             stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
+
+    //         const pipeline = PIPELINE.map((step) => {
+    //             const timestamp = stageTimestampMap[step.status] || null
+    //             return {
+    //                 key: step.key,
+    //                 label: step.label,
+    //                 completed: !!timestamp,
+    //                 timestamp: timestamp || null,
+    //             }
+    //         })
+
+    //         // Per-item granular audit trail
+    //         const itemTimeline = []
+    //         for (const item of order.items || []) {
+    //             for (const log of item.actionLog || []) {
+    //                 itemTimeline.push({
+    //                     itemId: item._id,
+    //                     itemType: item.type,
+    //                     action: log.action,
+    //                     note: log.note || '',
+    //                     timestamp: log.timestamp,
+    //                 })
+    //             }
+    //         }
+    //         itemTimeline.sort(
+    //             (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+    //         )
+
+    //         const trackingStatus =
+    //             order.stage.status === ORDER_STATUS.DELIVERED
+    //                 ? 'completed'
+    //                 : 'in_progress'
+
+    //         return BaseService.sendSuccessResponse({
+    //             message: {
+    //                 order: {
+    //                     _id: order._id,
+    //                     oscNumber: order.oscNumber,
+    //                     fullName: order.fullName,
+    //                     phoneNumber: order.phoneNumber,
+    //                     serviceType: order.serviceType,
+    //                     serviceTier: order.serviceTier,
+    //                     amount: order.amount,
+    //                     stage: order.stage,
+    //                     stationStatus: order.stationStatus,
+    //                     trackingStatus,
+    //                     items: order.items,
+    //                     createdAt: order.createdAt,
+    //                 },
+    //                 pipeline,
+    //                 itemTimeline,
+    //             },
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Failed to fetch order timeline',
+    //         })
+    //     }
+    // }
     async getOrderTimeline(req) {
         try {
             const orderId = req.params.id
@@ -1515,64 +1641,69 @@ class SortAndPretreatService extends BaseService {
                 {
                     key: 'intake',
                     label: 'Intake',
-                    status: ORDER_STATUS.PENDING,
+                    completedBy: ORDER_STATUS.QUEUE,
                 },
-                { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
+                {
+                    key: 'tagged',
+                    label: 'Tagged',
+                    completedBy: ORDER_STATUS.SORT_AND_PRETREAT,
+                },
                 {
                     key: 'pretreated',
                     label: 'Pretreated',
-                    status: ORDER_STATUS.SORT_AND_PRETREAT,
+                    completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
                 {
-                    key: 'washing',
-                    label: 'Washing',
-                    status: ORDER_STATUS.WASHING,
+                    key: 'washed',
+                    label: 'Washed',
+                    completedBy: ORDER_STATUS.IRONING,
                 },
                 {
-                    key: 'ironed',
-                    label: 'Ironed',
-                    status: ORDER_STATUS.IRONING,
+                    key: 'ironing',
+                    label: 'Ironing',
+                    completedBy: ORDER_STATUS.QC,
                 },
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
-                    status: ORDER_STATUS.QC,
+                    completedBy: ORDER_STATUS.READY,
                 },
-                { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
+                {
+                    key: 'ready',
+                    label: 'Ready',
+                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                },
                 {
                     key: 'delivered',
                     label: 'Delivered',
-                    status: ORDER_STATUS.DELIVERED,
+                    completedBy: ORDER_STATUS.DELIVERED,
                 },
             ]
 
-            // Build status → earliest timestamp lookup from stageHistory
-            const stageTimestampMap = {}
-            for (const entry of order.stageHistory || []) {
-                if (!stageTimestampMap[entry.status]) {
-                    stageTimestampMap[entry.status] = entry.updatedAt
-                }
-            }
-            stageTimestampMap[ORDER_STATUS.PENDING] =
-                stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-
             const pipeline = PIPELINE.map((step) => {
-                const timestamp = stageTimestampMap[step.status] || null
+                const completedByStatuses = Array.isArray(step.completedBy)
+                    ? step.completedBy
+                    : [step.completedBy]
+
+                const matchingEntry = order.stageHistory?.find((h) =>
+                    completedByStatuses.includes(h.status),
+                )
+
                 return {
                     key: step.key,
                     label: step.label,
-                    completed: !!timestamp,
-                    timestamp: timestamp || null,
+                    completed: !!matchingEntry,
+                    timestamp: matchingEntry?.updatedAt || null,
                 }
             })
 
-            // Per-item granular audit trail
             const itemTimeline = []
             for (const item of order.items || []) {
                 for (const log of item.actionLog || []) {
                     itemTimeline.push({
                         itemId: item._id,
                         itemType: item.type,
+                        tagId: item.tagId,
                         action: log.action,
                         note: log.note || '',
                         timestamp: log.timestamp,
@@ -1584,9 +1715,16 @@ class SortAndPretreatService extends BaseService {
             )
 
             const trackingStatus =
-                order.stage.status === ORDER_STATUS.DELIVERED
+                order.dispatchDetails?.delivery?.status ===
+                DELIVERY_STATUS.DELIVERED
                     ? 'completed'
-                    : 'in_progress'
+                    : order.dispatchDetails?.delivery?.status ===
+                        DELIVERY_STATUS.FAILED
+                      ? 'delivery_failed'
+                      : order.dispatchDetails?.pickup?.status ===
+                          PICKUP_STATUS.FAILED
+                        ? 'pickup_failed'
+                        : 'in_progress'
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -1594,14 +1732,14 @@ class SortAndPretreatService extends BaseService {
                         _id: order._id,
                         oscNumber: order.oscNumber,
                         fullName: order.fullName,
-                        phoneNumber: order.phoneNumber,
                         serviceType: order.serviceType,
                         serviceTier: order.serviceTier,
                         amount: order.amount,
                         stage: order.stage,
                         stationStatus: order.stationStatus,
                         trackingStatus,
-                        items: order.items,
+                        qcDetails: order.qcDetails,
+                        dispatchDetails: order.dispatchDetails,
                         createdAt: order.createdAt,
                     },
                     pipeline,
