@@ -9,6 +9,8 @@ const {
     ROLE,
     WASH_DURATION_MINUTES,
     NOTIFICATION_TYPE,
+    DELIVERY_STATUS,
+    PICKUP_STATUS,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')

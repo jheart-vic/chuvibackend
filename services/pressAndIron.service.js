@@ -6,6 +6,8 @@ const {
     STATION_STATUS,
     ACTIVITY_TYPE,
     ROLE,
+    DELIVERY_STATUS,
+    PICKUP_STATUS,
 } = require('../util/constants')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')

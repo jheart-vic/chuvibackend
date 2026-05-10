@@ -13,6 +13,8 @@ const {
     ACTIVITY_TYPE,
     ROLE,
     NOTIFICATION_TYPE,
+    DELIVERY_STATUS,
+    PICKUP_STATUS,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const { buildStageUpdate } = require('../util/helper')

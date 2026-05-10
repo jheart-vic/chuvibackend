@@ -7,6 +7,8 @@ const {
     ACTIVITY_TYPE,
     ROLE,
     NOTIFICATION_TYPE,
+    DELIVERY_STATUS,
+    PICKUP_STATUS,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
