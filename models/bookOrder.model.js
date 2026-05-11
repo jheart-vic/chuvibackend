@@ -161,7 +161,7 @@ const bookOrderSchema = new mongoose.Schema(
         fullName: { type: String, required: true },
         phoneNumber: { type: String, required: true },
         pickupAddress: { type: String },
-        // deliveryAddress: { type: String, required: true },
+        deliveryAddress: { type: String },
         pickupDate: { type: Date },
         deliveryDate: { type: Date },
         isVerified: { type: Boolean, default: false },
