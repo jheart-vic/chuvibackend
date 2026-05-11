@@ -31,6 +31,7 @@ const router = require("express").Router();
  *               - title
  *               - description
  *               - duration
+ *               - paystackPlanCode
  *               - itemPerMonth
  *               - price
  *               - features
@@ -44,6 +45,9 @@ const router = require("express").Router();
  *               duration:
  *                 type: string
  *                 example: monthly
+ *               paystackPlanCode:
+ *                 type: string
+ *                 example: PLN_dzkt60m83znaydt
  *               itemPerMonth:
  *                 type: integer
  *                 example: 30
