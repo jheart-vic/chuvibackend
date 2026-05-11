@@ -59,6 +59,9 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *               pickupAddress:
  *                 type: string
  *                 example: 12 Allen Avenue, Ikeja
+ *               deliveryAddress:
+ *                 type: string
+ *                 example: 12 Allen Avenue, Ikeja
  *               pickupDate:
  *                 type: string
  *                 format: date
@@ -126,6 +129,9 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                       type: string
  *                       example: "+1234567890"
  *                     pickupAddress:
+ *                       type: string
+ *                       example: "123 Main Street"
+ *                     deliveryAddress:
  *                       type: string
  *                       example: "123 Main Street"
  *                     pickupDate:
@@ -298,6 +304,9 @@ router.get(ROUTE_GET_PENDING_ORDERS, [intakeUserAuth], (req, res) => {
  *                       type: string
  *                       example: "+1234567890"
  *                     pickupAddress:
+ *                       type: string
+ *                       example: "123 Main Street"
+ *                     deliveryAddress:
  *                       type: string
  *                       example: "123 Main Street"
  *                     pickupDate:
@@ -1568,6 +1577,7 @@ router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
  *                         fullName:       { type: string, example: "Jude Victor" }
  *                         phoneNumber:    { type: string, example: "08012345678" }
  *                         pickupAddress:  { type: string, example: "12 Lagos Street, Yaba" }
+ *                         deliveryAddress:  { type: string, example: "12 Lagos Street, Yaba" }
  *                         serviceType:    { type: string, example: "wash-and-iron" }
  *                         serviceTier:    { type: string, example: "standard" }
  *                         amount:         { type: number, example: 4500 }

@@ -51,6 +51,10 @@ const {
  *                 type: string
  *                 example: 12 Allen Avenue, Ikeja
  *                 description: Required if isPickupAndDelivery is true
+ *               deliveryAddress:
+ *                 type: string
+ *                 example: 12 Allen Avenue, Ikeja
+ *                 description: Required if isPickupAndDelivery is true
  *               pickupDate:
  *                 type: string
  *                 format: date
@@ -130,6 +134,9 @@ const {
  *                       type: string
  *                       example: "+2348151128383"
  *                     pickupAddress:
+ *                       type: string
+ *                       example: "12 Allen Avenue, Ikeja"
+ *                     deliveryAddress:
  *                       type: string
  *                       example: "12 Allen Avenue, Ikeja"
  *                     pickupDate:
@@ -497,6 +504,9 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *                           pickupAddress:
  *                             type: string
  *                             example: "123 Main Street"
+ *                           deliveryAddress:
+ *                             type: string
+ *                             example: "123 Main Street"
  *                           pickupDate:
  *                             type: string
  *                             format: date
@@ -608,6 +618,9 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  *                       type: string
  *                       example: "+1234567890"
  *                     pickupAddress:
+ *                       type: string
+ *                       example: "123 Main Street"
+ *                     deliveryAddress:
  *                       type: string
  *                       example: "123 Main Street"
  *                     pickupDate:
