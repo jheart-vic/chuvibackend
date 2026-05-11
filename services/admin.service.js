@@ -1323,20 +1323,14 @@ class AdminService extends BaseService {
             const search = req.query.search
 
             if (!search || !search.trim()) {
-                return BaseService({ error: 'Search query is required' })
+                return BaseService.sendFailedResponse({
+                    error: 'Search query is required',
+                })
             }
 
             const keyword = search.trim()
 
-            // Find matching users
             const users = await UserModel.find({
-                return BaseService.sendFailedResponse({error: "Search query is required"});
-              }
-            
-              const keyword = search.trim();
-            
-              // Find matching users
-              const users = await UserModel.find({
                 $or: [
                     { fullName: { $regex: keyword, $options: 'i' } },
                     { phoneNumber: { $regex: keyword, $options: 'i' } },
@@ -1349,7 +1343,6 @@ class AdminService extends BaseService {
 
             const userIds = users.map((user) => user._id)
 
-            // Find wallets belonging to matched users
             const wallets = await WalletModel.find({
                 userId: { $in: userIds },
             }).populate('userId', 'fullName phoneNumber')
