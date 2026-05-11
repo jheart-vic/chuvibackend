@@ -169,7 +169,8 @@ exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/:id/add-fund'
 exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/:id/deduct-fund'
 exports.ROUTE_ADMIN_AUDIT_LITE = '/audit-lite'
 exports.ROUTE_SEARCH_WALLET = '/search-wallet'
-
+exports.ROUTE_SEARCH_ORDERS = '/search-orders'
+exports.ROUTE_SEARCH_ORDER_DETAIL = '/search-orders/:id'
 
 
 // book orders
