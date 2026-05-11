@@ -1330,6 +1330,13 @@ class AdminService extends BaseService {
 
             // Find matching users
             const users = await UserModel.find({
+                return BaseService.sendFailedResponse({error: "Search query is required"});
+              }
+            
+              const keyword = search.trim();
+            
+              // Find matching users
+              const users = await UserModel.find({
                 $or: [
                     { fullName: { $regex: keyword, $options: 'i' } },
                     { phoneNumber: { $regex: keyword, $options: 'i' } },
