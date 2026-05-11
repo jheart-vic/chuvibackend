@@ -4,6 +4,7 @@ const NotificationModel = require('../models/notification.model')
 const PaymentModel = require('../models/payment.model')
 const SubscriptionModel = require('../models/subscription.model')
 const UpdateFundModel = require('../models/updateFund.model')
+const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
 const {
@@ -1316,6 +1317,44 @@ class AdminService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to fetch audit log',
+            })
+        }
+    }
+
+    async searchWallet(req){
+        try {
+            const search = req.query.search;
+
+            if (!search || !search.trim()) {
+                return BaseService({error: "Search query is required"});
+              }
+            
+              const keyword = search.trim();
+            
+              // Find matching users
+              const users = await UserModel.find({
+                $or: [
+                  { fullName: { $regex: keyword, $options: "i" } },
+                  { phoneNumber: { $regex: keyword, $options: "i" } },
+                ],
+              }).select("_id fullName phoneNumber");
+            
+              if (!users.length) {
+                return BaseService.sendSuccessResponse({message: []});
+              }
+            
+              const userIds = users.map((user) => user._id);
+            
+              // Find wallets belonging to matched users
+              const wallets = await WalletModel.find({
+                userId: { $in: userIds },
+              }).populate("userId", "fullName phoneNumber");
+            
+              return BaseService.sendSuccessResponse({message: wallets});
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to search wallet',
             })
         }
     }
