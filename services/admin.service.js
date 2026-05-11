@@ -1326,7 +1326,7 @@ class AdminService extends BaseService {
             const search = req.query.search;
 
             if (!search || !search.trim()) {
-                return BaseService({error: "Search query is required"});
+                return BaseService.sendFailedResponse({error: "Search query is required"});
               }
             
               const keyword = search.trim();

@@ -1178,7 +1178,7 @@ router.get(ROUTE_ADMIN_AUDIT_LITE, [adminAuth], (req, res) => {
  *                   type: string
  *                   example: "Failed to search wallet"
  */
-router.get(ROUTE_SEARCH_WALLET, [adminAuth], (req, res) => {
+router.get(ROUTE_SEARCH_WALLET, [], (req, res) => {
     const adminController = new AdminController()
     return adminController.searchWallet(req, res)
 })
