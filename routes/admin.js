@@ -14,7 +14,8 @@ const {
     ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION,
     ROUTE_ADMIN_WALLET_ID_ADD_FUND,
     ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND,
-    ROUTE_ADMIN_AUDIT_LITE
+    ROUTE_ADMIN_AUDIT_LITE,
+    ROUTE_SEARCH_WALLET
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -159,6 +160,7 @@ const router = require("express").Router();
  *       500:
  *         description: Server error
  */
+
 router.get(ROUTE_ADMIN_DASHBOARD_STATS, adminAuth, (req, res)=>{
     const adminController = new AdminController();
     return adminController.getDashboardStats(req, res);
@@ -1086,6 +1088,99 @@ router.put(ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND, adminAuth, (req, res)=>{
 router.get(ROUTE_ADMIN_AUDIT_LITE, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAuditLite(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/search-wallet:
+ *   get:
+ *     summary: Search customer wallets
+ *     tags:
+ *       - Admin
+ *     description: Search for customer wallets using customer full name or phone number.
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Customer full name or phone number
+ *         example: john
+ *     responses:
+ *       200:
+ *         description: Wallet search completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                         example: "6820d4a5b1e7b7c1a1234567"
+ *                       userId:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             example: "6820d4a5b1e7b7c1a7654321"
+ *                           fullName:
+ *                             type: string
+ *                             example: "John Doe"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "08012345678"
+ *                       balance:
+ *                         type: number
+ *                         example: 25000
+ *                       currency:
+ *                         type: string
+ *                         example: "NGN"
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-05-11T10:00:00.000Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-05-11T12:00:00.000Z"
+ *       400:
+ *         description: Search query is required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Search query is required"
+ *       500:
+ *         description: Failed to search wallet
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to search wallet"
+ */
+router.get(ROUTE_SEARCH_WALLET, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.searchWallet(req, res)
 })
 
 
