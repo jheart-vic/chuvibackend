@@ -691,6 +691,7 @@ class AdminService extends BaseService {
                     page: req.query.page,
                     limit: req.query.limit,
                     sort: { createdAt: -1 },
+                    populate: [{ path: 'userId' }],
                 },
             )
             return BaseService.sendSuccessResponse({ message: result })
