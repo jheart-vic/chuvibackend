@@ -18,6 +18,14 @@ class AdminController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async updateOrderDetails(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.updateOrderDetails(req, res)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async getOrderDetails(req, res) {
         const adminService = new AdminService()
         const result = await adminService.getOrderDetails(req, res)

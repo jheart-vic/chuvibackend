@@ -417,7 +417,7 @@ class IntakeUserService extends BaseService {
             }
 
             const validateRule = {
-                tagState: 'string|required',
+                tagState: 'array|required',
                 tagColor: 'string|required',
                 tagStatus: 'string|required',
                 tagId: 'string|required',
@@ -515,7 +515,7 @@ class IntakeUserService extends BaseService {
                 { 'items._id': itemId },
                 {
                     $set: {
-                        'items.$.tagState': '',
+                        'items.$.tagState': [],
                         'items.$.tagColor': '',
                         'items.$.tagStatus': '',
                         'items.$.tagId': '',
