@@ -1,4 +1,5 @@
 const ActivityModel = require('../models/activity.model')
+const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
 const PaymentModel = require('../models/payment.model')
@@ -683,6 +684,31 @@ class AdminService extends BaseService {
             })
         }
     }
+    async updateOrderDetails(req) {
+        try {
+            const updateData = req.body;
+            
+            // Find the single configuration document
+            const adminOrderDetail = await AdminOrderDetailsModel.findOne();
+    
+            if (!adminOrderDetail) {
+                return BaseService.sendFailedResponse({ error: 'Order details configuration not found.' });
+            }
+    
+            // Dynamically update the document fields
+            await AdminOrderDetailsModel.findOneAndUpdate(
+                { _id: adminOrderDetail._id },
+                { $set: updateData },
+                { new: true } // Returns the modified document
+            );
+    
+            return BaseService.sendSuccessResponse({ message: 'Setting has been update' });
+        } catch (error) {
+            console.log(error);
+            return BaseService.sendFailedResponse({ error: 'Something went wrong. Please try again later.' });
+        }
+    }
+    
     async getPaymentVerificationQueue(req, res) {
         try {
             const result = await paginate(

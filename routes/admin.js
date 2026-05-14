@@ -295,6 +295,11 @@ router.get(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
     return adminController.orderManagement(req, res);
 });
 
+router.put(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.updateOrderDetails(req, res);
+});
+
 /**
  * @swagger
  * /admin/order/{orderId}:

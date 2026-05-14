@@ -574,8 +574,10 @@ router.post(ROUTE_PROCEED_TO_TAG_ID, [intakeUserAuth], (req, res) => {
  *               - tagId
  *             properties:
  *               tagState:
- *                 type: string
- *                 example: "cleaned"
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   example: ["STAINED", "DELICATE", "PRETREAT", "DAMAGED"]
  *               tagColor:
  *                 type: string
  *                 example: "blue"

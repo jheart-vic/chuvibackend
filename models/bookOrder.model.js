@@ -28,7 +28,7 @@ const ItemSchema = new mongoose.Schema(
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
         tagId: { type: String },
-        tagState: {
+        tagState: [{
             type: String,
             enum: [
                 TAG_STATE.DAMAGED,
@@ -36,7 +36,8 @@ const ItemSchema = new mongoose.Schema(
                 TAG_STATE.PRETREAT,
                 TAG_STATE.STAINED,
             ],
-        },
+            default: [],
+        }],
         tagColor: {
             type: String,
             enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE],
