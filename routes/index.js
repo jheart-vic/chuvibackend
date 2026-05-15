@@ -15,6 +15,7 @@ const qcUserRouter = require('./qc')
 const notificationRouter = require('./notification')
 const riderRouter = require('./rider')
 const seedRouter = require('./seed')
+const searchRouter = require('./search')
 
 
 router.use('/admin', adminRouter)
@@ -30,6 +31,8 @@ router.use('/wash-dry', washDryRouter)
 router.use('/sort-pretreat', sortPretreatRouter)
 router.use('/rider', riderRouter)
 router.use('/seeds', seedRouter)
+router.use('/seeds', seedRouter)
+router.use('/search', searchRouter)
 router.use('/qc-user', qcUserRouter)
 router.use('/notifications', notificationRouter)
 

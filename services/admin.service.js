@@ -853,11 +853,8 @@ class AdminService extends BaseService {
             switch (type) {
                 case 'all':
                     filter = {
-                        $or: [
-                          { isPickUp: true },
-                          { isDelivery: true }
-                        ]
-                      }
+                        $or: [{ isPickUp: true }, { isDelivery: true }],
+                    }
                     break
                 case 'delivery':
                     filter = {
@@ -1347,36 +1344,36 @@ class AdminService extends BaseService {
         }
     }
 
-    async searchWallet(req){
+    async searchWallet(req) {
         try {
-            const search = req.query.search;
+            const search = req.query.search
 
             if (!search || !search.trim()) {
-                return BaseService.sendFailedResponse({error: "Search query is required"});
-              }
-            
-              const keyword = search.trim();
-            
-              // Find matching users
-              const users = await UserModel.find({
+                return BaseService.sendFailedResponse({
+                    error: 'Search query is required',
+                })
+            }
+
+            const keyword = search.trim()
+
+            const users = await UserModel.find({
                 $or: [
-                  { fullName: { $regex: keyword, $options: "i" } },
-                  { phoneNumber: { $regex: keyword, $options: "i" } },
+                    { fullName: { $regex: keyword, $options: 'i' } },
+                    { phoneNumber: { $regex: keyword, $options: 'i' } },
                 ],
-              }).select("_id fullName phoneNumber");
-            
-              if (!users.length) {
-                return BaseService.sendSuccessResponse({message: []});
-              }
-            
-              const userIds = users.map((user) => user._id);
-            
-              // Find wallets belonging to matched users
-              const wallets = await WalletModel.find({
+            }).select('_id fullName phoneNumber')
+
+            if (!users.length) {
+                return BaseService.sendSuccessResponse({ message: [] })
+            }
+
+            const userIds = users.map((user) => user._id)
+
+            const wallets = await WalletModel.find({
                 userId: { $in: userIds },
-              }).populate("userId", "fullName phoneNumber");
-            
-              return BaseService.sendSuccessResponse({message: wallets});
+            }).populate('userId', 'fullName phoneNumber')
+
+            return BaseService.sendSuccessResponse({ message: wallets })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
@@ -1384,6 +1381,7 @@ class AdminService extends BaseService {
             })
         }
     }
+
 }
 
 module.exports = AdminService
