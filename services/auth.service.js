@@ -137,7 +137,7 @@ class AuthService extends BaseService {
       return BaseService.sendFailedResponse({ error });
     }
   }
-  async loginUser(req) {
+  async loginUser(req, res) {
     try {
       const post = req.body;
       const { email, password, userType } = post;
@@ -164,16 +164,31 @@ class AuthService extends BaseService {
         return BaseService.sendFailedResponse({ error: error });
       }
 
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+      });
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+      });
+
       return BaseService.sendSuccessResponse({
-        message: accessToken,
+        // message: accessToken,
         user,
-        refreshToken,
+        // refreshToken,
       });
     } catch (error) {
       return BaseService.sendFailedResponse({ error: error.message });
     }
   }
-  async googleSignup(req) {
+  async googleSignup(req, res) {
     try {
       const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
       const client = new OAuth2Client(GOOGLE_CLIENT_ID);
@@ -249,10 +264,25 @@ class AuthService extends BaseService {
           process.env.REFRESH_TOKEN_SECRET || ""
         );
 
+        res.cookie('accessToken', accessToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 60 * 60 * 1000,
+          path: '/'
+      });
+        res.cookie('refreshToken', refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 60 * 60 * 1000,
+          path: '/'
+      });
+
         return BaseService.sendSuccessResponse({
-          message: accessToken,
-          user: userWithSub,
-          refreshToken,
+          message: user,
+          // user: userWithSub,
+          // refreshToken,
         });
       }
 
@@ -291,10 +321,26 @@ class AuthService extends BaseService {
         html: emailHtml,
       });
 
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 1000,
+      path: '/'
+  });
+
       return BaseService.sendSuccessResponse({
-        message: accessToken,
-        user: newUser,
-        refreshToken,
+        message: newUser,
+        // user: newUser,
+        // refreshToken,
       });
     } catch (error) {
       console.error(error);
@@ -456,7 +502,7 @@ class AuthService extends BaseService {
       });
     }
   }
-  async verifyOTP(req) {
+  async verifyOTP(req, res) {
     try {
       const post = req.body;
 
@@ -519,17 +565,33 @@ class AuthService extends BaseService {
         html: emailHtml,
       });
 
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 1000,
+      path: '/'
+  });
+
       return BaseService.sendSuccessResponse({
-        message: accessToken,
-        user: userExists,
-        refreshToken,
+        message: userExists,
+        // user: userExists,
+        // refreshToken,
       });
     } catch (error) {
       console.log(error);
       return BaseService.sendFailedResponse({ error });
     }
   }
-  async resendOtp(req) {
+  async resendOtp(req, res) {
     try {
       const { email, userType } = req.body;
 
@@ -603,10 +665,26 @@ class AuthService extends BaseService {
 
       userExists.password = undefined;
 
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 1000,
+      path: '/'
+  });
+
       return BaseService.sendSuccessResponse({
-        message: accessToken,
-        user: userExists,
-        refreshToken,
+        message: userExists,
+        // user: userExists,
+        // refreshToken,
       });
     } catch (error) {
       console.log(error, "the error");
@@ -843,8 +921,16 @@ class AuthService extends BaseService {
       // Optionally: set as Authorization header or return in body
       res.header("Authorization", `Bearer ${newAccessToken}`);
 
+      res.cookie('accessToken', newAccessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+    });
+
       return BaseService.sendSuccessResponse({
-        message: newAccessToken,
+        message: 'Request for new access token successful',
       });
     } catch (err) {
       console.error("Refresh Token Error:", err);
@@ -911,8 +997,26 @@ class AuthService extends BaseService {
         return BaseService.sendFailedResponse({ error: error });
       }
 
+
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000,
+        path: '/'
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 1000,
+      path: '/'
+  });
+
+
       return BaseService.sendSuccessResponse({
-        message: accessToken,
+        message: user,
         user,
         refreshToken,
       });
