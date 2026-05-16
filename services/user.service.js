@@ -232,11 +232,11 @@ class UserService extends BaseService {
 
     async addAddress(req) {
         try {
-            const { label, address } = req.body
+            const { label, address, landmark } = req.body
 
-            if (!label || !address) {
+            if (!label || !address||!landmark) {
                 return BaseService.sendFailedResponse({
-                    error: 'Label and address are required',
+                    error: 'Label, address, and landmark are required',
                 })
             }
 
@@ -248,7 +248,7 @@ class UserService extends BaseService {
             }
 
             const exists = user.addresses.some(
-                (addr) => addr.label === label && addr.address === address,
+                (addr) => addr.label === label && addr.address === address && addr.landmark === landmark,
             )
             if (exists) {
                 return BaseService.sendFailedResponse({
@@ -259,7 +259,7 @@ class UserService extends BaseService {
             // ✅ use $push instead of push + save
             const updatedUser = await UserModel.findByIdAndUpdate(
                 req.user.id,
-                { $push: { addresses: { label, address } } },
+                { $push: { addresses: { label, address, landmark } } },
                 { new: true },
             )
 
@@ -278,9 +278,9 @@ class UserService extends BaseService {
     async updateAddress(req) {
         try {
             const { addressId } = req.params
-            const { label, address } = req.body
+            const { label, address, landmark } = req.body
 
-            if (label === undefined && address === undefined) {
+            if (label === undefined && address === undefined && landmark === undefined) {
                 return BaseService.sendFailedResponse({
                     error: 'Nothing to update',
                 })
@@ -305,6 +305,8 @@ class UserService extends BaseService {
             if (label !== undefined) updateFields['addresses.$.label'] = label
             if (address !== undefined)
                 updateFields['addresses.$.address'] = address
+            if (landmark !== undefined)
+                updateFields['addresses.$.landmark'] = landmark
 
             const updatedUser = await UserModel.findOneAndUpdate(
                 { _id: req.user.id, 'addresses._id': addressId },
