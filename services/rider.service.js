@@ -259,7 +259,7 @@ class RiderService extends BaseService {
             const query = {
                 isDelivery: true,
                 'dispatchDetails.pickup.rider': riderId,
-                'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
+                'dispatchDetails.pickup.status': PICKUP_STATUS.PICKUP_IN_PROGRESS,
             }
 
             const result = await paginate(BookOrderModel, query, {
@@ -340,7 +340,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP
+            order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKUP_IN_PROGRESS
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
             await order.save()
@@ -348,8 +348,8 @@ class RiderService extends BaseService {
             if (order.userId?._id) {
                 await createNotification({
                     userId: order.userId._id,
-                    title: 'Your order has been delivered',
-                    body: `Order ${order.oscNumber} has been delivered successfully.`,
+                    title: 'Your order has been picked up',
+                    body: `Order ${order.oscNumber} has been picked up successfully.`,
                     subBody: `Order ID: ${order.oscNumber}`,
                     type: NOTIFICATION_TYPE.PICKUP_STARTED,
                 })
@@ -368,6 +368,93 @@ class RiderService extends BaseService {
             })
         } catch (error) {
             console.error('Error in startPickup:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    async markAsPickedUp(req) {
+        try {
+            const orderId = req.params.id
+            const { phoneNumber } = req.body
+            const userId = req.user.id
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!phoneNumber)
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number is required',
+                })
+
+            const order = await BookOrderModel.findById(orderId).populate(
+                'userId',
+                'phoneNumber',
+            )
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            if (!order.isPickUp)
+                return BaseService.sendFailedResponse({
+                    error: 'This order does not require pickup',
+                })
+
+            if (order.dispatchDetails.pickup.rider?.toString() !== userId)
+                return BaseService.sendFailedResponse({
+                    error: 'You are not assigned to this pickup',
+                })
+
+            if (
+                order.dispatchDetails.pickup.status !==
+                PICKUP_STATUS.PICKUP_IN_PROGRESS
+            )
+                return BaseService.sendFailedResponse({
+                    error: 'Pickup must be in progress before it can be marked as picked up',
+                })
+
+            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            if (!customerPhone)
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number not found on order',
+                })
+
+            if (customerPhone !== phoneNumber)
+                return BaseService.sendFailedResponse({
+                    error: "Provided phone number does not match customer's phone number",
+                })
+
+            order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP
+            order.dispatchDetails.pickup.updatedAt = new Date()
+            order.dispatchDetails.pickup.isVerified = true
+            await order.save()
+
+            if (order.userId?._id) {
+                await createNotification({
+                    userId: order.userId._id,
+                    title: 'Order Picked Up',
+                    body: `Your order ${order.oscNumber} has been picked up and is on its way to us.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.PICKUP_STARTED,
+                })
+            }
+
+            await createNotification({
+                userId: userId,
+                title: 'Pickup Completed',
+                body: `Pickup for order ${order.oscNumber} has been marked as picked up.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.PICKUP_STARTED,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: 'Order marked as picked up successfully',
+            })
+        } catch (error) {
+            console.error('Error in markAsPickedUp:', error)
             return BaseService.sendFailedResponse({
                 error: 'Something went wrong. Please try again later',
             })
