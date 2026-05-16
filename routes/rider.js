@@ -1344,7 +1344,7 @@ router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
  */
 router.put(ROUTE_RIDER_MARK_PICKUP_ID, riderAuth, (req, res) => {
     const riderController = new RiderController()
-    return riderController.markPickupAsFailed(req, res)
+    return riderController.markAsPickedUp(req, res)
 })
 /**
  * @swagger
