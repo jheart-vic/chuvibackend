@@ -13,6 +13,7 @@ const {
     ROUTE_RIDER_ASSIGNED_PICKUPS,
     ROUTE_RIDER_MARK_PICKUP_FAILED_ID,
     ROUTE_RIDER_START_PICKUP_ID,
+    ROUTE_RIDER_MARK_PICKUP_ID,
 } = require('../util/page-route')
 
 const router = require('express').Router()
@@ -1265,6 +1266,86 @@ router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
     return riderController.startPickup(req, res)
 })
 
+/**
+ * @swagger
+ * /rider/mark-pickup/{id}:
+ *   put:
+ *     summary: Mark an order as pickedup
+ *     description: Marks the pickup as picked-up.
+ *     tags:
+ *       - Rider
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *         description: The order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "08123456789"
+ *                 description: Customer phone number for verification
+ *     responses:
+ *       200:
+ *         description: Pickup marked as picked up successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Pickup marked as picked up successfully"
+ *       400:
+ *         description: Validation or business logic error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               examples:
+ *                 missingOrderId:
+ *                   summary: Missing order ID
+ *                   value:
+ *                     error: "Order ID is required"
+ *                 missingPhone:
+ *                   summary: Missing phone number
+ *                   value:
+ *                     error: "Customer phone number is required"
+ *                 notPending:
+ *                   summary: Pickup not in pending state
+ *                   value:
+ *                     error: "Only pending pickups can be marked as failed"
+ *                 wrongRider:
+ *                   summary: Unauthorized rider
+ *                   value:
+ *                     error: "You are not assigned to this pickup"
+ *                 phoneMismatch:
+ *                   summary: Phone number mismatch
+ *                   value:
+ *                     error: "Provided phone number does not match customer's phone number"
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_RIDER_MARK_PICKUP_ID, riderAuth, (req, res) => {
+    const riderController = new RiderController()
+    return riderController.markPickupAsFailed(req, res)
+})
 /**
  * @swagger
  * /rider/mark-pickup-failed/{id}:
