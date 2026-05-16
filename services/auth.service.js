@@ -1120,13 +1120,12 @@ class AuthService extends BaseService {
         return { success: true, user, accessToken, refreshToken }
     }
 
-    async logout(req, res) {
-        res.clearCookie('accessToken', { httpOnly: true, sameSite: 'none' })
-        res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'none' })
-        return res
-            .status(200)
-            .json({ success: true, message: 'Logged out successfully' })
-    }
+  async logout(req, res) {
+      res.clearCookie('accessToken', { httpOnly: true, sameSite: 'none', secure: true })
+      res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'none', secure: true })
+
+      return BaseService.sendSuccessResponse({ message: 'Logged out successfully' })
+  }
 }
 
 module.exports = AuthService
