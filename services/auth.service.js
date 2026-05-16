@@ -167,14 +167,14 @@ class AuthService extends BaseService {
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
       });
       res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
       });
@@ -267,14 +267,14 @@ class AuthService extends BaseService {
         res.cookie('accessToken', accessToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          sameSite: 'none',
           maxAge: 60 * 60 * 1000,
           path: '/'
       });
         res.cookie('refreshToken', refreshToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          sameSite: 'none',
           maxAge: 60 * 60 * 1000,
           path: '/'
       });
@@ -324,7 +324,7 @@ class AuthService extends BaseService {
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
     });
@@ -332,7 +332,7 @@ class AuthService extends BaseService {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'none',
       maxAge: 60 * 60 * 1000,
       path: '/'
   });
@@ -568,7 +568,7 @@ class AuthService extends BaseService {
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
     });
@@ -576,7 +576,7 @@ class AuthService extends BaseService {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'none',
       maxAge: 60 * 60 * 1000,
       path: '/'
   });
@@ -668,7 +668,7 @@ class AuthService extends BaseService {
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
     });
@@ -676,7 +676,7 @@ class AuthService extends BaseService {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'none',
       maxAge: 60 * 60 * 1000,
       path: '/'
   });
@@ -924,7 +924,7 @@ class AuthService extends BaseService {
       res.cookie('accessToken', newAccessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
     });
@@ -1001,7 +1001,7 @@ class AuthService extends BaseService {
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 60 * 60 * 1000,
         path: '/'
     });
@@ -1009,7 +1009,7 @@ class AuthService extends BaseService {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'none',
       maxAge: 60 * 60 * 1000,
       path: '/'
   });
