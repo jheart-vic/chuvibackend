@@ -80,6 +80,14 @@ class RiderController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async markAsPickedUp(req, res) {
+        const riderService = new RiderService()
+        const result = await riderService.markAsPickedUp(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async getRiderHistory(req, res) {
         const riderService = new RiderService()
         const result = await riderService.getHistoryList(req)

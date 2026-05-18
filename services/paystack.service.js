@@ -119,11 +119,11 @@ class PaystackService extends BaseService {
             // ...(plan && {paystackSubscriptionCode: plan.paystackPlanCode}),
             ...(subExists && {subscriptionId: subExists?._id}),
           },
-          // callback_url: 'https://yourapp.com/pay/callback' // optional
+          callback_url: "https://www.chuvilaundry.com/user/payment/callback",
         }
       );
 
-     
+
 
       return BaseService.sendSuccessResponse({ message: response.data });
     } catch (error) {
@@ -142,7 +142,7 @@ class PaystackService extends BaseService {
         last_name: user.lastName,
       }
     );
-  
+
     return res.data.data.customer_code;
   }
   async createSubscription(customerCode, planCode) {
@@ -153,7 +153,7 @@ class PaystackService extends BaseService {
         plan: planCode,
       }
     );
-  
+
     return res.data.data;
   }
 
@@ -166,8 +166,8 @@ class PaystackService extends BaseService {
       },
     );
   }
-  
-  
+
+
 }
 
 module.exports = PaystackService;

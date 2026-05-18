@@ -47,7 +47,8 @@ const {
   ROUTE_SORT_AND_PRETREAT_VERIFY_OTP,
   ROUTE_SORT_AND_PRETREAT_RESEND_OTP,
   ROUTE_SORT_AND_PRETREAT_VERIFY_EMAIL,
-  ROUTE_SORT_AND_PRETREAT_REFRESH_TOKEN
+  ROUTE_SORT_AND_PRETREAT_REFRESH_TOKEN,
+  ROUTE_LOGOUT
 } = require("../util/page-route");
 
 const router = require("express").Router();
@@ -316,6 +317,82 @@ router.post(ROUTE_APPLE_SIGNUP, (req, res) => {
 router.post(ROUTE_LOGIN, (req, res) => {
   const authController = new AuthController();
   return authController.loginUser(req, res);
+});
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout a user
+ *     tags: [AuthUser]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - userType
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *               userType:
+ *                 type: string
+ *                 example: user
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Access token (JWT)
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 user:
+ *                   type: object
+ *                   description: Logged in user details
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "612345abcdef67890"
+ *                     email:
+ *                       type: string
+ *                       example: user@example.com
+ *                     userType:
+ *                       type: string
+ *                       example: admin
+ *                     name:
+ *                       type: string
+ *                       example: John Doe
+ *                 refreshToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: Invalid email or password
+ */
+router.post(ROUTE_LOGOUT, (req, res) => {
+  const authController = new AuthController();
+  return authController.logOutUser(req, res);
 });
 /**
  * @swagger

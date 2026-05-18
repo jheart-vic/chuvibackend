@@ -30,6 +30,15 @@ class AuthController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
+  async logOutUser(req, res) {
+    const service = new AuthService();
+    const result = await service.logout(req, res);
+
+    return result.success
+      ? BaseController.sendSuccessResponse(res, result.data)
+      : BaseController.sendFailedResponse(res, result.data);
+  }
+
   async googleSignup(req, res) {
     const service = new AuthService();
     const result = await service.googleSignup(req, res);

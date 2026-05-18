@@ -29,6 +29,7 @@ const PICKUP_STATUS = {
     PICKED_UP: 'picked-up',
     FAILED: 'failed',
     SCHEDULED: 'scheduled',
+    PICKUP_IN_PROGRESS: 'pickup-in-progress',
 }
 
 const DELIVERY_STATUS = {
