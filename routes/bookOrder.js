@@ -79,11 +79,11 @@ const {
  *                 enum: [standard, premium]
  *               billingType:
  *                 type: string
- *                 enum: [pay-per-item, pay-from-subscription]
+ *                 enum: [pay-per-item, pay-from-subscription, pay-from-wallet]
  *                 example: pay-per-item
  *               deliverySpeed:
  *                 type: string
- *                 enum: [normal, express]
+ *                 enum: [same-day, express, standard]
  *                 example: express
  *               extraNote:
  *                 type: string
@@ -235,84 +235,6 @@ const {
 router.post(ROUTE_CREATE_BOOK_ORDER, [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.postBookOrder(req, res);
-});
-
-/**
- * @swagger
- * /bookOrder/admin-order-details:
- *   get:
- *     summary: Get admin order details
- *     tags:
- *       - BookOrder
- *     responses:
- *       200:
- *         description: Returns an admin order details object
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     _id:
- *                       type: string
- *                       example: 64fa12b8a4b7c91234567890
- *                     serviceType:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["ironing-only", "washing-only", "wash-and-iron"]
- *                     billingType:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["pay-per-item", "pay-from-subscription"]
- *                     serviceTiers:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["student", "standard", "premium", "vip"]
- *                     deliverySpeed:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["standard", "express", "vip"]
- *                     pickupTime:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["10am-12pm", "4pm-6pm"]
- *                     orderItems:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemType:
- *                             type: string
- *                             example: shirt
- *                           price:
- *                             type: number
- *                             example: 500
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: 2026-01-12T10:00:00.000Z
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: 2026-01-12T10:00:00.000Z
- *       404:
- *         description: Admin order details not found
- *       500:
- *         description: Server error
- */
-router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
-  const bookOrderController = new BookOrderController();
-  return bookOrderController.getAdminOrderDetails(req, res);
 });
 
 /**

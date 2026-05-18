@@ -147,6 +147,7 @@ const ORDER_SERVICE_TYPE = {
 const BILLING_TYPE = {
     PAY_PER_ITEM: 'pay-per-item',
     PAY_FROM_SUBSCRIPTION: 'pay-from-subscription',
+    PAY_FROM_WALLET: 'pay-from-wallet'
 }
 
 const SERVICE_TIERS = {
@@ -159,7 +160,7 @@ const SERVICE_TIERS = {
 const DELIVERY_SPEED = {
     STANDARD: 'standard',
     EXPRESS: 'express',
-    VIP: 'vip',
+    // VIP: 'vip',
     SAME_DAY: 'same-day',
 }
 

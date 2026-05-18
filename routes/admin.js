@@ -17,7 +17,13 @@ const {
     ROUTE_ADMIN_AUDIT_LITE,
     ROUTE_SEARCH_WALLET,
     ROUTE_SEARCH_ORDERS,
-    ROUTE_SEARCH_ORDER_DETAIL
+    ROUTE_SEARCH_ORDER_DETAIL,
+    ROUTE_ADMIN_ORDER_DETAILS,
+    ROUTE_ADD_ORDER_ITEM,
+    ROUTE_UPDATE_ORDER_ITEM_ID,
+    ROUTE_GET_ORDER_ITEMS,
+    ROUTE_GET_ORDER_ITEM_ID,
+    ROUTE_DELETE_ORDER_ITEM_ID
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -296,6 +302,97 @@ router.get(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
     const adminController = new AdminController();
     return adminController.orderManagement(req, res);
 });
+
+/**
+ * @swagger
+ * /bookOrder/admin-order-details:
+ *   get:
+ *     summary: Get admin order details
+ *     tags:
+ *       - Admin
+ *     responses:
+ *       200:
+ *         description: Returns an admin order details object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: 64fa12b8a4b7c91234567890
+ *                     serviceType:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["ironing-only", "washing-only", "wash-and-iron"]
+ *                     billingType:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["pay-per-item", "pay-from-subscription"]
+ *                     serviceTiers:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["student", "standard", "premium", "vip"]
+ *                     deliverySpeed:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["standard", "express", "same-day"]
+ *                     pickupTime:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["10am-12pm", "4pm-6pm"]
+ *                     orderItems:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           itemType:
+ *                             type: string
+ *                             example: shirt
+ *                           price:
+ *                             type: number
+ *                             example: 500
+ *                     standardCapacity:
+ *                       type: number
+ *                       example: 400
+ *                     sameDayCapacity:
+ *                       type: number
+ *                       example: 400
+ *                     expressCapacity:
+ *                       type: number
+ *                       example: 400
+ *                     standardDeliveryPeriod:
+ *                       type: number
+ *                       example: 2
+ *                       description: Period in days for the standard delivery to be ready because of too much orders
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *       404:
+ *         description: Admin order details not found
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
+    const bookOrderController = new AdminController();
+    return bookOrderController.getAdminOrderDetails(req, res);
+  });
 
 router.put(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
     const adminController = new AdminController();
@@ -1366,5 +1463,218 @@ router.get(ROUTE_SEARCH_ORDER_DETAIL, [adminAuth], (req, res) => {
     return adminController.getOrderDetail(req, res)
 })
 
+/**
+ * @swagger
+ * /admin/add-order-item:
+ *   post:
+ *     summary: Add an order item
+ *     tags:
+ *       - Admin
+ *     description: Add an order item
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         required: true
+ *         schema:
+ *           type: object
+ *           required:
+ *             - amount
+ *           properties:
+ *             name:
+ *               type: string
+ *               example: Shirt
+ *             price:
+ *               type: number
+ *               example: 400
+ *         description: Details of the item to be added
+ *     responses:
+ *       200:
+ *         description: Item updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order item updated successfully"
+ *       400:
+ *         description: Invalid input (missing or invalid amount/userId)
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_ADD_ORDER_ITEM, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.addItem(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/update-order-item/{id}:
+ *   put:
+ *     summary: Update an order item
+ *     tags:
+ *       - Admin
+ *     description: Update an order item
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique user ID
+ *       - in: body
+ *         name: body
+ *         required: true
+ *         schema:
+ *           type: object
+ *           required:
+ *             - amount
+ *           properties:
+ *             name:
+ *               type: string
+ *               example: Shirt
+ *             price:
+ *               type: number
+ *               example: 400
+ *         description: Amount of the items
+ *     responses:
+ *       200:
+ *         description: Item updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order item updated successfully"
+ *       400:
+ *         description: Invalid input (missing or invalid amount/userId)
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_UPDATE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.updateItem(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/get-order-items:
+ *   get:
+ *     summary: Get all order items
+ *     tags:
+ *       - Admin
+ *     description: Fetch all order items
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved order items
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             example: "64d3c9c0f1b2a8e9d0f12345"
+ *                           name:
+ *                             type: string
+ *                             example: "Shirt"
+ *                           price:
+ *                             type: number
+ *                             example: 400
+ *       400:
+ *         description: Invalid type supplied
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_ORDER_ITEMS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getItems(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/get-order-item/{id}:
+ *   get:
+ *     summary: Get order item
+ *     tags:
+ *       - Admin
+ *     description: Returns order item
+ *     responses:
+ *       200:
+ *         description: Order item fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       example: Shirt
+ *                     price:
+ *                       type: number
+ *                       example: 500
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_ORDER_ITEM_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getItem(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/delete-order-item/{id}:
+ *   delete:
+ *     summary: Delete an order item
+ *     tags:
+ *       - Admin
+ *     description: Delete an order item
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique user ID
+ *     responses:
+ *       200:
+ *         description: Item deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order item deleted successfully"
+ *       400:
+ *         description: Invalid input (missing or invalid amount/userId)
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.delete(ROUTE_DELETE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.deleteItem(req, res)
+})
 
 module.exports = router;

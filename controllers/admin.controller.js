@@ -18,6 +18,13 @@ class AdminController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async getAdminOrderDetails(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.getAdminOrderDetails(req, res)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async updateOrderDetails(req, res) {
         const adminService = new AdminService()
         const result = await adminService.updateOrderDetails(req, res)
@@ -117,6 +124,46 @@ class AdminController extends BaseController {
     async searchWallet(req, res) {
         const adminService = new AdminService()
         const result = await adminService.searchWallet(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async addItem(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.addItem(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async updateItem(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.updateItem(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async getItems(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.getItems(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async getItem(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.getItem(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async deleteItem(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.deleteItem(req)
 
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
