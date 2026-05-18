@@ -2,6 +2,7 @@ const ActivityModel = require('../models/activity.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
+const OrderItemModel = require('../models/orderItem.model')
 const PaymentModel = require('../models/payment.model')
 const SubscriptionModel = require('../models/subscription.model')
 const UpdateFundModel = require('../models/updateFund.model')
@@ -684,6 +685,18 @@ class AdminService extends BaseService {
             })
         }
     }
+    async getAdminOrderDetails(req, res) {
+        try {
+            const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
+
+            return BaseService.sendSuccessResponse({
+                message: adminOrderDetails,
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({ error })
+        }
+    }
     async updateOrderDetails(req) {
         try {
             const updateData = req.body;
@@ -699,7 +712,7 @@ class AdminService extends BaseService {
             await AdminOrderDetailsModel.findOneAndUpdate(
                 { _id: adminOrderDetail._id },
                 { $set: updateData },
-                { new: true } // Returns the modified document
+                { new: true }
             );
     
             return BaseService.sendSuccessResponse({ message: 'Setting has been update' });
@@ -1379,6 +1392,100 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({
                 error: 'Failed to search wallet',
             })
+        }
+    }
+    async addItem(req){
+        try {
+            const name = req.body.name
+            const price = req.body.price
+            if(!name){
+                return BaseService.sendFailedResponse({error: 'Please enter a name for the item'})
+            }
+            if(!price){
+                return BaseService.sendFailedResponse({error: 'Please enter a price for the item'})
+            }
+
+            await OrderItemModel.create({name, price})
+
+            return BaseService.sendSuccessResponse({message: 'Item added successfully'})
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+        }
+    }
+    async updateItem(req){
+        try {
+            const orderItemId = req.params.id
+            if(!id){
+                return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
+            }
+
+            const orderItem = await OrderItemModel.findById(orderItemId)
+
+            if(!orderItem){
+                return BaseService.sendFailedResponse({error: 'Order item not found'})
+            }
+
+            await OrderItemModel.findOneAndUpdate(
+                { _id: orderItemId },
+                { $set: req.body },
+                { new: true }
+            )
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+        }
+    }
+    async getItems(req){
+        try {
+            const orderItems = await OrderItemModel.find({})
+
+            return BaseService.sendSuccessResponse({message: orderItems})
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+        }
+    }
+    async getItem(req){
+        try {
+            const orderItemId = req.params.id
+            if(!id){
+                return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
+            }
+
+            const orderItem = await OrderItemModel.findById(orderItemId)
+
+            if(!orderItem){
+                return BaseService.sendFailedResponse({error: 'Order item not found'})
+            }
+
+            return BaseService.sendSuccessResponse({message: orderItem})
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+        }
+    }
+    async deleteItem(req){
+        try {
+            const orderItemId = req.params.id
+            if(!id){
+                return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
+            }
+
+            const orderItem = await OrderItemModel.findById(orderItemId)
+
+            if(!orderItem){
+                return BaseService.sendFailedResponse({error: 'Order item not found'})
+            }
+
+            await OrderItemModel.findOneAndDelete({
+                _id: orderItemId
+            })
+
+            return BaseService.sendSuccessResponse({message: 'Order item deleted successfully'})
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
         }
     }
 

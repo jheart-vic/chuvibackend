@@ -44,7 +44,7 @@ const adminOrderDetailsSchema = new mongoose.Schema(
       default: [
         DELIVERY_SPEED.STANDARD,
         DELIVERY_SPEED.EXPRESS,
-        DELIVERY_SPEED.VIP,
+        DELIVERY_SPEED.SAME_DAY,
       ],
     },
     pickupTime: {

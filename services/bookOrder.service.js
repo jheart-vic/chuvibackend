@@ -4,7 +4,6 @@ const validateData = require('../util/validate')
 const BookOrderModel = require('../models/bookOrder.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const { generateOscNumber } = require('../util/helper')
-const NotificationModel = require('../models/notification.model')
 const SubscriptionModel = require('../models/subscription.model')
 const {
     NOTIFICATION_TYPE,
@@ -18,6 +17,7 @@ const {
 } = require('../util/constants')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
+const WalletModel = require('../models/wallet.model')
 
 class BookOrderService extends BaseService {
     async postBookOrder(req, res) {
@@ -244,6 +244,67 @@ class BookOrderService extends BaseService {
                     subBody: `Order ID: ${oscNumber}.`,
                     type: NOTIFICATION_TYPE.ORDER_CREATED,
                 })
+            } else if (post.billingType === BILLING_TYPE.PAY_FROM_WALLET) {
+                const wallet = await WalletModel.findOne({userId})
+                if(!wallet){
+                    return BaseService.sendFailedResponse({error: 'Wallet not found. Please try again later'})
+                }
+
+                let totalPrice = post.items.reduce((sum, item) => {
+                    const price = Number(item.price)
+                    const quantity = Number(item.quantity)
+
+                    return sum + price * quantity
+                }, 0)
+
+                let extraDeliveryCost = 0
+
+                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                    extraDeliveryCost = 300
+                } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
+                    extraDeliveryCost = 500
+                }
+
+                totalPrice += extraDeliveryCost
+
+                // const oscNumber = generateOscNumber();
+
+                if(totalPrice > wallet.balance){
+                    return BaseService.sendFailedResponse({error: 'Insufficient balance in your wallet. Please try funding your account to continue'})
+                }
+
+                wallet.balance -= totalPrice
+                await wallet.save()
+
+                const stage = {
+                    status: ORDER_STATUS.PENDING,
+                    updatedAt: new Date(),
+                }
+                const stageHistory = {
+                    status: ORDER_STATUS.PENDING,
+                    note: 'Order created',
+                    updatedAt: new Date(),
+                }
+
+                const newOrderItem = {
+                    userId,
+                    oscNumber,
+                    amount: totalPrice,
+                    deliveryAmount: extraDeliveryCost,
+                    stage,
+                    stageHistory: [stageHistory],
+                    ...post,
+                }
+                newOrder = new BookOrderModel(newOrderItem)
+                await newOrder.save()
+
+                await createNotification({
+                    userId: userId,
+                    title: 'Order Created Successfully',
+                    body: `Your laundry order has been received. We will pick it up shortly.`,
+                    subBody: `Order ID: ${oscNumber}.`,
+                    type: NOTIFICATION_TYPE.ORDER_CREATED,
+                })
             }
             // update the capacity in admin order settings
             if (
@@ -281,18 +342,6 @@ class BookOrderService extends BaseService {
             return BaseService.sendSuccessResponse({
                 message: finalMessage,
                 order: newOrder,
-            })
-        } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({ error })
-        }
-    }
-    async getAdminOrderDetails(req, res) {
-        try {
-            const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
-
-            return BaseService.sendSuccessResponse({
-                message: adminOrderDetails,
             })
         } catch (error) {
             console.log(error)

@@ -171,6 +171,11 @@ exports.ROUTE_ADMIN_AUDIT_LITE = '/audit-lite'
 exports.ROUTE_SEARCH_WALLET = '/search-wallet'
 exports.ROUTE_SEARCH_ORDERS = '/search-orders'
 exports.ROUTE_SEARCH_ORDER_DETAIL = '/search-orders/:id'
+exports.ROUTE_ADD_ORDER_ITEM = '/add-order-item'
+exports.ROUTE_UPDATE_ORDER_ITEM_ID = '/update-order-item/:id'
+exports.ROUTE_GET_ORDER_ITEMS = '/get-order-items'
+exports.ROUTE_GET_ORDER_ITEM_ID = '/get-order-item/:id'
+exports.ROUTE_DELETE_ORDER_ITEM_ID = '/delete-order-item/:id'
 
 
 // book orders
