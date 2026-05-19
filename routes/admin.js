@@ -354,17 +354,6 @@ router.get(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
  *                       items:
  *                         type: string
  *                       example: ["10am-12pm", "4pm-6pm"]
- *                     orderItems:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemType:
- *                             type: string
- *                             example: shirt
- *                           price:
- *                             type: number
- *                             example: 500
  *                     standardCapacity:
  *                       type: number
  *                       example: 400
@@ -435,17 +424,6 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  *                 items:
  *                   type: string
  *                 example: ["10am-12pm", "4pm-6pm"]
- *               orderItems:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     itemType:
- *                       type: string
- *                       example: shirt
- *                     price:
- *                       type: number
- *                       example: 500
  *               standardCapacity:
  *                 type: number
  *                 example: 400
@@ -509,17 +487,6 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  *                       items:
  *                         type: string
  *                       example: ["10am-12pm", "4pm-6pm"]
- *                     orderItems:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemType:
- *                             type: string
- *                             example: shirt
- *                           price:
- *                             type: number
- *                             example: 500
  *                     standardCapacity:
  *                       type: number
  *                       example: 400
