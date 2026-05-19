@@ -18,6 +18,7 @@ const {
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
 const WalletModel = require('../models/wallet.model')
+const AdminSettingModel = require('../models/adminSetting.model')
 
 class BookOrderService extends BaseService {
     async postBookOrder(req, res) {
@@ -69,11 +70,17 @@ class BookOrderService extends BaseService {
             }
 
             let finalMessage = 'Order booked successfully'
-            const adminOrderSettings = await AdminOrderDetailsModel.findOne({})
+            const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
+            const adminOrderSetting = await AdminSettingModel.findOne({})
 
-            if (!adminOrderSettings) {
+            if (!adminOrderDetails) {
                 return BaseService.sendFailedResponse({
-                    error: 'Admin order settings not found',
+                    error: 'Admin order details not found',
+                })
+            }
+            if (!adminOrderSetting) {
+                return BaseService.sendFailedResponse({
+                    error: 'Admin settings not found',
                 })
             }
 
@@ -118,7 +125,7 @@ class BookOrderService extends BaseService {
 
                 if (
                     post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-                    post.items.length > adminOrderSettings.sameDayCapacity
+                    post.items.length > adminOrderDetails.sameDayCapacity
                 ) {
                     return BaseService.sendFailedResponse({
                         error: `Same day delivery is currently at full capacity. Please reduce your items or choose the express delivery speed.`,
@@ -127,7 +134,7 @@ class BookOrderService extends BaseService {
 
                 if (
                     post.deliverySpeed === DELIVERY_SPEED.EXPRESS &&
-                    post.items.length > adminOrderSettings.expressCapacity
+                    post.items.length > adminOrderDetails.expressCapacity
                 ) {
                     return BaseService.sendFailedResponse({
                         error: `Same day delivery is currently at full capacity. Please reduce your items or choose the standard delivery speed.`,
@@ -136,9 +143,9 @@ class BookOrderService extends BaseService {
 
                 if (
                     post.deliverySpeed === DELIVERY_SPEED.STANDARD &&
-                    post.items.length > adminOrderSettings.standardCapacity
+                    post.items.length > adminOrderDetails.standardCapacity
                 ) {
-                    finalMessage += ` We expect this to take ${adminOrderSettings.standardDeliveryPeriod} days. We appreciate your patience and understanding.`
+                    finalMessage += ` We expect this to take ${adminOrderDetails.standardDeliveryPeriod} days. We appreciate your patience and understanding.`
                 }
 
                 const subscriptionPlanMonthlyLimits =
@@ -206,9 +213,9 @@ class BookOrderService extends BaseService {
                 let extraDeliveryCost = 0
 
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    extraDeliveryCost = 300
+                    extraDeliveryCost = adminOrderSetting.expressCharge
                 } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
-                    extraDeliveryCost = 500
+                    extraDeliveryCost = adminOrderSetting.sameDayCharge
                 }
 
                 totalPrice += extraDeliveryCost
@@ -260,9 +267,9 @@ class BookOrderService extends BaseService {
                 let extraDeliveryCost = 0
 
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    extraDeliveryCost = 300
+                    extraDeliveryCost = adminOrderSetting.expressCharge
                 } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
-                    extraDeliveryCost = 500
+                    extraDeliveryCost = adminOrderSetting.sameDayCharge
                 }
 
                 totalPrice += extraDeliveryCost
@@ -309,21 +316,21 @@ class BookOrderService extends BaseService {
             // update the capacity in admin order settings
             if (
                 post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-                adminOrderSettings.sameDayCapacity > 0
+                adminOrderDetails.sameDayCapacity > 0
             ) {
-                adminOrderSettings.sameDayCapacity -= post.items.length
+                adminOrderDetails.sameDayCapacity -= post.items.length
             } else if (
                 post.deliverySpeed === DELIVERY_SPEED.EXPRESS &&
-                adminOrderSettings.expressCapacity > 0
+                adminOrderDetails.expressCapacity > 0
             ) {
-                adminOrderSettings.expressCapacity -= post.items.length
+                adminOrderDetails.expressCapacity -= post.items.length
             } else if (
                 post.deliverySpeed === DELIVERY_SPEED.STANDARD &&
-                adminOrderSettings.standardCapacity > 0
+                adminOrderDetails.standardCapacity > 0
             ) {
-                adminOrderSettings.standardCapacity -= post.items.length
+                adminOrderDetails.standardCapacity -= post.items.length
             }
-            await adminOrderSettings.save()
+            await adminOrderDetails.save()
 
                 // guard against unrecognised billingType
                 if (!newOrder) {
