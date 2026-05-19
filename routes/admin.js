@@ -23,7 +23,9 @@ const {
     ROUTE_UPDATE_ORDER_ITEM_ID,
     ROUTE_GET_ORDER_ITEMS,
     ROUTE_GET_ORDER_ITEM_ID,
-    ROUTE_DELETE_ORDER_ITEM_ID
+    ROUTE_DELETE_ORDER_ITEM_ID,
+    ROUTE_UPDATE_ORDER_DETAILS,
+    ROUTE_UPDATE_ADMIN_SETTING
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -305,7 +307,7 @@ router.get(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
 
 /**
  * @swagger
- * /bookOrder/admin-order-details:
+ * /admin/admin-order-details:
  *   get:
  *     summary: Get admin order details
  *     tags:
@@ -394,9 +396,259 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
     return bookOrderController.getAdminOrderDetails(req, res);
   });
 
-router.put(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
+/**
+ * @swagger
+ * /admin/update-order-details:
+ *   put:
+ *     summary: Update admin order details
+ *     tags:
+ *       - Admin
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               serviceType:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["ironing-only", "washing-only", "wash-and-iron"]
+ *               billingType:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["pay-per-item", "pay-from-subscription"]
+ *               serviceTiers:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["student", "standard", "premium", "vip"]
+ *               deliverySpeed:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["standard", "express", "same-day"]
+ *               pickupTime:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["10am-12pm", "4pm-6pm"]
+ *               orderItems:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     itemType:
+ *                       type: string
+ *                       example: shirt
+ *                     price:
+ *                       type: number
+ *                       example: 500
+ *               standardCapacity:
+ *                 type: number
+ *                 example: 400
+ *               sameDayCapacity:
+ *                 type: number
+ *                 example: 400
+ *               expressCapacity:
+ *                 type: number
+ *                 example: 400
+ *               standardDeliveryPeriod:
+ *                 type: number
+ *                 example: 2
+ *                 description: Period in days for the standard delivery to be ready because of too much orders
+ *               sameDayCharge:
+ *                 type: number
+ *                 example: 500
+ *                 description: Charge for same day
+ *               expressCharge:
+ *                 type: number
+ *                 example: 200
+ *                 description: Charge for express day
+ *     responses:
+ *       200:
+ *         description: Admin order details updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: 64fa12b8a4b7c91234567890
+ *                     serviceType:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["ironing-only", "washing-only", "wash-and-iron"]
+ *                     billingType:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["pay-per-item", "pay-from-subscription"]
+ *                     serviceTiers:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["student", "standard", "premium", "vip"]
+ *                     deliverySpeed:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["standard", "express", "same-day"]
+ *                     pickupTime:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["10am-12pm", "4pm-6pm"]
+ *                     orderItems:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           itemType:
+ *                             type: string
+ *                             example: shirt
+ *                           price:
+ *                             type: number
+ *                             example: 500
+ *                     standardCapacity:
+ *                       type: number
+ *                       example: 400
+ *                     sameDayCapacity:
+ *                       type: number
+ *                       example: 400
+ *                     expressCapacity:
+ *                       type: number
+ *                       example: 400
+ *                     standardDeliveryPeriod:
+ *                       type: number
+ *                       example: 2
+ *                       description: Period in days for the standard delivery to be ready because of too much orders
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *       400:
+ *         description: Invalid input data supplied
+ *       404:
+ *         description: Admin order details not found to update
+ *       500:
+ *         description: Server error
+ */
+router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
     const adminController = new AdminController();
     return adminController.updateOrderDetails(req, res);
+});
+
+/**
+ * @swagger
+ * /admin/update-admin-setting:
+ *   put:
+ *     summary: Update system-wide admin settings
+ *     tags:
+ *       - Admin
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               washAndIronPerKg:
+ *                 type: number
+ *                 example: 1200
+ *                 description: Cost per kilogram for washing and ironing
+ *               washOnlyPerKg:
+ *                 type: number
+ *                 example: 800
+ *                 description: Cost per kilogram for washing only
+ *               ironOnlyPerPiece:
+ *                 type: number
+ *                 example: 300
+ *                 description: Cost per individual piece for ironing only
+ *               dryCleanPerPiece:
+ *                 type: number
+ *                 example: 1500
+ *                 description: Cost per individual piece for dry cleaning
+ *               sameDayCharge:
+ *                 type: number
+ *                 example: 500
+ *                 description: Additional dynamic fee for same-day delivery service
+ *               expressCharge:
+ *                 type: number
+ *                 example: 200
+ *                 description: Additional dynamic fee for express delivery service
+ *     responses:
+ *       200:
+ *         description: Admin settings updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Settings updated successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: 64fa12b8a4b7c91234567890
+ *                     washAndIronPerKg:
+ *                       type: number
+ *                       example: 1200
+ *                     washOnlyPerKg:
+ *                       type: number
+ *                       example: 800
+ *                     ironOnlyPerPiece:
+ *                       type: number
+ *                       example: 300
+ *                     dryCleanPerPiece:
+ *                       type: number
+ *                       example: 1500
+ *                     sameDayCharge:
+ *                       type: number
+ *                       example: 500
+ *                     expressCharge:
+ *                       type: number
+ *                       example: 200
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-05-19T14:00:00.000Z
+ *       400:
+ *         description: Invalid value or payload format supplied
+ *       401:
+ *         description: Unauthorized access (Missing token)
+ *       403:
+ *         description: Forbidden access (User is not an admin)
+ *       500:
+ *         description: Internal server database error
+ */
+router.put(ROUTE_UPDATE_ADMIN_SETTING, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.updateAdminSettings(req, res);
 });
 
 /**

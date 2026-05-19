@@ -13,6 +13,8 @@ const init = async () => {
       washOnlyPerKg: 1500,
       ironOnlyPerPiece: 1300,
       dryCleanPerPiece: 8000,
+      sameDayCharge: 500,
+      expressCharge: 200,
     }
     await AdminSettingModel.create(defaultSetting)
 
