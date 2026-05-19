@@ -698,6 +698,18 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({ error })
         }
     }
+    async getAdminSetting(req, res) {
+        try {
+            const adminSetting = await AdminSettingModel.findOne({})
+
+            return BaseService.sendSuccessResponse({
+                message: adminSetting,
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({ error })
+        }
+    }
     async updateOrderDetails(req) {
         try {
             const updateData = req.body;
