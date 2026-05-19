@@ -1416,7 +1416,7 @@ class AdminService extends BaseService {
     async updateItem(req){
         try {
             const orderItemId = req.params.id
-            if(!id){
+            if(!orderItemId){
                 return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
             }
 
@@ -1449,7 +1449,7 @@ class AdminService extends BaseService {
     async getItem(req){
         try {
             const orderItemId = req.params.id
-            if(!id){
+            if(!orderItemId){
                 return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
             }
 
@@ -1468,7 +1468,7 @@ class AdminService extends BaseService {
     async deleteItem(req){
         try {
             const orderItemId = req.params.id
-            if(!id){
+            if(!orderItemId){
                 return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
             }
 
