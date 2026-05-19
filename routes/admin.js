@@ -1853,7 +1853,7 @@ router.put(ROUTE_UPDATE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_GET_ORDER_ITEMS, [adminAuth], (req, res) => {
+router.get(ROUTE_GET_ORDER_ITEMS, [auth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getItems(req, res)
 })
@@ -1886,7 +1886,7 @@ router.get(ROUTE_GET_ORDER_ITEMS, [adminAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_GET_ORDER_ITEM_ID, [adminAuth], (req, res) => {
+router.get(ROUTE_GET_ORDER_ITEM_ID, [auth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getItem(req, res)
 })
