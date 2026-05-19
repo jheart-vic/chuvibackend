@@ -25,7 +25,8 @@ const {
     ROUTE_GET_ORDER_ITEM_ID,
     ROUTE_DELETE_ORDER_ITEM_ID,
     ROUTE_UPDATE_ORDER_DETAILS,
-    ROUTE_UPDATE_ADMIN_SETTING
+    ROUTE_UPDATE_ADMIN_SETTING,
+    ROUTE_GET_ADMIN_SETTING
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -384,6 +385,66 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
     const bookOrderController = new AdminController();
     return bookOrderController.getAdminOrderDetails(req, res);
   });
+
+/**
+ * @swagger
+ * /admin/get-admin-setting:
+ *   get:
+ *     summary: Get admin setting
+ *     tags:
+ *       - Admin
+ *     responses:
+ *       200:
+ *         description: Returns an admin setting object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       example: 64fa12b8a4b7c91234567890
+ *                     washAndIronPerKg:
+ *                       type: number
+ *                       example: 400
+ *                     washOnlyPerKg:
+ *                       type: number
+ *                       example: 400
+ *                     ironOnlyPerPiece:
+ *                       type: number
+ *                       example: 400
+ *                     dryCleanPerPiece:
+ *                       type: number
+ *                       example: 400
+ *                     sameDayCharge:
+ *                       type: number
+ *                       example: 400
+ *                     expressCharge:
+ *                       type: number
+ *                       example: 400
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: 2026-01-12T10:00:00.000Z
+ *       404:
+ *         description: Admin order details not found
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_ADMIN_SETTING, [auth], (req, res) => {
+    const bookOrderController = new AdminController();
+    return bookOrderController.getAdminOrderDetails(req, res);
+});
 
 /**
  * @swagger
