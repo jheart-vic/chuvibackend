@@ -6,6 +6,8 @@ const adminSettingSchema = new mongoose.Schema(
     washOnlyPerKg: { type: Number },
     ironOnlyPerPiece: { type: Number },
     dryCleanPerPiece: { type: Number },
+    sameDayCharge: { type: Number },
+    expressCharge: { type: Number },
   },
   { timestamps: true }
 );

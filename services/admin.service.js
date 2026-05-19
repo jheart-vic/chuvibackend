@@ -1,5 +1,6 @@
 const ActivityModel = require('../models/activity.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
+const AdminSettingModel = require('../models/adminSetting.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
 const OrderItemModel = require('../models/orderItem.model')
@@ -715,7 +716,31 @@ class AdminService extends BaseService {
                 { new: true }
             );
     
-            return BaseService.sendSuccessResponse({ message: 'Setting has been update' });
+            return BaseService.sendSuccessResponse({ message: 'Setting has been updated' });
+        } catch (error) {
+            console.log(error);
+            return BaseService.sendFailedResponse({ error: 'Something went wrong. Please try again later.' });
+        }
+    }
+    async updateAdminSettings(req) {
+        try {
+            const updateData = req.body;
+            
+            // Find the single configuration document
+            const adminSetting = await AdminSettingModel.findOne();
+    
+            if (!adminSetting) {
+                return BaseService.sendFailedResponse({ error: 'Order details configuration not found.' });
+            }
+    
+            // Dynamically update the document fields
+            await AdminSettingModel.findOneAndUpdate(
+                { _id: adminSetting._id },
+                { $set: updateData },
+                { new: true }
+            );
+    
+            return BaseService.sendSuccessResponse({ message: 'Setting has been updated' });
         } catch (error) {
             console.log(error);
             return BaseService.sendFailedResponse({ error: 'Something went wrong. Please try again later.' });
