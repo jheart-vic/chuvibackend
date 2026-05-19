@@ -443,7 +443,7 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  */
 router.get(ROUTE_GET_ADMIN_SETTING, [auth], (req, res) => {
     const bookOrderController = new AdminController();
-    return bookOrderController.getAdminOrderDetails(req, res);
+    return bookOrderController.getAdminSetting(req, res);
 });
 
 /**
