@@ -112,6 +112,7 @@ class PaystackService extends BaseService {
           metadata: {
             userId,
             transactionType: transactionType,
+            amount,
             paymentMethod,
             ...(orderId && {orderId: post.orderId}),
             ...(plan && {paystackPlan: plan.paystackPlanCode}),
