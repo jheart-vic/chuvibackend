@@ -932,7 +932,7 @@ class AuthService extends BaseService {
 
     async refreshToken(req, res) {
         try {
-            const refreshToken = req.cookies.refreshToken // better than Authorization
+            const refreshToken = req.cookies.refreshToken
 
             if (!refreshToken) {
                 return BaseService.sendFailedResponse({
@@ -940,22 +940,25 @@ class AuthService extends BaseService {
                 })
             }
 
-            let decoded
-            try {
-                decoded = verifyRefreshToken(refreshToken)
-            } catch (err) {
+            const decoded = verifyRefreshToken(refreshToken)
+
+            const user = await UserModel.findById(decoded.id)
+
+            if (!user) {
                 return BaseService.sendFailedResponse({
-                    error: 'Invalid or expired refresh token',
+                    error: 'User not found',
                 })
             }
 
             const newAccessToken = signAccessToken({
-                id: decoded.id,
-                userType: decoded.userType,
+                id: user._id,
+                userType: user.userType,
             })
 
-            // Optionally: set as Authorization header or return in body
-            res.header('Authorization', `Bearer ${newAccessToken}`)
+            const newRefreshToken = signRefreshToken({
+                id: user._id,
+                userType: user.userType,
+            })
 
             res.cookie('accessToken', newAccessToken, {
                 httpOnly: true,
@@ -965,13 +968,20 @@ class AuthService extends BaseService {
                 path: '/',
             })
 
+            res.cookie('refreshToken', newRefreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'none',
+                maxAge: 28 * 24 * 60 * 60 * 1000,
+                path: '/',
+            })
+
             return BaseService.sendSuccessResponse({
-                message: 'Request for new access token successful',
+                message: 'Token refreshed successfully',
             })
         } catch (err) {
-            console.error('Refresh Token Error:', err)
             return BaseService.sendFailedResponse({
-                error: 'Something went wrong. Please try again later.',
+                error: 'Invalid refresh token',
             })
         }
     }
@@ -1119,12 +1129,22 @@ class AuthService extends BaseService {
         return { success: true, user, accessToken, refreshToken }
     }
 
-  async logout(req, res) {
-      res.clearCookie('accessToken', { httpOnly: true, sameSite: 'none', secure: true })
-      res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'none', secure: true })
+    async logout(req, res) {
+        res.clearCookie('accessToken', {
+            httpOnly: true,
+            sameSite: 'none',
+            secure: true,
+        })
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            sameSite: 'none',
+            secure: true,
+        })
 
-      return BaseService.sendSuccessResponse({ message: 'Logged out successfully' })
-  }
+        return BaseService.sendSuccessResponse({
+            message: 'Logged out successfully',
+        })
+    }
 }
 
 module.exports = AuthService
