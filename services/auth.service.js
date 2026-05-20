@@ -1052,7 +1052,6 @@ class AuthService extends BaseService {
             return BaseService.sendSuccessResponse({
                 message: user,
                 user,
-                refreshToken,
             })
         } catch (error) {
             return BaseService.sendFailedResponse({ error: error.message })
