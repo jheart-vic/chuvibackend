@@ -45,7 +45,7 @@ async function handleChargeSuccess(data) {
             return
         }
 
-        if(existingPayment.status == 'success'){
+        if(existingPayment && existingPayment.status == 'success'){
             console.log('Payment already made')
             return
         }
@@ -357,6 +357,15 @@ async function handleWalletTopUp(metadata) {
             amount: metadata.amount / 100,
             status: 'success',
         })
+
+        // await PaymentModel.create({
+        //     userId: userId,
+        //     amount: metadata.amount / 100,
+        //     reference: metadata.reference,
+        //     status: 'pending',
+        //     type: 'wallet-top-up',
+        //     alertType: 'credit',
+        // })
 
         // 🔔 Optional notification
         await createNotification({

@@ -30,8 +30,8 @@ const {
  *               - amount
  *             properties:
  *               amount:
- *                 type: string
- *                 example: "4500000"
+ *                 type: number
+ *                 example: 4500000
  *                 description: Amount in kobo (₦1 = 100 kobo)
  *     responses:
  *       200:

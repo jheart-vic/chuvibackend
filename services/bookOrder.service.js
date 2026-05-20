@@ -19,6 +19,7 @@ const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
 const WalletModel = require('../models/wallet.model')
 const AdminSettingModel = require('../models/adminSetting.model')
+const WalletTransactionModel = require('../models/walletTransaction.model')
 
 class BookOrderService extends BaseService {
     async postBookOrder(req, res) {
@@ -284,6 +285,17 @@ class BookOrderService extends BaseService {
                 wallet.balance -= totalPrice
                 await wallet.save()
 
+                const reference = uuidv4();
+                await WalletTransactionModel.create({
+                    userId,
+                    walletId: wallet._id,
+                    type: "debit",
+                    amount: totalPrice,
+                    reference,
+                    status: "success",
+                    description: "Order Payment",
+                  });
+
                 const stage = {
                     status: ORDER_STATUS.PENDING,
                     updatedAt: new Date(),
@@ -301,6 +313,7 @@ class BookOrderService extends BaseService {
                     deliveryAmount: extraDeliveryCost,
                     stage,
                     stageHistory: [stageHistory],
+                    paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     ...post,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
