@@ -87,6 +87,7 @@ class WalletService extends BaseService {
     try {
       const { bookOrderId, description = "Order Payment" } = req.body;
       const userId = req.user.id;
+      console.log({userId})
 
       const validateRule = {
         bookOrderId: "string|required",
@@ -145,6 +146,7 @@ class WalletService extends BaseService {
       const reference = uuidv4();
 
       await WalletTransactionModel.create({
+        userId,
         walletId: wallet._id,
         type: "debit",
         amount: bookOrder.amount,
