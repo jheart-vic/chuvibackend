@@ -31,7 +31,6 @@ async function handleChargeSuccess(data) {
 
         // 2️⃣ Prevent duplicate payments
         const existingPayment = await PaymentModel.findOne({ reference })
-        console.log({existingPayment}, 'existing payment')
         // if (existingPayment) {
         //     console.log('Payment already recorded:', reference)
         //     return
@@ -54,6 +53,7 @@ async function handleChargeSuccess(data) {
             existingPayment.paidAt = new Date(data.paid_at)
             existingPayment.metadata = metadata
             existingPayment.status = 'success'
+            existingPayment.amount = metadata.amount
             existingPayment.channel = data.channel
             await existingPayment.save()
 

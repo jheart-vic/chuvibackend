@@ -49,14 +49,12 @@ class WalletService extends BaseService {
 
       const newPayment = await PaymentModel.create({
         userId: userId,
-        amount: amount,
+        amount: 0,
         reference,
         status: 'pending',
         type: 'wallet-top-up',
         alertType: 'credit',
     })
-
-    console.log({newPayment})
       const response = await paystackAxios.post("/transaction/initialize", {
         email,
         amount: amount * 100, // e.g. 4500000 for ₦45,000.00
