@@ -44,7 +44,7 @@ class WalletService extends BaseService {
       const email = user.email;
 
       let { amount } = post;
-      amount = amount * 100;
+      // amount = amount * 100;
       const reference = generateReferenceId();
 
       await PaymentModel.create({
@@ -58,13 +58,14 @@ class WalletService extends BaseService {
 
       const response = await paystackAxios.post("/transaction/initialize", {
         email,
-        amount, // e.g. 4500000 for ₦45,000.00
+        amount: amount * 100, // e.g. 4500000 for ₦45,000.00
         reference,
         metadata: {
           userId,
           transactionType: "wallet-top-up",
           amount,
           paymentMethod,
+          reference
         },
       });
 
