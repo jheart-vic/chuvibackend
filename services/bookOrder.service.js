@@ -5,6 +5,7 @@ const BookOrderModel = require('../models/bookOrder.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const { generateOscNumber } = require('../util/helper')
 const SubscriptionModel = require('../models/subscription.model')
+const { v4: uuidv4 } = require("uuid");
 const {
     NOTIFICATION_TYPE,
     ORDER_STATUS,
