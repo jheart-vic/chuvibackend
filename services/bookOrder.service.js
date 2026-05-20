@@ -106,16 +106,6 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                // const isAllStandard = post.items.every((item) =>
-                //     STANDARD_ITEMS_ENUM_TYPES.includes(item.type),
-                // )
-
-                // if (!isAllStandard) {
-                //     return BaseService.sendFailedResponse({
-                //         error: 'Your subscription plan only allows standard items. Please remove any non-standard items from your order.',
-                //     })
-                // }
-
                 const invalidItem = post.items.find(
                     (item) => !STANDARD_ITEMS_ENUM_TYPES.includes(item.type)
                   );
