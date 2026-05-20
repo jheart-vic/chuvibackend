@@ -182,17 +182,6 @@ class BookOrderService extends BaseService {
         newOrder = new BookOrderModel(newOrderItem);
         await newOrder.save();
 
-        const reference = generateReferenceId();
-        await PaymentModel.create({
-          userId: userId,
-          amount: totalPrice,
-          reference: reference,
-          status: "success",
-          order: newOrder._id,
-          type: "order",
-          alertType: "debit",
-        });
-
         await createNotification({
           userId: userId,
           title: "Order Created Successfully",
@@ -290,13 +279,13 @@ class BookOrderService extends BaseService {
         wallet.balance -= totalPrice;
         await wallet.save();
 
-        const reference = uuidv4();
+        const referencee = uuidv4();
         await WalletTransactionModel.create({
           userId,
           walletId: wallet._id,
           type: "debit",
           amount: totalPrice,
-          reference,
+          reference: referencee,
           status: "success",
           description: "Order Payment",
         });
@@ -323,6 +312,17 @@ class BookOrderService extends BaseService {
         };
         newOrder = new BookOrderModel(newOrderItem);
         await newOrder.save();
+
+        const reference = generateReferenceId();
+        await PaymentModel.create({
+          userId: userId,
+          amount: totalPrice,
+          reference: reference,
+          status: "success",
+          order: newOrder._id,
+          type: "order",
+          alertType: "debit",
+        });
 
         await createNotification({
           userId: userId,
