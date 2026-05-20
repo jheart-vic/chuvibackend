@@ -47,7 +47,7 @@ class WalletService extends BaseService {
       // amount = amount * 100;
       const reference = generateReferenceId();
 
-      await PaymentModel.create({
+      const newPayment = await PaymentModel.create({
         userId: userId,
         amount: amount,
         reference,
@@ -56,6 +56,7 @@ class WalletService extends BaseService {
         alertType: 'credit',
     })
 
+    console.log({newPayment})
       const response = await paystackAxios.post("/transaction/initialize", {
         email,
         amount: amount * 100, // e.g. 4500000 for ₦45,000.00
