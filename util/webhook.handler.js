@@ -31,6 +31,7 @@ async function handleChargeSuccess(data) {
 
         // 2️⃣ Prevent duplicate payments
         const existingPayment = await PaymentModel.findOne({ reference })
+        console.log({existingPayment}, 'existing payment')
         // if (existingPayment) {
         //     console.log('Payment already recorded:', reference)
         //     return
@@ -348,13 +349,13 @@ async function handleWalletTopUp(metadata) {
 
         await WalletModel.findOneAndUpdate(
             { userId },
-            { $inc: { balance: metadata.amount / 100 } },
+            { $inc: { balance: metadata.amount } },
             { upsert: true, new: true },
         )
         await WalletTransactionModel.create({
             userId,
             type: 'credit',
-            amount: metadata.amount / 100,
+            amount: metadata.amount,
             status: 'success',
         })
 
