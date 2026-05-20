@@ -92,7 +92,7 @@ class PaystackService extends BaseService {
 
       await PaymentModel.create({
         userId: userId,
-        amount: amount,
+        amount: amount / 100,
         reference,
         status: 'pending',
         ...(subExists && {subscription: subExists?._id}),
