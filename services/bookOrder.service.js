@@ -42,8 +42,8 @@ class BookOrderService extends BaseService {
                 // pickupTime: "string|required",
                 serviceType: 'string|required',
                 serviceTier: 'string|required',
-                billingType: 'string|required',
-                deliverySpeed: 'string|required:in:express,standard,same-day',
+                billingType: 'string|required|in:pay-per-item,pay-from-subscription,pay-from-wallet',
+                deliverySpeed: 'string|required|in:express,standard,same-day',
                 isDelivery: 'boolean|required',
                 isPickUp: 'boolean|required',
                 items: 'array|required',
@@ -56,6 +56,7 @@ class BookOrderService extends BaseService {
                 required: ':attribute is required',
                 int: ':attribute must be an integer.',
                 array: ':attribute must be an array.',
+                in: ":attribute must be valid.",
             }
 
             const validateResult = validateData(
@@ -331,13 +332,6 @@ class BookOrderService extends BaseService {
                 adminOrderDetails.standardCapacity -= post.items.length
             }
             await adminOrderDetails.save()
-
-                // guard against unrecognised billingType
-                if (!newOrder) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Invalid billing type',
-                    })
-                }
             await ActivityModel.create({
                 title: 'New Order Registered',
                 description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
