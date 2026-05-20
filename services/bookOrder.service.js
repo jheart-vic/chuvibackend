@@ -313,6 +313,7 @@ class BookOrderService extends BaseService {
                     deliveryAmount: extraDeliveryCost,
                     stage,
                     stageHistory: [stageHistory],
+                    paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     ...post,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
