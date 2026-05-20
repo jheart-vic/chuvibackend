@@ -185,7 +185,7 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 60 * 60 * 1000,
+                maxAge: 28 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
@@ -292,7 +292,7 @@ class AuthService extends BaseService {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'none',
-                    maxAge: 60 * 60 * 1000,
+                    maxAge: 28 * 24 * 60 * 60 * 1000,
                     path: '/',
                 })
 
@@ -350,7 +350,7 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 60 * 60 * 1000,
+                maxAge: 7 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
@@ -602,7 +602,7 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 60 * 60 * 1000,
+                maxAge: 28 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
@@ -703,7 +703,7 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 60 * 60 * 1000,
+                maxAge: 28 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
@@ -932,7 +932,7 @@ class AuthService extends BaseService {
 
     async refreshToken(req, res) {
         try {
-            const refreshToken = req.headers['x-refresh-token'] // better than Authorization
+            const refreshToken = req.cookies.refreshToken // better than Authorization
 
             if (!refreshToken) {
                 return BaseService.sendFailedResponse({
@@ -1045,7 +1045,7 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 60 * 60 * 1000,
+                maxAge: 28 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
