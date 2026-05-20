@@ -87,7 +87,6 @@ class WalletService extends BaseService {
     try {
       const { bookOrderId, description = "Order Payment" } = req.body;
       const userId = req.user.id;
-      console.log({userId})
 
       const validateRule = {
         bookOrderId: "string|required",
