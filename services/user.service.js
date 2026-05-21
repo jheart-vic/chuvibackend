@@ -18,6 +18,7 @@ const {
     ORDER_STATUS,
     ROLE,
     GENERAL_STATUS,
+    PAYMENT_ORDER_STATUS,
 } = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
