@@ -81,6 +81,7 @@ class UserService extends BaseService {
                     ongoingOrder: ongoingOrder
                         ? {
                               id: ongoingOrder._id,
+                              oscNumber: ongoingOrder.oscNumber,
                               status: ongoingOrder.stage.status,
                               amount: ongoingOrder.amount,
                               createdAt: ongoingOrder.createdAt,
