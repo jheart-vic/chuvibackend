@@ -7,7 +7,7 @@ const PaymentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    amount: { type: Number, required: true }, // in your base currency
+    amount: { type: Number, required: true, default: 0 }, // in your base currency
     reference: { type: String, required: true, unique: true }, // from Paystack
     subscription: { type: mongoose.Schema.Types.ObjectId, ref: "Subscription" },
     order: { type: mongoose.Schema.Types.ObjectId, ref: "BookOrder" },
