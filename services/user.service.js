@@ -51,17 +51,18 @@ class UserService extends BaseService {
                 NotificationModel.countDocuments({ userId, isRead: false }),
 
                 BookOrderModel.findOne({
-                    $or: [
-                        { userId },
-                        { phoneNumber: req.user.phoneNumber }, // fallback if no userId linked
-                    ],
+                    $or: [{ userId }, { phoneNumber: req.user.phoneNumber }],
                     'stage.status': {
-                        $nin: [
-                            ORDER_STATUS.DELIVERED,
-                            ORDER_STATUS.PENDING,
-                            ORDER_STATUS.HOLD,
-                        ],
+                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.HOLD],
                     },
+                    $nor: [
+                        {
+                            'stage.status': ORDER_STATUS.PENDING,
+                            paymentStatus: {
+                                $ne: PAYMENT_ORDER_STATUS.SUCCESS,
+                            },
+                        },
+                    ],
                 })
                     .sort({ createdAt: -1 })
                     .lean(),
@@ -234,7 +235,7 @@ class UserService extends BaseService {
         try {
             const { label, address, landmark } = req.body
 
-            if (!label || !address||!landmark) {
+            if (!label || !address || !landmark) {
                 return BaseService.sendFailedResponse({
                     error: 'Label, address, and landmark are required',
                 })
@@ -248,7 +249,10 @@ class UserService extends BaseService {
             }
 
             const exists = user.addresses.some(
-                (addr) => addr.label === label && addr.address === address && addr.landmark === landmark,
+                (addr) =>
+                    addr.label === label &&
+                    addr.address === address &&
+                    addr.landmark === landmark,
             )
             if (exists) {
                 return BaseService.sendFailedResponse({
@@ -280,7 +284,11 @@ class UserService extends BaseService {
             const { addressId } = req.params
             const { label, address, landmark } = req.body
 
-            if (label === undefined && address === undefined && landmark === undefined) {
+            if (
+                label === undefined &&
+                address === undefined &&
+                landmark === undefined
+            ) {
                 return BaseService.sendFailedResponse({
                     error: 'Nothing to update',
                 })

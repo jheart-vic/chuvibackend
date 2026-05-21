@@ -143,28 +143,64 @@ router.get(ROUTE_QC_QUEUE_SINGLE, [qcAuth], (req, res) => {
 
 /**
  * @swagger
- * /qc-user/order/queue/{id}/items/{itemId}/confirm:
+ * /qc-user/order/queue/{id}/items/confirm:
  *   patch:
- *     summary: Mark a single item as QC passed
+ *     summary: Mark one, many, or all items as QC passed
  *     description: |
- *       Sets item `qcStatus` to `passed`. On the first item confirmation,
- *       `qcDetails.startedAt` and `qcDetails.operatorId` are recorded.
- *       Returns `allItemsPassed` flag so the frontend knows when to enable
- *       the "Pass QC" button.
+ *       Supports three calling modes controlled by the request body:
+ *
+ *       - **Single item** — individual per-item QC pass button:
+ *         `{ "itemIds": ["<itemId>"] }`
+ *
+ *       - **Multiple items** — bulk selection:
+ *         `{ "itemIds": ["<id1>", "<id2>"] }`
+ *
+ *       - **All items at once** — "Pass All" button:
+ *         `{ "allItems": true }`
+ *
+ *       On the **first** call for an order, `qcDetails.startedAt` and
+ *       `qcDetails.operatorId` are recorded automatically (regardless of how many
+ *       items are passed in that call).
+ *       Each targeted item gets `qcStatus → passed`, `qcConfirmedAt`, and
+ *       `qcConfirmedByOperatorId` stamped, plus a `qc_passed` entry in `actionLog`.
+ *       Returns `updatedCount` and `allItemsPassed` so the frontend knows when to
+ *       enable the "Pass QC" order-level button.
  *     tags:
  *       - QC
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
+ *         description: Order ID
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemIds:
+ *                 type: array
+ *                 description: Item IDs to mark as passed. Required unless allItems is true.
+ *                 items: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *               allItems:
+ *                 type: boolean
+ *                 description: When true, passes all pending items in one action.
+ *                 example: false
+ *           examples:
+ *             single:
+ *               summary: Single item (per-item button)
+ *               value: { itemIds: ["64d3c9c0f1b2a8e9d0f67890"] }
+ *             bulk:
+ *               summary: Multiple selected items
+ *               value: { itemIds: ["64d3c9c0f1b2a8e9d0f67890", "64d3c9c0f1b2a8e9d0f99999"] }
+ *             all:
+ *               summary: All items at once (Pass All button)
+ *               value: { allItems: true }
  *     responses:
  *       200:
- *         description: Item marked as QC passed
+ *         description: Items marked as QC passed.
  *         content:
  *           application/json:
  *             schema:
@@ -173,10 +209,12 @@ router.get(ROUTE_QC_QUEUE_SINGLE, [qcAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     message: { type: string, example: "Item marked as QC passed" }
- *                     allItemsPassed: { type: boolean, example: false }
+ *                     message:        { type: string, example: "3 item(s) marked as QC passed" }
+ *                     allItemsPassed: { type: boolean, example: true }
+ *       400:
+ *         description: No valid items found, or neither itemIds nor allItems provided
  *       404:
- *         description: Order or item not found
+ *         description: Order not found or not in QC stage
  *       500:
  *         description: Server error
  */

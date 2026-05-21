@@ -131,30 +131,62 @@ router.get(ROUTE_PRESS_IRON_QUEUE_SINGLE, [pressAndIronAuth], (req, res) => {
 
 /**
  * @swagger
- * /press-iron/order/queue/{id}/items/{itemId}/confirm-pressing:
+ * /press-iron/order/queue/{id}/items/confirm-pressing:
  *   patch:
- *     summary: Confirm a single item is present and ready for pressing
+ *     summary: Confirm one, many, or all items as ready for pressing
  *     description: |
- *       Operator clicks "Start pressing" per item. The "Confirm Item for Pressing" modal shows
- *       item name, Tag ID and color (read-only). The only input is:
- *       "This item is present and ready for pressing or ironing" checkbox.
- *       Sets item.pressStatus → complete and pushes to actionLog.
- *       When ALL items are confirmed, stationStatus → PRESSING_AND_IRONING_STATION and
- *       pressDetails.startedAt is set automatically. Returns allItemsConfirmed.
+ *       Supports three calling modes controlled by the request body:
+ *
+ *       - **Single item** — individual "Start Pressing" button per item:
+ *         `{ "itemIds": ["<itemId>"] }`
+ *
+ *       - **Multiple items** — bulk selection:
+ *         `{ "itemIds": ["<id1>", "<id2>"] }`
+ *
+ *       - **All items at once** — "Start All" button:
+ *         `{ "allItems": true }`
+ *
+ *       Each targeted item gets `pressStatus → complete`, `pressConfirmedAt`, and
+ *       `pressConfirmedByOperatorId` stamped, plus an `actionLog` entry.
+ *       When **all** order items are confirmed, `stationStatus → PRESSING_AND_IRONING_STATION`
+ *       and `pressDetails.startedAt` are set automatically.
+ *       Returns `updatedCount` and `allItemsConfirmed`.
  *     tags:
  *       - Press & Iron
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
+ *         description: Order ID
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemIds:
+ *                 type: array
+ *                 description: Item IDs to confirm. Required unless allItems is true.
+ *                 items: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *               allItems:
+ *                 type: boolean
+ *                 description: When true, confirms all pending items in one action.
+ *                 example: false
+ *           examples:
+ *             single:
+ *               summary: Single item (per-item button)
+ *               value: { itemIds: ["64d3c9c0f1b2a8e9d0f67890"] }
+ *             bulk:
+ *               summary: Multiple selected items
+ *               value: { itemIds: ["64d3c9c0f1b2a8e9d0f67890", "64d3c9c0f1b2a8e9d0f99999"] }
+ *             all:
+ *               summary: All items at once (Start All button)
+ *               value: { allItems: true }
  *     responses:
  *       200:
- *         description: Item confirmed for pressing. Returns allItemsConfirmed flag.
+ *         description: Items confirmed for pressing.
  *         content:
  *           application/json:
  *             schema:
@@ -163,12 +195,12 @@ router.get(ROUTE_PRESS_IRON_QUEUE_SINGLE, [pressAndIronAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     message:           { type: string, example: "Item confirmed for pressing" }
- *                     allItemsConfirmed: { type: boolean, example: false }
+ *                     message:           { type: string, example: "3 item(s) confirmed for pressing" }
+ *                     allItemsConfirmed: { type: boolean, example: true }
  *       400:
- *         description: Item already confirmed
+ *         description: No valid items found, or neither itemIds nor allItems provided
  *       404:
- *         description: Order or item not found
+ *         description: Order not found or not in ironing stage
  *       500:
  *         description: Server error
  */

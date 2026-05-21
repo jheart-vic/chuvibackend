@@ -28,16 +28,18 @@ const ItemSchema = new mongoose.Schema(
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
         tagId: { type: String },
-        tagState: [{
-            type: String,
-            enum: [
-                TAG_STATE.DAMAGED,
-                TAG_STATE.DELICATE,
-                TAG_STATE.PRETREAT,
-                TAG_STATE.STAINED,
-            ],
-            default: [],
-        }],
+        tagState: [
+            {
+                type: String,
+                enum: [
+                    TAG_STATE.DAMAGED,
+                    TAG_STATE.DELICATE,
+                    TAG_STATE.PRETREAT,
+                    TAG_STATE.STAINED,
+                ],
+                default: [],
+            },
+        ],
         tagColor: {
             type: String,
             enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE],
@@ -101,6 +103,11 @@ const ItemSchema = new mongoose.Schema(
             type: String,
             enum: ['pending', 'passed', 'failed'],
             default: 'pending',
+        },
+        qcConfirmedAt: { type: Date },
+        qcConfirmedByOperatorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
         },
         pressStatus: {
             type: String,
