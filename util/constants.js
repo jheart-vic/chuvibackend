@@ -151,8 +151,7 @@ const BILLING_TYPE = {
 }
 
 const SERVICE_TIERS = {
-    STUDENT: 'student',
-    STANDARD: 'standard',
+    CLASSIC: 'classic',
     PREMIUM: 'premium',
     VIP: 'vip',
 }

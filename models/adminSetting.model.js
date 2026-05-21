@@ -8,6 +8,8 @@ const adminSettingSchema = new mongoose.Schema(
     dryCleanPerPiece: { type: Number },
     sameDayCharge: { type: Number },
     expressCharge: { type: Number },
+    premiumServiceTierCharge: { type: Number, default: 1.5 },
+    vipServiceTierCharge: { type: Number, default: 2 },
   },
   { timestamps: true }
 );
