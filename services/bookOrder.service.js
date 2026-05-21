@@ -15,6 +15,7 @@ const {
   ACTIVITY_TYPE,
   STATION_STATUS,
   PAYMENT_ORDER_STATUS,
+  SERVICE_TIERS,
 } = require("../util/constants");
 const ActivityModel = require("../models/activity.model");
 const createNotification = require("../util/createNotification");
@@ -44,9 +45,8 @@ class BookOrderService extends BaseService {
         // pickupDate: "date|required",
         // pickupTime: "string|required",
         serviceType: "string|required",
-        serviceTier: "string|required",
-        billingType:
-          "string|required|in:pay-per-item,pay-from-subscription,pay-from-wallet",
+        serviceTier: "string|required|in:classic,premium,vip",
+        billingType:"string|required|in:pay-per-item,pay-from-subscription,pay-from-wallet",
         deliverySpeed: "string|required|in:express,standard,same-day",
         isDelivery: "boolean|required",
         isPickUp: "boolean|required",
@@ -194,12 +194,29 @@ class BookOrderService extends BaseService {
         subscription.remainingItems -= post.items.length;
         await subscription.save();
       } else if (post.billingType === BILLING_TYPE.PAY_PER_ITEM) {
+        
+        const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
+        const VIP = adminOrderSetting.vipServiceTierCharge || 2;
+
+        let multiplier = 1;
+        if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
+        if (selectedTier === "vip") multiplier = VIP;
+
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
           const quantity = Number(item.quantity);
-
-          return sum + price * quantity;
+        
+          // Multiply the item subtotal by the selected tier multiplier
+          return sum + (price * quantity * multiplier);
         }, 0);
+
+        // let totalPrice = post.items.reduce((sum, item) => {
+        //   const price = Number(item.price);
+        //   const quantity = Number(item.quantity);
+
+        //   return sum + price * quantity;
+        // }, 0);
+
 
         let extraDeliveryCost = 0;
 
@@ -250,12 +267,28 @@ class BookOrderService extends BaseService {
           });
         }
 
+
+        const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
+        const VIP = adminOrderSetting.vipServiceTierCharge || 2;
+
+        let multiplier = 1;
+        if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
+        if (selectedTier === "vip") multiplier = VIP;
+
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
           const quantity = Number(item.quantity);
-
-          return sum + price * quantity;
+        
+          // Multiply the item subtotal by the selected tier multiplier
+          return sum + (price * quantity * multiplier);
         }, 0);
+
+        // let totalPrice = post.items.reduce((sum, item) => {
+        //   const price = Number(item.price);
+        //   const quantity = Number(item.quantity);
+
+        //   return sum + price * quantity;
+        // }, 0);
 
         let extraDeliveryCost = 0;
 

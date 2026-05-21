@@ -15,6 +15,8 @@ const init = async () => {
       dryCleanPerPiece: 8000,
       sameDayCharge: 500,
       expressCharge: 200,
+      premiumServiceTierCharge: 2,
+      vipServiceTierCharge: 1.5,
     }
     await AdminSettingModel.create(defaultSetting)
 

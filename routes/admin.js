@@ -428,6 +428,12 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  *                     expressCharge:
  *                       type: number
  *                       example: 400
+ *                     premiumServiceTierCharge:
+ *                       type: number
+ *                       example: 1.5
+ *                     vipServiceTierCharge:
+ *                       type: number
+ *                       example: 2
  *                     createdAt:
  *                       type: string
  *                       format: date-time
@@ -506,6 +512,14 @@ router.get(ROUTE_GET_ADMIN_SETTING, [auth], (req, res) => {
  *                 type: number
  *                 example: 200
  *                 description: Charge for express day
+ *               premiumServiceTierCharge:
+ *                 type: number
+ *                 example: 1.5
+ *                 description: Charge for premium service tier
+ *               vipServiceTierCharge:
+ *                 type: number
+ *                 example: 2
+ *                 description: Charge for vip service tier
  *     responses:
  *       200:
  *         description: Admin order details updated successfully
@@ -619,6 +633,14 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                 type: number
  *                 example: 200
  *                 description: Additional dynamic fee for express delivery service
+ *               premiumServiceTierCharge:
+ *                 type: number
+ *                 example: 1.5
+ *                 description: Surcharge multiplier for premium service tier (e.g., 1.5 means 50% increase over base price)
+ *               vipServiceTierCharge:
+ *                 type: number
+ *                 example: 2
+ *                 description: Surcharge multiplier for VIP service tier (e.g., 2 means 100% increase over base price)
  *     responses:
  *       200:
  *         description: Admin settings updated successfully
@@ -655,6 +677,12 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                       type: number
  *                       example: 500
  *                     expressCharge:
+ *                       type: number
+ *                       example: 200
+ *                     premiumServiceTierCharge:
+ *                       type: number
+ *                       example: 200
+ *                     vipServiceTierCharge:
  *                       type: number
  *                       example: 200
  *                     createdAt:
