@@ -1,123 +1,130 @@
-const BaseController = require("./base.controller");
-const AuthService = require("../services/auth.service");
+const BaseController = require('./base.controller')
+const AuthService = require('../services/auth.service')
 
 class AuthController extends BaseController {
+    async createUser(req, res) {
+        const service = new AuthService()
+        const result = await service.createUser(req, res)
 
-  async createUser(req, res) {
-    const service = new AuthService();
-    const result = await service.createUser(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async resendOtp(req, res) {
+        const service = new AuthService()
+        const result = await service.resendOtp(req, res)
 
-  async resendOtp(req, res) {
-    const service = new AuthService();
-    const result = await service.resendOtp(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async loginUser(req, res) {
+        const service = new AuthService()
+        const result = await service.loginUser(req, res)
 
-  async loginUser(req, res) {
-    const service = new AuthService();
-    const result = await service.loginUser(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async logOutUser(req, res) {
+        const service = new AuthService()
+        const result = await service.logout(req, res)
 
-  async logOutUser(req, res) {
-    const service = new AuthService();
-    const result = await service.logout(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async googleSignup(req, res) {
+        const service = new AuthService()
+        const result = await service.googleSignup(req, res)
 
-  async googleSignup(req, res) {
-    const service = new AuthService();
-    const result = await service.googleSignup(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async appleSignup(req, res) {
+        const service = new AuthService()
+        const result = await service.appleSignup(req, res)
 
-  async appleSignup(req, res) {
-    const service = new AuthService();
-    const result = await service.appleSignup(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async verifyOTP(req, res) {
+        const service = new AuthService()
+        const result = await service.verifyOTP(req, res)
 
-  async verifyOTP(req, res) {
-    const service = new AuthService();
-    const result = await service.verifyOTP(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async forgotPassword(req, res) {
+        const service = new AuthService()
+        const result = await service.forgotPassword(req, res)
 
-  async forgotPassword(req, res) {
-    const service = new AuthService();
-    const result = await service.forgotPassword(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async resetPassword(req, res) {
+        const service = new AuthService()
+        const result = await service.resetPassword(req, res)
 
-  async resetPassword(req, res) {
-    const service = new AuthService();
-    const result = await service.resetPassword(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async verifyResetPasswordOtp(req, res) {
+        const service = new AuthService()
+        const result = await service.verifyResetPasswordOtp(req, res)
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
-  async verifyResetPasswordOtp(req, res) {
-    const service = new AuthService();
-    const result = await service.verifyResetPasswordOtp(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+    async verifyEmail(req, res) {
+        const service = new AuthService()
+        const result = await service.verifyEmail(req, res)
 
-  async verifyEmail(req, res) {
-    const service = new AuthService();
-    const result = await service.verifyEmail(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
-  // Admin related controllers
-  async adminLogin(req, res) {
-    const service = new AuthService();
-    const result = await service.adminLogin(req, res);
+    async refreshToken(req, res) {
+        const service = new AuthService()
+        const result = await service.refreshToken(req, res)
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
-  async registerAdmin(req, res) {
-    const service = new AuthService();
-    const result = await service.registerAdmin(req, res);
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    // Admin related controllers
+    async adminLogin(req, res) {
+        const service = new AuthService()
+        const result = await service.adminLogin(req, res)
 
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async registerAdmin(req, res) {
+        const service = new AuthService()
+        const result = await service.registerAdmin(req, res)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 }
 
-module.exports = AuthController;
-
+module.exports = AuthController

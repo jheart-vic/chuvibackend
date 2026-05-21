@@ -955,10 +955,9 @@ class AuthService extends BaseService {
                 userType: user.userType,
             })
 
-            const newRefreshToken = signRefreshToken({
-                id: user._id,
-                userType: user.userType,
-            })
+            const newRefreshToken = await user.generateRefreshToken(
+                process.env.REFRESH_TOKEN_SECRET,
+            )
 
             res.cookie('accessToken', newAccessToken, {
                 httpOnly: true,
