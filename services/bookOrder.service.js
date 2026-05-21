@@ -200,7 +200,7 @@ class BookOrderService extends BaseService {
 
         let multiplier = 1;
         if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
-        if (selectedTier === "vip") multiplier = VIP;
+        if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP;
 
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
@@ -273,7 +273,7 @@ class BookOrderService extends BaseService {
 
         let multiplier = 1;
         if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
-        if (selectedTier === "vip") multiplier = VIP;
+        if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP;
 
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
