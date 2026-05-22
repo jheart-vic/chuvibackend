@@ -379,6 +379,12 @@ router.get(ROUTE_WALLET_BALANCE, [auth], (req, res) => {
  *           type: integer
  *           example: 10
  *         description: Number of records per page (default is 10)
+ *       - in: query
+ *         name: alertType
+ *         schema:
+ *           type: string
+ *           example: credit | debit
+ *         description: Filter transactions by alert type (credit or debit)
  *     responses:
  *       200:
  *         description: Wallet transactions retrieved successfully

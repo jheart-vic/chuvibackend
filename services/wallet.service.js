@@ -230,6 +230,8 @@ async fetchUserTransactions(req) {
       const userId = req.user.id;
 
       let { page, limit } = req.query;
+      const alertType = req.query.alertType || "";
+
 
       // 📅 Monthly filter
       const startOfMonth = new Date();
@@ -244,6 +246,7 @@ async fetchUserTransactions(req) {
       const query = {
         userId,
         status: "success",
+        ...(alertType ? { alertType } : {}),
         createdAt: { $gte: startOfMonth, $lte: endOfMonth },
       };
 
