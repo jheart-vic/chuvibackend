@@ -170,65 +170,61 @@ class WalletService extends BaseService {
       return BaseService.sendFailedResponse({ error: error.message });
     }
   }
-  async fetchUserTransactions(req) {
-    try {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
-      const alertType = req.query.alertType || "";
-      const period = req.query.period || "all"; // '7d', '30d', 'all'
-      const skip = (page - 1) * limit;
-      const userId = req.user.id;
+async fetchUserTransactions(req) {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    // Accept both 'type' (frontend) and 'alertType' (backwards compat)
+    const alertType = req.query.type || req.query.alertType;
+    const period = req.query.period || "all";
+    const skip = (page - 1) * limit;
+    const userId = req.user.id;
 
-      const wallet = await WalletModel.findOne({ userId });
-      if (!wallet) {
-        return BaseService.sendFailedResponse({ error: "Wallet not found" });
-      }
-
-      // Build date filter
-      let dateFilter = {};
-      const now = new Date();
-      if (period === "7d") {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(now.getDate() - 7);
-        dateFilter = { createdAt: { $gte: sevenDaysAgo, $lte: now } };
-      } else if (period === "30d") {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(now.getDate() - 30);
-        dateFilter = { createdAt: { $gte: thirtyDaysAgo, $lte: now } };
-      }
-      // if 'all', leave dateFilter empty
-
-      const filter = {
-        userId,
-        ...(alertType ? { alertType } : {}),
-        ...dateFilter,
-      };
-
-      const transactions = await PaymentModel.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
-
-      const total = await PaymentModel.countDocuments(filter);
-
-      return BaseService.sendSuccessResponse({
-        message: {
-          data: transactions,
-          pagination: {
-            total,
-            page,
-            limit,
-            pages: Math.ceil(total / limit),
-          },
-        },
-      });
-    } catch (error) {
-      console.error("Error fetching transactions:", error);
-      return BaseService.sendFailedResponse({
-        error: "Error fetching transactions",
-      });
+    const wallet = await WalletModel.findOne({ userId });
+    if (!wallet) {
+      return BaseService.sendFailedResponse({ error: "Wallet not found" });
     }
+
+    // Date filter
+    let dateFilter = {};
+    const now = new Date();
+    if (period === "7d") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      dateFilter = { createdAt: { $gte: sevenDaysAgo, $lte: now } };
+    } else if (period === "30d") {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+      dateFilter = { createdAt: { $gte: thirtyDaysAgo, $lte: now } };
+    }
+
+    // Build filter – only apply alertType if it's 'credit' or 'debit'
+    const filter = { userId, ...dateFilter };
+    if (alertType === "credit") filter.alertType = "credit";
+    if (alertType === "debit")  filter.alertType = "debit";
+
+    const transactions = await PaymentModel.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await PaymentModel.countDocuments(filter);
+
+    return BaseService.sendSuccessResponse({
+      transactions,           // ✅ direct array, no nested 'message'
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching transactions:", error);
+    return BaseService.sendFailedResponse({ error: "Error fetching transactions" });
   }
+}
+
   async getMonthlyTransaction(req, res) {
     try {
       const userId = req.user.id;
