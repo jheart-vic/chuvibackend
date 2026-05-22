@@ -69,12 +69,12 @@ class WalletService extends BaseService {
        callback_url: "https://www.chuvilaundry.com/user/payment/callback",
       });
 
-      await createNotification({
-        userId,
-        title: "Wallet Top-Up Initiated",
-        body: `Your wallet top-up of ₦${amount / 100} has been initiated. Please complete the payment to add funds to your wallet.`,
-        type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
-      })
+      // await createNotification({
+      //   userId,
+      //   title: "Wallet Top-Up Initiated",
+      //   body: `Your wallet top-up of ₦${amount / 100} has been initiated. Please complete the payment to add funds to your wallet.`,
+      //   type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
+      // })
 
       return BaseService.sendSuccessResponse({
         message: response.data,
