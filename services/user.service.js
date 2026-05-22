@@ -24,6 +24,7 @@ const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const SubscriptionModel = require('../models/subscription.model')
+const paginate = require('../util/paginate')
 
 class UserService extends BaseService {
     async getDashboard(req) {
@@ -450,13 +451,21 @@ class UserService extends BaseService {
     async getUserNotifications(req) {
         try {
             const userId = req.user.id
+            const { type, page = 1, limit = 20 } = req.query
 
-            const notifications = await NotificationModel.find({ userId }).sort(
-                { createdAt: -1 },
-            )
+            const query = { userId }
+            if (type && type !== 'all') {
+                const types = type.split(',')
+                query.type = types.length === 1 ? types[0] : { $in: types }
+            }
+
+            const [{ data: notifications, pagination }, unreadCount] = await Promise.all([
+                paginate(NotificationModel, query, { page, limit }),
+                NotificationModel.countDocuments({ userId, isRead: false }),
+            ])
 
             return BaseService.sendSuccessResponse({
-                data: notifications,
+                data: { notifications, pagination, unreadCount },
             })
         } catch (error) {
             console.log(error)
