@@ -383,7 +383,7 @@ router.get(ROUTE_WALLET_BALANCE, [auth], (req, res) => {
  *         name: alertType
  *         schema:
  *           type: string
- *           example: credit | debit
+ *           example: alert type (credit | debit)
  *         description: Filter transactions by alert type (credit or debit)
  *     responses:
  *       200:
