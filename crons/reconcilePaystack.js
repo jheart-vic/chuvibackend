@@ -27,7 +27,7 @@ cron.schedule("0 3 * * *", async () => {
     // === Task 2: Clean up abandoned pending payments ===
     // Calculate the date threshold (exactly 3 days ago from right now)
     const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 1);
 
     // Perform bulk deletion matching all your criteria
     const deleteResult = await PaymentModel.deleteMany({
