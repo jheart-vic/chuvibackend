@@ -234,6 +234,8 @@ class WalletService extends BaseService {
       const userId = req.user.id;
 
       let { page, limit } = req.query;
+      const alertType = req.query.alertType || "";
+
 
       // 📅 Monthly filter
       const startOfMonth = new Date();
@@ -248,6 +250,7 @@ class WalletService extends BaseService {
       const query = {
         userId,
         status: "success",
+        ...(alertType ? { alertType } : {}),
         createdAt: { $gte: startOfMonth, $lte: endOfMonth },
       };
 
