@@ -17,6 +17,7 @@ const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
 const createNotification = require('../util/createNotification')
+const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
@@ -195,19 +196,20 @@ class WashAndDryService extends BaseService {
     }
 
     //CONFIRM ITEM FOR WASHING
+
     async confirmItemForWashing(req) {
         try {
             const orderId = req.params.id
-            const itemId = req.params.itemId
             const userId = req.user.id
+            const { itemIds = [], allItems = false } = req.body
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            if (!itemId)
+            if (!allItems && !itemIds.length)
                 return BaseService.sendFailedResponse({
-                    error: 'Item ID is required',
+                    error: 'Provide itemIds or set allItems to true',
                 })
 
             const user = await UserModel.findById(userId)
@@ -225,57 +227,29 @@ class WashAndDryService extends BaseService {
                     error: 'Order not found or not in washing stage',
                 })
 
-            const item = order.items.id(itemId)
-            if (!item)
-                return BaseService.sendFailedResponse({
-                    error: 'Item not found in order',
+            const { updatedCount, allItemsCompleted } =
+                await updateOrderItemsStage({
+                    order,
+                    orderId,
+                    userId,
+                    itemIds,
+                    allItems,
+                    statusField: 'washStatus',
+                    completedValue: 'complete',
+                    timestampField: 'washConfirmedAt',
+                    operatorField: 'washConfirmedByOperatorId',
+                    actionName: 'wash_confirmed',
+                    actionNote:
+                        'Item confirmed as present and ready for washing',
+                    orderStartedAtField: 'washDetails.startedAt',
+                    orderOperatorField: 'washDetails.operatorId',
+                    stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                    completionCheck: (item) => item.washStatus === 'complete',
                 })
-            if (item.washStatus === 'complete')
-                return BaseService.sendFailedResponse({
-                    error: 'Item already confirmed for washing',
-                })
-
-            await BookOrderModel.updateOne(
-                { _id: orderId, 'items._id': itemId },
-                {
-                    $set: {
-                        'items.$.washStatus': 'complete',
-                        'items.$.washConfirmedAt': new Date(),
-                        'items.$.washConfirmedByOperatorId': userId,
-                    },
-                    $push: {
-                        'items.$.actionLog': {
-                            action: 'wash_confirmed',
-                            note: 'Item confirmed as present and ready for washing',
-                            timestamp: new Date(),
-                        },
-                    },
-                },
-            )
-
-            // Re-fetch to check if all items are now confirmed
-            const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allItemsConfirmed = updatedOrder.items.every(
-                (i) => i.washStatus === 'complete',
-            )
-
-            // Auto-promote: when all items confirmed set order-level startedAt + stationStatus
-            if (allItemsConfirmed) {
-                await BookOrderModel.updateOne(
-                    { _id: orderId },
-                    {
-                        $set: {
-                            stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
-                            'washDetails.startedAt': new Date(),
-                            'washDetails.operatorId': userId,
-                        },
-                    },
-                )
-            }
 
             await ActivityModel.create({
-                title: 'Item Confirmed for Washing',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} confirmed as present and ready for washing`,
+                title: 'Item(s) Confirmed for Washing',
+                description: `${updatedCount} item(s) on order ${order.oscNumber} confirmed for washing`,
                 type: ACTIVITY_TYPE.ORDER_ITEM_WASH_CONFIRMED,
                 orderId: order._id,
                 userId,
@@ -284,39 +258,148 @@ class WashAndDryService extends BaseService {
 
             await createNotification({
                 userId,
-                title: 'Item Confirmed for Washing',
-                body: "Item confirmed for washing",
+                title: 'Item(s) Confirmed for Washing',
+                body: `${updatedCount} item(s) confirmed for washing`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
             return BaseService.sendSuccessResponse({
                 message: {
-                    message: 'Item confirmed for washing',
-                    allItemsConfirmed,
+                    message: `${updatedCount} item(s) confirmed for washing`,
+                    allItemsConfirmed: allItemsCompleted,
                 },
             })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to confirm item for washing',
+                error: 'Failed to confirm item(s) for washing',
             })
         }
     }
+    // async confirmItemForWashing(req) {
 
-    // UNDO ITEM WASH CONFIRMATION
+    //     try {
+    //         const orderId = req.params.id
+    //         const itemId = req.params.itemId
+    //         const userId = req.user.id
+
+    //         if (!orderId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order ID is required',
+    //             })
+    //         if (!itemId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item ID is required',
+    //             })
+
+    //         const user = await UserModel.findById(userId)
+    //         if (!user)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'User not found',
+    //             })
+
+    //         const order = await BookOrderModel.findOne({
+    //             _id: orderId,
+    //             'stage.status': ORDER_STATUS.WASHING,
+    //         })
+    //         if (!order)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order not found or not in washing stage',
+    //             })
+
+    //         const item = order.items.id(itemId)
+    //         if (!item)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item not found in order',
+    //             })
+    //         if (item.washStatus === 'complete')
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item already confirmed for washing',
+    //             })
+
+    //         await BookOrderModel.updateOne(
+    //             { _id: orderId, 'items._id': itemId },
+    //             {
+    //                 $set: {
+    //                     'items.$.washStatus': 'complete',
+    //                     'items.$.washConfirmedAt': new Date(),
+    //                     'items.$.washConfirmedByOperatorId': userId,
+    //                 },
+    //                 $push: {
+    //                     'items.$.actionLog': {
+    //                         action: 'wash_confirmed',
+    //                         note: 'Item confirmed as present and ready for washing',
+    //                         timestamp: new Date(),
+    //                     },
+    //                 },
+    //             },
+    //         )
+
+    //         // Re-fetch to check if all items are now confirmed
+    //         const updatedOrder = await BookOrderModel.findById(orderId).lean()
+    //         const allItemsConfirmed = updatedOrder.items.every(
+    //             (i) => i.washStatus === 'complete',
+    //         )
+
+    //         // Auto-promote: when all items confirmed set order-level startedAt + stationStatus
+    //         if (allItemsConfirmed) {
+    //             await BookOrderModel.updateOne(
+    //                 { _id: orderId },
+    //                 {
+    //                     $set: {
+    //                         stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+    //                         'washDetails.startedAt': new Date(),
+    //                         'washDetails.operatorId': userId,
+    //                     },
+    //                 },
+    //             )
+    //         }
+
+    //         await ActivityModel.create({
+    //             title: 'Item Confirmed for Washing',
+    //             description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} confirmed as present and ready for washing`,
+    //             type: ACTIVITY_TYPE.ORDER_ITEM_WASH_CONFIRMED,
+    //             orderId: order._id,
+    //             userId,
+    //             reference: order.oscNumber,
+    //         })
+
+    //         await createNotification({
+    //             userId,
+    //             title: 'Item Confirmed for Washing',
+    //             body: "Item confirmed for washing",
+    //             type: NOTIFICATION_TYPE.ORDER_WASHING,
+    //         })
+
+    //         return BaseService.sendSuccessResponse({
+    //             message: {
+    //                 message: 'Item confirmed for washing',
+    //                 allItemsConfirmed,
+    //             },
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Failed to confirm item for washing',
+    //         })
+    //     }
+    // }
+
+    // UNDO ITEM(S) WASH CONFIRMATION
+
     async undoConfirmItemForWashing(req) {
         try {
             const orderId = req.params.id
-            const itemId = req.params.itemId
             const userId = req.user.id
+            const { itemIds = [], allItems = false } = req.body
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            if (!itemId)
+            if (!allItems && !itemIds.length)
                 return BaseService.sendFailedResponse({
-                    error: 'Item ID is required',
+                    error: 'Provide itemIds or set allItems to true',
                 })
 
             const user = await UserModel.findById(userId)
@@ -334,48 +417,72 @@ class WashAndDryService extends BaseService {
                     error: 'Order not found or not in washing stage',
                 })
 
-            const item = order.items.id(itemId)
-            if (!item)
+            const now = new Date()
+
+            const targetItems = allItems
+                ? order.items.filter((item) => item.washStatus === 'complete')
+                : order.items.filter(
+                      (item) =>
+                          itemIds.includes(item._id.toString()) &&
+                          item.washStatus === 'complete',
+                  )
+
+            if (!targetItems.length)
                 return BaseService.sendFailedResponse({
-                    error: 'Item not found in order',
+                    error: 'No confirmed items found to undo',
                 })
 
-            if (item.washStatus === 'pending') {
-                return BaseService.sendFailedResponse({
-                    error: 'Item wash has not been confirmed yet',
-                })
-            }
-
-            await BookOrderModel.updateOne(
-                { _id: orderId, 'items._id': itemId },
-                {
-                    $set: {
-                        'items.$.washStatus': 'pending',
-                        'items.$.washConfirmedAt': null,
-                        'items.$.washConfirmedByOperatorId': null,
-                        'washDetails.startedAt': null,
-                        'washDetails.operatorId': null,
-                        stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                    },
-                    $push: {
-                        'items.$.actionLog': {
-                            action: 'undo_wash_confirmed',
-                            note: '',
-                            timestamp: new Date(),
+            await BookOrderModel.bulkWrite(
+                targetItems.map((item) => ({
+                    updateOne: {
+                        filter: { _id: orderId, 'items._id': item._id },
+                        update: {
+                            $set: {
+                                'items.$.washStatus': 'pending',
+                                'items.$.washConfirmedAt': null,
+                                'items.$.washConfirmedByOperatorId': null,
+                            },
+                            $push: {
+                                'items.$.actionLog': {
+                                    action: 'undo_wash_confirmed',
+                                    note: '',
+                                    timestamp: now,
+                                },
+                            },
                         },
                     },
-                },
+                })),
             )
+
+            // Only clear order-level wash fields if no items remain confirmed
+            const updatedOrder = await BookOrderModel.findById(orderId).lean()
+            const anyStillConfirmed = updatedOrder.items.some(
+                (i) => i.washStatus === 'complete',
+            )
+
+            if (!anyStillConfirmed) {
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    {
+                        $set: {
+                            'washDetails.startedAt': null,
+                            'washDetails.operatorId': null,
+                            stationStatus:
+                                STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                        },
+                    },
+                )
+            }
 
             await createNotification({
                 userId,
                 title: 'Item Wash Confirmation Undone',
-                body: "Item wash confirmation has been undone",
+                body: `${targetItems.length} item(s) wash confirmation has been undone`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
             return BaseService.sendSuccessResponse({
-                message: 'Item wash confirmation undone',
+                message: `${targetItems.length} item(s) wash confirmation undone`,
             })
         } catch (error) {
             console.log(error)
@@ -384,6 +491,87 @@ class WashAndDryService extends BaseService {
             })
         }
     }
+
+    // async undoConfirmItemForWashing(req) {
+    //     try {
+    //         const orderId = req.params.id
+    //         const itemId = req.params.itemId
+    //         const userId = req.user.id
+
+    //         if (!orderId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order ID is required',
+    //             })
+    //         if (!itemId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item ID is required',
+    //             })
+
+    //         const user = await UserModel.findById(userId)
+    //         if (!user)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'User not found',
+    //             })
+
+    //         const order = await BookOrderModel.findOne({
+    //             _id: orderId,
+    //             'stage.status': ORDER_STATUS.WASHING,
+    //         })
+    //         if (!order)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order not found or not in washing stage',
+    //             })
+
+    //         const item = order.items.id(itemId)
+    //         if (!item)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item not found in order',
+    //             })
+
+    //         if (item.washStatus === 'pending') {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item wash has not been confirmed yet',
+    //             })
+    //         }
+
+    //         await BookOrderModel.updateOne(
+    //             { _id: orderId, 'items._id': itemId },
+    //             {
+    //                 $set: {
+    //                     'items.$.washStatus': 'pending',
+    //                     'items.$.washConfirmedAt': null,
+    //                     'items.$.washConfirmedByOperatorId': null,
+    //                     'washDetails.startedAt': null,
+    //                     'washDetails.operatorId': null,
+    //                     stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+    //                 },
+    //                 $push: {
+    //                     'items.$.actionLog': {
+    //                         action: 'undo_wash_confirmed',
+    //                         note: '',
+    //                         timestamp: new Date(),
+    //                     },
+    //                 },
+    //             },
+    //         )
+
+    //         await createNotification({
+    //             userId,
+    //             title: 'Item Wash Confirmation Undone',
+    //             body: 'Item wash confirmation has been undone',
+    //             type: NOTIFICATION_TYPE.ORDER_WASHING,
+    //         })
+
+    //         return BaseService.sendSuccessResponse({
+    //             message: 'Item wash confirmation undone',
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Failed to undo item wash confirmation',
+    //         })
+    //     }
+    // }
 
     // SEND ITEM TO HOLD
     async sendToHold(req) {

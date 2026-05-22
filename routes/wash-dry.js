@@ -138,30 +138,62 @@ router.get(ROUTE_WASH_AND_DRY_QUEUE_SINGLE, [washAndDryAuth], (req, res) => {
 
 /**
  * @swagger
- * /wash-dry/order/queue/{id}/items/{itemId}/confirm-washing:
+ * /wash-dry/order/queue/{id}/items/confirm-washing:
  *   patch:
- *     summary: Confirm a single item is present and ready for washing
+ *     summary: Confirm one, many, or all items as ready for washing
  *     description: |
- *       Operator opens the "Confirm Item for Washing" modal per item.
- *       The modal shows the item's pretreatment comments and flag comments from S&P (read-only).
- *       The only input is checking "This item is present and ready for washing".
- *       Sets item.washStatus → complete and pushes to actionLog.
- *       When ALL items are confirmed, stationStatus → WASH_AND_DRY_STATION and
- *       washDetails.startedAt is set automatically. Returns allItemsConfirmed.
+ *       Supports three calling modes controlled by the request body:
+ *
+ *       - **Single item** — individual "Start Washing" button per item:
+ *         `{ "itemIds": ["<itemId>"] }`
+ *
+ *       - **Multiple items** — bulk selection:
+ *         `{ "itemIds": ["<id1>", "<id2>"] }`
+ *
+ *       - **All items at once** — "Start All" button:
+ *         `{ "allItems": true }`
+ *
+ *       Each targeted item gets `washStatus → complete`, `washConfirmedAt`, and
+ *       `washConfirmedByOperatorId` stamped, plus an `actionLog` entry.
+ *       When **all** order items are confirmed, `stationStatus → WASH_AND_DRY_STATION`
+ *       and `washDetails.startedAt` are set automatically.
+ *       Returns `updatedCount` and `allItemsConfirmed`.
  *     tags:
  *       - Wash & Dry
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
+ *         description: Order ID
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemIds:
+ *                 type: array
+ *                 description: Item IDs to confirm. Required unless allItems is true.
+ *                 items: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *               allItems:
+ *                 type: boolean
+ *                 description: When true, confirms all pending items in one action.
+ *                 example: false
+ *           examples:
+ *             single:
+ *               summary: Single item (per-item button)
+ *               value: { itemIds: ["64d3c9c0f1b2a8e9d0f67890"] }
+ *             bulk:
+ *               summary: Multiple selected items
+ *               value: { itemIds: ["64d3c9c0f1b2a8e9d0f67890", "64d3c9c0f1b2a8e9d0f99999"] }
+ *             all:
+ *               summary: All items at once (Start All button)
+ *               value: { allItems: true }
  *     responses:
  *       200:
- *         description: Item confirmed for washing. Returns allItemsConfirmed flag.
+ *         description: Items confirmed for washing.
  *         content:
  *           application/json:
  *             schema:
@@ -170,12 +202,12 @@ router.get(ROUTE_WASH_AND_DRY_QUEUE_SINGLE, [washAndDryAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     message:           { type: string, example: "Item confirmed for washing" }
- *                     allItemsConfirmed: { type: boolean, example: false }
+ *                     message:           { type: string, example: "3 item(s) confirmed for washing" }
+ *                     allItemsConfirmed: { type: boolean, example: true }
  *       400:
- *         description: Item already confirmed
+ *         description: No valid items found, or neither itemIds nor allItems provided
  *       404:
- *         description: Order or item not found
+ *         description: Order not found or not in washing stage
  *       500:
  *         description: Server error
  */

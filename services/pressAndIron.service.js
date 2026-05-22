@@ -12,6 +12,7 @@ const {
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const { buildStageUpdate } = require('../util/helper')
+const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 
 class PressAndIronService extends BaseService {
     async getDashboard(req) {
@@ -166,16 +167,16 @@ class PressAndIronService extends BaseService {
     async confirmItemForPressing(req) {
         try {
             const orderId = req.params.id
-            const itemId = req.params.itemId
             const userId = req.user.id
+            const { itemIds = [], allItems = false } = req.body
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            if (!itemId)
+            if (!allItems && !itemIds.length)
                 return BaseService.sendFailedResponse({
-                    error: 'Item ID is required',
+                    error: 'Provide itemIds or set allItems to true',
                 })
 
             const user = await UserModel.findById(userId)
@@ -193,57 +194,29 @@ class PressAndIronService extends BaseService {
                     error: 'Order not found or not in ironing stage',
                 })
 
-            const item = order.items.id(itemId)
-            if (!item)
-                return BaseService.sendFailedResponse({
-                    error: 'Item not found in order',
+            const { updatedCount, allItemsCompleted } =
+                await updateOrderItemsStage({
+                    order,
+                    orderId,
+                    userId,
+                    itemIds,
+                    allItems,
+                    statusField: 'pressStatus',
+                    completedValue: 'complete',
+                    timestampField: 'pressConfirmedAt',
+                    operatorField: 'pressConfirmedByOperatorId',
+                    actionName: 'press_confirmed',
+                    actionNote:
+                        'Item confirmed as present and ready for pressing or ironing',
+                    orderStartedAtField: 'pressDetails.startedAt',
+                    orderOperatorField: 'pressDetails.operatorId',
+                    stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    completionCheck: (item) => item.pressStatus === 'complete',
                 })
-            if (item.pressStatus === 'complete')
-                return BaseService.sendFailedResponse({
-                    error: 'Item already confirmed for pressing',
-                })
-
-            await BookOrderModel.updateOne(
-                { _id: orderId, 'items._id': itemId },
-                {
-                    $set: {
-                        'items.$.pressStatus': 'complete',
-                        'items.$.pressConfirmedAt': new Date(),
-                        'items.$.pressConfirmedByOperatorId': userId,
-                    },
-                    $push: {
-                        'items.$.actionLog': {
-                            action: 'press_confirmed',
-                            note: 'Item confirmed as present and ready for pressing or ironing',
-                            timestamp: new Date(),
-                        },
-                    },
-                },
-            )
-
-            const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allItemsConfirmed = updatedOrder.items.every(
-                (i) => i.pressStatus === 'complete',
-            )
-
-            // Auto-promote when all items confirmed
-            if (allItemsConfirmed) {
-                await BookOrderModel.updateOne(
-                    { _id: orderId },
-                    {
-                        $set: {
-                            stationStatus:
-                                STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                            'pressDetails.startedAt': new Date(),
-                            'pressDetails.operatorId': userId,
-                        },
-                    },
-                )
-            }
 
             await ActivityModel.create({
-                title: 'Item Confirmed for Pressing',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} confirmed as present and ready for pressing`,
+                title: 'Item(s) Confirmed for Pressing',
+                description: `${updatedCount} item(s) on order ${order.oscNumber} confirmed for pressing`,
                 type: ACTIVITY_TYPE.ORDER_ITEM_PRESS_CONFIRMED,
                 orderId: order._id,
                 userId,
@@ -252,31 +225,32 @@ class PressAndIronService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: {
-                    message: 'Item confirmed for pressing',
-                    allItemsConfirmed,
+                    message: `${updatedCount} item(s) confirmed for pressing`,
+                    allItemsConfirmed: allItemsCompleted,
                 },
             })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to confirm item for pressing',
+                error: 'Failed to confirm item(s) for pressing',
             })
         }
     }
 
+    // UNDO ITEM(S) PRESS CONFIRMATION
     async undoConfirmItemForPressing(req) {
         try {
             const orderId = req.params.id
-            const itemId = req.params.itemId
             const userId = req.user.id
+            const { itemIds = [], allItems = false } = req.body
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            if (!itemId)
+            if (!allItems && !itemIds.length)
                 return BaseService.sendFailedResponse({
-                    error: 'Item ID is required',
+                    error: 'Provide itemIds or set allItems to true',
                 })
 
             const user = await UserModel.findById(userId)
@@ -294,36 +268,46 @@ class PressAndIronService extends BaseService {
                     error: 'Order not found or not in ironing stage',
                 })
 
-            const item = order.items.id(itemId)
-            if (!item)
+            const now = new Date()
+
+            const targetItems = allItems
+                ? order.items.filter((item) => item.pressStatus === 'complete')
+                : order.items.filter(
+                      (item) =>
+                          itemIds.includes(item._id.toString()) &&
+                          item.pressStatus === 'complete',
+                  )
+
+            if (!targetItems.length)
                 return BaseService.sendFailedResponse({
-                    error: 'Item not found in order',
+                    error: 'No confirmed items found to undo',
                 })
-            if (item.pressStatus === 'pending')
-                return BaseService.sendFailedResponse({
-                    error: 'Item was never completed, please confirm as completed',
-                })
-            await BookOrderModel.updateOne(
-                { _id: orderId, 'items._id': itemId },
-                {
-                    $set: { 'items.$.pressStatus': 'pending' },
-                    $push: {
-                        'items.$.actionLog': {
-                            action: 'undo_press_confirmed',
-                            note: '',
-                            timestamp: new Date(),
+
+            await BookOrderModel.bulkWrite(
+                targetItems.map((item) => ({
+                    updateOne: {
+                        filter: { _id: orderId, 'items._id': item._id },
+                        update: {
+                            $set: { 'items.$.pressStatus': 'pending' },
+                            $push: {
+                                'items.$.actionLog': {
+                                    action: 'undo_press_confirmed',
+                                    note: '',
+                                    timestamp: now,
+                                },
+                            },
                         },
                     },
-                },
+                })),
             )
 
-            // If pressDetails.startedAt was set (auto-promoted when all items confirmed),
-            // clear it since items are no longer all confirmed
+            // Only clear pressDetails if no items remain confirmed
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allStillConfirmed = updatedOrder.items.every(
+            const anyStillConfirmed = updatedOrder.items.some(
                 (i) => i.pressStatus === 'complete',
             )
-            if (!allStillConfirmed && updatedOrder.pressDetails?.startedAt) {
+
+            if (!anyStillConfirmed && updatedOrder.pressDetails?.startedAt) {
                 await BookOrderModel.updateOne(
                     { _id: orderId },
                     {
@@ -336,7 +320,7 @@ class PressAndIronService extends BaseService {
             }
 
             return BaseService.sendSuccessResponse({
-                message: 'Item press confirmation undone',
+                message: `${targetItems.length} item(s) press confirmation undone`,
             })
         } catch (error) {
             console.log(error)
@@ -345,6 +329,88 @@ class PressAndIronService extends BaseService {
             })
         }
     }
+
+    // async undoConfirmItemForPressing(req) {
+    //     try {
+    //         const orderId = req.params.id
+    //         const itemId = req.params.itemId
+    //         const userId = req.user.id
+
+    //         if (!orderId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order ID is required',
+    //             })
+    //         if (!itemId)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item ID is required',
+    //             })
+
+    //         const user = await UserModel.findById(userId)
+    //         if (!user)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'User not found',
+    //             })
+
+    //         const order = await BookOrderModel.findOne({
+    //             _id: orderId,
+    //             'stage.status': ORDER_STATUS.IRONING,
+    //         })
+    //         if (!order)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order not found or not in ironing stage',
+    //             })
+
+    //         const item = order.items.id(itemId)
+    //         if (!item)
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item not found in order',
+    //             })
+    //         if (item.pressStatus === 'pending')
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Item was never completed, please confirm as completed',
+    //             })
+    //         await BookOrderModel.updateOne(
+    //             { _id: orderId, 'items._id': itemId },
+    //             {
+    //                 $set: { 'items.$.pressStatus': 'pending' },
+    //                 $push: {
+    //                     'items.$.actionLog': {
+    //                         action: 'undo_press_confirmed',
+    //                         note: '',
+    //                         timestamp: new Date(),
+    //                     },
+    //                 },
+    //             },
+    //         )
+
+    //         // If pressDetails.startedAt was set (auto-promoted when all items confirmed),
+    //         // clear it since items are no longer all confirmed
+    //         const updatedOrder = await BookOrderModel.findById(orderId).lean()
+    //         const allStillConfirmed = updatedOrder.items.every(
+    //             (i) => i.pressStatus === 'complete',
+    //         )
+    //         if (!allStillConfirmed && updatedOrder.pressDetails?.startedAt) {
+    //             await BookOrderModel.updateOne(
+    //                 { _id: orderId },
+    //                 {
+    //                     $unset: {
+    //                         'pressDetails.startedAt': '',
+    //                         'pressDetails.operatorId': '',
+    //                     },
+    //                 },
+    //             )
+    //         }
+
+    //         return BaseService.sendSuccessResponse({
+    //             message: 'Item press confirmation undone',
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Failed to undo item press confirmation',
+    //         })
+    //     }
+    // }
 
     async sendToHold(req) {
         try {

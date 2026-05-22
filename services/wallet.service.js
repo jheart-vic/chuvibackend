@@ -66,6 +66,7 @@ class WalletService extends BaseService {
           paymentMethod,
           reference
         },
+       callback_url: "https://www.chuvilaundry.com/user/payment/callback",
       });
 
       await createNotification({
@@ -280,7 +281,7 @@ class WalletService extends BaseService {
           },
         },
       ]);
-      
+
       const credit = result?.credit || 0;
       const debit = result?.debit || 0;
 

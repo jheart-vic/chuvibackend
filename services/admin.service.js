@@ -713,21 +713,21 @@ class AdminService extends BaseService {
     async updateOrderDetails(req) {
         try {
             const updateData = req.body;
-            
+
             // Find the single configuration document
             const adminOrderDetail = await AdminOrderDetailsModel.findOne();
-    
+
             if (!adminOrderDetail) {
                 return BaseService.sendFailedResponse({ error: 'Order details configuration not found.' });
             }
-    
+
             // Dynamically update the document fields
             await AdminOrderDetailsModel.findOneAndUpdate(
                 { _id: adminOrderDetail._id },
                 { $set: updateData },
                 { new: true }
             );
-    
+
             return BaseService.sendSuccessResponse({ message: 'Setting has been updated' });
         } catch (error) {
             console.log(error);
@@ -737,28 +737,28 @@ class AdminService extends BaseService {
     async updateAdminSettings(req) {
         try {
             const updateData = req.body;
-            
+
             // Find the single configuration document
             const adminSetting = await AdminSettingModel.findOne();
-    
+
             if (!adminSetting) {
                 return BaseService.sendFailedResponse({ error: 'Order details configuration not found.' });
             }
-    
+
             // Dynamically update the document fields
             await AdminSettingModel.findOneAndUpdate(
                 { _id: adminSetting._id },
                 { $set: updateData },
                 { new: true }
             );
-    
+
             return BaseService.sendSuccessResponse({ message: 'Setting has been updated' });
         } catch (error) {
             console.log(error);
             return BaseService.sendFailedResponse({ error: 'Something went wrong. Please try again later.' });
         }
     }
-    
+
     async getPaymentVerificationQueue(req, res) {
         try {
             const result = await paginate(
@@ -1468,6 +1468,7 @@ class AdminService extends BaseService {
                 { $set: req.body },
                 { new: true }
             )
+          return BaseService.sendSuccessResponse({message: 'Item updated successfully'})
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
