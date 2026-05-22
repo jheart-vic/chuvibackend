@@ -9,14 +9,21 @@ class NotificationService extends BaseService {
     async getNotifications(req) {
         try {
             const userId = req.user.id
-            const { page = 1, limit = 20 } = req.query
+            const { type, page = 1, limit = 20 } = req.query
 
             const user = await UserModel.findById(userId)
             if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
 
+            // Build query — apply type filter if provided and not 'all'
+            const query = { userId }
+            if (type && type !== 'all') {
+                const types = type.split(',').map((t) => t.trim()).filter(Boolean)
+                query.type = types.length === 1 ? types[0] : { $in: types }
+            }
+
             const { data, pagination } = await paginate(
                 NotificationModel,
-                { userId },
+                query,
                 {
                     page,
                     limit,
