@@ -349,7 +349,7 @@ class BookOrderService extends BaseService {
         const reference = generateReferenceId();
         await PaymentModel.create({
           userId: userId,
-          amount: totalPrice,
+          amount: 0,
           reference: reference,
           status: "success",
           order: newOrder._id,
