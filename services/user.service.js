@@ -19,6 +19,7 @@ const {
     ROLE,
     GENERAL_STATUS,
     PAYMENT_ORDER_STATUS,
+    SERVICE_PLATFORM,
 } = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
@@ -533,6 +534,12 @@ class UserService extends BaseService {
                 })
             }
 
+            // ✅ Block Google users from changing password
+            if (user.servicePlatform === SERVICE_PLATFORM.GOOGLE) {
+                return BaseService.sendFailedResponse({
+                    error: 'Your account uses Google sign-in. Password change is not available.',
+                })
+            }
             // Verify current password
             const isMatch = await user.comparePassword(currentPassword)
             if (!isMatch) {
