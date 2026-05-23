@@ -502,12 +502,26 @@ class UserService extends BaseService {
                 })
             }
 
-            user.phoneNumber = phoneNumber
-            await user.save()
+            // ✅ Fix 1 — avoid full document validation (address landmark issue)
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                userId,
+                { $set: { phoneNumber } },
+                { new: true, runValidators: false },
+            )
+
+            // ✅ Fix 2 — generate and return tokens so frontend can proceed
+            const accessToken = await updatedUser.generateAccessToken(
+                process.env.ACCESS_TOKEN_SECRET || '',
+            )
+            const refreshToken = await updatedUser.generateRefreshToken(
+                process.env.REFRESH_TOKEN_SECRET || '',
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Profile completed successfully',
-                data: user,
+                data: updatedUser,
+                accessToken,
+                refreshToken,
             })
         } catch (error) {
             console.error(error)
