@@ -267,8 +267,12 @@ class AuthService extends BaseService {
                 if (!userWithSub.fullName && fullName)
                     userWithSub.fullName = fullName
 
-                if (picture)
+                // ✅ Only use Google picture if user hasn't uploaded a custom one
+                // publicId is '' for Google/default images, non-empty for Cloudinary uploads
+                const hasCustomImage = userWithSub.image?.publicId !== ''
+                if (picture && !hasCustomImage) {
                     userWithSub.image = { imageUrl: picture, publicId: '' }
+                }
 
                 await userWithSub.save()
 
@@ -290,13 +294,13 @@ class AuthService extends BaseService {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'none',
-                    maxAge: 28 * 24 * 60 * 60 * 1000,
+                    maxAge: 7 * 24 * 60 * 60 * 1000,
                     path: '/',
                 })
 
                 return BaseService.sendSuccessResponse({
                     message: userWithSub,
-                    requiresPhone: !userWithSub.phone, // ✅ false on every login after phone is saved
+                    requiresPhone: !userWithSub.phoneNumber, // ✅ using phoneNumber (not phone)
                 })
             }
 
@@ -324,10 +328,10 @@ class AuthService extends BaseService {
 
             // Welcome email
             const emailHtml = `
-            <h1>Registration successful</h1>
-            <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
-            <p>You have successfully signed up.</p>
-        `
+                <h1>Registration successful</h1>
+                <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+                <p>You have successfully signed up.</p>
+            `
 
             await sendEmail({
                 subject: 'Welcome to Chuvi Laundry',
@@ -347,13 +351,13 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 28 * 24 * 60 * 60 * 1000,
+                maxAge: 7 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
             return BaseService.sendSuccessResponse({
                 message: newUser,
-                requiresPhone: true, // ✅ always true for brand new users (no phone yet)
+                requiresPhone: true, // ✅ always true for brand new users
             })
         } catch (error) {
             console.error(error)
@@ -362,7 +366,6 @@ class AuthService extends BaseService {
             })
         }
     }
-
     async appleSignup(req, res) {
         try {
             const {
