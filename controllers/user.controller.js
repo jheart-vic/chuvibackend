@@ -143,6 +143,44 @@ class UserController extends BaseController {
         }
         return BaseController.sendSuccessResponse(res, result.data)
     }
+    async completeProfile(req) {
+        try {
+            const userId = req.user.id
+            const { phoneNumber } = req.body
+
+            if (!phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Phone number is required',
+                })
+            }
+
+            const user = await UserModel.findById(userId)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
+
+            if (user.phone) {
+                return BaseService.sendFailedResponse({
+                    error: 'Profile already completed',
+                })
+            }
+
+            user.phoneNumber = phoneNumber
+            await user.save()
+
+            return BaseService.sendSuccessResponse({
+                message: 'Profile completed successfully',
+                data: user,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: this.server_error_message,
+            })
+        }
+    }
 }
 
 module.exports = UserController

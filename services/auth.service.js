@@ -290,12 +290,13 @@ class AuthService extends BaseService {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'none',
-                    maxAge: 28 * 24 * 60 * 60 * 1000, // ✅ Fixed: was 28 days, now consistent with new user (7 days)
+                    maxAge: 28 * 24 * 60 * 60 * 1000,
                     path: '/',
                 })
 
                 return BaseService.sendSuccessResponse({
-                    message: userWithSub, // ✅ Fixed: was `user` (undefined), now `userWithSub`
+                    message: userWithSub,
+                    requiresPhone: !userWithSub.phone, // ✅ false on every login after phone is saved
                 })
             }
 
@@ -323,10 +324,10 @@ class AuthService extends BaseService {
 
             // Welcome email
             const emailHtml = `
-                <h1>Registration successful</h1>
-                <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
-                <p>You have successfully signed up.</p>
-            `
+            <h1>Registration successful</h1>
+            <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+            <p>You have successfully signed up.</p>
+        `
 
             await sendEmail({
                 subject: 'Welcome to Chuvi Laundry',
@@ -352,6 +353,7 @@ class AuthService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: newUser,
+                requiresPhone: true, // ✅ always true for brand new users (no phone yet)
             })
         } catch (error) {
             console.error(error)

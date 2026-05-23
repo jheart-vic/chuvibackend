@@ -459,10 +459,11 @@ class UserService extends BaseService {
                 query.type = types.length === 1 ? types[0] : { $in: types }
             }
 
-            const [{ data: notifications, pagination }, unreadCount] = await Promise.all([
-                paginate(NotificationModel, query, { page, limit }),
-                NotificationModel.countDocuments({ userId, isRead: false }),
-            ])
+            const [{ data: notifications, pagination }, unreadCount] =
+                await Promise.all([
+                    paginate(NotificationModel, query, { page, limit }),
+                    NotificationModel.countDocuments({ userId, isRead: false }),
+                ])
 
             return BaseService.sendSuccessResponse({
                 data: { notifications, pagination, unreadCount },
@@ -475,6 +476,44 @@ class UserService extends BaseService {
         }
     }
 
+    async completeProfile(req) {
+        try {
+            const userId = req.user.id
+            const { phoneNumber } = req.body
+
+            if (!phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Phone number is required',
+                })
+            }
+
+            const user = await UserModel.findById(userId)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
+
+            if (user.phone) {
+                return BaseService.sendFailedResponse({
+                    error: 'Profile already completed',
+                })
+            }
+
+            user.phoneNumber = phoneNumber
+            await user.save()
+
+            return BaseService.sendSuccessResponse({
+                message: 'Profile completed successfully',
+                data: user,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: this.server_error_message,
+            })
+        }
+    }
     async resetPasswordInProfilePage(req, res) {
         try {
             const userId = req.user.id
