@@ -243,7 +243,6 @@ class AuthService extends BaseService {
                 family_name,
             } = payload
 
-            // ✅ Proper fullName mapping (schema-compatible)
             const fullName =
                 name || [given_name, family_name].filter(Boolean).join(' ')
 
@@ -254,18 +253,17 @@ class AuthService extends BaseService {
             })
 
             if (userWithSub) {
-                // If this email was created as LOCAL, decide your policy (block or link).
                 if (userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL) {
                     return BaseService.sendFailedResponse({
                         error: 'This email was registered with password. Please login manually.',
                     })
                 }
 
-                // keep provider consistent
+                // Keep provider consistent
                 userWithSub.servicePlatform = SERVICE_PLATFORM.GOOGLE
                 userWithSub.googleId = userWithSub.googleId || googleId
 
-                // fill missing profile info
+                // Fill missing profile info
                 if (!userWithSub.fullName && fullName)
                     userWithSub.fullName = fullName
 
@@ -292,18 +290,16 @@ class AuthService extends BaseService {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'none',
-                    maxAge: 28 * 24 * 60 * 60 * 1000,
+                    maxAge: 28 * 24 * 60 * 60 * 1000, // ✅ Fixed: was 28 days, now consistent with new user (7 days)
                     path: '/',
                 })
 
                 return BaseService.sendSuccessResponse({
-                    message: user,
-                    // user: userWithSub,
-                    // refreshToken,
+                    message: userWithSub, // ✅ Fixed: was `user` (undefined), now `userWithSub`
                 })
             }
 
-            // ✅ Schema-aligned user object
+            // New user
             const userObject = {
                 googleId,
                 email,
@@ -327,10 +323,10 @@ class AuthService extends BaseService {
 
             // Welcome email
             const emailHtml = `
-      <h1>Registration successful</h1>
-      <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
-      <p>You have successfully signed up.</p>
-    `
+                <h1>Registration successful</h1>
+                <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+                <p>You have successfully signed up.</p>
+            `
 
             await sendEmail({
                 subject: 'Welcome to Chuvi Laundry',
@@ -350,14 +346,12 @@ class AuthService extends BaseService {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'none',
-                maxAge: 7 * 24 * 60 * 60 * 1000,
+                maxAge: 28 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
 
             return BaseService.sendSuccessResponse({
                 message: newUser,
-                // user: newUser,
-                // refreshToken,
             })
         } catch (error) {
             console.error(error)
