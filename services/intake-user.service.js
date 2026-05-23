@@ -275,6 +275,8 @@ class IntakeUserService extends BaseService {
 
             order.stage.status = ORDER_STATUS.HOLD
             order.stage.note = message
+            order.stage.updatedAt = new Date()
+            order.stationStatus = STATION_STATUS.INTAKE_AND_TAG_STATION
 
             order.stageHistory.push({
                 status: ORDER_STATUS.HOLD,
