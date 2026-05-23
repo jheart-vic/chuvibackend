@@ -59,6 +59,8 @@ app.get("/", (req, res) => {
   res.send("This is the base project");
 });
 
+app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }))
+
 // Non-implemented routes middleware
 app.all("*", (req, res, next) => {
   next(
