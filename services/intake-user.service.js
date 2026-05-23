@@ -14,6 +14,7 @@ const {
     STATION_STATUS,
     DELIVERY_SPEED,
     NOTIFICATION_TYPE,
+    ROLE,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const { generateOscNumber, buildStageUpdate } = require('../util/helper')
@@ -1321,9 +1322,16 @@ class IntakeUserService extends BaseService {
             )
 
             const holdItems = data.map((order) => {
-                const assignedToUs =
+                // ✅ raised_by_us = intake put the whole order on hold
+                const raisedByUs =
                     order.stationStatus ===
                     STATION_STATUS.INTAKE_AND_TAG_STATION
+
+                // ✅ assigned_to_us = another station flagged an item and sent it to intake
+                const assignedToUs = (order.items || []).some(
+                    (i) => i.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG,
+                )
+
                 const flaggedItems = (order.items || [])
                     .filter(
                         (i) =>
@@ -1351,7 +1359,11 @@ class IntakeUserService extends BaseService {
                     operator: order.washDetails?.operatorId?.fullName || null,
                     stage: order.stage,
                     stationStatus: order.stationStatus,
-                    holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
+                    holdType: raisedByUs
+                        ? 'raised_by_us'
+                        : assignedToUs
+                          ? 'assigned_to_us'
+                          : 'unknown', // ✅ fixed
                     holdReason: order.stage.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
