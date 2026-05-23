@@ -494,7 +494,7 @@ class UserService extends BaseService {
                 })
             }
 
-            if (user.phone) {
+            if (user.phoneNumber) {
                 return BaseService.sendFailedResponse({
                     error: 'Profile already completed',
                 })
