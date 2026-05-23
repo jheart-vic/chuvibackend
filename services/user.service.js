@@ -26,6 +26,7 @@ const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const SubscriptionModel = require('../models/subscription.model')
 const paginate = require('../util/paginate')
+const bcrypt = require('bcryptjs')
 
 class UserService extends BaseService {
     async getDashboard(req) {
@@ -520,7 +521,6 @@ class UserService extends BaseService {
             const userId = req.user.id
             const { currentPassword, newPassword } = req.body
 
-            // Basic validation
             if (!currentPassword || !newPassword) {
                 return BaseService.sendFailedResponse({
                     error: 'Current password and new password are required',
@@ -534,13 +534,12 @@ class UserService extends BaseService {
                 })
             }
 
-            // ✅ Block Google users from changing password
             if (user.servicePlatform === SERVICE_PLATFORM.GOOGLE) {
                 return BaseService.sendFailedResponse({
                     error: 'Your account uses Google sign-in. Password change is not available.',
                 })
             }
-            // Verify current password
+
             const isMatch = await user.comparePassword(currentPassword)
             if (!isMatch) {
                 return BaseService.sendFailedResponse({
@@ -548,18 +547,24 @@ class UserService extends BaseService {
                 })
             }
 
-            // Prevent reuse
             const isSamePassword = await user.comparePassword(newPassword)
             if (isSamePassword) {
                 return BaseService.sendFailedResponse({
                     error: 'New password cannot be the same as the old password',
                 })
             }
+            const hashedPassword = await bcrypt.hash(newPassword, 10)
 
-            // Update password
-            user.password = newPassword
-            user.lastChangedPassword = new Date()
-            await user.save()
+            await UserModel.findByIdAndUpdate(
+                userId,
+                {
+                    $set: {
+                        password: hashedPassword,
+                        lastChangedPassword: new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Password changed successfully',
