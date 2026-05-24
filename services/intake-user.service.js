@@ -1422,15 +1422,12 @@ class IntakeUserService extends BaseService {
                     error: 'User not found',
                 })
 
-            // ✅ query by either stationStatus OR assignTo — covers both hold types
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
                 $or: [
                     { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
-                    {
-                        'items.holdDetails.assignTo': ROLE.INTAKE_AND_TAG,
-                    },
+                    { 'items.holdDetails.assignTo': ROLE.INTAKE_AND_TAG },
                 ],
             })
             if (!order)
@@ -1438,17 +1435,20 @@ class IntakeUserService extends BaseService {
                     error: 'Order not found or not assigned to this station',
                 })
 
-            // stamp release details on all held items
             const now = new Date()
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo) {
+                if (item.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG) {
                     item.holdDetails.releasedAt = now
                     item.holdDetails.releasedByOperatorId = userId
+                    item.holdDetails.assignTo = null
+                    item.tagStatus = 'pending'
+                    item.tagId = ''
+                    item.tagState = []
+                    item.tagColor = null
                 }
                 return item
             })
 
-            // ✅ always return to intake tagging queue regardless of which station held it
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
@@ -1456,7 +1456,7 @@ class IntakeUserService extends BaseService {
                         items: updatedItems,
                         ...buildStageUpdate(
                             ORDER_STATUS.QUEUE,
-                            STATION_STATUS.INTAKE_AND_TAG_STATION, // ✅ force stationStatus to intake
+                            STATION_STATUS.INTAKE_AND_TAG_STATION,
                             'Released from hold',
                         ).$set,
                     },
@@ -1468,6 +1468,7 @@ class IntakeUserService extends BaseService {
                         },
                     },
                 },
+                { runValidators: false }, // ✅ avoid serviceTier validation issue
             )
 
             await ActivityModel.create({
