@@ -434,6 +434,14 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  *                     vipServiceTierCharge:
  *                       type: number
  *                       example: 2
+ *                     serviceType:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     pickupTimeSlots:
+ *                       type: array
+ *                       items:
+ *                         type: string
  *                     createdAt:
  *                       type: string
  *                       format: date-time
@@ -641,6 +649,16 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                 type: number
  *                 example: 2
  *                 description: Surcharge multiplier for VIP service tier (e.g., 2 means 100% increase over base price)
+ *               serviceType:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["ironing-only", "washing-only", "wash-and-iron"]
+ *               pickupTimeSlots:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["10am-12pm", "4pm-6pm"]
  *     responses:
  *       200:
  *         description: Admin settings updated successfully
@@ -681,10 +699,20 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                       example: 200
  *                     premiumServiceTierCharge:
  *                       type: number
- *                       example: 200
+ *                       example: 1.5
  *                     vipServiceTierCharge:
  *                       type: number
- *                       example: 200
+ *                       example: 2
+ *                     serviceType:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["ironing-only", "washing-only", "wash-and-iron"]
+ *                     pickupTimeSlots:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["10am-12pm", "4pm-6pm"]
  *                     createdAt:
  *                       type: string
  *                       format: date-time

@@ -1,6 +1,7 @@
 const ActivityModel = require('../models/activity.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
+const PaymentModel = require('../models/payment.model')
 const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
 const {
@@ -16,7 +17,7 @@ const {
     NOTIFICATION_TYPE,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
-const { generateOscNumber, buildStageUpdate } = require('../util/helper')
+const { generateOscNumber, buildStageUpdate, generateReferenceId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const validateData = require('../util/validate')
 const BaseService = require('./base.service')
@@ -98,6 +99,7 @@ class IntakeUserService extends BaseService {
                 billingType: BILLING_TYPE.PAY_PER_ITEM,
                 intakeStaffId: userId,
                 channel: ORDER_CHANNEL.OFFICE,
+                paymentDate: new Date(),
                 stage: {
                     status: ORDER_STATUS.QUEUE,
                 },
@@ -130,6 +132,17 @@ class IntakeUserService extends BaseService {
                 userId,
                 reference: oscNumber,
             })
+
+            const reference = generateReferenceId();
+            await PaymentModel.create({
+              userId: userId,
+              amount: totalPrice,
+              reference: reference,
+              status: "success",
+              order: newOrder._id,
+              type: "order",
+            //   alertType: "debit",
+            });
 
             return BaseService.sendSuccessResponse({
                 message: newOrder,
@@ -292,6 +305,7 @@ class IntakeUserService extends BaseService {
                 userId: userId || null,
                 reference: order.oscNumber,
             })
+            
 
             await createNotification({
                 userId: order.userId,
