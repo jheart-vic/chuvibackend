@@ -889,11 +889,23 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            order.dispatchDetails.pickup.rider = riderId
-            order.dispatchDetails.pickup.status = PICKUP_STATUS.SCHEDULED
-            order.dispatchDetails.pickup.updatedAt = new Date()
+            // order.dispatchDetails.delivery.rider = riderId
+            // order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
+            // order.dispatchDetails.delivery.updatedAt = new Date()
+            // order.save()
 
-            await order.save()
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'dispatchDetails.pickup.rider': riderId,
+                        'dispatchDetails.pickup.status':
+                            PICKUP_STATUS.SCHEDULED,
+                        'dispatchDetails.pickup.updatedAt': new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
 
             await ActivityModel.create({
                 title: 'Dispach Run Created',
@@ -944,11 +956,23 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            order.dispatchDetails.delivery.rider = riderId
-            order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
-            order.dispatchDetails.delivery.updatedAt = new Date()
+            // order.dispatchDetails.delivery.rider = riderId
+            // order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
+            // order.dispatchDetails.delivery.updatedAt = new Date()
+            // order.save()
 
-            await order.save()
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'dispatchDetails.delivery.rider': riderId,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.READY,
+                        'dispatchDetails.delivery.updatedAt': new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
 
             await ActivityModel.create({
                 title: 'Dispach Run Created',
@@ -1339,14 +1363,12 @@ class IntakeUserService extends BaseService {
                         heldAt: i.holdDetails?.heldAt,
                     }))
 
-
                 const assignedToUs = (order.items || []).some(
                     (i) =>
                         i.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG &&
                         i.holdDetails?.heldByStation !==
                             STATION_STATUS.INTAKE_AND_TAG_STATION,
                 )
-
 
                 const raisedByUs =
                     order.stationStatus ===
@@ -1400,14 +1422,20 @@ class IntakeUserService extends BaseService {
                     error: 'User not found',
                 })
 
+            // ✅ query by either stationStatus OR assignTo — covers both hold types
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                $or: [
+                    { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
+                    {
+                        'items.holdDetails.assignTo': ROLE.INTAKE_AND_TAG,
+                    },
+                ],
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not on hold at this station',
+                    error: 'Order not found or not assigned to this station',
                 })
 
             // stamp release details on all held items
@@ -1420,6 +1448,7 @@ class IntakeUserService extends BaseService {
                 return item
             })
 
+            // ✅ always return to intake tagging queue regardless of which station held it
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
@@ -1427,12 +1456,20 @@ class IntakeUserService extends BaseService {
                         items: updatedItems,
                         ...buildStageUpdate(
                             ORDER_STATUS.QUEUE,
-                            STATION_STATUS.INTAKE_AND_TAG_STATION,
+                            STATION_STATUS.INTAKE_AND_TAG_STATION, // ✅ force stationStatus to intake
                             'Released from hold',
                         ).$set,
                     },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.QUEUE,
+                            note: 'Released from hold',
+                            updatedAt: now,
+                        },
+                    },
                 },
             )
+
             await ActivityModel.create({
                 title: 'Order Released from Hold',
                 description: `Order ${order.oscNumber} released from hold and returned to tagging queue by ${user.fullName}`,
