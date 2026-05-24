@@ -297,7 +297,7 @@ class IntakeUserService extends BaseService {
             })
 
             await createNotification({
-                userId: order.userId,
+                userId: userId,
                 title: 'Order Flagged',
                 body: `Your order ${order.oscNumber} has been flagged by our team.`,
                 subBody: `Reason: ${message}`,
