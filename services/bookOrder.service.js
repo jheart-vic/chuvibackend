@@ -176,6 +176,7 @@ class BookOrderService extends BaseService {
           stageHistory: [stageHistory],
           stationStatus: STATION_STATUS.PENDING,
           paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+          paymentDate: new Date(),
           ...post,
         };
 
@@ -341,6 +342,7 @@ class BookOrderService extends BaseService {
           stage,
           stageHistory: [stageHistory],
           paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+          paymentDate: new Date(),
           ...post,
         };
         newOrder = new BookOrderModel(newOrderItem);

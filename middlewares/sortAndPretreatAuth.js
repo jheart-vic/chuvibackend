@@ -4,7 +4,7 @@ const auth = require("./auth");
 async function sortAndPretreatAuth(req, res, next) {
   try {
     auth(req, res, () => {
-      if (req.user.userType == ROLE.SORT_AND_PRETREAT) {
+      if (req.user.userType == ROLE.SORT_AND_PRETREAT || req.user.userType == ROLE.ADMIN) {
         return next();
       } else {
         return res.status(403).json({

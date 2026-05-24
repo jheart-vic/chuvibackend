@@ -4,7 +4,7 @@ const auth = require("./auth");
 async function riderAuth(req, res, next) {
   try {
     auth(req, res, () => {
-      if (req.user.userType == ROLE.RIDER) {
+      if (req.user.userType == ROLE.RIDER  || req.user.userType == ROLE.ADMIN) {
         return next();
       } else {
         return res.status(403).json({

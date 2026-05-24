@@ -4,7 +4,7 @@ const auth = require("./auth");
 async function washAndDryAuthAuth(req, res, next) {
   try {
     auth(req, res, () => {
-      if (req.user.userType == ROLE.WASH_AND_DRY) {
+      if (req.user.userType == ROLE.WASH_AND_DRY || req.user.userType == ROLE.ADMIN) {
         return next();
       } else {
         return res.status(403).json({
