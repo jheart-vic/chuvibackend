@@ -274,18 +274,25 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            order.stage.status = ORDER_STATUS.HOLD
-            order.stage.note = message
-            order.stage.updatedAt = new Date()
-            order.stationStatus = STATION_STATUS.INTAKE_AND_TAG_STATION
-
-            order.stageHistory.push({
-                status: ORDER_STATUS.HOLD,
-                note: message,
-                updatedAt: new Date(),
-            })
-
-            await order.save()
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'stage.status': ORDER_STATUS.HOLD,
+                        'stage.note': message,
+                        'stage.updatedAt': new Date(),
+                        stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.HOLD,
+                            note: message,
+                            updatedAt: new Date(),
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
 
             await ActivityModel.create({
                 title: 'Order Flagged',
@@ -296,14 +303,16 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
-                userId: userId,
-                title: 'Order Flagged',
-                body: `Your order ${order.oscNumber} has been flagged by our team.`,
-                subBody: `Reason: ${message}`,
-                type: NOTIFICATION_TYPE.ORDER_FLAGGED,
-            })
-
+            // ✅ Fix 2 — only notify customer if order has a linked userId
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Order Flagged',
+                    body: `Your order ${order.oscNumber} has been flagged by our team.`,
+                    subBody: `Reason: ${message}`,
+                    type: NOTIFICATION_TYPE.ORDER_FLAGGED,
+                })
+            }
             return BaseService.sendSuccessResponse({
                 message: 'Order flagged successfully',
             })
