@@ -315,7 +315,7 @@ class IntakeUserService extends BaseService {
                 userId: userId || null,
                 reference: order.oscNumber,
             })
-            
+
 
             // ✅ Fix 2 — only notify customer if order has a linked userId
             if (order.userId) {
@@ -1050,7 +1050,7 @@ class IntakeUserService extends BaseService {
                 // only generate if not already tagged
                 if (item.tagStatus === 'complete') return item
                 const paddedIndex = String(index + 1).padStart(2, '0')
-                item.tagId = `${order.oscNumber}-${paddedIndex}`
+                item.tagId = `TAG-${order.oscNumber}-${paddedIndex}`
                 // item.tagStatus = 'complete'
                 return item
             })

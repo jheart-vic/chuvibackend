@@ -1068,10 +1068,14 @@ class QCService extends BaseService {
                     error: 'User not found',
                 })
 
+            // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.QC_STATION,
+                $or: [
+                    { stationStatus: STATION_STATUS.QC_STATION },
+                    { 'items.holdDetails.assignTo': ROLE.QC },
+                ],
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1080,27 +1084,47 @@ class QCService extends BaseService {
 
             const now = new Date()
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo) {
+                if (item.holdDetails?.assignTo === ROLE.QC) {
                     item.holdDetails.releasedAt = now
                     item.holdDetails.releasedByOperatorId = userId
+                    item.holdDetails.assignTo = null
+                    // ✅ reset qc status so item can be worked on again
+                    item.qcStatus = 'pending'
+                    item.qcConfirmedAt = null
+                    item.qcConfirmedByOperatorId = null
+                    item.flaggedForReview = false
                 }
                 return item
             })
-
-            const stageUpdate = buildStageUpdate(
-                ORDER_STATUS.QC,
-                STATION_STATUS.QC_STATION,
-                'Released from hold',
-            )
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
                         items: updatedItems,
-                        ...stageUpdate.$set,
+                        ...buildStageUpdate(
+                            ORDER_STATUS.QC,
+                            STATION_STATUS.QC_STATION,
+                            'Released from hold',
+                        ).$set,
+                        // ✅ clear qcDetails so order reappears in QC queue correctly
+                        'qcDetails.startedAt': null,
+                        'qcDetails.passedAt': null,
+                        'qcDetails.packCompletedAt': null,
+                        'qcDetails.operatorId': null,
+                        'qcDetails.packOperatorId': null,
+                        'qcDetails.labelAttached': false,
+                        'qcDetails.packageSealed': false,
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.QC,
+                            note: 'Released from hold',
+                            updatedAt: now,
+                        },
                     },
                 },
+                { runValidators: false },
             )
 
             await ActivityModel.create({
@@ -1110,14 +1134,6 @@ class QCService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
-            })
-
-            await createNotification({
-                userId: userId,
-                title: 'Your order has been released from hold',
-                body: `Order ${order.oscNumber} has been released from hold and is now back in the QC queue for processing.`,
-                subBody: `Order ID: ${order.oscNumber}`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({

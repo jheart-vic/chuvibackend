@@ -751,10 +751,17 @@ class PressAndIronService extends BaseService {
                     error: 'User not found',
                 })
 
+            // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                $or: [
+                    {
+                        stationStatus:
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    },
+                    { 'items.holdDetails.assignTo': ROLE.PRESS },
+                ],
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -763,9 +770,15 @@ class PressAndIronService extends BaseService {
 
             const now = new Date()
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo) {
+                if (item.holdDetails?.assignTo === ROLE.PRESS) {
                     item.holdDetails.releasedAt = now
                     item.holdDetails.releasedByOperatorId = userId
+                    item.holdDetails.assignTo = null
+                    // ✅ reset press status so item can be worked on again
+                    item.pressStatus = 'pending'
+                    item.pressConfirmedAt = null
+                    item.pressConfirmedByOperatorId = null
+                    item.flaggedForReview = false
                 }
                 return item
             })
@@ -780,8 +793,20 @@ class PressAndIronService extends BaseService {
                             STATION_STATUS.PRESSING_AND_IRONING_STATION,
                             'Released from hold',
                         ).$set,
+                        // ✅ clear pressDetails so order reappears in active press correctly
+                        'pressDetails.startedAt': null,
+                        'pressDetails.completedAt': null,
+                        'pressDetails.operatorId': null,
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.IRONING,
+                            note: 'Released from hold',
+                            updatedAt: now,
+                        },
                     },
                 },
+                { runValidators: false },
             )
 
             await ActivityModel.create({

@@ -1984,22 +1984,30 @@ class SortAndPretreatService extends BaseService {
                     error: 'User not found',
                 })
 
+            // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                $or: [
+                    { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
+                    { 'items.holdDetails.assignTo': ROLE.SORT_AND_PRETREAT },
+                ],
             })
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not on hold at this station',
                 })
 
-            // stamp releasedAt and releasedByOperatorId on all held items
             const now = new Date()
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo) {
+                if (item.holdDetails?.assignTo === ROLE.SORT_AND_PRETREAT) {
                     item.holdDetails.releasedAt = now
                     item.holdDetails.releasedByOperatorId = userId
+                    item.holdDetails.assignTo = null
+                    // ✅ reset so items can be sorted/pretreated again
+                    item.sortStatus = 'pending'
+                    item.pretreatStatus = 'pending'
+                    item.flaggedForReview = false
                 }
                 return item
             })
@@ -2015,7 +2023,15 @@ class SortAndPretreatService extends BaseService {
                             'Released from hold',
                         ).$set,
                     },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.SORT_AND_PRETREAT,
+                            note: 'Released from hold',
+                            updatedAt: now,
+                        },
+                    },
                 },
+                { runValidators: false }, // ✅ avoid serviceTier validation issue
             )
 
             await ActivityModel.create({
@@ -2030,7 +2046,7 @@ class SortAndPretreatService extends BaseService {
             await createNotification({
                 userId,
                 title: 'Order Released from Hold',
-                body: `Your order ${order.oscNumber} has been released from hold and is back in the sort & pretreat queue. We are working to get it processed as quickly as possible!`,
+                body: `Your order ${order.oscNumber} has been released from hold and is back in the sort & pretreat queue.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
