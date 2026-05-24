@@ -93,7 +93,7 @@ class QCService extends BaseService {
 
             const query = {
                 'stage.status': ORDER_STATUS.QC,
-                'qcDetails.startedAt': { $exists: true },
+                'qcDetails.startedAt': { $exists: false },
                 'qcDetails.passedAt': { $exists: false },
             }
 
