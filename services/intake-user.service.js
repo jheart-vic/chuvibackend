@@ -1322,16 +1322,6 @@ class IntakeUserService extends BaseService {
             )
 
             const holdItems = data.map((order) => {
-                // ✅ raised_by_us = intake put the whole order on hold
-                const raisedByUs =
-                    order.stationStatus ===
-                    STATION_STATUS.INTAKE_AND_TAG_STATION
-
-                // ✅ assigned_to_us = another station flagged an item and sent it to intake
-                const assignedToUs = (order.items || []).some(
-                    (i) => i.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG,
-                )
-
                 const flaggedItems = (order.items || [])
                     .filter(
                         (i) =>
@@ -1349,6 +1339,19 @@ class IntakeUserService extends BaseService {
                         heldAt: i.holdDetails?.heldAt,
                     }))
 
+
+                const assignedToUs = (order.items || []).some(
+                    (i) =>
+                        i.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG &&
+                        i.holdDetails?.heldByStation !==
+                            STATION_STATUS.INTAKE_AND_TAG_STATION,
+                )
+
+
+                const raisedByUs =
+                    order.stationStatus ===
+                        STATION_STATUS.INTAKE_AND_TAG_STATION && !assignedToUs
+
                 return {
                     orderId: order._id,
                     oscNumber: order.oscNumber,
@@ -1359,11 +1362,11 @@ class IntakeUserService extends BaseService {
                     operator: order.washDetails?.operatorId?.fullName || null,
                     stage: order.stage,
                     stationStatus: order.stationStatus,
-                    holdType: raisedByUs
-                        ? 'raised_by_us'
-                        : assignedToUs
-                          ? 'assigned_to_us'
-                          : 'unknown', // ✅ fixed
+                    holdType: assignedToUs
+                        ? 'assigned_to_us'
+                        : raisedByUs
+                          ? 'raised_by_us'
+                          : 'unknown',
                     holdReason: order.stage.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
