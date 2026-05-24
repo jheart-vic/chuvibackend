@@ -1107,14 +1107,14 @@ class QCService extends BaseService {
                             STATION_STATUS.QC_STATION,
                             'Released from hold',
                         ).$set,
-                        // ✅ clear qcDetails so order reappears in QC queue correctly
-                        'qcDetails.startedAt': null,
-                        'qcDetails.passedAt': null,
-                        'qcDetails.packCompletedAt': null,
-                        'qcDetails.operatorId': null,
-                        'qcDetails.packOperatorId': null,
-                        'qcDetails.labelAttached': false,
-                        'qcDetails.packageSealed': false,
+                    },
+
+                    $unset: {
+                        'qcDetails.startedAt': '',
+                        'qcDetails.passedAt': '',
+                        'qcDetails.packCompletedAt': '',
+                        'qcDetails.operatorId': '',
+                        'qcDetails.packOperatorId': '',
                     },
                     $push: {
                         stageHistory: {

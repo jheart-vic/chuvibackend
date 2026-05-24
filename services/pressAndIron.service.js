@@ -793,10 +793,12 @@ class PressAndIronService extends BaseService {
                             STATION_STATUS.PRESSING_AND_IRONING_STATION,
                             'Released from hold',
                         ).$set,
-                        // ✅ clear pressDetails so order reappears in active press correctly
-                        'pressDetails.startedAt': null,
-                        'pressDetails.completedAt': null,
-                        'pressDetails.operatorId': null,
+                    },
+                    // ✅ $unset is a sibling of $set, not inside it
+                    $unset: {
+                        'pressDetails.startedAt': '',
+                        'pressDetails.completedAt': '',
+                        'pressDetails.operatorId': '',
                     },
                     $push: {
                         stageHistory: {

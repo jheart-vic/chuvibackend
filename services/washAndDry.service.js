@@ -1110,11 +1110,12 @@ class WashAndDryService extends BaseService {
                             STATION_STATUS.WASH_AND_DRY_STATION,
                             'Released from hold',
                         ).$set,
-                        // ✅ clear washDetails so order reappears in wash queue correctly
-                        'washDetails.startedAt': null,
-                        'washDetails.movedToDryingAt': null,
-                        'washDetails.dryingCompletedAt': null,
-                        'washDetails.operatorId': null,
+                    },
+                    $unset: {
+                        'washDetails.startedAt': '',
+                        'washDetails.movedToDryingAt': '',
+                        'washDetails.dryingCompletedAt': '',
+                        'washDetails.operatorId': '',
                     },
                     $push: {
                         stageHistory: {
