@@ -1004,7 +1004,7 @@ router.get(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
 /**
  * @swagger
  * /intake-user/assign-rider/{riderId}/pickup-order/{id}:
- *   patch:
+ *   post:
  *     summary: Assign a rider to a pickup order
  *     tags:
  *       - Intake User
@@ -1065,7 +1065,7 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
 /**
  * @swagger
  * /intake-user/assign-rider/{riderId}/delivery-order/{id}:
- *   patch:
+ *   post:
  *     summary: Assign a rider to a delivery order
  *     tags:
  *       - Intake User

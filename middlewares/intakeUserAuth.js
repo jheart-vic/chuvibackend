@@ -4,7 +4,7 @@ const auth = require("./auth");
 async function intakeUserAuth(req, res, next) {
   try {
     auth(req, res, () => {
-      if (req.user.userType == ROLE.INTAKE_AND_TAG) {
+      if (req.user.userType == ROLE.INTAKE_AND_TAG || req.user.userType == ROLE.ADMIN) {
         return next();
       } else {
         return res.status(403).json({
