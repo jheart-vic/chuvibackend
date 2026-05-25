@@ -693,13 +693,22 @@ class AdminService extends BaseService {
                 AdminSettingModel.findOne().lean(),
             ])
 
+            const activeServiceTypes = adminSetting?.serviceTypes || []
+
             return BaseService.sendSuccessResponse({
                 message: {
                     ...adminOrderDetails,
+                    serviceTypes: activeServiceTypes,
+                    serviceType: activeServiceTypes.map((s) => s.name),
                     pickupTime: adminSetting?.pickupTimeSlots || [
                         '10am-12pm',
                         '4pm-6pm',
                     ],
+                    standardCapacity: adminSetting?.standardCapacity ?? 100,
+                    sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
+                    expressCapacity: adminSetting?.expressCapacity ?? 30,
+                    standardDeliveryPeriod:
+                        adminSetting?.standardDeliveryPeriod ?? 2,
                 },
             })
         } catch (error) {
@@ -714,15 +723,25 @@ class AdminService extends BaseService {
                 AdminOrderDetailsModel.findOne().lean(),
             ])
 
+            const serviceTypes = adminSetting?.serviceTypes || []
+
             return BaseService.sendSuccessResponse({
                 message: {
                     ...adminSetting,
                     orderDetails: {
                         ...adminOrderDetails,
+                        // ✅ override stale fields from AdminOrderDetailsModel
+                        serviceTypes,
+                        serviceType: serviceTypes.map((s) => s.name),
                         pickupTime: adminSetting?.pickupTimeSlots || [
                             '10am-12pm',
                             '4pm-6pm',
                         ],
+                        standardCapacity: adminSetting?.standardCapacity ?? 100,
+                        sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
+                        expressCapacity: adminSetting?.expressCapacity ?? 30,
+                        standardDeliveryPeriod:
+                            adminSetting?.standardDeliveryPeriod ?? 2,
                     },
                 },
             })

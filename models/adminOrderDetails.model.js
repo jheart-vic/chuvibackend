@@ -18,14 +18,14 @@ const OrderItemSchema = new mongoose.Schema(
 
 const adminOrderDetailsSchema = new mongoose.Schema(
   {
-    serviceType: {
-      type: [String],
-      default: [
-        ORDER_SERVICE_TYPE.IRONING_ONLY,
-        ORDER_SERVICE_TYPE.WASHING_ONLY,
-        ORDER_SERVICE_TYPE.WASH_AND_IRON,
-      ],
-    },
+    // serviceType: {
+    //   type: [String],
+    //   default: [
+    //     ORDER_SERVICE_TYPE.IRONING_ONLY,
+    //     ORDER_SERVICE_TYPE.WASHING_ONLY,
+    //     ORDER_SERVICE_TYPE.WASH_AND_IRON,
+    //   ],
+    // },
     billingType: {
       type: [String],
       default: [BILLING_TYPE.PAY_PER_ITEM, BILLING_TYPE.PAY_FROM_SUBSCRIPTION],
@@ -33,8 +33,7 @@ const adminOrderDetailsSchema = new mongoose.Schema(
     serviceTiers: {
       type: [String],
       default: [
-        SERVICE_TIERS.STUDENT,
-        SERVICE_TIERS.STANDARD,
+        SERVICE_TIERS.CLASSIC,
         SERVICE_TIERS.PREMIUM,
         SERVICE_TIERS.VIP,
       ],
@@ -50,10 +49,10 @@ const adminOrderDetailsSchema = new mongoose.Schema(
     // pickupTime: {
     //   type: [String],
     // },
-    standardCapacity: { type: Number, default: 100 },
-    sameDayCapacity: { type: Number, default: 50 },
-    expressCapacity: { type: Number, default: 30 },
-    standardDeliveryPeriod: {type: Number, default: 2},
+    // standardCapacity: { type: Number },
+    // sameDayCapacity: { type: Number },
+    // expressCapacity: { type: Number },
+    // standardDeliveryPeriod: {type: Number},
   },
   { timestamps: true }
 );
