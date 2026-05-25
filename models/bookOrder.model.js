@@ -180,7 +180,7 @@ const bookOrderSchema = new mongoose.Schema(
             type: String,
             required: true,
             trim: true,
-            enum: Object.values(ORDER_SERVICE_TYPE),
+            // enum: Object.values(ORDER_SERVICE_TYPE),
         },
         serviceTier: {
             type: String,
