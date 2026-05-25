@@ -700,7 +700,7 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            const { amount } = post
+            const { amount, message } = post
             //   send message either SMS or Whatsapp to a user
 
             if (order.phoneNumber) {
