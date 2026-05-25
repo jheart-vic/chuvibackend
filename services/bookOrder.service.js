@@ -211,13 +211,6 @@ class BookOrderService extends BaseService {
           return sum + (price * quantity * multiplier);
         }, 0);
 
-        // let totalPrice = post.items.reduce((sum, item) => {
-        //   const price = Number(item.price);
-        //   const quantity = Number(item.quantity);
-
-        //   return sum + price * quantity;
-        // }, 0);
-
 
         let extraDeliveryCost = 0;
 
@@ -227,7 +220,15 @@ class BookOrderService extends BaseService {
           extraDeliveryCost = adminOrderSetting.sameDayCharge;
         }
 
+        let serviceTypeCost = 0
+        const matchedService = adminOrderSetting.serviceTypes.find(
+          (service) => service.name === post.serviceType
+        );
+
+      serviceTypeCost = matchedService ? matchedService.pricePerPiece : 0;
+
         totalPrice += extraDeliveryCost;
+        totalPrice += serviceTypeCost;
 
         // const oscNumber = generateOscNumber();
 
@@ -299,7 +300,15 @@ class BookOrderService extends BaseService {
           extraDeliveryCost = adminOrderSetting.sameDayCharge;
         }
 
+        let serviceTypeCost = 0
+        const matchedService = adminOrderSetting.serviceTypes.find(
+          (service) => service.name === post.serviceType
+        );
+
+        serviceTypeCost = matchedService ? matchedService.pricePerPiece : 0;
+
         totalPrice += extraDeliveryCost;
+        totalPrice += serviceTypeCost
 
         // const oscNumber = generateOscNumber();
 
