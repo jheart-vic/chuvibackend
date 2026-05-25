@@ -55,12 +55,11 @@ class AdminService extends BaseService {
               ]);
             const totalRevenue = result.length > 0 ? result[0].totalAmount : 0;
               
-            const revenueTodayVerifiedAgg = await BookOrderModel.aggregate([
+            const revenueTodayVerifiedAgg = await PaymentModel.aggregate([
                 {
                     $match: {
-                        paymentDate: { $gte: todayStart, $lte: todayEnd },
-                        paymentStatus: PAYMENT_ORDER_STATUS.PAID,
-                        isVerified: true,
+                        verifiedAt: { $gte: todayStart, $lte: todayEnd },
+                        status: "success",
                     },
                 },
                 {
@@ -69,16 +68,16 @@ class AdminService extends BaseService {
                         total: { $sum: '$amount' },
                     },
                 },
-            ])
+            ]);
+            
+            const revenueTodayVerified = revenueTodayVerifiedAgg[0]?.total || 0;
+            
 
-            const revenueTodayVerified = revenueTodayVerifiedAgg[0]?.total || 0
-
-            const revenueComparisonAgg = await BookOrderModel.aggregate([
+            const revenueComparisonAgg = await PaymentModel.aggregate([
                 {
                     $match: {
-                        paymentDate: { $gte: yesterdayStart, $lte: todayEnd },
-                        paymentStatus: PAYMENT_ORDER_STATUS.PAID,
-                        isVerified: true,
+                        verifiedAt: { $gte: yesterdayStart, $lte: todayEnd },
+                        status: "success",
                     },
                 },
                 {
@@ -88,8 +87,8 @@ class AdminService extends BaseService {
                             $cond: [
                                 {
                                     $and: [
-                                        { $gte: ['$paymentDate', todayStart] },
-                                        { $lte: ['$paymentDate', todayEnd] },
+                                        { $gte: ['$paidAt', todayStart] },
+                                        { $lte: ['$paidAt', todayEnd] },
                                     ],
                                 },
                                 'today',
@@ -105,22 +104,20 @@ class AdminService extends BaseService {
                     },
                 },
             ])
-
+            
             revenueComparisonAgg.forEach((item) => {
                 if (item._id === 'today') todayRevenue = item.total
                 if (item._id === 'yesterday') yesterdayRevenue = item.total
             })
-
+            
             if (yesterdayRevenue === 0) {
                 percentageChange = todayRevenue > 0 ? 100 : 0
             } else {
-                percentageChange =
-                    ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
+                percentageChange = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
             }
-
-            //   const revenueTodayVerified = todayRevenue;
-
+            
             const revenueTodayChange = Number(percentageChange.toFixed(2))
+            
 
             const activities = await ActivityModel.find()
                 .sort({ createdAt: -1 })
