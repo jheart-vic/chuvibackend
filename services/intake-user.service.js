@@ -17,6 +17,7 @@ const {
     DELIVERY_SPEED,
     NOTIFICATION_TYPE,
     ROLE,
+    SERVICE_TIERS,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const {
@@ -82,11 +83,19 @@ class IntakeUserService extends BaseService {
             }
 
       const adminOrderSetting = await AdminSettingModel.findOne({});
+
+      const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
+        const VIP = adminOrderSetting.vipServiceTierCharge || 2;
+
+        let multiplier = 1;
+        if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
+        if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP;
+
             let totalPrice = post.items.reduce((sum, item) => {
                 const price = Number(item.price)
                 const quantity = Number(item.quantity)
 
-                return sum + price * quantity
+                return sum + (price * quantity * multiplier);
             }, 0)
 
             let extraDeliveryCost = 0
