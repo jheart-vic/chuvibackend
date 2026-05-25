@@ -718,32 +718,10 @@ class AdminService extends BaseService {
     }
     async getAdminSetting(req, res) {
         try {
-            const [adminSetting, adminOrderDetails] = await Promise.all([
-                AdminSettingModel.findOne().lean(),
-                AdminOrderDetailsModel.findOne().lean(),
-            ])
-
-            const serviceTypes = adminSetting?.serviceTypes || []
+            const adminSetting = await AdminSettingModel.findOne().lean()
 
             return BaseService.sendSuccessResponse({
-                message: {
-                    ...adminSetting,
-                    orderDetails: {
-                        ...adminOrderDetails,
-                        // ✅ override stale fields from AdminOrderDetailsModel
-                        serviceTypes,
-                        serviceType: serviceTypes.map((s) => s.name),
-                        pickupTime: adminSetting?.pickupTimeSlots || [
-                            '10am-12pm',
-                            '4pm-6pm',
-                        ],
-                        standardCapacity: adminSetting?.standardCapacity ?? 100,
-                        sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
-                        expressCapacity: adminSetting?.expressCapacity ?? 30,
-                        standardDeliveryPeriod:
-                            adminSetting?.standardDeliveryPeriod ?? 2,
-                    },
-                },
+                message: adminSetting,
             })
         } catch (error) {
             console.log(error)
