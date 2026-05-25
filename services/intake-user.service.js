@@ -1,4 +1,5 @@
 const ActivityModel = require('../models/activity.model')
+const AdminSettingModel = require('../models/adminSetting.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
 const PaymentModel = require('../models/payment.model')
@@ -16,6 +17,7 @@ const {
     DELIVERY_SPEED,
     NOTIFICATION_TYPE,
     ROLE,
+    SERVICE_TIERS,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const {
@@ -80,11 +82,20 @@ class IntakeUserService extends BaseService {
                 })
             }
 
+      const adminOrderSetting = await AdminSettingModel.findOne({});
+
+      const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
+        const VIP = adminOrderSetting.vipServiceTierCharge || 2;
+
+        let multiplier = 1;
+        if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
+        if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP;
+
             let totalPrice = post.items.reduce((sum, item) => {
                 const price = Number(item.price)
                 const quantity = Number(item.quantity)
 
-                return sum + price * quantity
+                return sum + (price * quantity * multiplier);
             }, 0)
 
             let extraDeliveryCost = 0
@@ -95,7 +106,17 @@ class IntakeUserService extends BaseService {
                 extraDeliveryCost = 500
             }
 
-            totalPrice += extraDeliveryCost * post.items.length
+            let serviceTypeCost = 0
+            const matchedService = adminOrderSetting.serviceTypes.find(
+              (service) => service.name === post.serviceType
+            );
+    
+            serviceTypeCost = matchedService ? matchedService.pricePerPiece : 0;
+    
+            totalPrice += serviceTypeCost
+
+            totalPrice += extraDeliveryCost
+            // totalPrice += extraDeliveryCost * post.items.length
 
             const oscNumber = generateOscNumber()
             const newOrderItem = {
