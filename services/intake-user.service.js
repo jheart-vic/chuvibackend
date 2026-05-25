@@ -18,7 +18,11 @@ const {
     ROLE,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
-const { generateOscNumber, buildStageUpdate, generateReferenceId } = require('../util/helper')
+const {
+    generateOscNumber,
+    buildStageUpdate,
+    generateReferenceId,
+} = require('../util/helper')
 const paginate = require('../util/paginate')
 const validateData = require('../util/validate')
 const BaseService = require('./base.service')
@@ -134,16 +138,16 @@ class IntakeUserService extends BaseService {
                 reference: oscNumber,
             })
 
-            const reference = generateReferenceId();
+            const reference = generateReferenceId()
             await PaymentModel.create({
-              userId: userId,
-              amount: totalPrice,
-              reference: reference,
-              status: "success",
-              order: newOrder._id,
-              type: "order",
-            //   alertType: "debit",
-            });
+                userId: userId,
+                amount: totalPrice,
+                reference: reference,
+                status: 'success',
+                order: newOrder._id,
+                type: 'order',
+                //   alertType: "debit",
+            })
 
             return BaseService.sendSuccessResponse({
                 message: newOrder,
@@ -315,7 +319,6 @@ class IntakeUserService extends BaseService {
                 userId: userId || null,
                 reference: order.oscNumber,
             })
-
 
             // ✅ Fix 2 — only notify customer if order has a linked userId
             if (order.userId) {
@@ -698,6 +701,14 @@ class IntakeUserService extends BaseService {
 
             const { amount } = post
             //   send message either SMS or Whatsapp to a user
+
+            if (order.phoneNumber) {
+                await sendSms(
+                    order.phoneNumber,
+                    `Hi ${order.fullName}, your laundry order (${order.oscNumber}) requires a top-up of ₦${amount}. Reason: ${message}. Please contact us to proceed.`,
+                )
+            }
+
             await ActivityModel.create({
                 title: 'Wallet Adjustment request',
                 description: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
