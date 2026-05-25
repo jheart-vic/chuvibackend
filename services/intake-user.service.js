@@ -1370,7 +1370,7 @@ class IntakeUserService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus userId stageHistory washDetails items createdAt updatedAt',
                     populate: {
                         path: 'intakeStaffId washDetails.operatorId',
                         select: 'fullName',
@@ -1411,6 +1411,7 @@ class IntakeUserService extends BaseService {
                 return {
                     orderId: order._id,
                     oscNumber: order.oscNumber,
+                    customerId: order.userId,
                     fullName: order.fullName,
                     phoneNumber: order.phoneNumber,
                     serviceType: order.serviceType,
