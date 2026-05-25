@@ -23,7 +23,6 @@ const PaymentSchema = new mongoose.Schema(
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
     channel: { type: String }, // card, bank, etc.
-    paidAt: { type: Date },
     alertType: { type: String, enum: ["credit", "debit"] },
     paymentMethod: {
       type: String,
