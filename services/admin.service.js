@@ -709,6 +709,13 @@ class AdminService extends BaseService {
                     expressCapacity: adminSetting?.expressCapacity ?? 30,
                     standardDeliveryPeriod:
                         adminSetting?.standardDeliveryPeriod ?? 2,
+                    // ✅ added from AdminSetting
+                    sameDayCharge: adminSetting?.sameDayCharge ?? 300,
+                    expressCharge: adminSetting?.expressCharge ?? 100,
+                    premiumServiceTierCharge:
+                        adminSetting?.premiumServiceTierCharge ?? 1.5,
+                    vipServiceTierCharge:
+                        adminSetting?.vipServiceTierCharge ?? 2,
                 },
             })
         } catch (error) {
