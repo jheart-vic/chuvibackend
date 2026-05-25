@@ -1071,22 +1071,31 @@ class WashAndDryService extends BaseService {
                     error: 'User not found',
                 })
 
+            // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                $or: [
+                    { stationStatus: STATION_STATUS.WASH_AND_DRY_STATION },
+                    { 'items.holdDetails.assignTo': ROLE.WASH_AND_DRY },
+                ],
             })
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not on hold at this station',
                 })
 
-            // stamp release details on all held items
             const now = new Date()
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo) {
+                if (item.holdDetails?.assignTo === ROLE.WASH_AND_DRY) {
                     item.holdDetails.releasedAt = now
                     item.holdDetails.releasedByOperatorId = userId
+                    item.holdDetails.assignTo = null
+                    // ✅ reset wash status so item can be worked on again
+                    item.washStatus = 'pending'
+                    item.washConfirmedAt = null
+                    item.washConfirmedByOperatorId = null
+                    item.flaggedForReview = false
                 }
                 return item
             })
@@ -1102,8 +1111,23 @@ class WashAndDryService extends BaseService {
                             'Released from hold',
                         ).$set,
                     },
+                    $unset: {
+                        'washDetails.startedAt': '',
+                        'washDetails.movedToDryingAt': '',
+                        'washDetails.dryingCompletedAt': '',
+                        'washDetails.operatorId': '',
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.WASHING,
+                            note: 'Released from hold',
+                            updatedAt: now,
+                        },
+                    },
                 },
+                { runValidators: false },
             )
+
             await ActivityModel.create({
                 title: 'Order Released from Hold',
                 description: `Order ${order.oscNumber} released from hold and returned to wash queue by ${user.fullName}`,
@@ -1111,13 +1135,6 @@ class WashAndDryService extends BaseService {
                 orderId: order._id,
                 userId,
                 reference: order.oscNumber,
-            })
-
-            await createNotification({
-                userId,
-                title: 'Order Released from Hold',
-                body: `Order ${order.oscNumber} has been released from hold and returned to the wash queue.`,
-                type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
             return BaseService.sendSuccessResponse({

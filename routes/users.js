@@ -60,6 +60,7 @@ const {
   ROUTE_GET_USER_NOTIFICATIONS,
   ROUTE_GET_DASHBOARD,
   ROUTE_GET_USERS_BY_TYPE,
+  ROUTE_COMPLETE_PROFILE,
 } = require("../util/page-route");
 const { image_uploader } = require("../util/imageUpload");
 const router = require("express").Router();
@@ -891,6 +892,54 @@ router.patch(ROUTE_CHANGE_PASSWORD, auth, (req, res) => {
 router.get(ROUTE_GET_USERS_BY_TYPE, [auth], (req, res) => {
     const userController = new UserController()
     return userController.getUsersByType(req, res)
+})
+
+/**
+ * @swagger
+ * /users/complete-profile:
+ *   patch:
+ *     summary: Complete Google signup profile by adding phone number
+ *     description: Called once after Google sign-in when the user has no phone number on file. Subsequent logins skip this step automatically.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+2348012345678"
+ *     responses:
+ *       200:
+ *         description: Profile completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Profile completed successfully
+ *       400:
+ *         description: Phone number missing or profile already completed
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_COMPLETE_PROFILE, [auth], (req, res) => {
+    const userController = new UserController()
+    return userController.completeProfile(req, res)
 })
 
 module.exports = router;

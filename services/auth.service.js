@@ -243,7 +243,6 @@ class AuthService extends BaseService {
                 family_name,
             } = payload
 
-            // ✅ Proper fullName mapping (schema-compatible)
             const fullName =
                 name || [given_name, family_name].filter(Boolean).join(' ')
 
@@ -254,23 +253,26 @@ class AuthService extends BaseService {
             })
 
             if (userWithSub) {
-                // If this email was created as LOCAL, decide your policy (block or link).
                 if (userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL) {
                     return BaseService.sendFailedResponse({
                         error: 'This email was registered with password. Please login manually.',
                     })
                 }
 
-                // keep provider consistent
+                // Keep provider consistent
                 userWithSub.servicePlatform = SERVICE_PLATFORM.GOOGLE
                 userWithSub.googleId = userWithSub.googleId || googleId
 
-                // fill missing profile info
+                // Fill missing profile info
                 if (!userWithSub.fullName && fullName)
                     userWithSub.fullName = fullName
 
-                if (picture)
+                // ✅ Only use Google picture if user hasn't uploaded a custom one
+                // publicId is '' for Google/default images, non-empty for Cloudinary uploads
+                const hasCustomImage = userWithSub.image?.publicId !== ''
+                if (picture && !hasCustomImage) {
                     userWithSub.image = { imageUrl: picture, publicId: '' }
+                }
 
                 await userWithSub.save()
 
@@ -292,18 +294,17 @@ class AuthService extends BaseService {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'none',
-                    maxAge: 28 * 24 * 60 * 60 * 1000,
+                    maxAge: 7 * 24 * 60 * 60 * 1000,
                     path: '/',
                 })
 
                 return BaseService.sendSuccessResponse({
-                    message: user,
-                    // user: userWithSub,
-                    // refreshToken,
+                    message: userWithSub,
+                    requiresPhone: !userWithSub.phoneNumber, // ✅ using phoneNumber (not phone)
                 })
             }
 
-            // ✅ Schema-aligned user object
+            // New user
             const userObject = {
                 googleId,
                 email,
@@ -327,10 +328,10 @@ class AuthService extends BaseService {
 
             // Welcome email
             const emailHtml = `
-      <h1>Registration successful</h1>
-      <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
-      <p>You have successfully signed up.</p>
-    `
+                <h1>Registration successful</h1>
+                <p>Hi <strong>${newUser.fullName || newUser.email}</strong>,</p>
+                <p>You have successfully signed up.</p>
+            `
 
             await sendEmail({
                 subject: 'Welcome to Chuvi Laundry',
@@ -356,8 +357,7 @@ class AuthService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: newUser,
-                // user: newUser,
-                // refreshToken,
+                requiresPhone: true, // ✅ always true for brand new users
             })
         } catch (error) {
             console.error(error)
@@ -366,7 +366,6 @@ class AuthService extends BaseService {
             })
         }
     }
-
     async appleSignup(req, res) {
         try {
             const {

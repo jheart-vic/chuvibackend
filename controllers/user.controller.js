@@ -143,6 +143,14 @@ class UserController extends BaseController {
         }
         return BaseController.sendSuccessResponse(res, result.data)
     }
+    async completeProfile(req, res) {
+        const userService = new UserService()
+        const result = await userService.completeProfile(req)
+        if (!result.success) {
+            return BaseController.sendFailedResponse(res, result.data)
+        }
+        return BaseController.sendSuccessResponse(res, result.data)
+    }
 }
 
 module.exports = UserController

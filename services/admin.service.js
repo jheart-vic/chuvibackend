@@ -693,12 +693,37 @@ class AdminService extends BaseService {
             })
         }
     }
-    async getAdminOrderDetails(req, res) {
+    async getAdminOrderDetails(req) {
         try {
-            const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
+            const [adminOrderDetails, adminSetting] = await Promise.all([
+                AdminOrderDetailsModel.findOne().lean(),
+                AdminSettingModel.findOne().lean(),
+            ])
+
+            const activeServiceTypes = adminSetting?.serviceTypes || []
 
             return BaseService.sendSuccessResponse({
-                message: adminOrderDetails,
+                message: {
+                    ...adminOrderDetails,
+                    serviceTypes: activeServiceTypes,
+                    serviceType: activeServiceTypes.map((s) => s.name),
+                    pickupTime: adminSetting?.pickupTimeSlots || [
+                        '10am-12pm',
+                        '4pm-6pm',
+                    ],
+                    standardCapacity: adminSetting?.standardCapacity ?? 100,
+                    sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
+                    expressCapacity: adminSetting?.expressCapacity ?? 30,
+                    standardDeliveryPeriod:
+                        adminSetting?.standardDeliveryPeriod ?? 2,
+                    // ✅ added from AdminSetting
+                    sameDayCharge: adminSetting?.sameDayCharge ?? 300,
+                    expressCharge: adminSetting?.expressCharge ?? 100,
+                    premiumServiceTierCharge:
+                        adminSetting?.premiumServiceTierCharge ?? 1.5,
+                    vipServiceTierCharge:
+                        adminSetting?.vipServiceTierCharge ?? 2,
+                },
             })
         } catch (error) {
             console.log(error)
@@ -707,7 +732,7 @@ class AdminService extends BaseService {
     }
     async getAdminSetting(req, res) {
         try {
-            const adminSetting = await AdminSettingModel.findOne({})
+            const adminSetting = await AdminSettingModel.findOne().lean()
 
             return BaseService.sendSuccessResponse({
                 message: adminSetting,
@@ -719,50 +744,62 @@ class AdminService extends BaseService {
     }
     async updateOrderDetails(req) {
         try {
-            const updateData = req.body;
+            const updateData = req.body
 
             // Find the single configuration document
-            const adminOrderDetail = await AdminOrderDetailsModel.findOne();
+            const adminOrderDetail = await AdminOrderDetailsModel.findOne()
 
             if (!adminOrderDetail) {
-                return BaseService.sendFailedResponse({ error: 'Order details configuration not found.' });
+                return BaseService.sendFailedResponse({
+                    error: 'Order details configuration not found.',
+                })
             }
 
             // Dynamically update the document fields
             await AdminOrderDetailsModel.findOneAndUpdate(
                 { _id: adminOrderDetail._id },
                 { $set: updateData },
-                { new: true }
-            );
+                { new: true },
+            )
 
-            return BaseService.sendSuccessResponse({ message: 'Setting has been updated' });
+            return BaseService.sendSuccessResponse({
+                message: 'Setting has been updated',
+            })
         } catch (error) {
-            console.log(error);
-            return BaseService.sendFailedResponse({ error: 'Something went wrong. Please try again later.' });
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
         }
     }
     async updateAdminSettings(req) {
         try {
-            const updateData = req.body;
+            const updateData = req.body
 
             // Find the single configuration document
-            const adminSetting = await AdminSettingModel.findOne();
+            const adminSetting = await AdminSettingModel.findOne()
 
             if (!adminSetting) {
-                return BaseService.sendFailedResponse({ error: 'Order details configuration not found.' });
+                return BaseService.sendFailedResponse({
+                    error: 'Order details configuration not found.',
+                })
             }
 
             // Dynamically update the document fields
             await AdminSettingModel.findOneAndUpdate(
                 { _id: adminSetting._id },
                 { $set: updateData },
-                { new: true }
-            );
+                { new: true },
+            )
 
-            return BaseService.sendSuccessResponse({ message: 'Setting has been updated' });
+            return BaseService.sendSuccessResponse({
+                message: 'Setting has been updated',
+            })
         } catch (error) {
-            console.log(error);
-            return BaseService.sendFailedResponse({ error: 'Something went wrong. Please try again later.' });
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
         }
     }
 
@@ -1102,6 +1139,7 @@ class AdminService extends BaseService {
             const { type } = req.query
             const note = req.body.note
             const orderId = req.params.id
+            const userId = req.user.id
 
             if (!orderId) {
                 return BaseService.sendFailedResponse({
@@ -1185,7 +1223,7 @@ class AdminService extends BaseService {
                 userId: userId,
                 title: 'Order Reassigned',
                 body: `You have reassigned order ${order.oscNumber} to ${type.replace(/-/g, ' ')}. Note: ${note}`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATE,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
@@ -1438,102 +1476,133 @@ class AdminService extends BaseService {
             })
         }
     }
-    async addItem(req){
+    async addItem(req) {
         try {
             const name = req.body.name
             const price = req.body.price
-            if(!name){
-                return BaseService.sendFailedResponse({error: 'Please enter a name for the item'})
+            if (!name) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter a name for the item',
+                })
             }
-            if(!price){
-                return BaseService.sendFailedResponse({error: 'Please enter a price for the item'})
+            if (!price) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter a price for the item',
+                })
             }
 
-            await OrderItemModel.create({name, price})
+            await OrderItemModel.create({ name, price })
 
-            return BaseService.sendSuccessResponse({message: 'Item added successfully'})
+            return BaseService.sendSuccessResponse({
+                message: 'Item added successfully',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
         }
     }
-    async updateItem(req){
+    async updateItem(req) {
         try {
             const orderItemId = req.params.id
-            if(!orderItemId){
-                return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
+            if (!orderItemId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter an order item ID',
+                })
             }
 
             const orderItem = await OrderItemModel.findById(orderItemId)
 
-            if(!orderItem){
-                return BaseService.sendFailedResponse({error: 'Order item not found'})
+            if (!orderItem) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order item not found',
+                })
             }
 
             await OrderItemModel.findOneAndUpdate(
                 { _id: orderItemId },
                 { $set: req.body },
-                { new: true }
+                { new: true },
             )
-          return BaseService.sendSuccessResponse({message: 'Item updated successfully'})
+            return BaseService.sendSuccessResponse({
+                message: 'Item updated successfully',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
         }
     }
-    async getItems(req){
+    async getItems(req) {
         try {
             const orderItems = await OrderItemModel.find({})
 
-            return BaseService.sendSuccessResponse({message: orderItems})
+            return BaseService.sendSuccessResponse({ message: orderItems })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
         }
     }
-    async getItem(req){
+    async getItem(req) {
         try {
             const orderItemId = req.params.id
-            if(!orderItemId){
-                return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
+            if (!orderItemId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter an order item ID',
+                })
             }
 
             const orderItem = await OrderItemModel.findById(orderItemId)
 
-            if(!orderItem){
-                return BaseService.sendFailedResponse({error: 'Order item not found'})
+            if (!orderItem) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order item not found',
+                })
             }
 
-            return BaseService.sendSuccessResponse({message: orderItem})
+            return BaseService.sendSuccessResponse({ message: orderItem })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
         }
     }
-    async deleteItem(req){
+    async deleteItem(req) {
         try {
             const orderItemId = req.params.id
-            if(!orderItemId){
-                return BaseService.sendFailedResponse({error: 'Please enter an order item ID'})
+            if (!orderItemId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter an order item ID',
+                })
             }
 
             const orderItem = await OrderItemModel.findById(orderItemId)
 
-            if(!orderItem){
-                return BaseService.sendFailedResponse({error: 'Order item not found'})
+            if (!orderItem) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order item not found',
+                })
             }
 
             await OrderItemModel.findOneAndDelete({
-                _id: orderItemId
+                _id: orderItemId,
             })
 
-            return BaseService.sendSuccessResponse({message: 'Order item deleted successfully'})
+            return BaseService.sendSuccessResponse({
+                message: 'Order item deleted successfully',
+            })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({error: 'Something went wrong. Please try again later'})
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
         }
     }
-
 }
 
 module.exports = AdminService

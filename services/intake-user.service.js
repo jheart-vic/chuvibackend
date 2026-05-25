@@ -15,10 +15,16 @@ const {
     STATION_STATUS,
     DELIVERY_SPEED,
     NOTIFICATION_TYPE,
+    ROLE,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
-const { generateOscNumber, buildStageUpdate, generateReferenceId } = require('../util/helper')
+const {
+    generateOscNumber,
+    buildStageUpdate,
+    generateReferenceId,
+} = require('../util/helper')
 const paginate = require('../util/paginate')
+const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const BaseService = require('./base.service')
 
@@ -133,16 +139,16 @@ class IntakeUserService extends BaseService {
                 reference: oscNumber,
             })
 
-            const reference = generateReferenceId();
+            const reference = generateReferenceId()
             await PaymentModel.create({
-              userId: userId,
-              amount: totalPrice,
-              reference: reference,
-              status: "success",
-              order: newOrder._id,
-              type: "order",
-            //   alertType: "debit",
-            });
+                userId: userId,
+                amount: totalPrice,
+                reference: reference,
+                status: 'success',
+                order: newOrder._id,
+                type: 'order',
+                //   alertType: "debit",
+            })
 
             return BaseService.sendSuccessResponse({
                 message: newOrder,
@@ -286,16 +292,25 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            order.stage.status = ORDER_STATUS.HOLD
-            order.stage.note = message
-
-            order.stageHistory.push({
-                status: ORDER_STATUS.HOLD,
-                note: message,
-                updatedAt: new Date(),
-            })
-
-            await order.save()
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'stage.status': ORDER_STATUS.HOLD,
+                        'stage.note': message,
+                        'stage.updatedAt': new Date(),
+                        stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.HOLD,
+                            note: message,
+                            updatedAt: new Date(),
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
 
             await ActivityModel.create({
                 title: 'Order Flagged',
@@ -305,16 +320,17 @@ class IntakeUserService extends BaseService {
                 userId: userId || null,
                 reference: order.oscNumber,
             })
-            
 
-            await createNotification({
-                userId: order.userId,
-                title: 'Order Flagged',
-                body: `Your order ${order.oscNumber} has been flagged by our team.`,
-                subBody: `Reason: ${message}`,
-                type: NOTIFICATION_TYPE.ORDER_FLAGGED,
-            })
-
+            // ✅ Fix 2 — only notify customer if order has a linked userId
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Order Flagged',
+                    body: `Your order ${order.oscNumber} has been flagged by our team.`,
+                    subBody: `Reason: ${message}`,
+                    type: NOTIFICATION_TYPE.ORDER_FLAGGED,
+                })
+            }
             return BaseService.sendSuccessResponse({
                 message: 'Order flagged successfully',
             })
@@ -646,6 +662,7 @@ class IntakeUserService extends BaseService {
                     error: 'Order ID is required',
                 })
             }
+
             const order =
                 await BookOrderModel.findById(orderId).populate('userId')
             if (!order) {
@@ -655,7 +672,6 @@ class IntakeUserService extends BaseService {
             }
 
             const user = await UserModel.findById(userId)
-
             if (!user) {
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
@@ -663,14 +679,12 @@ class IntakeUserService extends BaseService {
             }
 
             const validateRule = {
-                message: 'string|required',
-                amount: 'integer|required',
+                amount: 'integer|required', // ✅ message no longer required
             }
 
             const validateMessage = {
                 required: ':attribute is required',
-                string: ':attribute must be an string.',
-                integer: ':attribute must be an number.',
+                integer: ':attribute must be a number.',
             }
 
             const validateResult = validateData(
@@ -684,24 +698,33 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            const { amount } = post
-            //   send message either SMS or Whatsapp to a user
+            const { amount, message } = post
+
             await ActivityModel.create({
                 title: 'Wallet Adjustment request',
                 description: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
                 type: ACTIVITY_TYPE.TOP_UP_REQUEST,
             })
 
-            await createNotification({
-                userId: order.userId._id,
-                title: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
-                body: `A top up request of ${amount} has been initiated for you. Please contact support for more details.`,
-                subBody: `Order ID: ${order.oscNumber}`,
-                type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
-            })
+            // ✅ only notify if order has a linked customer account
+            if (order.userId?._id) {
+                await createNotification({
+                    userId: order.userId._id,
+                    title: `Top-up Request for Order ${order.oscNumber}`,
+                    body: `A top up request of ₦${amount} has been initiated for you.${message ? ` Reason: ${message}` : ''} Please contact support for more details.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
+                })
+            }
+
+            // ✅ always send SMS to phone number on the order
+            if (order.phoneNumber) {
+                const smsMessage = `Hi ${order.fullName}, a top-up of ₦${amount} is required for your laundry order (${order.oscNumber}).${message ? ` Reason: ${message}.` : ''} Please contact us to proceed.`
+                await sendSms(order.phoneNumber, smsMessage)
+            }
 
             return BaseService.sendSuccessResponse({
-                message: 'Order moved to sort and pretreat successfully',
+                message: 'Top up request sent successfully',
             })
         } catch (error) {
             console.log(error)
@@ -900,11 +923,23 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            order.dispatchDetails.pickup.rider = riderId
-            order.dispatchDetails.pickup.status = PICKUP_STATUS.SCHEDULED
-            order.dispatchDetails.pickup.updatedAt = new Date()
+            // order.dispatchDetails.delivery.rider = riderId
+            // order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
+            // order.dispatchDetails.delivery.updatedAt = new Date()
+            // order.save()
 
-            await order.save()
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'dispatchDetails.pickup.rider': riderId,
+                        'dispatchDetails.pickup.status':
+                            PICKUP_STATUS.SCHEDULED,
+                        'dispatchDetails.pickup.updatedAt': new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
 
             await ActivityModel.create({
                 title: 'Dispach Run Created',
@@ -955,11 +990,23 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            order.dispatchDetails.delivery.rider = riderId
-            order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
-            order.dispatchDetails.delivery.updatedAt = new Date()
+            // order.dispatchDetails.delivery.rider = riderId
+            // order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
+            // order.dispatchDetails.delivery.updatedAt = new Date()
+            // order.save()
 
-            await order.save()
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'dispatchDetails.delivery.rider': riderId,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.READY,
+                        'dispatchDetails.delivery.updatedAt': new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
 
             await ActivityModel.create({
                 title: 'Dispach Run Created',
@@ -1014,7 +1061,7 @@ class IntakeUserService extends BaseService {
                 // only generate if not already tagged
                 if (item.tagStatus === 'complete') return item
                 const paddedIndex = String(index + 1).padStart(2, '0')
-                item.tagId = `${order.oscNumber}-${paddedIndex}`
+                item.tagId = `TAG-${order.oscNumber}-${paddedIndex}`
                 // item.tagStatus = 'complete'
                 return item
             })
@@ -1323,7 +1370,7 @@ class IntakeUserService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus userId stageHistory washDetails items createdAt updatedAt',
                     populate: {
                         path: 'intakeStaffId washDetails.operatorId',
                         select: 'fullName',
@@ -1333,9 +1380,6 @@ class IntakeUserService extends BaseService {
             )
 
             const holdItems = data.map((order) => {
-                const assignedToUs =
-                    order.stationStatus ===
-                    STATION_STATUS.INTAKE_AND_TAG_STATION
                 const flaggedItems = (order.items || [])
                     .filter(
                         (i) =>
@@ -1353,9 +1397,21 @@ class IntakeUserService extends BaseService {
                         heldAt: i.holdDetails?.heldAt,
                     }))
 
+                const assignedToUs = (order.items || []).some(
+                    (i) =>
+                        i.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG &&
+                        i.holdDetails?.heldByStation !==
+                            STATION_STATUS.INTAKE_AND_TAG_STATION,
+                )
+
+                const raisedByUs =
+                    order.stationStatus ===
+                        STATION_STATUS.INTAKE_AND_TAG_STATION && !assignedToUs
+
                 return {
                     orderId: order._id,
                     oscNumber: order.oscNumber,
+                    customerId: order.userId,
                     fullName: order.fullName,
                     phoneNumber: order.phoneNumber,
                     serviceType: order.serviceType,
@@ -1363,7 +1419,11 @@ class IntakeUserService extends BaseService {
                     operator: order.washDetails?.operatorId?.fullName || null,
                     stage: order.stage,
                     stationStatus: order.stationStatus,
-                    holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
+                    holdType: assignedToUs
+                        ? 'assigned_to_us'
+                        : raisedByUs
+                          ? 'raised_by_us'
+                          : 'unknown',
                     holdReason: order.stage.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
@@ -1400,19 +1460,26 @@ class IntakeUserService extends BaseService {
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
-                stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                $or: [
+                    { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
+                    { 'items.holdDetails.assignTo': ROLE.INTAKE_AND_TAG },
+                ],
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not on hold at this station',
+                    error: 'Order not found or not assigned to this station',
                 })
 
-            // stamp release details on all held items
             const now = new Date()
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo) {
+                if (item.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG) {
                     item.holdDetails.releasedAt = now
                     item.holdDetails.releasedByOperatorId = userId
+                    item.holdDetails.assignTo = null
+                    item.tagStatus = 'pending'
+                    item.tagId = ''
+                    item.tagState = []
+                    item.tagColor = null
                 }
                 return item
             })
@@ -1428,8 +1495,17 @@ class IntakeUserService extends BaseService {
                             'Released from hold',
                         ).$set,
                     },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.QUEUE,
+                            note: 'Released from hold',
+                            updatedAt: now,
+                        },
+                    },
                 },
+                { runValidators: false }, // ✅ avoid serviceTier validation issue
             )
+
             await ActivityModel.create({
                 title: 'Order Released from Hold',
                 description: `Order ${order.oscNumber} released from hold and returned to tagging queue by ${user.fullName}`,

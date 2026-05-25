@@ -19,12 +19,14 @@ const {
     ROLE,
     GENERAL_STATUS,
     PAYMENT_ORDER_STATUS,
+    SERVICE_PLATFORM,
 } = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const SubscriptionModel = require('../models/subscription.model')
 const paginate = require('../util/paginate')
+const bcrypt = require('bcryptjs')
 
 class UserService extends BaseService {
     async getDashboard(req) {
@@ -459,10 +461,11 @@ class UserService extends BaseService {
                 query.type = types.length === 1 ? types[0] : { $in: types }
             }
 
-            const [{ data: notifications, pagination }, unreadCount] = await Promise.all([
-                paginate(NotificationModel, query, { page, limit }),
-                NotificationModel.countDocuments({ userId, isRead: false }),
-            ])
+            const [{ data: notifications, pagination }, unreadCount] =
+                await Promise.all([
+                    paginate(NotificationModel, query, { page, limit }),
+                    NotificationModel.countDocuments({ userId, isRead: false }),
+                ])
 
             return BaseService.sendSuccessResponse({
                 data: { notifications, pagination, unreadCount },
@@ -475,12 +478,63 @@ class UserService extends BaseService {
         }
     }
 
+    async completeProfile(req) {
+        try {
+            const userId = req.user.id
+            const { phoneNumber } = req.body
+
+            if (!phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Phone number is required',
+                })
+            }
+
+            const user = await UserModel.findById(userId)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+            }
+
+            if (user.phoneNumber) {
+                return BaseService.sendFailedResponse({
+                    error: 'Profile already completed',
+                })
+            }
+
+            // ✅ Fix 1 — avoid full document validation (address landmark issue)
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                userId,
+                { $set: { phoneNumber } },
+                { new: true, runValidators: false },
+            )
+
+            // ✅ Fix 2 — generate and return tokens so frontend can proceed
+            const accessToken = await updatedUser.generateAccessToken(
+                process.env.ACCESS_TOKEN_SECRET || '',
+            )
+            const refreshToken = await updatedUser.generateRefreshToken(
+                process.env.REFRESH_TOKEN_SECRET || '',
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: 'Profile completed successfully',
+                data: updatedUser,
+                accessToken,
+                refreshToken,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: this.server_error_message,
+            })
+        }
+    }
     async resetPasswordInProfilePage(req, res) {
         try {
             const userId = req.user.id
             const { currentPassword, newPassword } = req.body
 
-            // Basic validation
             if (!currentPassword || !newPassword) {
                 return BaseService.sendFailedResponse({
                     error: 'Current password and new password are required',
@@ -494,7 +548,12 @@ class UserService extends BaseService {
                 })
             }
 
-            // Verify current password
+            if (user.servicePlatform === SERVICE_PLATFORM.GOOGLE) {
+                return BaseService.sendFailedResponse({
+                    error: 'Your account uses Google sign-in. Password change is not available.',
+                })
+            }
+
             const isMatch = await user.comparePassword(currentPassword)
             if (!isMatch) {
                 return BaseService.sendFailedResponse({
@@ -502,18 +561,24 @@ class UserService extends BaseService {
                 })
             }
 
-            // Prevent reuse
             const isSamePassword = await user.comparePassword(newPassword)
             if (isSamePassword) {
                 return BaseService.sendFailedResponse({
                     error: 'New password cannot be the same as the old password',
                 })
             }
+            const hashedPassword = await bcrypt.hash(newPassword, 10)
 
-            // Update password
-            user.password = newPassword
-            user.lastChangedPassword = new Date()
-            await user.save()
+            await UserModel.findByIdAndUpdate(
+                userId,
+                {
+                    $set: {
+                        password: hashedPassword,
+                        lastChangedPassword: new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Password changed successfully',
