@@ -662,6 +662,7 @@ class IntakeUserService extends BaseService {
                     error: 'Order ID is required',
                 })
             }
+
             const order =
                 await BookOrderModel.findById(orderId).populate('userId')
             if (!order) {
@@ -671,7 +672,6 @@ class IntakeUserService extends BaseService {
             }
 
             const user = await UserModel.findById(userId)
-
             if (!user) {
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
@@ -679,14 +679,12 @@ class IntakeUserService extends BaseService {
             }
 
             const validateRule = {
-                message: 'string|required',
-                amount: 'integer|required',
+                amount: 'integer|required', // ✅ message no longer required
             }
 
             const validateMessage = {
                 required: ':attribute is required',
-                string: ':attribute must be an string.',
-                integer: ':attribute must be an number.',
+                integer: ':attribute must be a number.',
             }
 
             const validateResult = validateData(
@@ -701,14 +699,6 @@ class IntakeUserService extends BaseService {
             }
 
             const { amount, message } = post
-            //   send message either SMS or Whatsapp to a user
-
-            if (order.phoneNumber) {
-                await sendSms(
-                    order.phoneNumber,
-                    `Hi ${order.fullName}, your laundry order (${order.oscNumber}) requires a top-up of ₦${amount}. Reason: ${message}. Please contact us to proceed.`,
-                )
-            }
 
             await ActivityModel.create({
                 title: 'Wallet Adjustment request',
@@ -716,16 +706,25 @@ class IntakeUserService extends BaseService {
                 type: ACTIVITY_TYPE.TOP_UP_REQUEST,
             })
 
-            await createNotification({
-                userId: order.userId._id,
-                title: `Credit ${amount} to ${order.fullName} with ${order.phoneNumber}`,
-                body: `A top up request of ${amount} has been initiated for you. Please contact support for more details.`,
-                subBody: `Order ID: ${order.oscNumber}`,
-                type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
-            })
+            // ✅ only notify if order has a linked customer account
+            if (order.userId?._id) {
+                await createNotification({
+                    userId: order.userId._id,
+                    title: `Top-up Request for Order ${order.oscNumber}`,
+                    body: `A top up request of ₦${amount} has been initiated for you.${message ? ` Reason: ${message}` : ''} Please contact support for more details.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
+                })
+            }
+
+            // ✅ always send SMS to phone number on the order
+            if (order.phoneNumber) {
+                const smsMessage = `Hi ${order.fullName}, a top-up of ₦${amount} is required for your laundry order (${order.oscNumber}).${message ? ` Reason: ${message}.` : ''} Please contact us to proceed.`
+                await sendSms(order.phoneNumber, smsMessage)
+            }
 
             return BaseService.sendSuccessResponse({
-                message: 'Order moved to sort and pretreat successfully',
+                message: 'Top up request sent successfully',
             })
         } catch (error) {
             console.log(error)
