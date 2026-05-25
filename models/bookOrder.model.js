@@ -5,7 +5,6 @@ const {
     DELIVERY_SPEED,
     SERVICE_TIERS,
     ORDER_SERVICE_TYPE,
-    PICK_UP_TIME,
     PAYMENT_METHOD,
     BILLING_TYPE,
     ITEM_ENUM_TYPES,
@@ -175,7 +174,6 @@ const bookOrderSchema = new mongoose.Schema(
         isVerified: { type: Boolean, default: false },
         pickupTime: {
             type: String,
-            enum: Object.values(PICK_UP_TIME),
         },
         serviceType: {
             type: String,

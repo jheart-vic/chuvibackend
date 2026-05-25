@@ -686,12 +686,21 @@ class AdminService extends BaseService {
             })
         }
     }
-    async getAdminOrderDetails(req, res) {
+    async getAdminOrderDetails(req) {
         try {
-            const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
+            const [adminOrderDetails, adminSetting] = await Promise.all([
+                AdminOrderDetailsModel.findOne().lean(),
+                AdminSettingModel.findOne().lean(),
+            ])
 
             return BaseService.sendSuccessResponse({
-                message: adminOrderDetails,
+                message: {
+                    ...adminOrderDetails,
+                    pickupTime: adminSetting?.pickupTimeSlots || [
+                        '10am-12pm',
+                        '4pm-6pm',
+                    ],
+                },
             })
         } catch (error) {
             console.log(error)
@@ -700,10 +709,22 @@ class AdminService extends BaseService {
     }
     async getAdminSetting(req, res) {
         try {
-            const adminSetting = await AdminSettingModel.findOne({})
+            const [adminSetting, adminOrderDetails] = await Promise.all([
+                AdminSettingModel.findOne().lean(),
+                AdminOrderDetailsModel.findOne().lean(),
+            ])
 
             return BaseService.sendSuccessResponse({
-                message: adminSetting,
+                message: {
+                    ...adminSetting,
+                    orderDetails: {
+                        ...adminOrderDetails,
+                        pickupTime: adminSetting?.pickupTimeSlots || [
+                            '10am-12pm',
+                            '4pm-6pm',
+                        ],
+                    },
+                },
             })
         } catch (error) {
             console.log(error)

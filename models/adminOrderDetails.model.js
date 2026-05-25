@@ -47,10 +47,9 @@ const adminOrderDetailsSchema = new mongoose.Schema(
         DELIVERY_SPEED.SAME_DAY,
       ],
     },
-    pickupTime: {
-      type: [String],
-      default: [PICK_UP_TIME.MORNING_TIME, PICK_UP_TIME.EVENING_TIME],
-    },
+    // pickupTime: {
+    //   type: [String],
+    // },
     standardCapacity: { type: Number, default: 100 },
     sameDayCapacity: { type: Number, default: 50 },
     expressCapacity: { type: Number, default: 30 },
