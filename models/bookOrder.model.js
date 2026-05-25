@@ -175,7 +175,7 @@ const bookOrderSchema = new mongoose.Schema(
         isVerified: { type: Boolean, default: false },
         pickupTime: {
             type: String,
-            enum: Object.values(PICK_UP_TIME),
+            // enum: Object.values(PICK_UP_TIME),
         },
         serviceType: {
             type: String,

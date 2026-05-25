@@ -49,6 +49,12 @@ class AdminService extends BaseService {
             let yesterdayRevenue = 0
             let percentageChange = 0
 
+            const result = await PaymentModel.aggregate([
+                { $match: { status: "success" } },
+                { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
+              ]);
+            const totalRevenue = result.length > 0 ? result[0].totalAmount : 0;
+              
             const revenueTodayVerifiedAgg = await BookOrderModel.aggregate([
                 {
                     $match: {
@@ -456,6 +462,7 @@ class AdminService extends BaseService {
 
             const response = {}
             response['totalActiveOrders'] = totalActiveOrders
+            response['totalRevenue'] = totalRevenue
             response['revenueTodayVerified'] = revenueTodayVerified
             response['avgProcessingTime'] = avgProcessingTime
             response['overdueOrders'] = overdueOrders
