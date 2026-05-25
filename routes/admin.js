@@ -52,6 +52,9 @@ const router = require("express").Router();
  *                     totalActiveOrders:
  *                       type: integer
  *                       example: 120
+ *                     totalRevenue:
+ *                       type: integer
+ *                       example: 120
  *                     revenueTodayVerified:
  *                       type: number
  *                       example: 50000
@@ -434,14 +437,6 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  *                     vipServiceTierCharge:
  *                       type: number
  *                       example: 2
- *                     serviceType:
- *                       type: array
- *                       items:
- *                         type: string
- *                     pickupTimeSlots:
- *                       type: array
- *                       items:
- *                         type: string
  *                     createdAt:
  *                       type: string
  *                       format: date-time

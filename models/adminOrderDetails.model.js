@@ -28,7 +28,8 @@ const adminOrderDetailsSchema = new mongoose.Schema(
     // },
     billingType: {
       type: [String],
-      default: [BILLING_TYPE.PAY_PER_ITEM, BILLING_TYPE.PAY_FROM_SUBSCRIPTION],
+      default: [BILLING_TYPE.PAY_PER_ITEM, BILLING_TYPE.PAY_FROM_SUBSCRIPTION, BILLING_TYPE.PAY_FROM_WALLET],
+      immutable: true
     },
     serviceTiers: {
       type: [String],
@@ -37,6 +38,7 @@ const adminOrderDetailsSchema = new mongoose.Schema(
         SERVICE_TIERS.PREMIUM,
         SERVICE_TIERS.VIP,
       ],
+      immutable: true
     },
     deliverySpeed: {
       type: [String],
@@ -45,6 +47,7 @@ const adminOrderDetailsSchema = new mongoose.Schema(
         DELIVERY_SPEED.EXPRESS,
         DELIVERY_SPEED.SAME_DAY,
       ],
+      immutable: true
     },
     // pickupTime: {
     //   type: [String],
