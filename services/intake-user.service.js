@@ -111,9 +111,9 @@ class IntakeUserService extends BaseService {
             let extraDeliveryCost = 0
 
             if (post.deliverySpeend == DELIVERY_SPEED.EXPRESS) {
-                extraDeliveryCost = 300
+                extraDeliveryCost = adminOrderSetting.expressCharge;
             } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
-                extraDeliveryCost = 500
+                extraDeliveryCost = adminOrderSetting.sameDayCharge;
             }
 
             totalPrice += extraDeliveryCost
