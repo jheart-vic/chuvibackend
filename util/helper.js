@@ -136,3 +136,17 @@ module.exports.generateReferenceId = ()=>{
   const reference = `pay_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   return reference;
 }
+
+module.exports.roundToNearestHundred = (amount, strategy = 'round')=> {
+  if (!amount || isNaN(amount)) return 0;
+  
+  switch (strategy) {
+      case 'ceil':
+          return Math.ceil(amount / 100) * 100;
+      case 'floor':
+          return Math.floor(amount / 100) * 100;
+      case 'round':
+      default:
+          return Math.round(amount / 100) * 100;
+  }
+}
