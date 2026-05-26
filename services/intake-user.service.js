@@ -94,8 +94,8 @@ class IntakeUserService extends BaseService {
           ? matchedService.pricePerPiece
           : 1;
 
-      const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
-        const VIP = adminOrderSetting.vipServiceTierCharge || 2;
+      const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1;
+        const VIP = adminOrderSetting.vipServiceTierCharge || 1;
 
         let multiplier = 1;
         if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
@@ -105,14 +105,14 @@ class IntakeUserService extends BaseService {
                 const price = Number(item.price)
                 const quantity = Number(item.quantity)
 
-                return sum + roundToNearestHundred(price * serviceTypeMultiplier) * quantity * multiplier;
+                return (sum + roundToNearestHundred(price * serviceTypeMultiplier) * quantity * multiplier);
             }, 0)
 
             let extraDeliveryCost = 0
 
-            if (post.deliverySpeend == DELIVERY_SPEED.EXPRESS) {
+            if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
                 extraDeliveryCost = adminOrderSetting.expressCharge;
-            } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
+            } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
                 extraDeliveryCost = adminOrderSetting.sameDayCharge;
             }
 
