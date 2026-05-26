@@ -46,7 +46,8 @@ class BookOrderService extends BaseService {
         // pickupTime: "string|required",
         serviceType: "string|required",
         serviceTier: "string|required|in:classic,premium,vip",
-        billingType:"string|required|in:pay-per-item,pay-from-subscription,pay-from-wallet",
+        billingType:
+          "string|required|in:pay-per-item,pay-from-subscription,pay-from-wallet",
         deliverySpeed: "string|required|in:express,standard,same-day",
         isDelivery: "boolean|required",
         isPickUp: "boolean|required",
@@ -195,7 +196,15 @@ class BookOrderService extends BaseService {
         subscription.remainingItems -= post.items.length;
         await subscription.save();
       } else if (post.billingType === BILLING_TYPE.PAY_PER_ITEM) {
-        
+        let serviceTypeMultiplier = 1;
+        const matchedService = adminOrderSetting.serviceTypes.find(
+          (service) => service.name === post.serviceType
+        );
+
+        serviceTypeMultiplier = matchedService
+          ? matchedService.pricePerPiece
+          : 1;
+
         const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
         const VIP = adminOrderSetting.vipServiceTierCharge || 2;
 
@@ -206,11 +215,10 @@ class BookOrderService extends BaseService {
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
           const quantity = Number(item.quantity);
-        
-          // Multiply the item subtotal by the selected tier multiplier
-          return sum + (price * quantity * multiplier);
-        }, 0);
 
+          // Multiply the item subtotal by the selected tier multiplier
+          return sum + (price * serviceTypeMultiplier) * quantity * multiplier;
+        }, 0);
 
         let extraDeliveryCost = 0;
 
@@ -220,15 +228,7 @@ class BookOrderService extends BaseService {
           extraDeliveryCost = adminOrderSetting.sameDayCharge;
         }
 
-        let serviceTypeCost = 0
-        const matchedService = adminOrderSetting.serviceTypes.find(
-          (service) => service.name === post.serviceType
-        );
-
-      serviceTypeCost = matchedService ? matchedService.pricePerPiece : 0;
-
         totalPrice += extraDeliveryCost;
-        totalPrice += serviceTypeCost;
 
         // const oscNumber = generateOscNumber();
 
@@ -269,6 +269,14 @@ class BookOrderService extends BaseService {
           });
         }
 
+        let serviceTypeMultiplier = 1;
+        const matchedService = adminOrderSetting.serviceTypes.find(
+          (service) => service.name === post.serviceType
+        );
+
+        serviceTypeMultiplier = matchedService
+          ? matchedService.pricePerPiece
+          : 1;
 
         const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
         const VIP = adminOrderSetting.vipServiceTierCharge || 2;
@@ -280,17 +288,11 @@ class BookOrderService extends BaseService {
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
           const quantity = Number(item.quantity);
-        
+
           // Multiply the item subtotal by the selected tier multiplier
-          return sum + (price * quantity * multiplier);
+          return sum + (price * serviceTypeMultiplier) * quantity * multiplier;
         }, 0);
 
-        // let totalPrice = post.items.reduce((sum, item) => {
-        //   const price = Number(item.price);
-        //   const quantity = Number(item.quantity);
-
-        //   return sum + price * quantity;
-        // }, 0);
 
         let extraDeliveryCost = 0;
 
@@ -300,15 +302,7 @@ class BookOrderService extends BaseService {
           extraDeliveryCost = adminOrderSetting.sameDayCharge;
         }
 
-        let serviceTypeCost = 0
-        const matchedService = adminOrderSetting.serviceTypes.find(
-          (service) => service.name === post.serviceType
-        );
-
-        serviceTypeCost = matchedService ? matchedService.pricePerPiece : 0;
-
         totalPrice += extraDeliveryCost;
-        totalPrice += serviceTypeCost
 
         // const oscNumber = generateOscNumber();
 

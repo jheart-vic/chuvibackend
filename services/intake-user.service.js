@@ -84,6 +84,15 @@ class IntakeUserService extends BaseService {
 
       const adminOrderSetting = await AdminSettingModel.findOne({});
 
+      let serviceTypeMultiplier = 1;
+        const matchedService = adminOrderSetting.serviceTypes.find(
+          (service) => service.name === post.serviceType
+        );
+
+        serviceTypeMultiplier = matchedService
+          ? matchedService.pricePerPiece
+          : 1;
+
       const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1.5;
         const VIP = adminOrderSetting.vipServiceTierCharge || 2;
 
@@ -95,7 +104,7 @@ class IntakeUserService extends BaseService {
                 const price = Number(item.price)
                 const quantity = Number(item.quantity)
 
-                return sum + (price * quantity * multiplier);
+                return sum + (price * serviceTypeMultiplier) * quantity * multiplier;
             }, 0)
 
             let extraDeliveryCost = 0
@@ -105,15 +114,6 @@ class IntakeUserService extends BaseService {
             } else if (post.deliverySpeed == DELIVERY_SPEED.SAME_DAY) {
                 extraDeliveryCost = 500
             }
-
-            let serviceTypeCost = 0
-            const matchedService = adminOrderSetting.serviceTypes.find(
-              (service) => service.name === post.serviceType
-            );
-    
-            serviceTypeCost = matchedService ? matchedService.pricePerPiece : 0;
-    
-            totalPrice += serviceTypeCost
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
