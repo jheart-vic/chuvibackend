@@ -3,7 +3,7 @@ const UserModel = require("../models/user.model");
 const validateData = require("../util/validate");
 const BookOrderModel = require("../models/bookOrder.model");
 const AdminOrderDetailsModel = require("../models/adminOrderDetails.model");
-const { generateOscNumber, generateReferenceId } = require("../util/helper");
+const { generateOscNumber, generateReferenceId, roundToNearestHundred } = require("../util/helper");
 const SubscriptionModel = require("../models/subscription.model");
 const { v4: uuidv4 } = require("uuid");
 const {
@@ -217,7 +217,7 @@ class BookOrderService extends BaseService {
           const quantity = Number(item.quantity);
 
           // Multiply the item subtotal by the selected tier multiplier
-          return sum + (price * serviceTypeMultiplier) * quantity * multiplier;
+          return sum + roundToNearestHundred(price * serviceTypeMultiplier) * quantity * multiplier;
         }, 0);
 
         let extraDeliveryCost = 0;
@@ -290,7 +290,7 @@ class BookOrderService extends BaseService {
           const quantity = Number(item.quantity);
 
           // Multiply the item subtotal by the selected tier multiplier
-          return sum + (price * serviceTypeMultiplier) * quantity * multiplier;
+          return sum + roundToNearestHundred(price * serviceTypeMultiplier) * quantity * multiplier;
         }, 0);
 
 

@@ -24,6 +24,7 @@ const {
     generateOscNumber,
     buildStageUpdate,
     generateReferenceId,
+    roundToNearestHundred,
 } = require('../util/helper')
 const paginate = require('../util/paginate')
 const sendSms = require('../util/sendSms')
@@ -104,7 +105,7 @@ class IntakeUserService extends BaseService {
                 const price = Number(item.price)
                 const quantity = Number(item.quantity)
 
-                return sum + (price * serviceTypeMultiplier) * quantity * multiplier;
+                return sum + roundToNearestHundred(price * serviceTypeMultiplier) * quantity * multiplier;
             }, 0)
 
             let extraDeliveryCost = 0
