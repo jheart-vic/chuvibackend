@@ -1639,50 +1639,27 @@ class IntakeUserService extends BaseService {
                     error: 'User not found',
                 })
 
-            // must be in QUEUE stage and have at least one complete item (i.e. a draft)
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QUEUE,
                 items: { $elemMatch: { tagStatus: 'complete' } },
-            })
+                // at least one still untagged — confirming it's still a draft
+                $and: [
+                    {
+                        items: {
+                            $elemMatch: { tagStatus: { $ne: 'complete' } },
+                        },
+                    },
+                ],
+            }).lean()
+
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not in draft state',
                 })
 
-            // reset ALL items back to untagged so the order falls into tagging queue
-            const resetItems = order.items.map((item) => {
-                item.tagStatus = ''
-                item.tagState = []
-                item.tagColor = ''
-                item.tagId = ''
-                return item
-            })
-
-            await BookOrderModel.updateOne(
-                { _id: orderId },
-                { $set: { items: resetItems } },
-            )
-
-            await ActivityModel.create({
-                title: 'Draft Resumed',
-                description: `Order ${order.oscNumber} resumed from draft and returned to tagging queue by ${user.fullName}`,
-                type: ACTIVITY_TYPE.TAG_AND_QUEUE,
-                orderId: order._id,
-                userId,
-                reference: order.oscNumber,
-            })
-
-            await createNotification({
-                userId,
-                title: 'Order Resumed',
-                body: `Order ${order.oscNumber} has been resumed and returned to the tagging queue.`,
-                subBody: `Please proceed to tag all items from the beginning.`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATED,
-            })
-
             return BaseService.sendSuccessResponse({
-                message: 'Order returned to tagging queue successfully',
+                message: order, // frontend uses this to navigate to the tagging screen
             })
         } catch (error) {
             console.log(error)
