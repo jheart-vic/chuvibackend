@@ -1546,7 +1546,7 @@ router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
 /**
  * @swagger
  * /intake-user/order/draft/{id}/resume:
- *   get:
+ *   patch:
  *     summary: Resume a draft order — fetch partial tagging progress to continue
  *     description: |
  *       Returns the full order document for a draft order so the frontend can
@@ -1605,7 +1605,7 @@ router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
  *       404:
  *         description: Order not found
  */
-router.get(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
+router.patch(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.resumeFromDraft(req, res)
 })
