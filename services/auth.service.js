@@ -10,6 +10,7 @@ const {
     generateOTP,
     verifyRefreshToken,
     signAccessToken,
+    cookieOptions,
 } = require('../util/helper')
 const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require('../util/constants')
 const FreePlanModel = require('../models/freeplan.model')
@@ -175,18 +176,12 @@ class AuthService extends BaseService {
             }
 
             res.cookie('accessToken', accessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
-                path: '/',
             })
             res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
-                path: '/',
             })
 
             return BaseService.sendSuccessResponse({
@@ -284,18 +279,12 @@ class AuthService extends BaseService {
                 )
 
                 res.cookie('accessToken', accessToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'none',
+                    ...cookieOptions,
                     maxAge: 60 * 60 * 1000,
-                    path: '/',
                 })
                 res.cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'none',
-                    maxAge: 7 * 24 * 60 * 60 * 1000,
-                    path: '/',
+                    ...cookieOptions,
+                    maxAge: 28 * 24 * 60 * 60 * 1000,
                 })
 
                 return BaseService.sendSuccessResponse({
@@ -340,19 +329,13 @@ class AuthService extends BaseService {
             })
 
             res.cookie('accessToken', accessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
-                path: '/',
             })
 
             res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-                path: '/',
+                ...cookieOptions,
+                maxAge: 28 * 24 * 60 * 60 * 1000,
             })
 
             return BaseService.sendSuccessResponse({
@@ -590,19 +573,13 @@ class AuthService extends BaseService {
             })
 
             res.cookie('accessToken', accessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
-                path: '/',
             })
 
             res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
-                path: '/',
             })
 
             return BaseService.sendSuccessResponse({
@@ -691,19 +668,13 @@ class AuthService extends BaseService {
             userExists.password = undefined
 
             res.cookie('accessToken', accessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
-                path: '/',
             })
 
             res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
-                path: '/',
             })
 
             return BaseService.sendSuccessResponse({
@@ -959,19 +930,13 @@ class AuthService extends BaseService {
             )
 
             res.cookie('accessToken', newAccessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
-                path: '/',
             })
 
             res.cookie('refreshToken', newRefreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
-                path: '/',
             })
 
             return BaseService.sendSuccessResponse({
@@ -1042,19 +1007,13 @@ class AuthService extends BaseService {
             }
 
             res.cookie('accessToken', accessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
-                path: '/',
             })
 
             res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'none',
+                ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
-                path: '/',
             })
 
             return BaseService.sendSuccessResponse({
@@ -1128,16 +1087,17 @@ class AuthService extends BaseService {
     }
 
     async logout(req, res) {
-        res.clearCookie('accessToken', {
+        const cookieOptions = {
             httpOnly: true,
-            sameSite: 'none',
             secure: true,
-        })
-        res.clearCookie('refreshToken', {
-            httpOnly: true,
             sameSite: 'none',
-            secure: true,
-        })
+            domain: '.chuvilaundry.com',
+            path: '/',
+        }
+
+        res.clearCookie('accessToken', cookieOptions)
+
+        res.clearCookie('refreshToken', cookieOptions)
 
         return BaseService.sendSuccessResponse({
             message: 'Logged out successfully',
