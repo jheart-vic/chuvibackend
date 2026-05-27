@@ -25,6 +25,7 @@ const {
   ROUTE_INTAKE_USER_RELEASE,
   ROUTE_INTAKE_HISTORY_TIMELINE,
   ROUTE_INTAKE_HISTORY,
+  ROUTE_INTAKE_DRAFT_RESUME,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1540,6 +1541,49 @@ router.patch(ROUTE_INTAKE_USER_RELEASE, [intakeUserAuth], (req, res) => {
 router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.getHistoryList(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/order/draft/{id}/resume:
+ *   patch:
+ *     summary: Resume an order from draft back to tagging queue
+ *     description: |
+ *       Resets all partially-tagged items on a draft order back to untagged,
+ *       returning the order to the tagging queue so staff can re-tag from scratch.
+ *       An order qualifies as a draft when it is in QUEUE stage and has at least
+ *       one item with tagStatus = "complete" alongside at least one that is not.
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Order returned to tagging queue successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order returned to tagging queue successfully"
+ *       400:
+ *         description: Order not found or not in draft state
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ */
+router.patch(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.resumeFromDraft(req, res)
 })
 
 /**
