@@ -189,22 +189,54 @@ class IntakeUserService extends BaseService {
     }
     async intakeDashboard(req, res) {
         try {
-            const pendingOrders = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.PENDING,
-            })
-            const taggingQueue = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.QUEUE,
-            })
-            const holdOrders = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-            })
+            const [pendingOrders, taggingQueue, drafts, holdOrders] =
+                await Promise.all([
+                    // pending orders — unchanged
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.PENDING,
+                    }),
 
-            const response = {}
-            response['pendingOrders'] = pendingOrders
-            response['taggingQueueOrders'] = taggingQueue
-            response['holdOrders'] = holdOrders
+                    // tagging queue — matches getTaggingQueue exactly
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.QUEUE,
+                        items: {
+                            $not: { $elemMatch: { tagStatus: 'complete' } },
+                        },
+                    }),
 
-            return BaseService.sendSuccessResponse({ message: response })
+                    // drafts — matches getDrafts exactly
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.QUEUE,
+                        $and: [
+                            {
+                                items: {
+                                    $elemMatch: { tagStatus: 'complete' },
+                                },
+                            },
+                            {
+                                items: {
+                                    $elemMatch: {
+                                        tagStatus: { $ne: 'complete' },
+                                    },
+                                },
+                            },
+                        ],
+                    }),
+
+                    // hold orders — unchanged
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.HOLD,
+                    }),
+                ])
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    pendingOrders,
+                    taggingQueueOrders: taggingQueue,
+                    draftOrders: drafts,
+                    holdOrders,
+                },
+            })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
@@ -1087,11 +1119,9 @@ class IntakeUserService extends BaseService {
 
             const now = new Date()
             const updatedItems = order.items.map((item, index) => {
-                // only generate if not already tagged
                 if (item.tagStatus === 'complete') return item
                 const paddedIndex = String(index + 1).padStart(2, '0')
-                item.tagId = `TAG-${order.oscNumber}-${paddedIndex}`
-                // item.tagStatus = 'complete'
+                item.tagId = `TAG-${paddedIndex}`
                 return item
             })
 
