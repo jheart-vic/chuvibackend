@@ -26,6 +26,7 @@ const {
   ROUTE_INTAKE_HISTORY_TIMELINE,
   ROUTE_INTAKE_HISTORY,
   ROUTE_INTAKE_DRAFT_RESUME,
+  ROUTE_INTAKE_MARK_AS_DELIVERED,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1689,6 +1690,84 @@ router.patch(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
 router.get(ROUTE_INTAKE_HISTORY_TIMELINE, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.getOrderTimeline(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/order/{id}/mark-delivered:
+ *   patch:
+ *     summary: Mark an order as collected in person by the customer
+ *     description: |
+ *       This endpoint handles **only** the self-pickup scenario — when a customer
+ *       walks into the facility and collects their order in person.
+ *
+ *       `selfPickup: true` is **required**. Passing `false` or omitting it will
+ *       return an error, since normal rider deliveries are handled exclusively
+ *       by the rider's own `mark-delivered` endpoint.
+ *
+ *       **Requirements:**
+ *       - Order must be in `READY` stage
+ *       - No rider or `isDelivery` constraint applies
+ *
+ *       **On success:**
+ *       - Stage moves to `DELIVERED`
+ *       - Delivery status set to `DELIVERED`
+ *       - Stage history updated with note: "Customer collected order in person"
+ *       - Activity log created
+ *       - In-app notification sent to customer (if account exists)
+ *       - SMS sent to the phone number on the order
+ *
+ *       > **Note:** For orders going out with a rider, the rider must call their
+ *       > own delivery endpoint. Intake staff cannot mark those as delivered.
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - selfPickup
+ *             properties:
+ *               selfPickup:
+ *                 type: boolean
+ *                 enum: [true]
+ *                 description: Must be `true`. This endpoint only handles in-person collection.
+ *             example:
+ *               selfPickup: true
+ *     responses:
+ *       200:
+ *         description: Order marked as collected successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order marked as collected successfully"
+ *       400:
+ *         description: |
+ *           Request failed. Possible reasons:
+ *           - `selfPickup` was `false` or omitted — only `true` is accepted
+ *           - Order not found or not in `READY` stage
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ */
+router.patch(ROUTE_INTAKE_MARK_AS_DELIVERED, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.markOrderAsDelivered(req, res)
 })
 
 module.exports = router;

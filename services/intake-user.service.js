@@ -115,11 +115,11 @@ class IntakeUserService extends BaseService {
 
             let extraDeliveryCost = 0
 
-            if(post.isDelivery || post.isPickUp){
+            if (post.isDelivery || post.isPickUp) {
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    extraDeliveryCost = adminOrderSetting.expressCharge;
+                    extraDeliveryCost = adminOrderSetting.expressCharge
                 } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                    extraDeliveryCost = adminOrderSetting.sameDayCharge;
+                    extraDeliveryCost = adminOrderSetting.sameDayCharge
                 }
             }
 
@@ -476,10 +476,10 @@ class IntakeUserService extends BaseService {
             }
 
             const validateRule = {
-                tagState: 'array|required',
-                tagColor: 'string|required',
-                tagStatus: 'string|required',
-                tagId: 'string|required',
+                tagState: 'array',
+                tagColor: 'string',
+                tagStatus: 'string',
+                tagId: 'string',
             }
 
             const validateMessage = {
@@ -748,7 +748,7 @@ class IntakeUserService extends BaseService {
 
             // ✅ always send SMS to phone number on the order
             if (order.phoneNumber) {
-                const smsMessage = `Hi ${order.fullName}, a top-up of ₦${amount} is required for your laundry order (${order.oscNumber}).${message ? ` Reason: ${message}.` : ''} Please contact us to proceed.`
+                const smsMessage = `Hi ${order.fullName}, a top-up of ₦${amount} is required for your laundry order (${order.oscNumber}).${message ? ` Reason: ${message}.` : ''} Please contact us to proceed via WhatsApp - +2347073254943.`
                 await sendSms(order.phoneNumber, smsMessage)
             }
 
@@ -1806,6 +1806,99 @@ class IntakeUserService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to fetch order timeline',
+            })
+        }
+    }
+
+    async markOrderAsDelivered(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+            const { selfPickup = false } = req.body
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            // selfPickup is the only valid use case for this endpoint
+            if (!selfPickup)
+                return BaseService.sendFailedResponse({
+                    error: 'Normal deliveries must be marked delivered by the assigned rider. Use selfPickup: true only when the customer collected in person.',
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.READY,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not ready for collection',
+                })
+
+            const now = new Date()
+
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'stage.status': ORDER_STATUS.DELIVERED,
+                        'stage.note': 'Customer collected order in person',
+                        'stage.updatedAt': now,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.DELIVERED,
+                        'dispatchDetails.delivery.updatedAt': now,
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.DELIVERED,
+                            note: 'Customer collected order in person',
+                            updatedAt: now,
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
+
+            await ActivityModel.create({
+                title: 'Order Collected In Person',
+                description: `Order ${order.oscNumber} was collected in person by the customer. Confirmed by ${user.fullName}`,
+                type: ACTIVITY_TYPE.ORDER_DELIVERED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
+
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Order Collected',
+                    body: `Your order ${order.oscNumber} has been collected. Thank you for visiting us!`,
+                    subBody: `Thank you for using our service.`,
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+            }
+
+            if (order.phoneNumber) {
+                await sendSms(
+                    order.phoneNumber,
+                    `Hi ${order.fullName}, your laundry order (${order.oscNumber}) has been collected. Thank you for visiting us!`,
+                )
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: 'Order marked as collected successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to mark order as collected',
             })
         }
     }

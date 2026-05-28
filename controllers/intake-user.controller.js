@@ -201,6 +201,14 @@ class IntakeUserController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+
+    async markOrderAsDelivered(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.markOrderAsDelivered(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 }
 
 module.exports = IntakeUserController

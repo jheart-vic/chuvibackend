@@ -53,6 +53,7 @@ exports.ROUTE_INTAKE_USER_RELEASE         = '/hold/:id/release'
 exports.ROUTE_INTAKE_HISTORY         = '/orders/history'
 exports.ROUTE_INTAKE_DRAFT_RESUME = '/order/draft/:id/resume'
 exports.ROUTE_INTAKE_HISTORY_TIMELINE = '/order/history/:id/timeline'
+exports.ROUTE_INTAKE_MARK_AS_DELIVERED = '/order/:id/mark-delivered'
 
 
 

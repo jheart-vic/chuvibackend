@@ -50,16 +50,16 @@ class AdminService extends BaseService {
             let percentageChange = 0
 
             const result = await PaymentModel.aggregate([
-                { $match: { status: "success" } },
-                { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
-              ]);
-            const totalRevenue = result.length > 0 ? result[0].totalAmount : 0;
-              
+                { $match: { status: 'success' } },
+                { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+            ])
+            const totalRevenue = result.length > 0 ? result[0].totalAmount : 0
+
             const revenueTodayVerifiedAgg = await PaymentModel.aggregate([
                 {
                     $match: {
                         verifiedAt: { $gte: todayStart, $lte: todayEnd },
-                        status: "success",
+                        status: 'success',
                     },
                 },
                 {
@@ -68,16 +68,15 @@ class AdminService extends BaseService {
                         total: { $sum: '$amount' },
                     },
                 },
-            ]);
-            
-            const revenueTodayVerified = revenueTodayVerifiedAgg[0]?.total || 0;
-            
+            ])
+
+            const revenueTodayVerified = revenueTodayVerifiedAgg[0]?.total || 0
 
             const revenueComparisonAgg = await PaymentModel.aggregate([
                 {
                     $match: {
                         verifiedAt: { $gte: yesterdayStart, $lte: todayEnd },
-                        status: "success",
+                        status: 'success',
                     },
                 },
                 {
@@ -104,20 +103,20 @@ class AdminService extends BaseService {
                     },
                 },
             ])
-            
+
             revenueComparisonAgg.forEach((item) => {
                 if (item._id === 'today') todayRevenue = item.total
                 if (item._id === 'yesterday') yesterdayRevenue = item.total
             })
-            
+
             if (yesterdayRevenue === 0) {
                 percentageChange = todayRevenue > 0 ? 100 : 0
             } else {
-                percentageChange = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
+                percentageChange =
+                    ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
             }
-            
+
             const revenueTodayChange = Number(percentageChange.toFixed(2))
-            
 
             const activities = await ActivityModel.find()
                 .sort({ createdAt: -1 })
@@ -713,13 +712,13 @@ class AdminService extends BaseService {
                     expressCapacity: adminSetting?.expressCapacity ?? 30,
                     standardDeliveryPeriod:
                         adminSetting?.standardDeliveryPeriod ?? 2,
-                    // ✅ added from AdminSetting
                     sameDayCharge: adminSetting?.sameDayCharge ?? 300,
                     expressCharge: adminSetting?.expressCharge ?? 100,
                     premiumServiceTierCharge:
                         adminSetting?.premiumServiceTierCharge ?? 1.5,
                     vipServiceTierCharge:
                         adminSetting?.vipServiceTierCharge ?? 2,
+                    bankDetails: adminSetting?.bankDetails ?? '',
                 },
             })
         } catch (error) {
@@ -727,6 +726,7 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({ error })
         }
     }
+
     async getAdminSetting(req, res) {
         try {
             const adminSetting = await AdminSettingModel.findOne().lean()
