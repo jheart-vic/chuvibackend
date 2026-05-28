@@ -231,13 +231,20 @@ class BookOrderService extends BaseService {
 
         let extraDeliveryCost = 0;
 
-        if(post.isDelivery || post.isPickUp){
-          if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-              extraDeliveryCost = adminOrderSetting.expressCharge;
-          } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-              extraDeliveryCost = adminOrderSetting.sameDayCharge;
-          }
-      }
+                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                    extraDeliveryCost += adminOrderSetting.expressCharge
+                } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    extraDeliveryCost += adminOrderSetting.sameDayCharge
+                }
+
+                if (post.isDelivery || post.isPickUp) {
+                    if (post.isPickUp) {
+                        extraDeliveryCost += adminOrderSetting.pickupFee || 0
+                    }
+                    if (post.isDelivery) {
+                        extraDeliveryCost += adminOrderSetting.deliveryFee || 0
+                    }
+                }
 
         totalPrice += extraDeliveryCost;
 
@@ -295,7 +302,7 @@ class BookOrderService extends BaseService {
         let multiplier = 1;
         if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
         if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP;
-        
+
 
         let totalPrice = post.items.reduce((sum, item) => {
           const price = Number(item.price);
@@ -311,14 +318,18 @@ class BookOrderService extends BaseService {
         }, 0);
 
         let extraDeliveryCost = 0;
+            if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                extraDeliveryCost += adminOrderSetting.expressCharge
+            } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                extraDeliveryCost += adminOrderSetting.sameDayCharge
+            }
 
-        if(post.isDelivery || post.isPickUp){
-          if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-              extraDeliveryCost = adminOrderSetting.expressCharge;
-          } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-              extraDeliveryCost = adminOrderSetting.sameDayCharge;
-          }
-      }
+        if (post.isPickUp) {
+            extraDeliveryCost += adminOrderSetting.pickupFee || 0
+        }
+        if (post.isDelivery) {
+            extraDeliveryCost += adminOrderSetting.deliveryFee || 0
+        }
 
         totalPrice += extraDeliveryCost;
 

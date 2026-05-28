@@ -54,6 +54,8 @@ const adminSettingSchema = new mongoose.Schema(
         sameDayCapacity: { type: Number, default: 50 },
         expressCapacity: { type: Number, default: 30 },
         standardDeliveryPeriod: { type: Number, default: 2 },
+        deliveryFee: { type: Number, default: 500 },
+        pickupFee: { type: Number, default: 500 },
     },
     { timestamps: true },
 )

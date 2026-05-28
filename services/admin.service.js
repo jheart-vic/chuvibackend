@@ -718,6 +718,8 @@ class AdminService extends BaseService {
                         adminSetting?.premiumServiceTierCharge ?? 1.5,
                     vipServiceTierCharge:
                         adminSetting?.vipServiceTierCharge ?? 2,
+                    deliveryFee: adminSetting?.deliveryFee ?? 500,
+                    pickupFee: adminSetting?.pickupFee ?? 500,
                     bankDetails: adminSetting?.bankDetails ?? '',
                 },
             })
