@@ -25,6 +25,7 @@ const {
   ROUTE_INTAKE_USER_RELEASE,
   ROUTE_INTAKE_HISTORY_TIMELINE,
   ROUTE_INTAKE_HISTORY,
+  ROUTE_INTAKE_DRAFT_RESUME,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1540,6 +1541,73 @@ router.patch(ROUTE_INTAKE_USER_RELEASE, [intakeUserAuth], (req, res) => {
 router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.getHistoryList(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/order/draft/{id}/resume:
+ *   patch:
+ *     summary: Resume a draft order — fetch partial tagging progress to continue
+ *     description: |
+ *       Returns the full order document for a draft order so the frontend can
+ *       navigate directly to the tagging screen and continue from where staff stopped.
+ *       No data is modified — already-tagged items are preserved.
+ *       An order qualifies as a draft when it is in QUEUE stage and has at least
+ *       one item with tagStatus = "complete" alongside at least one that is not.
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Draft order returned with partial tagging progress intact
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     _id:          { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *                     oscNumber:    { type: string, example: "OSC-20260428-321782" }
+ *                     fullName:     { type: string, example: "Jude Victor" }
+ *                     phoneNumber:  { type: string, example: "08012345678" }
+ *                     serviceType:  { type: string, example: "wash-and-iron" }
+ *                     serviceTier:  { type: string, example: "standard" }
+ *                     amount:       { type: number, example: 4500 }
+ *                     stage:
+ *                       type: object
+ *                       properties:
+ *                         status: { type: string, example: "queue" }
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:       { type: string }
+ *                           type:      { type: string, example: "shirt" }
+ *                           tagId:     { type: string, example: "TAG-OSC-20260428-321782-01" }
+ *                           tagStatus: { type: string, example: "complete" }
+ *                           tagColor:  { type: string, example: "red" }
+ *                           tagState:  { type: array, items: { type: string } }
+ *                     createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: Order not found or not in draft state
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ */
+router.patch(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.resumeFromDraft(req, res)
 })
 
 /**

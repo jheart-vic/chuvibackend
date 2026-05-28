@@ -7,6 +7,7 @@ const corsOptions = {
         'http://localhost:3000',
         'http://localhost:5000',
         'http://localhost:5173',
+        'https://chuvilaundry.com',
         'https://www.chuvilaundry.com',
         'https://chuvi-v1.vercel.app',
     ],

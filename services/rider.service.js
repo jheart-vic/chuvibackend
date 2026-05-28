@@ -257,7 +257,7 @@ class RiderService extends BaseService {
             const { page = 1, limit = 10 } = req.query
 
             const query = {
-                isDelivery: true,
+                isPickUp: true,
                 'dispatchDetails.pickup.rider': riderId,
                 'dispatchDetails.pickup.status': PICKUP_STATUS.PICKUP_IN_PROGRESS,
             }

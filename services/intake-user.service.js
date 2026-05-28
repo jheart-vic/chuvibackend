@@ -83,29 +83,34 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-      const adminOrderSetting = await AdminSettingModel.findOne({});
+            const adminOrderSetting = await AdminSettingModel.findOne({})
 
-      let serviceTypeMultiplier = 1;
-        const matchedService = adminOrderSetting.serviceTypes.find(
-          (service) => service.name === post.serviceType
-        );
+            let serviceTypeMultiplier = 1
+            const matchedService = adminOrderSetting.serviceTypes.find(
+                (service) => service.name === post.serviceType,
+            )
 
-        serviceTypeMultiplier = matchedService
-          ? matchedService.pricePerPiece
-          : 1;
+            serviceTypeMultiplier = matchedService
+                ? matchedService.pricePerPiece
+                : 1
 
-      const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1;
-        const VIP = adminOrderSetting.vipServiceTierCharge || 1;
+            const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1
+            const VIP = adminOrderSetting.vipServiceTierCharge || 1
 
-        let multiplier = 1;
-        if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM;
-        if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP;
+            let multiplier = 1
+            if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM
+            if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
 
             let totalPrice = post.items.reduce((sum, item) => {
                 const price = Number(item.price)
                 const quantity = Number(item.quantity)
 
-                return (sum + roundToNearestHundred(price * serviceTypeMultiplier) * quantity * multiplier);
+                return (
+                    sum +
+                    roundToNearestHundred(price * serviceTypeMultiplier) *
+                        quantity *
+                        multiplier
+                )
             }, 0)
 
             let extraDeliveryCost = 0
@@ -1620,134 +1625,51 @@ class IntakeUserService extends BaseService {
         }
     }
 
-    // async getOrderTimeline(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const userId = req.user.id
+    async resumeFromDraft(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
 
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
 
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
 
-    //         const order = await BookOrderModel.findById(orderId).lean()
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found',
-    //             })
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.QUEUE,
+                items: { $elemMatch: { tagStatus: 'complete' } },
+                // at least one still untagged — confirming it's still a draft
+                $and: [
+                    {
+                        items: {
+                            $elemMatch: { tagStatus: { $ne: 'complete' } },
+                        },
+                    },
+                ],
+            }).lean()
 
-    //         const PIPELINE = [
-    //             {
-    //                 key: 'intake',
-    //                 label: 'Intake',
-    //                 status: ORDER_STATUS.PENDING,
-    //             },
-    //             { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
-    //             {
-    //                 key: 'pretreated',
-    //                 label: 'Pretreated',
-    //                 status: ORDER_STATUS.SORT_AND_PRETREAT,
-    //             },
-    //             {
-    //                 key: 'washed',
-    //                 label: 'Washed',
-    //                 status: ORDER_STATUS.WASHING,
-    //             },
-    //             {
-    //                 key: 'ironing',
-    //                 label: 'Ironing',
-    //                 status: ORDER_STATUS.IRONING,
-    //             },
-    //             {
-    //                 key: 'qc_passed',
-    //                 label: 'QC Passed',
-    //                 status: ORDER_STATUS.QC,
-    //             },
-    //             { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
-    //             {
-    //                 key: 'delivered',
-    //                 label: 'Delivered',
-    //                 status: ORDER_STATUS.DELIVERED,
-    //             },
-    //         ]
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not in draft state',
+                })
 
-    //         const stageTimestampMap = {}
-    //         for (const entry of order.stageHistory || []) {
-    //             if (!stageTimestampMap[entry.status]) {
-    //                 stageTimestampMap[entry.status] = entry.updatedAt
-    //             }
-    //         }
-    //         stageTimestampMap[ORDER_STATUS.PENDING] =
-    //             stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-
-    //         const pipeline = PIPELINE.map((step) => {
-    //             const timestamp = stageTimestampMap[step.status] || null
-    //             return {
-    //                 key: step.key,
-    //                 label: step.label,
-    //                 completed: !!timestamp,
-    //                 timestamp,
-    //             }
-    //         })
-
-    //         // Per-item action log
-    //         const itemTimeline = []
-    //         for (const item of order.items || []) {
-    //             for (const log of item.actionLog || []) {
-    //                 itemTimeline.push({
-    //                     itemId: item._id,
-    //                     itemType: item.type,
-    //                     tagId: item.tagId,
-    //                     action: log.action,
-    //                     note: log.note || '',
-    //                     timestamp: log.timestamp,
-    //                 })
-    //             }
-    //         }
-    //         itemTimeline.sort(
-    //             (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-    //         )
-
-    //         const trackingStatus =
-    //             order.stage.status === ORDER_STATUS.DELIVERED
-    //                 ? 'completed'
-    //                 : 'in_progress'
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 order: {
-    //                     _id: order._id,
-    //                     oscNumber: order.oscNumber,
-    //                     fullName: order.fullName,
-    //                     phoneNumber: order.phoneNumber,
-    //                     pickupAddress: order.pickupAddress,
-    //                     serviceType: order.serviceType,
-    //                     serviceTier: order.serviceTier,
-    //                     amount: order.amount,
-    //                     channel: order.channel,
-    //                     stage: order.stage,
-    //                     stationStatus: order.stationStatus,
-    //                     trackingStatus,
-    //                     intakeStaffId: order.intakeStaffId,
-    //                     createdAt: order.createdAt,
-    //                 },
-    //                 pipeline,
-    //                 itemTimeline,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to fetch order timeline',
-    //         })
-    //     }
-    // }
+            return BaseService.sendSuccessResponse({
+                message: order, // frontend uses this to navigate to the tagging screen
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to resume order from draft',
+            })
+        }
+    }
 
     async getOrderTimeline(req) {
         try {

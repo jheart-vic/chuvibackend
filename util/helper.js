@@ -139,7 +139,7 @@ module.exports.generateReferenceId = ()=>{
 
 module.exports.roundToNearestHundred = (amount, strategy = 'round')=> {
   if (!amount || isNaN(amount)) return 0;
-  
+
   switch (strategy) {
       case 'ceil':
           return Math.ceil(amount / 100) * 100;
@@ -150,3 +150,13 @@ module.exports.roundToNearestHundred = (amount, strategy = 'round')=> {
           return Math.round(amount / 100) * 100;
   }
 }
+
+const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    domain: '.chuvilaundry.com',
+    path: '/',
+}
+
+module.exports.cookieOptions = cookieOptions;

@@ -186,6 +186,13 @@ class IntakeUserController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async resumeFromDraft(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.resumeFromDraft(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
     async getOrderTimeline(req, res) {
         const intakeUserService = new IntakeUserService()

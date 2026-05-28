@@ -51,6 +51,7 @@ exports.ROUTE_INTAKE_GET_TAGGING_QUEUE   = '/tagging-queue'
 exports.ROUTE_INTAKE_USER_GET_HOLD       = '/orders/hold'
 exports.ROUTE_INTAKE_USER_RELEASE         = '/hold/:id/release'
 exports.ROUTE_INTAKE_HISTORY         = '/orders/history'
+exports.ROUTE_INTAKE_DRAFT_RESUME = '/order/draft/:id/resume'
 exports.ROUTE_INTAKE_HISTORY_TIMELINE = '/order/history/:id/timeline'
 
 
