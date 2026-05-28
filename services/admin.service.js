@@ -720,7 +720,7 @@ class AdminService extends BaseService {
                         adminSetting?.vipServiceTierCharge ?? 2,
                     deliveryFee: adminSetting?.deliveryFee ?? 500,
                     pickupFee: adminSetting?.pickupFee ?? 500,
-                    bankDetails: adminSetting?.bankDetails ?? '',
+                    bankDetails: adminSetting?.bankDetails,
                 },
             })
         } catch (error) {
@@ -775,7 +775,6 @@ class AdminService extends BaseService {
         try {
             const updateData = req.body
 
-            // Find the single configuration document
             const adminSetting = await AdminSettingModel.findOne()
 
             if (!adminSetting) {
@@ -784,15 +783,17 @@ class AdminService extends BaseService {
                 })
             }
 
-            // Dynamically update the document fields
-            await AdminSettingModel.findOneAndUpdate(
+            const updated = await AdminSettingModel.findOneAndUpdate(
                 { _id: adminSetting._id },
                 { $set: updateData },
-                { new: true },
+                {
+                    new: true,
+                    runValidators: false, // ← prevents required field validation on subdocuments
+                },
             )
 
             return BaseService.sendSuccessResponse({
-                message: 'Setting has been updated',
+                message: updated, // ← return updated doc so frontend can confirm what was saved
             })
         } catch (error) {
             console.log(error)
@@ -801,7 +802,6 @@ class AdminService extends BaseService {
             })
         }
     }
-
     async getPaymentVerificationQueue(req, res) {
         try {
             const result = await paginate(

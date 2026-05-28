@@ -10,9 +10,9 @@ const ServiceTypeSchema = new mongoose.Schema(
 
 const BankDetailsSchema = new mongoose.Schema(
     {
-        bankName: { type: String, default: '' },
-        accountNumber: { type: String, default: '' },
-        accountName: { type: String, default: '' },
+        bankName: { type: String },
+        accountNumber: { type: String },
+        accountName: { type: String },
     },
     { _id: false },
 )
