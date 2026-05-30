@@ -308,6 +308,7 @@ const bookOrderSchema = new mongoose.Schema(
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
                 isVerified: { type: Boolean, default: false },
+                startedAt: { type: Date },
                 updatedAt: { type: Date },
             },
             delivery: {
@@ -318,6 +319,7 @@ const bookOrderSchema = new mongoose.Schema(
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
                 note: { type: String },
+                startedAt: { type: Date },
                 updatedAt: { type: Date },
             },
         },

@@ -7,6 +7,8 @@ const {
     ORDER_STATUS,
     NOTIFICATION_TYPE,
     STATION_STATUS,
+    PICKUP_DURATION_MINUTES,
+    DELIVERY_DURATION_MINUTES,
 } = require('../util/constants')
 const paginate = require('../util/paginate')
 
@@ -51,11 +53,38 @@ class RiderService extends BaseService {
                     DELIVERY_STATUS.OUT_FOR_DELIVERY,
             }
 
-            const result = await paginate(BookOrderModel, query, {
+            const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
+                select: 'oscNumber fullName phoneNumber deliveryAddress serviceType serviceTier stage dispatchDetails createdAt',
+                lean: true,
             })
-            return BaseService.sendSuccessResponse({ message: result })
+
+            const ordersWithMeta = data.map((order) => {
+                const startedAt = order.dispatchDetails?.delivery?.startedAt
+                const estimatedDelivery = startedAt
+                    ? new Date(
+                          new Date(startedAt).getTime() +
+                              DELIVERY_DURATION_MINUTES * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...order,
+                    dispatchDetails: {
+                        ...order.dispatchDetails,
+                        delivery: {
+                            ...order.dispatchDetails?.delivery,
+                            estimatedDelivery,
+                            durationMinutes: DELIVERY_DURATION_MINUTES,
+                        },
+                    },
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: ordersWithMeta, pagination },
+            })
         } catch (error) {
             console.error('Error in getActiveDeliveries:', error)
             return BaseService.sendFailedResponse({
@@ -263,11 +292,38 @@ class RiderService extends BaseService {
                     PICKUP_STATUS.PICKUP_IN_PROGRESS,
             }
 
-            const result = await paginate(BookOrderModel, query, {
+            const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
+                select: 'oscNumber fullName phoneNumber pickupAddress serviceType serviceTier stage dispatchDetails createdAt',
+                lean: true,
             })
-            return BaseService.sendSuccessResponse({ message: result })
+
+            const ordersWithMeta = data.map((order) => {
+                const startedAt = order.dispatchDetails?.pickup?.updatedAt
+                const estimatedArrival = startedAt
+                    ? new Date(
+                          new Date(startedAt).getTime() +
+                              PICKUP_DURATION_MINUTES * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...order,
+                    dispatchDetails: {
+                        ...order.dispatchDetails,
+                        pickup: {
+                            ...order.dispatchDetails?.pickup,
+                            estimatedArrival,
+                            durationMinutes: PICKUP_DURATION_MINUTES,
+                        },
+                    },
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: ordersWithMeta, pagination },
+            })
         } catch (error) {
             console.error('Error in getActivePickups:', error)
             return BaseService.sendFailedResponse({

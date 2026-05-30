@@ -8,6 +8,7 @@ const {
     ROLE,
     DELIVERY_STATUS,
     PICKUP_STATUS,
+    PRESS_DURATION_MINUTES,
 } = require('../util/constants')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
@@ -441,7 +442,8 @@ class PressAndIronService extends BaseService {
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
                 [ROLE.WASH_AND_DRY]: STATION_STATUS.WASH_AND_DRY_STATION,
-                [ROLE.SORT_AND_PRETREAT]: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                [ROLE.SORT_AND_PRETREAT]:
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
                 [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
             }
 
@@ -556,8 +558,30 @@ class PressAndIronService extends BaseService {
                 lean: true,
             })
 
+            const ordersWithMeta = data.map((order) => {
+                const startedAt = order.pressDetails?.startedAt
+                const durationMinutes =
+                    PRESS_DURATION_MINUTES[order.serviceTier] ?? 30
+                const estimatedFinish = startedAt
+                    ? new Date(
+                          new Date(startedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...order,
+                    itemCount: (order.items || []).length,
+                    pressDetails: {
+                        ...order.pressDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { data: ordersWithMeta, pagination },
             })
         } catch (error) {
             console.log(error)

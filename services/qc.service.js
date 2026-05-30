@@ -9,6 +9,7 @@ const {
     NOTIFICATION_TYPE,
     DELIVERY_STATUS,
     PICKUP_STATUS,
+    QC_DURATION_MINUTES,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
@@ -113,13 +114,29 @@ class QCService extends BaseService {
                 lean: true,
             })
 
-            const ordersWithMeta = data.map((o) => ({
-                ...o,
-                itemCount: (o.items || []).length,
-                flaggedItemCount: (o.items || []).filter(
-                    (i) => i.flaggedForReview,
-                ).length,
-            }))
+            const ordersWithMeta = data.map((o) => {
+                const arrivedAt = o.stage?.updatedAt
+                const durationMinutes = QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
+                const estimatedFinish = arrivedAt
+                    ? new Date(
+                          new Date(arrivedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...o,
+                    itemCount: (o.items || []).length,
+                    flaggedItemCount: (o.items || []).filter(
+                        (i) => i.flaggedForReview,
+                    ).length,
+                    qcDetails: {
+                        ...o.qcDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
 
             return BaseService.sendSuccessResponse({
                 message: { data: ordersWithMeta, pagination },
@@ -158,12 +175,31 @@ class QCService extends BaseService {
                     error: 'Order not found or not in QC stage',
                 })
 
+            const arrivedAt = order.stage?.updatedAt
+            const durationMinutes = QC_DURATION_MINUTES[order.deliverySpeed] ?? 20
+            const estimatedFinish = arrivedAt
+                ? new Date(
+                      new Date(arrivedAt).getTime() +
+                          durationMinutes * 60 * 1000,
+                  )
+                : null
+
             const allItemsPassed = order.items.every(
                 (i) => i.qcStatus === 'passed',
             )
 
             return BaseService.sendSuccessResponse({
-                message: { order, allItemsPassed },
+                message: {
+                    order: {
+                        ...order,
+                        qcDetails: {
+                            ...order.qcDetails,
+                            estimatedFinish,
+                            durationMinutes,
+                        },
+                    },
+                    allItemsPassed,
+                },
             })
         } catch (error) {
             console.log(error)

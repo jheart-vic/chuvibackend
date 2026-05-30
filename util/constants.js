@@ -79,11 +79,12 @@ const STATION_STATUS = {
     RIDER_STATION: 'rider-station',
 }
 
-const WASH_DURATION_MINUTES = {
-    standard: 45,
-    premium: 90,
-    express: 30,
-}
+const WASH_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
+const DRY_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
+const PRESS_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
+const QC_DURATION_MINUTES = { standard: 25, express: 15, same_day: 10 }
+const PICKUP_DURATION_MINUTES = 30  // flat estimate — no tier variation
+const DELIVERY_DURATION_MINUTES = 45
 
 const ORDER_STATUS = {
     PENDING: 'pending',
@@ -278,4 +279,9 @@ module.exports = {
     ACTIVITY_TYPE,
     STATION_STATUS,
     WASH_DURATION_MINUTES,
+    DRY_DURATION_MINUTES,
+    PRESS_DURATION_MINUTES,
+    PICKUP_DURATION_MINUTES,
+    DELIVERY_DURATION_MINUTES,
+    QC_DURATION_MINUTES,
 }
