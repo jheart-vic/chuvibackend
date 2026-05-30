@@ -41,7 +41,8 @@ const ItemSchema = new mongoose.Schema(
         ],
         tagColor: {
             type: String,
-            enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE],
+            enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE, null],
+            default: null,
         },
         tagStatus: {
             type: String,
@@ -121,6 +122,7 @@ const ItemSchema = new mongoose.Schema(
         flaggedForReview: { type: Boolean, default: false },
         holdDetails: {
             reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
+            note: { type: String, default: '' },
             assignTo: {
                 type: String,
                 enum: [

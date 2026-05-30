@@ -417,7 +417,7 @@ class PressAndIronService extends BaseService {
             const orderId = req.params.id
             const itemId = req.params.itemId
             const userId = req.user.id
-            const { reason, assignTo } = req.body
+            const { reason, assignTo, note = '' } = req.body
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
@@ -441,20 +441,19 @@ class PressAndIronService extends BaseService {
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
                 [ROLE.WASH_AND_DRY]: STATION_STATUS.WASH_AND_DRY_STATION,
-                [ROLE.SORT_AND_PRETREAT]:
-                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                [ROLE.SORT_AND_PRETREAT]: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
             }
 
-            if (!allowedReasons.includes(reason)) {
+            if (!allowedReasons.includes(reason))
                 return BaseService.sendFailedResponse({
                     error: `reason must be one of: ${allowedReasons.join(', ')}`,
                 })
-            }
-            if (!stationMap[assignTo]) {
+
+            if (!stationMap[assignTo])
                 return BaseService.sendFailedResponse({
                     error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
                 })
-            }
 
             const user = await UserModel.findById(userId)
             if (!user)
@@ -477,13 +476,16 @@ class PressAndIronService extends BaseService {
                     error: 'Item not found in order',
                 })
 
+            const holdNote = note ? `${reason}: ${note}` : reason
+
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
                 {
                     $set: {
                         'items.$.flaggedForReview': true,
-                        'items.$.flagNote': reason,
+                        'items.$.flagNote': holdNote,
                         'items.$.holdDetails.reason': reason,
+                        'items.$.holdDetails.note': note,
                         'items.$.holdDetails.assignTo': assignTo,
                         'items.$.holdDetails.heldAt': new Date(),
                         'items.$.holdDetails.heldByOperatorId': userId,
@@ -493,7 +495,7 @@ class PressAndIronService extends BaseService {
                     $push: {
                         'items.$.actionLog': {
                             action: 'item_held',
-                            note: `Reason: ${reason}, Assigned to: ${assignTo}`,
+                            note: holdNote,
                             timestamp: new Date(),
                         },
                     },
@@ -505,13 +507,13 @@ class PressAndIronService extends BaseService {
                 buildStageUpdate(
                     ORDER_STATUS.HOLD,
                     stationMap[assignTo],
-                    reason,
+                    holdNote,
                 ),
             )
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}. Assigned to: ${assignTo}`,
+                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
@@ -1053,12 +1055,12 @@ class PressAndIronService extends BaseService {
                 {
                     key: 'washed',
                     label: 'Washed',
-                    completedBy: ORDER_STATUS.IRONING,
+                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
                 },
                 {
                     key: 'ironing',
                     label: 'Ironing',
-                    completedBy: ORDER_STATUS.QC,
+                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
                 },
                 {
                     key: 'qc_passed',
@@ -1068,7 +1070,10 @@ class PressAndIronService extends BaseService {
                 {
                     key: 'ready',
                     label: 'Ready',
-                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                    completedBy: [
+                        ORDER_STATUS.OUT_FOR_DELIVERY,
+                        ORDER_STATUS.DELIVERED,
+                    ],
                 },
                 {
                     key: 'delivered',

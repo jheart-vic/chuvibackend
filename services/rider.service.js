@@ -259,7 +259,8 @@ class RiderService extends BaseService {
             const query = {
                 isPickUp: true,
                 'dispatchDetails.pickup.rider': riderId,
-                'dispatchDetails.pickup.status': PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                'dispatchDetails.pickup.status':
+                    PICKUP_STATUS.PICKUP_IN_PROGRESS,
             }
 
             const result = await paginate(BookOrderModel, query, {
@@ -327,7 +328,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            const customerPhone = order.phoneNumber
             if (!customerPhone) {
                 return BaseService.sendFailedResponse({
                     error: 'Customer phone number not found on order',
@@ -340,7 +341,8 @@ class RiderService extends BaseService {
                 })
             }
 
-            order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKUP_IN_PROGRESS
+            order.dispatchDetails.pickup.status =
+                PICKUP_STATUS.PICKUP_IN_PROGRESS
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
             await order.save()
@@ -564,6 +566,23 @@ class RiderService extends BaseService {
                 DELIVERY_STATUS.OUT_FOR_DELIVERY
             order.dispatchDetails.delivery.updatedAt = new Date()
             await order.save()
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: {
+                        'stage.status': ORDER_STATUS.OUT_FOR_DELIVERY,
+                        'stage.updatedAt': new Date(),
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.OUT_FOR_DELIVERY,
+                            note: 'Out for delivery',
+                            updatedAt: new Date(),
+                        },
+                    },
+                },
+            )
 
             await createNotification({
                 userId: userId,
@@ -860,12 +879,12 @@ class RiderService extends BaseService {
                 {
                     key: 'washed',
                     label: 'Washed',
-                    completedBy: ORDER_STATUS.IRONING,
+                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
                 },
                 {
                     key: 'ironing',
                     label: 'Ironing',
-                    completedBy: ORDER_STATUS.QC,
+                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
                 },
                 {
                     key: 'qc_passed',
@@ -875,7 +894,10 @@ class RiderService extends BaseService {
                 {
                     key: 'ready',
                     label: 'Ready',
-                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                    completedBy: [
+                        ORDER_STATUS.OUT_FOR_DELIVERY,
+                        ORDER_STATUS.DELIVERED,
+                    ], // DELIVERED covers self-pickup
                 },
                 {
                     key: 'delivered',

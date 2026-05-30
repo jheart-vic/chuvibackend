@@ -612,8 +612,8 @@ class IntakeUserService extends BaseService {
                 {
                     $set: {
                         'items.$.tagState': [],
-                        'items.$.tagColor': '',
-                        'items.$.tagStatus': '',
+                        'items.$.tagColor': null,
+                        'items.$.tagStatus': 'pending',
                         'items.$.tagId': '',
                     },
                 },
@@ -1233,16 +1233,32 @@ class IntakeUserService extends BaseService {
 
             const query = {
                 'stage.status': ORDER_STATUS.PENDING,
-                channel: {
-                    $in: [ORDER_CHANNEL.WHATSAPP, ORDER_CHANNEL.WEBSITE],
-                },
+                $or: [
+                    {
+                        channel: {
+                            $in: [
+                                ORDER_CHANNEL.WHATSAPP,
+                                ORDER_CHANNEL.WEBSITE,
+                            ],
+                        },
+                    },
+                    {
+                        isPickUp: true,
+                        'dispatchDetails.pickup.status':
+                            PICKUP_STATUS.PICKED_UP,
+                    },
+                ],
             }
 
             if (search) {
-                query.$or = [
-                    { oscNumber: { $regex: search, $options: 'i' } },
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { phoneNumber: { $regex: search, $options: 'i' } },
+                query.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
                 ]
             }
 
@@ -1252,7 +1268,7 @@ class IntakeUserService extends BaseService {
                     .skip(skip)
                     .limit(Number(limit))
                     .select(
-                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt',
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage dispatchDetails createdAt',
                     )
                     .lean(),
                 BookOrderModel.countDocuments(query),
@@ -1747,12 +1763,12 @@ class IntakeUserService extends BaseService {
                 {
                     key: 'washed',
                     label: 'Washed',
-                    completedBy: ORDER_STATUS.IRONING,
+                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
                 },
                 {
                     key: 'ironing',
                     label: 'Ironing',
-                    completedBy: ORDER_STATUS.QC,
+                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
                 },
                 {
                     key: 'qc_passed',
@@ -1762,7 +1778,10 @@ class IntakeUserService extends BaseService {
                 {
                     key: 'ready',
                     label: 'Ready',
-                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                    completedBy: [
+                        ORDER_STATUS.OUT_FOR_DELIVERY,
+                        ORDER_STATUS.DELIVERED,
+                    ], // DELIVERED covers self-pickup
                 },
                 {
                     key: 'delivered',
