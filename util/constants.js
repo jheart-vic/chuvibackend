@@ -246,6 +246,46 @@ const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 const ITEM_ENUM_TYPES = Object.values(ORDER_ITEMS)
 const STANDARD_ITEMS_ENUM_TYPES = Object.values(STANDARD_ORDER_ITEMS)
 
+const HOLD_REASONS = {
+    [ROLE.INTAKE_AND_TAG]: [
+        'item_missing',
+        'item_mismatched',
+        'wrong_label',
+        'damaged_on_arrival',
+        'other',
+    ],
+    [ROLE.SORT_AND_PRETREAT]: [
+        'fabric_incompatible',
+        'item_missing',
+        'item_mismatched',
+        'stain_requires_special_treatment',
+        'color_bleed_risk',
+        'other',
+    ],
+    [ROLE.WASH_AND_DRY]: [
+        'item_missing',
+        'item_mismatched',
+        'color_bleed_risk',
+        'fabric_damage_risk',
+        'other',
+    ],
+    [ROLE.PRESS]: [
+        'item_missing',
+        'item_mismatched',
+        'fabric_damage_risk',
+        'delicate_requires_attention',
+        'other',
+    ],
+    [ROLE.QC]: [
+        'item_missing',
+        'item_mismatched',
+        'quality_not_met',
+        'wrong_item_returned',
+        'packaging_issue',
+        'other',
+    ],
+}
+
 module.exports = {
     EXPIRES_AT,
     DELIVERY_CHARGE,

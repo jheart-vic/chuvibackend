@@ -121,7 +121,7 @@ const ItemSchema = new mongoose.Schema(
         },
         flaggedForReview: { type: Boolean, default: false },
         holdDetails: {
-            reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
+            reason: { type: String },
             note: { type: String, default: '' },
             assignTo: {
                 type: String,

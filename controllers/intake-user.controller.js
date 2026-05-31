@@ -130,6 +130,23 @@ class IntakeUserController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async unassignRiderFromPickupOrder(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.unassignRiderFromPickupOrder(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async unassignRiderFromDeliveryOrder(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result =
+            await intakeUserService.unassignRiderFromDeliveryOrder(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
     async generateAllTags(req, res) {
         const intakeUserService = new IntakeUserService()

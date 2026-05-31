@@ -40,8 +40,7 @@ class PressAndIronService extends BaseService {
                         'pressDetails.completedAt': { $exists: false },
                     }),
                     BookOrderModel.countDocuments({
-                        'stageHistory.status': ORDER_STATUS.IRONING,
-                        'stageHistory.updatedAt': { $gte: startOfToday },
+                        'pressDetails.completedAt': { $gte: startOfToday },
                         'stage.status': ORDER_STATUS.QC,
                     }),
                     paginate(
@@ -331,88 +330,6 @@ class PressAndIronService extends BaseService {
         }
     }
 
-    // async undoConfirmItemForPressing(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const itemId = req.params.itemId
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-    //         if (!itemId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findOne({
-    //             _id: orderId,
-    //             'stage.status': ORDER_STATUS.IRONING,
-    //         })
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found or not in ironing stage',
-    //             })
-
-    //         const item = order.items.id(itemId)
-    //         if (!item)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item not found in order',
-    //             })
-    //         if (item.pressStatus === 'pending')
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item was never completed, please confirm as completed',
-    //             })
-    //         await BookOrderModel.updateOne(
-    //             { _id: orderId, 'items._id': itemId },
-    //             {
-    //                 $set: { 'items.$.pressStatus': 'pending' },
-    //                 $push: {
-    //                     'items.$.actionLog': {
-    //                         action: 'undo_press_confirmed',
-    //                         note: '',
-    //                         timestamp: new Date(),
-    //                     },
-    //                 },
-    //             },
-    //         )
-
-    //         // If pressDetails.startedAt was set (auto-promoted when all items confirmed),
-    //         // clear it since items are no longer all confirmed
-    //         const updatedOrder = await BookOrderModel.findById(orderId).lean()
-    //         const allStillConfirmed = updatedOrder.items.every(
-    //             (i) => i.pressStatus === 'complete',
-    //         )
-    //         if (!allStillConfirmed && updatedOrder.pressDetails?.startedAt) {
-    //             await BookOrderModel.updateOne(
-    //                 { _id: orderId },
-    //                 {
-    //                     $unset: {
-    //                         'pressDetails.startedAt': '',
-    //                         'pressDetails.operatorId': '',
-    //                     },
-    //                 },
-    //             )
-    //         }
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: 'Item press confirmation undone',
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to undo item press confirmation',
-    //         })
-    //     }
-    // }
-
     async sendToHold(req) {
         try {
             const orderId = req.params.id
@@ -437,7 +354,7 @@ class PressAndIronService extends BaseService {
                     error: 'An assignee is required',
                 })
 
-            const allowedReasons = ['item_missing', 'item_mismatched']
+            // const allowedReasons = ['item_missing', 'item_mismatched']
 
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
@@ -446,11 +363,15 @@ class PressAndIronService extends BaseService {
                     STATION_STATUS.SORT_AND_PRETREAT_STATION,
                 [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
             }
-
-            if (!allowedReasons.includes(reason))
+            if (!reason || !reason.trim())
                 return BaseService.sendFailedResponse({
-                    error: `reason must be one of: ${allowedReasons.join(', ')}`,
+                    error: 'A reason is required',
                 })
+
+            // if (!allowedReasons.includes(reason))
+            //     return BaseService.sendFailedResponse({
+            //         error: `reason must be one of: ${allowedReasons.join(', ')}`,
+            //     })
 
             if (!stationMap[assignTo])
                 return BaseService.sendFailedResponse({
@@ -913,130 +834,6 @@ class PressAndIronService extends BaseService {
         }
     }
 
-    // async getOrderTimeline(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findById(orderId).lean()
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found',
-    //             })
-
-    //         const PIPELINE = [
-    //             {
-    //                 key: 'intake',
-    //                 label: 'Intake',
-    //                 status: ORDER_STATUS.PENDING,
-    //             },
-    //             { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
-    //             {
-    //                 key: 'pretreated',
-    //                 label: 'Pretreated',
-    //                 status: ORDER_STATUS.SORT_AND_PRETREAT,
-    //             },
-    //             {
-    //                 key: 'washed',
-    //                 label: 'Washed',
-    //                 status: ORDER_STATUS.WASHING,
-    //             },
-    //             {
-    //                 key: 'ironing',
-    //                 label: 'Ironing',
-    //                 status: ORDER_STATUS.IRONING,
-    //             },
-    //             {
-    //                 key: 'qc_passed',
-    //                 label: 'QC Passed',
-    //                 status: ORDER_STATUS.QC,
-    //             },
-    //             { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
-    //             {
-    //                 key: 'delivered',
-    //                 label: 'Delivered',
-    //                 status: ORDER_STATUS.DELIVERED,
-    //             },
-    //         ]
-
-    //         const stageTimestampMap = {}
-    //         for (const entry of order.stageHistory || []) {
-    //             if (!stageTimestampMap[entry.status]) {
-    //                 stageTimestampMap[entry.status] = entry.updatedAt
-    //             }
-    //         }
-    //         stageTimestampMap[ORDER_STATUS.PENDING] =
-    //             stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-
-    //         const pipeline = PIPELINE.map((step) => {
-    //             const timestamp = stageTimestampMap[step.status] || null
-    //             return {
-    //                 key: step.key,
-    //                 label: step.label,
-    //                 completed: !!timestamp,
-    //                 timestamp,
-    //             }
-    //         })
-
-    //         const itemTimeline = []
-    //         for (const item of order.items || []) {
-    //             for (const log of item.actionLog || []) {
-    //                 itemTimeline.push({
-    //                     itemId: item._id,
-    //                     itemType: item.type,
-    //                     tagId: item.tagId,
-    //                     action: log.action,
-    //                     note: log.note || '',
-    //                     timestamp: log.timestamp,
-    //                 })
-    //             }
-    //         }
-    //         itemTimeline.sort(
-    //             (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-    //         )
-
-    //         const trackingStatus =
-    //             order.stage.status === ORDER_STATUS.DELIVERED
-    //                 ? 'completed'
-    //                 : 'in_progress'
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 order: {
-    //                     _id: order._id,
-    //                     oscNumber: order.oscNumber,
-    //                     fullName: order.fullName,
-    //                     serviceType: order.serviceType,
-    //                     serviceTier: order.serviceTier,
-    //                     amount: order.amount,
-    //                     stage: order.stage,
-    //                     stationStatus: order.stationStatus,
-    //                     trackingStatus,
-    //                     pressDetails: order.pressDetails,
-    //                     createdAt: order.createdAt,
-    //                 },
-    //                 pipeline,
-    //                 itemTimeline,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to fetch order timeline',
-    //         })
-    //     }
-    // }
 
     async getOrderTimeline(req) {
         try {

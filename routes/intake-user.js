@@ -27,6 +27,8 @@ const {
   ROUTE_INTAKE_HISTORY,
   ROUTE_INTAKE_DRAFT_RESUME,
   ROUTE_INTAKE_MARK_AS_DELIVERED,
+  ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID,
+  ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -1768,6 +1770,132 @@ router.get(ROUTE_INTAKE_HISTORY_TIMELINE, [intakeUserAuth], (req, res) => {
 router.patch(ROUTE_INTAKE_MARK_AS_DELIVERED, [intakeUserAuth], (req, res) => {
     const controller = new IntakeUserController()
     return controller.markOrderAsDelivered(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/unassign-rider/{riderId}/pickup-order/{id}:
+ *   patch:
+ *     summary: Unassign a rider from a pickup order
+ *     description: |
+ *       Removes a rider assignment from a pickup order. The rider must currently
+ *       be assigned and the pickup must not have started or been completed.
+ *       Blocked if pickup status is `pickup-in-progress` or `picked-up`.
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: riderId
+ *         required: true
+ *         description: Rider ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f54321"
+ *     responses:
+ *       200:
+ *         description: Rider unassigned from pickup successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Rider unassigned from pickup successfully"
+ *       400:
+ *         description: |
+ *           Unassignment blocked. Possible reasons:
+ *           - No rider is currently assigned to this pickup
+ *           - This rider is not assigned to this pickup
+ *           - Cannot unassign a rider who has already started or completed the pickup
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Cannot unassign a rider who has already started or completed the pickup"
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, res) => {
+    const bookOrderController = new IntakeUserController()
+    return bookOrderController.unassignRiderFromPickupOrder(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/unassign-rider/{riderId}/delivery-order/{id}:
+ *   patch:
+ *     summary: Unassign a rider from a delivery order
+ *     description: |
+ *       Removes a rider assignment from a delivery order. The rider must currently
+ *       be assigned and the delivery must not have started or been completed.
+ *       Blocked if delivery status is `out-for-delivery` or `delivered`.
+ *     tags:
+ *       - Intake User
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Order ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *       - in: path
+ *         name: riderId
+ *         required: true
+ *         description: Rider ID
+ *         schema:
+ *           type: string
+ *           example: "64d3c9c0f1b2a8e9d0f54321"
+ *     responses:
+ *       200:
+ *         description: Rider unassigned from delivery successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Rider unassigned from delivery successfully"
+ *       400:
+ *         description: |
+ *           Unassignment blocked. Possible reasons:
+ *           - No rider is currently assigned to this delivery
+ *           - This rider is not assigned to this delivery
+ *           - Cannot unassign a rider who has already started or completed the delivery
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Cannot unassign a rider who has already started or completed the delivery"
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req, res) => {
+    const bookOrderController = new IntakeUserController()
+    return bookOrderController.unassignRiderFromDeliveryOrder(req, res)
 })
 
 module.exports = router;
