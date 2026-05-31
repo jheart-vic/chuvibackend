@@ -51,7 +51,10 @@ class SortAndPretreatService extends BaseService {
                 }),
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
-                    'stage.updatedAt': { $gte: yesterdayStart, $lt: todayStart },
+                    'stage.updatedAt': {
+                        $gte: yesterdayStart,
+                        $lt: todayStart,
+                    },
                 }),
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
@@ -939,20 +942,30 @@ class SortAndPretreatService extends BaseService {
                     error: 'Order not found or not in sort & pretreat stage',
                 })
 
-            const allItemsSorted = order.items.every(
-                (i) => i.sortStatus === 'complete',
+            // ← flexible check: only validate what each item actually requires
+            const pendingSortItems = order.items.filter(
+                (i) =>
+                    i.sortStatus !== 'complete' &&
+                    i.sortStatus !== 'not_required',
             )
-            const allItemsPretreated = order.items.every(
-                (i) => i.pretreatStatus === 'complete',
+            const pendingPretreatItems = order.items.filter(
+                (i) =>
+                    i.pretreatStatus !== 'complete' &&
+                    i.pretreatStatus !== 'not_required',
             )
 
-            if (!allItemsSorted || !allItemsPretreated) {
+            if (pendingSortItems.length > 0) {
                 return BaseService.sendFailedResponse({
-                    error: 'All items must be marked as sorted and pretreated before sending to the next stage',
+                    error: `${pendingSortItems.length} item(s) still pending sorting. Mark as sorted or not required before proceeding.`,
                 })
             }
 
-            // Determine next ORDER_STATUS and matching STATION_STATUS
+            if (pendingPretreatItems.length > 0) {
+                return BaseService.sendFailedResponse({
+                    error: `${pendingPretreatItems.length} item(s) still pending pretreatment. Mark as pretreated or not required before proceeding.`,
+                })
+            }
+
             const isIroningOnly =
                 order.serviceType === ORDER_SERVICE_TYPE.IRONING_ONLY
 
@@ -987,6 +1000,7 @@ class SortAndPretreatService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+
             await createNotification({
                 userId,
                 title: isIroningOnly
@@ -1445,7 +1459,6 @@ class SortAndPretreatService extends BaseService {
             })
         }
     }
-
 
     async getOrderTimeline(req) {
         try {

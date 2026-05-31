@@ -76,12 +76,12 @@ const ItemSchema = new mongoose.Schema(
         },
         sortStatus: {
             type: String,
-            enum: ['pending', 'complete'],
+            enum: ['pending', 'complete', 'not_required'],
             default: 'pending',
         },
         pretreatStatus: {
             type: String,
-            enum: ['pending', 'complete'],
+            enum: ['pending', 'complete', 'not_required'],
             default: 'pending',
         },
         washStatus: {
