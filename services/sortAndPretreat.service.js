@@ -46,10 +46,15 @@ class SortAndPretreatService extends BaseService {
                 recentOrdersResult,
             ] = await Promise.all([
                 BookOrderModel.countDocuments({
-                    createdAt: { $gte: todayStart },
+                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                    'stage.updatedAt': { $gte: todayStart },
                 }),
                 BookOrderModel.countDocuments({
-                    createdAt: { $gte: yesterdayStart, $lt: todayStart },
+                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                    'stage.updatedAt': {
+                        $gte: yesterdayStart,
+                        $lt: todayStart,
+                    },
                 }),
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
@@ -937,20 +942,30 @@ class SortAndPretreatService extends BaseService {
                     error: 'Order not found or not in sort & pretreat stage',
                 })
 
-            const allItemsSorted = order.items.every(
-                (i) => i.sortStatus === 'complete',
+            // ← flexible check: only validate what each item actually requires
+            const pendingSortItems = order.items.filter(
+                (i) =>
+                    i.sortStatus !== 'complete' &&
+                    i.sortStatus !== 'not_required',
             )
-            const allItemsPretreated = order.items.every(
-                (i) => i.pretreatStatus === 'complete',
+            const pendingPretreatItems = order.items.filter(
+                (i) =>
+                    i.pretreatStatus !== 'complete' &&
+                    i.pretreatStatus !== 'not_required',
             )
 
-            if (!allItemsSorted || !allItemsPretreated) {
+            if (pendingSortItems.length > 0) {
                 return BaseService.sendFailedResponse({
-                    error: 'All items must be marked as sorted and pretreated before sending to the next stage',
+                    error: `${pendingSortItems.length} item(s) still pending sorting. Mark as sorted or not required before proceeding.`,
                 })
             }
 
-            // Determine next ORDER_STATUS and matching STATION_STATUS
+            if (pendingPretreatItems.length > 0) {
+                return BaseService.sendFailedResponse({
+                    error: `${pendingPretreatItems.length} item(s) still pending pretreatment. Mark as pretreated or not required before proceeding.`,
+                })
+            }
+
             const isIroningOnly =
                 order.serviceType === ORDER_SERVICE_TYPE.IRONING_ONLY
 
@@ -985,6 +1000,7 @@ class SortAndPretreatService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+
             await createNotification({
                 userId,
                 title: isIroningOnly
@@ -1009,52 +1025,6 @@ class SortAndPretreatService extends BaseService {
             })
         }
     }
-
-    // GET FLAGGED ORDERS
-    // async getFlaggedOrders(req) {
-    //     try {
-    //         const userId = req.user.id
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user) {
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-    //         }
-
-    //         const { page = 1, limit = 20, search = '' } = req.query
-
-    //         const query = { 'stage.status': ORDER_STATUS.HOLD }
-
-    //         if (search) {
-    //             query.$or = [
-    //                 { oscNumber: { $regex: search, $options: 'i' } },
-    //                 { fullName: { $regex: search, $options: 'i' } },
-    //                 { phoneNumber: { $regex: search, $options: 'i' } },
-    //             ]
-    //         }
-
-    //         const { data, pagination } = await paginate(BookOrderModel, query, {
-    //             page,
-    //             limit,
-    //             sort: { updatedAt: -1 },
-    //             select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stageHistory createdAt updatedAt',
-    //             lean: true,
-    //         })
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 data,
-    //                 pagination,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to fetch flagged orders',
-    //         })
-    //     }
-    // }
 
     async getFlaggedOrders(req) {
         try {
@@ -1490,133 +1460,6 @@ class SortAndPretreatService extends BaseService {
         }
     }
 
-    //GET ORDER TIMELINE
-    // async getOrderTimeline(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findById(orderId).lean()
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found',
-    //             })
-
-    //         const PIPELINE = [
-    //             {
-    //                 key: 'intake',
-    //                 label: 'Intake',
-    //                 status: ORDER_STATUS.PENDING,
-    //             },
-    //             { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
-    //             {
-    //                 key: 'pretreated',
-    //                 label: 'Pretreated',
-    //                 status: ORDER_STATUS.SORT_AND_PRETREAT,
-    //             },
-    //             {
-    //                 key: 'washing',
-    //                 label: 'Washing',
-    //                 status: ORDER_STATUS.WASHING,
-    //             },
-    //             {
-    //                 key: 'ironed',
-    //                 label: 'Ironed',
-    //                 status: ORDER_STATUS.IRONING,
-    //             },
-    //             {
-    //                 key: 'qc_passed',
-    //                 label: 'QC Passed',
-    //                 status: ORDER_STATUS.QC,
-    //             },
-    //             { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
-    //             {
-    //                 key: 'delivered',
-    //                 label: 'Delivered',
-    //                 status: ORDER_STATUS.DELIVERED,
-    //             },
-    //         ]
-
-    //         // Build status → earliest timestamp lookup from stageHistory
-    //         const stageTimestampMap = {}
-    //         for (const entry of order.stageHistory || []) {
-    //             if (!stageTimestampMap[entry.status]) {
-    //                 stageTimestampMap[entry.status] = entry.updatedAt
-    //             }
-    //         }
-    //         stageTimestampMap[ORDER_STATUS.PENDING] =
-    //             stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-
-    //         const pipeline = PIPELINE.map((step) => {
-    //             const timestamp = stageTimestampMap[step.status] || null
-    //             return {
-    //                 key: step.key,
-    //                 label: step.label,
-    //                 completed: !!timestamp,
-    //                 timestamp: timestamp || null,
-    //             }
-    //         })
-
-    //         // Per-item granular audit trail
-    //         const itemTimeline = []
-    //         for (const item of order.items || []) {
-    //             for (const log of item.actionLog || []) {
-    //                 itemTimeline.push({
-    //                     itemId: item._id,
-    //                     itemType: item.type,
-    //                     action: log.action,
-    //                     note: log.note || '',
-    //                     timestamp: log.timestamp,
-    //                 })
-    //             }
-    //         }
-    //         itemTimeline.sort(
-    //             (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-    //         )
-
-    //         const trackingStatus =
-    //             order.stage.status === ORDER_STATUS.DELIVERED
-    //                 ? 'completed'
-    //                 : 'in_progress'
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 order: {
-    //                     _id: order._id,
-    //                     oscNumber: order.oscNumber,
-    //                     fullName: order.fullName,
-    //                     phoneNumber: order.phoneNumber,
-    //                     serviceType: order.serviceType,
-    //                     serviceTier: order.serviceTier,
-    //                     amount: order.amount,
-    //                     stage: order.stage,
-    //                     stationStatus: order.stationStatus,
-    //                     trackingStatus,
-    //                     items: order.items,
-    //                     createdAt: order.createdAt,
-    //                 },
-    //                 pipeline,
-    //                 itemTimeline,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to fetch order timeline',
-    //         })
-    //     }
-    // }
     async getOrderTimeline(req) {
         try {
             const orderId = req.params.id
@@ -1783,17 +1626,21 @@ class SortAndPretreatService extends BaseService {
                     error: 'An assignee is required',
                 })
 
-            const allowedReasons = ['item_missing', 'item_mismatched']
+            // const allowedReasons = ['item_missing', 'item_mismatched']
 
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
                 [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
             }
-
-            if (!allowedReasons.includes(reason))
+            if (!reason || !reason.trim())
                 return BaseService.sendFailedResponse({
-                    error: `reason must be one of: ${allowedReasons.join(', ')}`,
+                    error: 'A reason is required',
                 })
+
+            // if (!allowedReasons.includes(reason))
+            //     return BaseService.sendFailedResponse({
+            //         error: `reason must be one of: ${allowedReasons.join(', ')}`,
+            //     })
 
             if (!stationMap[assignTo])
                 return BaseService.sendFailedResponse({

@@ -29,6 +29,7 @@ exports.ROUTE_GET_DASHBOARD = '/get-dashboard'
 exports.ROUTE_VERIFY_RESET_PASSWORD_OTP = '/verify-reset-password-otp'
 exports.ROUTE_GET_USERS_BY_TYPE = '/get-users-by-type'
 exports.ROUTE_COMPLETE_PROFILE = '/complete-profile'
+exports.ROUTE_GET_HOLD_REASONS = '/hold-reasons'
 
 // Intake User
 exports.ROUTE_INTAKE_USER_REFRESH_TOKEN = '/intake-user/refresh-token'
@@ -205,6 +206,8 @@ exports.ROUTE_PICKABLE_ORDERS = '/pickable-orders'
 exports.ROUTE_DELIVERABLE_ORDERS = '/deliverable-orders'
 exports.ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID = '/assign-rider/:riderId/pickup-order/:id'
 exports.ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/assign-rider/:riderId/delivery-order/:id'
+exports.ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID = '/unassign-rider/:riderId/pickup-order/:id'
+exports.ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/unassign-rider/:riderId/delivery-order/:id'
 exports.ROUTE_GET_BOOK_ORDER_ID = '/get-book-order/:id'
 exports.ROUTE_GET_PENDING_ORDERS = '/get-pending-orders'
 

@@ -45,91 +45,102 @@ class AdminService extends BaseService {
             const twelveHoursAgo = new Date()
             twelveHoursAgo.setHours(now.getHours() - 12)
 
-            let todayRevenue = 0
-            let yesterdayRevenue = 0
-            let percentageChange = 0
+            const totalActiveOrders = await BookOrderModel.countDocuments({
+                'stage.status': {
+                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+                },
+            })
 
-            const result = await PaymentModel.aggregate([
-                { $match: { status: 'success' } },
-                { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
-            ])
-            const totalRevenue = result.length > 0 ? result[0].totalAmount : 0
+            const overdueOrders = await BookOrderModel.countDocuments({
+                deliveryDate: { $lt: todayStart },
+                'stage.status': {
+                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+                },
+            })
 
-            const revenueTodayVerifiedAgg = await PaymentModel.aggregate([
+            const dueToday = await BookOrderModel.countDocuments({
+                deliveryDate: { $gte: todayStart, $lte: todayEnd },
+                'stage.status': {
+                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+                },
+            })
+
+            const revenueTodayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
+                        status: 'success',
                         verifiedAt: { $gte: todayStart, $lte: todayEnd },
-                        status: 'success',
                     },
                 },
-                {
-                    $group: {
-                        _id: null,
-                        total: { $sum: '$amount' },
-                    },
-                },
+                { $group: { _id: null, total: { $sum: '$amount' } } },
             ])
+            const revenueTodayVerified = revenueTodayAgg[0]?.total || 0
 
-            const revenueTodayVerified = revenueTodayVerifiedAgg[0]?.total || 0
-
-            const revenueComparisonAgg = await PaymentModel.aggregate([
+            const revenueYesterdayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
-                        verifiedAt: { $gte: yesterdayStart, $lte: todayEnd },
                         status: 'success',
-                    },
-                },
-                {
-                    $project: {
-                        amount: 1,
-                        period: {
-                            $cond: [
-                                {
-                                    $and: [
-                                        { $gte: ['$paidAt', todayStart] },
-                                        { $lte: ['$paidAt', todayEnd] },
-                                    ],
-                                },
-                                'today',
-                                'yesterday',
-                            ],
+                        verifiedAt: {
+                            $gte: yesterdayStart,
+                            $lte: yesterdayEnd,
                         },
                     },
                 },
+                { $group: { _id: null, total: { $sum: '$amount' } } },
+            ])
+            const revenueYesterday = revenueYesterdayAgg[0]?.total || 0
+
+            const revenueTodayChange =
+                revenueYesterday === 0
+                    ? revenueTodayVerified > 0
+                        ? 100
+                        : 0
+                    : Number(
+                          (
+                              ((revenueTodayVerified - revenueYesterday) /
+                                  revenueYesterday) *
+                              100
+                          ).toFixed(2),
+                      )
+
+            const revenue7DayAgg = await PaymentModel.aggregate([
+                {
+                    $match: {
+                        status: 'success',
+                        verifiedAt: { $gte: sevenDaysAgo, $lte: todayEnd },
+                    },
+                },
                 {
                     $group: {
-                        _id: '$period',
-                        total: { $sum: '$amount' },
+                        _id: {
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: '$verifiedAt',
+                            },
+                        },
+                        dailyTotal: { $sum: '$amount' },
                     },
                 },
             ])
+            const avgDailyRevenue7Days =
+                revenue7DayAgg.length > 0
+                    ? Math.round(
+                          revenue7DayAgg.reduce((s, d) => s + d.dailyTotal, 0) /
+                              7,
+                      )
+                    : 0
 
-            revenueComparisonAgg.forEach((item) => {
-                if (item._id === 'today') todayRevenue = item.total
-                if (item._id === 'yesterday') yesterdayRevenue = item.total
-            })
-
-            if (yesterdayRevenue === 0) {
-                percentageChange = todayRevenue > 0 ? 100 : 0
-            } else {
-                percentageChange =
-                    ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
-            }
-
-            const revenueTodayChange = Number(percentageChange.toFixed(2))
-
-            const activities = await ActivityModel.find()
-                .sort({ createdAt: -1 })
-                .limit(10)
-
-            const totalActiveOrders = await BookOrderModel.countDocuments({
-                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
-            })
+            const totalRevenueAgg = await PaymentModel.aggregate([
+                { $match: { status: 'success' } },
+                { $group: { _id: null, total: { $sum: '$amount' } } },
+            ])
+            const totalRevenue = totalRevenueAgg[0]?.total || 0
 
             const avgProcessingTimeAgg = await BookOrderModel.aggregate([
                 {
                     $match: {
                         'stage.status': ORDER_STATUS.DELIVERED,
+                        updatedAt: { $gte: todayStart, $lte: todayEnd },
                     },
                 },
                 {
@@ -143,82 +154,28 @@ class AdminService extends BaseService {
                     $group: {
                         _id: null,
                         avgTime: { $avg: '$processingTime' },
-                    },
-                },
-            ])
-
-            const avgProcessingTime = avgProcessingTimeAgg[0]?.avgTime || 0
-
-            const overdueOrders = await BookOrderModel.countDocuments({
-                deliveryDate: { $lt: now },
-                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
-            })
-
-            const dueToday = await BookOrderModel.countDocuments({
-                deliveryDate: { $gte: todayStart, $lte: todayEnd },
-                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
-            })
-
-            const bottleneckAgg = await BookOrderModel.aggregate([
-                {
-                    $match: {
-                        'stage.status': { $ne: ORDER_STATUS.DELIVERED },
-                    },
-                },
-                {
-                    $group: {
-                        _id: '$stage.status',
                         count: { $sum: 1 },
                     },
                 },
-                { $sort: { count: -1 } },
-                { $limit: 1 },
             ])
-
-            const bottleNeckStation = bottleneckAgg[0] || null
-
-            const readyAndWaiting = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.READY,
-                'dispatchDetails.delivery.status': {
-                    $ne: DELIVERY_STATUS.DELIVERED,
-                },
-            })
-
-            const pendingPayment = await BookOrderModel.countDocuments({
-                paymentStatus: PAYMENT_ORDER_STATUS.PENDING,
-            })
-
-            const activeHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-            })
-
-            const overdueHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-                deliveryDate: { $lt: now },
-            })
-
-            const deliveryIssues = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.OUT_FOR_DELIVERY,
-                // deliveryDate: { $lt: now }
-                'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
-            })
+            const avgProcessingTime = avgProcessingTimeAgg[0]?.avgTime || 0
+            const ordersProcessedToday = avgProcessingTimeAgg[0]?.count || 0
 
             const avgCostPerItem7DaysAgg = await BookOrderModel.aggregate([
                 {
                     $match: {
                         paymentDate: { $gte: sevenDaysAgo, $lte: todayEnd },
-                        paymentStatus: PAYMENT_ORDER_STATUS.PAID,
+                        paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     },
                 },
-                {
-                    $unwind: '$items',
-                },
+                { $unwind: '$items' },
                 {
                     $group: {
                         _id: {
-                            day: { $dayOfMonth: '$paymentDate' },
-                            month: { $month: '$paymentDate' },
-                            year: { $year: '$paymentDate' },
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: '$paymentDate',
+                            },
                         },
                         dailyRevenue: { $sum: '$amount' },
                         dailyItems: { $sum: '$items.quantity' },
@@ -235,76 +192,163 @@ class AdminService extends BaseService {
                         },
                     },
                 },
-                {
-                    $group: {
-                        _id: null,
-                        avgCostPerItem: { $avg: '$dailyCostPerItem' },
-                    },
-                },
+                { $sort: { _id: 1 } },
             ])
 
             const avgCostPerItem7Days =
-                avgCostPerItem7DaysAgg[0]?.avgCostPerItem || 0
+                avgCostPerItem7DaysAgg.length > 0
+                    ? Math.round(
+                          avgCostPerItem7DaysAgg.reduce(
+                              (s, d) => s + d.dailyCostPerItem,
+                              0,
+                          ) / avgCostPerItem7DaysAgg.length,
+                      )
+                    : 0
+
+            const recent3 = avgCostPerItem7DaysAgg.slice(-3)
+            const prior4 = avgCostPerItem7DaysAgg.slice(0, 4)
+            const avgRecent =
+                recent3.length > 0
+                    ? recent3.reduce((s, d) => s + d.dailyCostPerItem, 0) /
+                      recent3.length
+                    : 0
+            const avgPrior =
+                prior4.length > 0
+                    ? prior4.reduce((s, d) => s + d.dailyCostPerItem, 0) /
+                      prior4.length
+                    : 0
+            const costTrend =
+                avgPrior === 0
+                    ? 'neutral'
+                    : avgRecent > avgPrior
+                      ? 'up_bad'
+                      : avgRecent < avgPrior
+                        ? 'down_good'
+                        : 'neutral'
+
+            const pendingVerification = await PaymentModel.countDocuments({
+                status: PAYMENT_ORDER_STATUS.PENDING,
+                type: { $in: ['order', 'wallet-top-up'] },
+                alertType: { $ne: 'paystack' },
+            })
+
+            // ALL: total pending (for reference section)
+            const pendingPayment = await PaymentModel.countDocuments({
+                status: PAYMENT_ORDER_STATUS.PENDING,
+            })
+
+            const activeHolds = await BookOrderModel.countDocuments({
+                'stage.status': ORDER_STATUS.HOLD,
+            })
+
+            const overdueHolds = await BookOrderModel.countDocuments({
+                'stage.status': ORDER_STATUS.HOLD,
+                deliveryDate: { $lt: now },
+            })
+
+            const expiringTodayHolds = await BookOrderModel.countDocuments({
+                'stage.status': ORDER_STATUS.HOLD,
+                deliveryDate: { $gte: todayStart, $lte: todayEnd },
+            })
+
+            const bottleneckAgg = await BookOrderModel.aggregate([
+                {
+                    $match: {
+                        'stage.status': {
+                            $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+                        },
+                    },
+                },
+                { $group: { _id: '$stage.status', count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 1 },
+            ])
+            const bottleNeckStation = bottleneckAgg[0] || null
+
+            const readyAndWaiting = await BookOrderModel.countDocuments({
+                'stage.status': ORDER_STATUS.READY,
+                'dispatchDetails.delivery.status': {
+                    $ne: DELIVERY_STATUS.DELIVERED,
+                },
+            })
+
+            const deliveryIssues = await BookOrderModel.countDocuments({
+                'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
+            })
+
+            const priorityAlerts = {
+                overdueOrders,
+                dueToday,
+                overdueHolds,
+                expiringTodayHolds,
+                pendingVerification,
+                deliveryIssues,
+                activeHolds,
+            }
 
             const totalSubscribers = await SubscriptionModel.countDocuments({
                 status: 'active',
             })
 
-            const monthlyRevenueAgg = await SubscriptionModel.aggregate([
+            const monthlyRevenueAgg = await PaymentModel.aggregate([
                 {
                     $match: {
-                        status: 'active', // or include expired/cancelled if needed
-                        lastPaymentAt: { $ne: null },
+                        status: 'success',
+                        verifiedAt: { $exists: true, $ne: null },
                     },
-                },
-                {
-                    $lookup: {
-                        from: 'plans', // collection name (important: lowercase plural)
-                        localField: 'planId',
-                        foreignField: '_id',
-                        as: 'plan',
-                    },
-                },
-                {
-                    $unwind: '$plan',
                 },
                 {
                     $group: {
                         _id: {
-                            year: { $year: '$lastPaymentAt' },
-                            month: { $month: '$lastPaymentAt' },
+                            year: { $year: '$verifiedAt' },
+                            month: { $month: '$verifiedAt' },
                         },
-                        totalRevenue: { $sum: '$plan.price' },
-                        totalSubscriptions: { $sum: 1 },
+                        totalRevenue: { $sum: '$amount' },
+                        orderCount: { $sum: 1 },
                     },
                 },
+                { $sort: { '_id.year': -1, '_id.month': -1 } },
+                { $limit: 12 },
                 {
-                    $sort: {
-                        '_id.year': -1,
-                        '_id.month': -1,
+                    $project: {
+                        _id: 0,
+                        year: '$_id.year',
+                        month: '$_id.month',
+                        totalRevenue: 1,
+                        orderCount: 1,
+                        label: {
+                            $concat: [
+                                {
+                                    $arrayElemAt: [
+                                        [
+                                            '',
+                                            'Jan',
+                                            'Feb',
+                                            'Mar',
+                                            'Apr',
+                                            'May',
+                                            'Jun',
+                                            'Jul',
+                                            'Aug',
+                                            'Sep',
+                                            'Oct',
+                                            'Nov',
+                                            'Dec',
+                                        ],
+                                        '$_id.month',
+                                    ],
+                                },
+                                ' ',
+                                { $toString: '$_id.year' },
+                            ],
+                        },
                     },
                 },
             ])
-            //   monthlyRevenueAgg = [           ///sample docs
-            //     {
-            //       "_id": { "year": 2026, "month": 4 },
-            //       "totalRevenue": 250000,
-            //       "totalSubscriptions": 120
-            //     }
-            //   ]
 
             const planDistributionAgg = await SubscriptionModel.aggregate([
-                {
-                    $match: {
-                        status: 'active',
-                    },
-                },
-                {
-                    $group: {
-                        _id: '$planId',
-                        count: { $sum: 1 },
-                    },
-                },
+                { $match: { status: 'active' } },
+                { $group: { _id: '$planId', count: { $sum: 1 } } },
                 {
                     $lookup: {
                         from: 'plans',
@@ -313,9 +357,7 @@ class AdminService extends BaseService {
                         as: 'plan',
                     },
                 },
-                {
-                    $unwind: '$plan',
-                },
+                { $unwind: '$plan' },
                 {
                     $group: {
                         _id: null,
@@ -329,9 +371,7 @@ class AdminService extends BaseService {
                         },
                     },
                 },
-                {
-                    $unwind: '$plans',
-                },
+                { $unwind: '$plans' },
                 {
                     $project: {
                         _id: 0,
@@ -346,30 +386,88 @@ class AdminService extends BaseService {
                         },
                     },
                 },
-                {
-                    $sort: { percentage: -1 },
-                },
+                { $sort: { percentage: -1 } },
             ])
 
-            //   const planDistributionAgg = [         //sample docs
-            //     {
-            //       "planId": "abc123",
-            //       "title": "Premium",
-            //       "count": 80,
-            //       "percentage": 66.67
-            //     },
-            //     {
-            //       "planId": "xyz456",
-            //       "title": "Standard",
-            //       "count": 40,
-            //       "percentage": 33.33
-            //     }
-            //   ]
+            const subscriptionAnalytics = await SubscriptionModel.aggregate([
+                { $match: { status: 'active' } },
+                {
+                    $lookup: {
+                        from: 'plans',
+                        localField: 'planId',
+                        foreignField: '_id',
+                        as: 'plan',
+                    },
+                },
+                { $unwind: '$plan' },
+                {
+                    $group: {
+                        _id: {
+                            planId: '$planId',
+                            title: '$plan.title',
+                            price: '$plan.price',
+                        },
+                        subscriberCount: { $sum: 1 },
+                        planRevenue: { $sum: '$plan.price' },
+                    },
+                },
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: { $sum: '$planRevenue' },
+                        totalSubscribers: { $sum: '$subscriberCount' },
+                        plans: {
+                            $push: {
+                                planId: '$_id.planId',
+                                title: '$_id.title',
+                                pricePerMonth: '$_id.price',
+                                subscriberCount: '$subscriberCount',
+                                planRevenue: '$planRevenue',
+                            },
+                        },
+                    },
+                },
+                { $unwind: '$plans' },
+                {
+                    $project: {
+                        _id: 0,
+                        planId: '$plans.planId',
+                        title: '$plans.title',
+                        pricePerMonth: '$plans.pricePerMonth',
+                        subscriberCount: '$plans.subscriberCount',
+                        planRevenue: '$plans.planRevenue',
+                        totalSubscribers: 1,
+                        totalRevenue: 1,
+                        percentageOfSubscribers: {
+                            $multiply: [
+                                {
+                                    $divide: [
+                                        '$plans.subscriberCount',
+                                        '$totalSubscribers',
+                                    ],
+                                },
+                                100,
+                            ],
+                        },
+                        percentageOfRevenue: {
+                            $multiply: [
+                                {
+                                    $divide: [
+                                        '$plans.planRevenue',
+                                        '$totalRevenue',
+                                    ],
+                                },
+                                100,
+                            ],
+                        },
+                    },
+                },
+                { $sort: { planRevenue: -1 } },
+            ])
 
             const ordersGraphAgg = await BookOrderModel.aggregate([
                 {
                     $facet: {
-                        // ✅ NEW ORDERS
                         newOrders: [
                             {
                                 $match: {
@@ -385,15 +483,13 @@ class AdminService extends BaseService {
                                         $dateTrunc: {
                                             date: '$createdAt',
                                             unit: 'hour',
-                                            binSize: 2, // 👈 change to 1 for hourly
+                                            binSize: 2,
                                         },
                                     },
                                     count: { $sum: 1 },
                                 },
                             },
                         ],
-
-                        // ✅ COMPLETED ORDERS
                         completedOrders: [
                             { $unwind: '$stageHistory' },
                             {
@@ -429,23 +525,18 @@ class AdminService extends BaseService {
             ordersGraphAgg[0].newOrders.forEach((item) => {
                 newOrdersMap[new Date(item._id).toISOString()] = item.count
             })
-
             ordersGraphAgg[0].completedOrders.forEach((item) => {
                 completedOrdersMap[new Date(item._id).toISOString()] =
                     item.count
             })
 
-            // Generate time buckets
             const graphResult = []
-
             for (let i = 0; i < 12; i += 2) {
                 const bucketTime = new Date(twelveHoursAgo)
                 bucketTime.setHours(bucketTime.getHours() + i)
-
                 const key = new Date(
                     bucketTime.setMinutes(0, 0, 0),
                 ).toISOString()
-
                 graphResult.push({
                     time: bucketTime.toLocaleTimeString([], {
                         hour: '2-digit',
@@ -456,29 +547,42 @@ class AdminService extends BaseService {
                 })
             }
 
-            const response = {}
-            response['totalActiveOrders'] = totalActiveOrders
-            response['totalRevenue'] = totalRevenue
-            response['revenueTodayVerified'] = revenueTodayVerified
-            response['avgProcessingTime'] = avgProcessingTime
-            response['overdueOrders'] = overdueOrders
-            response['dueToday'] = dueToday
-            response['bottleNeckStation'] = bottleNeckStation
-            response['readyAndWaiting'] = readyAndWaiting
-            response['pendingPayment'] = pendingPayment
-            response['activeHolds'] = activeHolds
-            response['overdueHolds'] = overdueHolds
-            response['deliveryIssues'] = deliveryIssues
-            response['activities'] = activities
-            response['avgCostPerItem7Days'] = avgCostPerItem7Days
-            response['revenueTodayVerified'] = revenueTodayVerified
-            response['revenueTodayChange'] = revenueTodayChange
-            response['totalSubscribers'] = totalSubscribers
-            response['monthlyRevenueAgg'] = monthlyRevenueAgg
-            response['planDistributionAgg'] = planDistributionAgg
-            response['graphResult'] = graphResult
+            const activities = await ActivityModel.find()
+                .sort({ createdAt: -1 })
+                .limit(10)
 
-            return BaseService.sendSuccessResponse({ message: response })
+            return BaseService.sendSuccessResponse({
+                message: {
+                    totalActiveOrders,
+                    overdueOrders,
+                    dueToday,
+                    totalRevenue,
+                    revenueTodayVerified,
+                    revenueYesterday,
+                    revenueTodayChange,
+                    avgDailyRevenue7Days,
+                    avgProcessingTime,
+                    ordersProcessedToday,
+                    avgCostPerItem7Days,
+                    costTrend,
+                    avgCostPerItem7DayBreakdown: avgCostPerItem7DaysAgg,
+                    pendingVerification,
+                    pendingPayment,
+                    activeHolds,
+                    overdueHolds,
+                    expiringTodayHolds,
+                    bottleNeckStation,
+                    readyAndWaiting,
+                    deliveryIssues,
+                    priorityAlerts,
+                    subscriptionAnalytics,
+                    totalSubscribers,
+                    planDistributionAgg,
+                    monthlyRevenueAgg,
+                    graphResult,
+                    activities,
+                },
+            })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
@@ -827,25 +931,23 @@ class AdminService extends BaseService {
         try {
             const { id } = req.params
             const adminId = req.user.id
-            if (!id) {
+
+            if (!id)
                 return BaseService.sendFailedResponse({
                     error: 'Payment ID is required',
                 })
-            }
 
             const payment = await PaymentModel.findById(id)
-
-            if (!payment) {
+            if (!payment)
                 return BaseService.sendFailedResponse({
                     error: 'Payment not found',
                 })
-            }
 
-            if (!payment.status == PAYMENT_ORDER_STATUS.SUCCESS) {
-                return BaseService.sendSuccessResponse({
+            // ← correct guard
+            if (payment.status === PAYMENT_ORDER_STATUS.SUCCESS)
+                return BaseService.sendFailedResponse({
                     error: 'Payment already resolved as successful',
                 })
-            }
 
             payment.status = PAYMENT_ORDER_STATUS.SUCCESS
             payment.verifiedBy = adminId
@@ -859,9 +961,13 @@ class AdminService extends BaseService {
                     amount: payment.amount,
                     status: 'success',
                 })
+                // ← actually update the balance
+                await WalletModel.findOneAndUpdate(
+                    { userId: payment.userId },
+                    { $inc: { balance: payment.amount } },
+                )
             }
 
-            // If it's an order payment, update the order's payment status
             if (payment.type === 'order' && payment.order) {
                 await BookOrderModel.findByIdAndUpdate(payment.order, {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
@@ -871,7 +977,7 @@ class AdminService extends BaseService {
             await createNotification({
                 userId: payment.userId,
                 title: 'Payment Approved',
-                body: `Your payment of ${payment.amount} has been approved.`,
+                body: `Your payment of ₦${payment.amount} has been approved.`,
                 type: NOTIFICATION_TYPE.PAYMENT_UPDATE,
             })
 
@@ -903,7 +1009,7 @@ class AdminService extends BaseService {
                 })
             }
 
-            if (!payment.status == PAYMENT_ORDER_STATUS.FAILED) {
+            if (payment.status === PAYMENT_ORDER_STATUS.FAILED) {
                 return BaseService.sendSuccessResponse({
                     error: 'Payment already resolved as failed',
                 })
@@ -1024,40 +1130,68 @@ class AdminService extends BaseService {
     }
     async getDispatchAdminDataCount(req, res) {
         try {
-            const pendingPickupOrders = await BookOrderModel.countDocuments({
-                isPickUp: true,
-                'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
+            const todayStart = new Date()
+            todayStart.setHours(0, 0, 0, 0)
+
+            const [
+                pendingPickupOrders,
+                scheduledPickups,
+                inProgressPickups,
+                pickedUpToday,
+                outForDelivery,
+                deliveredToday,
+                deliveryFailed,
+            ] = await Promise.all([
+                // unassigned pickup orders
+                BookOrderModel.countDocuments({
+                    isPickUp: true,
+                    'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
+                }),
+                // assigned and awaiting start
+                BookOrderModel.countDocuments({
+                    isPickUp: true,
+                    'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
+                }),
+                // pickup in progress
+                BookOrderModel.countDocuments({
+                    isPickUp: true,
+                    'dispatchDetails.pickup.status':
+                        PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                }),
+                // picked up today
+                BookOrderModel.countDocuments({
+                    isPickUp: true,
+                    'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
+                    'dispatchDetails.pickup.updatedAt': { $gte: todayStart },
+                }),
+                // currently out for delivery
+                BookOrderModel.countDocuments({
+                    isDelivery: true,
+                    'dispatchDetails.delivery.status':
+                        DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                }),
+                // delivered today
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.DELIVERED,
+                    updatedAt: { $gte: todayStart },
+                }),
+                // failed deliveries
+                BookOrderModel.countDocuments({
+                    'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
+                }),
+            ])
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    pendingPickupOrders,
+                    scheduledPickups,
+                    inProgressPickups,
+                    pickedUpToday,
+                    outForDelivery,
+                    deliveredToday,
+                    deliveryFailed,
+                },
             })
-
-            const assignedOrders = await BookOrderModel.countDocuments({
-                isPickUp: true,
-                $or: [
-                    {
-                        'dispatchDetails.pickup.rider': { $ne: null },
-                        'dispatchDetails.pickup.status': {
-                            $ne: PICKUP_STATUS.SCHEDULED,
-                        },
-                    },
-                    {
-                        'dispatchDetails.delivery.rider': { $ne: null },
-                        'dispatchDetails.delivery.status': {
-                            $ne: DELIVERY_STATUS.DELIVERED,
-                        },
-                    },
-                ],
-            })
-
-            const deliveredOrders = await BookOrderModel.countDocuments({
-                isPickUp: true,
-                'stage.status': ORDER_STATUS.DELIVERED,
-            })
-
-            const response = {}
-            response['pendingPickupOrders'] = pendingPickupOrders
-            response['assignedOrders'] = assignedOrders
-            response['deliveredOrders'] = deliveredOrders
-
-            return BaseService.sendSuccessResponse({ message: response })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({

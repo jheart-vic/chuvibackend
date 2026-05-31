@@ -14,7 +14,7 @@ const paginate = require('../util/paginate')
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
-const { buildStageUpdate } = require('../util/helper')
+const { buildStageUpdate, normalizePhone } = require('../util/helper')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -133,14 +133,14 @@ class RiderService extends BaseService {
                 })
             }
 
-            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            const customerPhone = order.phoneNumber
             if (!customerPhone) {
                 return BaseService.sendFailedResponse({
                     error: 'Customer phone number not found on order',
                 })
             }
 
-            if (customerPhone !== phoneNumber) {
+            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -220,14 +220,14 @@ class RiderService extends BaseService {
                 })
             }
 
-            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
+            const customerPhone = order.phoneNumber
             if (!customerPhone) {
                 return BaseService.sendFailedResponse({
                     error: 'Customer phone number not found on order',
                 })
             }
 
-            if (customerPhone !== phoneNumber) {
+            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -391,7 +391,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            if (customerPhone !== phoneNumber) {
+            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -474,17 +474,18 @@ class RiderService extends BaseService {
                     error: 'Pickup must be in progress before it can be marked as picked up',
                 })
 
-            const customerPhone = order.userId?.phoneNumber || order.phoneNumber
-            if (!customerPhone)
+            const customerPhone = order.phoneNumber
+            if (!customerPhone) {
                 return BaseService.sendFailedResponse({
                     error: 'Customer phone number not found on order',
                 })
+            }
 
-            if (customerPhone !== phoneNumber)
+            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
-
+            }
             order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
@@ -549,15 +550,26 @@ class RiderService extends BaseService {
                 })
             }
 
+            const failableStatuses = [
+                PICKUP_STATUS.SCHEDULED,
+                PICKUP_STATUS.PICKUP_IN_PROGRESS,
+            ]
             if (
-                order.dispatchDetails.pickup.status !== PICKUP_STATUS.SCHEDULED
+                !failableStatuses.includes(order.dispatchDetails.pickup.status)
             ) {
                 return BaseService.sendFailedResponse({
-                    error: 'Only scheduled pickups can be marked as failed',
+                    error: 'Only scheduled or in-progress pickups can be marked as failed',
+                })
+            }
+            const customerPhone = order.phoneNumber
+
+            if (!customerPhone) {
+                return BaseService.sendFailedResponse({
+                    error: 'Customer phone number not found on order',
                 })
             }
 
-            if (order.userId.phoneNumber !== phoneNumber) {
+            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
                 return BaseService.sendFailedResponse({
                     error: "Provided phone number does not match customer's phone number",
                 })
@@ -621,6 +633,7 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.status =
                 DELIVERY_STATUS.OUT_FOR_DELIVERY
             order.dispatchDetails.delivery.updatedAt = new Date()
+            order.dispatchDetails.delivery.startedAt = new Date()
             await order.save()
 
             await BookOrderModel.updateOne(
@@ -680,7 +693,12 @@ class RiderService extends BaseService {
                 $or: [
                     {
                         'dispatchDetails.pickup.rider': riderId,
-                        'dispatchDetails.pickup.status': PICKUP_STATUS.FAILED,
+                        'dispatchDetails.pickup.status': {
+                            $in: [
+                                PICKUP_STATUS.PICKED_UP,
+                                PICKUP_STATUS.FAILED,
+                            ],
+                        },
                     },
                     {
                         'dispatchDetails.delivery.rider': riderId,
@@ -756,143 +774,6 @@ class RiderService extends BaseService {
             })
         }
     }
-
-    // async getOrderTimeline(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const riderId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(riderId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findById(orderId).lean()
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found',
-    //             })
-
-    //         const isAssigned =
-    //             order.dispatchDetails?.pickup?.rider?.toString() === riderId ||
-    //             order.dispatchDetails?.delivery?.rider?.toString() === riderId
-
-    //         if (!isAssigned)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'You are not assigned to this order',
-    //             })
-
-    //         const PIPELINE = [
-    //             {
-    //                 key: 'intake',
-    //                 label: 'Intake',
-    //                 status: ORDER_STATUS.PENDING,
-    //             },
-    //             { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
-    //             {
-    //                 key: 'pretreated',
-    //                 label: 'Pretreated',
-    //                 status: ORDER_STATUS.SORT_AND_PRETREAT,
-    //             },
-    //             {
-    //                 key: 'washed',
-    //                 label: 'Washed',
-    //                 status: ORDER_STATUS.WASHING,
-    //             },
-    //             {
-    //                 key: 'ironing',
-    //                 label: 'Ironing',
-    //                 status: ORDER_STATUS.IRONING,
-    //             },
-    //             {
-    //                 key: 'qc_passed',
-    //                 label: 'QC Passed',
-    //                 status: ORDER_STATUS.QC,
-    //             },
-    //             { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
-    //             {
-    //                 key: 'delivered',
-    //                 label: 'Delivered',
-    //                 status: ORDER_STATUS.DELIVERED,
-    //             },
-    //         ]
-
-    //         const stageTimestampMap = {}
-    //         for (const entry of order.stageHistory || []) {
-    //             if (!stageTimestampMap[entry.status]) {
-    //                 stageTimestampMap[entry.status] = entry.updatedAt
-    //             }
-    //         }
-    //         const hasProgressedBeyondPending = order.stageHistory?.some(
-    //             (s) => s.status !== ORDER_STATUS.PENDING,
-    //         )
-
-    //         stageTimestampMap[ORDER_STATUS.PENDING] = hasProgressedBeyondPending
-    //             ? stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-    //             : null
-
-    //         const pipeline = PIPELINE.map((step) => {
-    //             const timestamp = stageTimestampMap[step.status] || null
-    //             return {
-    //                 key: step.key,
-    //                 label: step.label,
-    //                 completed: !!timestamp,
-    //                 timestamp,
-    //             }
-    //         })
-
-    //         // const trackingStatus =
-    //         //     order.dispatchDetails?.delivery?.status ===
-    //         //     DELIVERY_STATUS.DELIVERED
-    //         //         ? 'completed'
-    //         //         : order.dispatchDetails?.delivery?.status ===
-    //         //             DELIVERY_STATUS.FAILED
-    //         //           ? 'failed'
-    //         //           : 'in_progress'
-
-    //         const trackingStatus =
-    //             order.stage.status === ORDER_STATUS.DELIVERED
-    //                 ? 'completed'
-    //                 : order.dispatchDetails?.delivery?.status ===
-    //                     DELIVERY_STATUS.FAILED
-    //                   ? 'delivery_failed'
-    //                   : order.dispatchDetails?.pickup?.status ===
-    //                       PICKUP_STATUS.FAILED
-    //                     ? 'pickup_failed'
-    //                     : 'in_progress'
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 order: {
-    //                     _id: order._id,
-    //                     oscNumber: order.oscNumber,
-    //                     fullName: order.fullName,
-    //                     phoneNumber: order.phoneNumber,
-    //                     pickupAddress: order.pickupAddress,
-    //                     serviceType: order.serviceType,
-    //                     serviceTier: order.serviceTier,
-    //                     amount: order.amount,
-    //                     stage: order.stage,
-    //                     trackingStatus,
-    //                     dispatchDetails: order.dispatchDetails,
-    //                     createdAt: order.createdAt,
-    //                 },
-    //                 pipeline,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.error('Error in getOrderTimeline:', error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to fetch order timeline',
-    //         })
-    //     }
-    // }
 
     async getOrderTimeline(req) {
         try {

@@ -76,12 +76,12 @@ const ItemSchema = new mongoose.Schema(
         },
         sortStatus: {
             type: String,
-            enum: ['pending', 'complete'],
+            enum: ['pending', 'complete', 'not_required'],
             default: 'pending',
         },
         pretreatStatus: {
             type: String,
-            enum: ['pending', 'complete'],
+            enum: ['pending', 'complete', 'not_required'],
             default: 'pending',
         },
         washStatus: {
@@ -121,7 +121,7 @@ const ItemSchema = new mongoose.Schema(
         },
         flaggedForReview: { type: Boolean, default: false },
         holdDetails: {
-            reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
+            reason: { type: String },
             note: { type: String, default: '' },
             assignTo: {
                 type: String,

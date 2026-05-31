@@ -10,7 +10,7 @@ class UtilController extends BaseController{
         }
         return BaseController.sendSuccessResponse(res, multipleFileUpload.data)
     }
-    
+
     async uploadSingleImage(req, res){
         const utilService = new UtilService()
         const singleFileUpload = await utilService.uploadSingleImage(req)
@@ -18,6 +18,14 @@ class UtilController extends BaseController{
             return BaseController.sendFailedResponse(res, singleFileUpload.data)
         }
         return BaseController.sendSuccessResponse(res, singleFileUpload.data)
+    }
+    async getHoldReasons(req, res){
+        const utilService = new UtilService()
+        const holdReasons = await utilService.getHoldReasons(req)
+        if(!holdReasons.success){
+            return BaseController.sendFailedResponse(res, holdReasons.data)
+        }
+        return BaseController.sendSuccessResponse(res, holdReasons.data)
     }
 }
 
