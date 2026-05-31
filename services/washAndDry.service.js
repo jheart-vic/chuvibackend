@@ -11,6 +11,7 @@ const {
     NOTIFICATION_TYPE,
     DELIVERY_STATUS,
     PICKUP_STATUS,
+    DRY_DURATION_MINUTES,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
@@ -729,7 +730,7 @@ class WashAndDryService extends BaseService {
             const ordersWithMeta = data.map((order) => {
                 const startedAt = order.washDetails?.startedAt
                 const durationMinutes =
-                    WASH_DURATION_MINUTES[order.serviceTier] ?? 60
+                    WASH_DURATION_MINUTES[order.deliverySpeed] ?? 60
                 const estimatedFinish = startedAt
                     ? new Date(
                           new Date(startedAt).getTime() +
@@ -857,9 +858,30 @@ class WashAndDryService extends BaseService {
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails createdAt updatedAt',
                 lean: true,
             })
+            const ordersWithMeta = data.map((order) => {
+                const startedAt = order.washDetails?.movedToDryingAt
+                const durationMinutes =
+                    DRY_DURATION_MINUTES[order.deliverySpeed] ?? 30
+                const estimatedFinish = startedAt
+                    ? new Date(
+                          new Date(startedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...order,
+                    itemCount: (order.items || []).length,
+                    washDetails: {
+                        ...order.washDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
 
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { data: ordersWithMeta, pagination },
             })
         } catch (error) {
             console.log(error)
