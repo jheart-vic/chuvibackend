@@ -229,7 +229,7 @@ class AdminService extends BaseService {
             const pendingVerification = await PaymentModel.countDocuments({
                 status: PAYMENT_ORDER_STATUS.PENDING,
                 type: { $in: ['order', 'wallet-top-up'] },
-                alertType: { $ne: 'paystack' },
+                paymentMethod: 'bank-transfer',
             })
 
             // ALL: total pending (for reference section)
