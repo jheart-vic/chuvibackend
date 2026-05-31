@@ -910,12 +910,16 @@ class AdminService extends BaseService {
         try {
             const result = await paginate(
                 PaymentModel,
-                {},
+                {
+                    status: PAYMENT_ORDER_STATUS.PENDING,
+                    type: { $in: ['order', 'wallet-top-up'] },
+                    paymentMethod: 'bank-transfer',
+                },
                 {
                     page: req.query.page,
                     limit: req.query.limit,
                     sort: { createdAt: -1 },
-                    populate: [{ path: 'userId' }],
+                    populate: [{ path: 'userId' }, { path: 'order' }],
                 },
             )
             return BaseService.sendSuccessResponse({ message: result })
@@ -926,7 +930,6 @@ class AdminService extends BaseService {
             })
         }
     }
-
     async acceptPaymentVerification(req, res) {
         try {
             const { id } = req.params
