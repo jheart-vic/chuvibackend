@@ -25,6 +25,7 @@ const {
     buildStageUpdate,
     generateReferenceId,
     roundToNearestHundred,
+    calculateDueDate,
 } = require('../util/helper')
 const paginate = require('../util/paginate')
 const sendSms = require('../util/sendSms')
@@ -152,6 +153,7 @@ class IntakeUserService extends BaseService {
                 ],
                 ...(customerId && { userId: customerId }),
                 ...post,
+               deliveryDate: calculateDueDate(post.deliverySpeed),
             }
             const newOrder = new BookOrderModel(newOrderItem)
             await newOrder.save()

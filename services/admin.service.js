@@ -251,19 +251,41 @@ class AdminService extends BaseService {
                 deliveryDate: { $gte: todayStart, $lte: todayEnd },
             })
 
-            const bottleneckAgg = await BookOrderModel.aggregate([
-                {
-                    $match: {
-                        'stage.status': {
-                            $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+            // const bottleneckAgg = await BookOrderModel.aggregate([
+            //     {
+            //         $match: {
+            //             'stage.status': {
+            //                 $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+            //             },
+            //         },
+            //     },
+            //     { $group: { _id: '$stage.status', count: { $sum: 1 } } },
+            //     { $sort: { count: -1 } },
+            //     { $limit: 1 },
+            // ])
+            // const bottleNeckStation = bottleneckAgg[0] || null
+
+            const [bottleneckOrderCount, bottleneckItemCount] =
+                await Promise.all([
+                    BookOrderModel.countDocuments({
+                        'stage.status': ORDER_STATUS.IRONING,
+                    }),
+                    BookOrderModel.aggregate([
+                        { $match: { 'stage.status': ORDER_STATUS.IRONING } },
+                        {
+                            $group: {
+                                _id: null,
+                                total: { $sum: { $size: '$items' } },
+                            },
                         },
-                    },
-                },
-                { $group: { _id: '$stage.status', count: { $sum: 1 } } },
-                { $sort: { count: -1 } },
-                { $limit: 1 },
-            ])
-            const bottleNeckStation = bottleneckAgg[0] || null
+                    ]).then((r) => r[0]?.total || 0),
+                ])
+
+            const bottleNeckStation = {
+                station: ORDER_STATUS.IRONING,
+                orderCount: bottleneckOrderCount,
+                itemCount: bottleneckItemCount,
+            }
 
             const readyAndWaiting = await BookOrderModel.countDocuments({
                 'stage.status': ORDER_STATUS.READY,
@@ -648,6 +670,11 @@ class AdminService extends BaseService {
                     }
                     break
 
+                case 'ready':
+                    filter = {
+                        'stage.status': ORDER_STATUS.READY,
+                    }
+                    break
                 case 'pendingPayment':
                     filter = {
                         paymentStatus: PAYMENT_ORDER_STATUS.PENDING,
@@ -1048,7 +1075,26 @@ class AdminService extends BaseService {
     }
     async getOrdersByState(req, res) {
         try {
-            const { type } = req.query
+            const { type, startDate, endDate } = req.query
+
+            if (!type)
+                return BaseService.sendFailedResponse({
+                    error: 'Type query parameter is required',
+                })
+
+            // build date range if provided
+            let dateFilter = null
+            if (startDate || endDate) {
+                dateFilter = {}
+                if (startDate)
+                    dateFilter.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    dateFilter.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
+            }
 
             let filter = {}
 
@@ -1058,6 +1104,7 @@ class AdminService extends BaseService {
                         $or: [{ isPickUp: true }, { isDelivery: true }],
                     }
                     break
+
                 case 'delivery':
                     filter = {
                         $or: [
@@ -1111,15 +1158,17 @@ class AdminService extends BaseService {
                     })
             }
 
+            // apply date range to createdAt if provided
+            if (dateFilter) {
+                filter.createdAt = dateFilter
+            }
+
             const result = await paginate(BookOrderModel, filter, {
                 page: req.query.page,
                 limit: req.query.limit,
                 sort: { createdAt: -1 },
                 populate: [{ path: 'userId' }],
             })
-
-            //   const orders = await BookOrderModel.find(filter)
-            //     .sort({ createdAt: -1 });
 
             return BaseService.sendSuccessResponse({
                 message: result,
@@ -1136,6 +1185,14 @@ class AdminService extends BaseService {
             const todayStart = new Date()
             todayStart.setHours(0, 0, 0, 0)
 
+            const tomorrowStart = new Date(todayStart)
+            tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+
+            const todayRange = {
+                $gte: todayStart,
+                $lt: tomorrowStart,
+            }
+
             const [
                 pendingPickupOrders,
                 scheduledPickups,
@@ -1145,42 +1202,53 @@ class AdminService extends BaseService {
                 deliveredToday,
                 deliveryFailed,
             ] = await Promise.all([
-                // unassigned pickup orders
+                // pending today
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
+                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
-                // assigned and awaiting start
+
+                // scheduled today
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
+                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
-                // pickup in progress
+
+                // pickup in progress today
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status':
                         PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
+
                 // picked up today
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
-                    'dispatchDetails.pickup.updatedAt': { $gte: todayStart },
+                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
-                // currently out for delivery
+
+                // out for delivery today
                 BookOrderModel.countDocuments({
                     isDelivery: true,
                     'dispatchDetails.delivery.status':
                         DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                    'dispatchDetails.delivery.updatedAt': todayRange,
                 }),
+
                 // delivered today
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.DELIVERED,
-                    updatedAt: { $gte: todayStart },
+                    'stage.updatedAt': todayRange,
                 }),
-                // failed deliveries
+
+                // failed delivery today
                 BookOrderModel.countDocuments({
                     'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
+                    'dispatchDetails.delivery.updatedAt': todayRange,
                 }),
             ])
 
@@ -1197,6 +1265,7 @@ class AdminService extends BaseService {
             })
         } catch (error) {
             console.log(error)
+
             return BaseService.sendFailedResponse({
                 error: 'Something went wrong',
             })
@@ -1205,14 +1274,12 @@ class AdminService extends BaseService {
     async getHoldOrders(req, res) {
         try {
             const { type, page = 1, limit = 10 } = req.query
-
             const now = new Date()
 
-            if (!type) {
+            if (!type)
                 return BaseService.sendFailedResponse({
                     error: 'Type query parameter is required',
                 })
-            }
 
             const todayStart = new Date()
             todayStart.setHours(0, 0, 0, 0)
@@ -1224,44 +1291,89 @@ class AdminService extends BaseService {
 
             switch (type) {
                 case 'activeHolds':
-                    filter = {
-                        'stage.status': ORDER_STATUS.HOLD,
-                    }
+                    filter = { 'stage.status': ORDER_STATUS.HOLD }
                     break
 
                 case 'overdueHolds':
                     filter = {
                         'stage.status': ORDER_STATUS.HOLD,
-                        deliveryDate: { $lt: now },
+                        $or: [
+                            {
+                                deliverySpeed: DELIVERY_SPEED.SAME_DAY,
+                                'stage.updatedAt': {
+                                    $lt: new Date(now - 2 * 60 * 60 * 1000),
+                                },
+                            },
+                            {
+                                deliverySpeed: DELIVERY_SPEED.EXPRESS,
+                                'stage.updatedAt': {
+                                    $lt: new Date(now - 4 * 60 * 60 * 1000),
+                                },
+                            },
+                            {
+                                deliverySpeed: DELIVERY_SPEED.STANDARD,
+                                'stage.updatedAt': {
+                                    $lt: new Date(now - 6 * 60 * 60 * 1000),
+                                },
+                            },
+                            {
+                                deliveryDate: { $lt: now },
+                            },
+                        ],
                     }
                     break
 
                 case 'expiringToday':
                     filter = {
                         deliveryDate: { $gte: todayStart, $lte: todayEnd },
-                        'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        'stage.status': ORDER_STATUS.HOLD,
                     }
                     break
 
                 default:
                     return BaseService.sendFailedResponse({
-                        error: 'Invalid type',
+                        error: 'Invalid type. Must be one of: activeHolds, overdueHolds, expiringToday',
                     })
             }
 
             const result = await paginate(BookOrderModel, filter, {
                 page,
                 limit,
-                sort: { createdAt: -1 },
-                populate: [
-                    {
-                        path: 'userId',
+                sort: { 'stage.updatedAt': 1 },
+                populate: [{ path: 'userId' }],
+            })
+
+            const enriched = result.data.map((order) => {
+                const heldSince = order.stage?.updatedAt
+                const heldMinutes = heldSince
+                    ? Math.floor((now - new Date(heldSince)) / 60000)
+                    : null
+
+                const slaThresholdMinutes =
+                    order.deliverySpeed === DELIVERY_SPEED.SAME_DAY
+                        ? 120
+                        : order.deliverySpeed === DELIVERY_SPEED.EXPRESS
+                          ? 240
+                          : 360 // standard
+
+                const slaBreached =
+                    heldMinutes !== null
+                        ? heldMinutes > slaThresholdMinutes
+                        : false
+
+                return {
+                    ...order,
+                    holdMeta: {
+                        heldSince,
+                        heldMinutes,
+                        slaThresholdMinutes,
+                        slaBreached,
                     },
-                ],
+                }
             })
 
             return BaseService.sendSuccessResponse({
-                message: result,
+                message: { data: enriched, pagination: result.pagination },
             })
         } catch (error) {
             console.log(error)
@@ -1273,102 +1385,202 @@ class AdminService extends BaseService {
     async reAssignOrderStation(req) {
         try {
             const { type } = req.query
-            const note = req.body.note
+            const { note } = req.body
             const orderId = req.params.id
             const userId = req.user.id
 
-            if (!orderId) {
+            if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            }
-
-            if (!note) {
+            if (!note)
                 return BaseService.sendFailedResponse({
-                    error: 'Note is required to reassign order state',
+                    error: 'Note is required to reassign order station',
                 })
-            }
-
-            const order = await BookOrderModel.findById(orderId)
-
-            if (!order) {
-                return BaseService.sendFailedResponse({
-                    error: 'Order not found',
-                })
-            }
-
-            if (!type || !Object.values(STATION_STATUS).includes(type)) {
+            if (!type || !Object.values(STATION_STATUS).includes(type))
                 return BaseService.sendFailedResponse({
                     error: 'Invalid type query parameter',
                 })
+
+            // ← only held orders can be reassigned
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.HOLD,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not currently on hold',
+                })
+
+            const stationMap = {
+                'intake-and-tag-station': STATION_STATUS.INTAKE_AND_TAG_STATION,
+                'sort-and-pretreat-station':
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                'wash-and-dry-station': STATION_STATUS.WASH_AND_DRY_STATION,
+                'pressing-and-ironing-station':
+                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'qc-station': STATION_STATUS.QC_STATION,
             }
 
-            switch (type) {
-                case 'intake-and-tag-station':
-                    order.stationStatus = STATION_STATUS.INTAKE_AND_TAG_STATION
-                    order.stage.status = ORDER_STATUS.QUEUE
-                    order.stageHistory.push({
-                        status: ORDER_STATUS.QUEUE,
-                        note,
-                        updatedAt: new Date(),
-                    })
-                    break
-                case 'sort-and-pretreat-station':
-                    order.stationStatus =
-                        STATION_STATUS.SORT_AND_PRETREAT_STATION
-                    order.stage.status = ORDER_STATUS.SORT_AND_PRETREAT
-                    order.stageHistory.push({
-                        status: ORDER_STATUS.SORT_AND_PRETREAT,
-                        note,
-                        updatedAt: new Date(),
-                    })
-                    break
-                case 'wash-and-dry-station':
-                    order.stationStatus = STATION_STATUS.WASH_AND_DRY_STATION
-                    order.stage.status = ORDER_STATUS.WASHING
-                    order.stageHistory.push({
-                        status: ORDER_STATUS.WASHING,
-                        note,
-                        updatedAt: new Date(),
-                    })
-                    break
-                case 'pressing-and-ironing-station':
-                    order.stationStatus =
-                        STATION_STATUS.PRESSING_AND_IRONING_STATION
-                    order.stage.status = ORDER_STATUS.IRONING
-                    order.stageHistory.push({
-                        status: ORDER_STATUS.IRONING,
-                        note,
-                        updatedAt: new Date(),
-                    })
-                    break
-                case 'qc-station':
-                    order.stationStatus = STATION_STATUS.QC_STATION
-                    order.stage.status = ORDER_STATUS.QC
-                    order.stageHistory.push({
-                        status: ORDER_STATUS.QC,
-                        note,
-                        updatedAt: new Date(),
-                    })
-                    break
-            }
+            if (!stationMap[type])
+                return BaseService.sendFailedResponse({
+                    error: `Invalid station. Must be one of: ${Object.keys(stationMap).join(', ')}`,
+                })
 
-            await order.save()
+            // hold stays open — only stationStatus changes so the right station sees it
+            // stage.status remains HOLD throughout
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        stationStatus: stationMap[type],
+                        'stage.note': note,
+                        'stage.updatedAt': new Date(),
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.HOLD,
+                            note: `Reassigned to ${type}: ${note}`,
+                            updatedAt: new Date(),
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
+
+            await ActivityModel.create({
+                title: 'Hold Reassigned',
+                description: `Order ${order.oscNumber} hold reassigned to ${type}. Note: ${note}`,
+                type: ACTIVITY_TYPE.ORDER_ON_HOLD,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
 
             await createNotification({
-                userId: userId,
-                title: 'Order Reassigned',
-                body: `You have reassigned order ${order.oscNumber} to ${type.replace(/-/g, ' ')}. Note: ${note}`,
+                userId,
+                title: 'Hold Reassigned',
+                body: `Order ${order.oscNumber} hold has been reassigned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             return BaseService.sendSuccessResponse({
-                message: `Order ${order.oscNumber} has been assigned and sent to be resolved`,
+                message: `Order ${order.oscNumber} hold reassigned to ${type}`,
             })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to assign rider to order',
+                error: 'Failed to reassign order station',
+            })
+        }
+    }
+
+    async resolveOrderHold(req) {
+        try {
+            const { type } = req.query
+            const { note } = req.body
+            const orderId = req.params.id
+            const userId = req.user.id
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!note)
+                return BaseService.sendFailedResponse({
+                    error: 'Resolution note is required',
+                })
+            if (!type || !Object.values(STATION_STATUS).includes(type))
+                return BaseService.sendFailedResponse({
+                    error: 'Invalid type query parameter',
+                })
+
+            // ← only held orders can be resolved
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.HOLD,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not currently on hold',
+                })
+
+            // map station back to the correct ORDER_STATUS it should resume at
+            const stationOrderStatusMap = {
+                'intake-and-tag-station': {
+                    stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    orderStatus: ORDER_STATUS.QUEUE,
+                },
+                'sort-and-pretreat-station': {
+                    stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    orderStatus: ORDER_STATUS.SORT_AND_PRETREAT,
+                },
+                'wash-and-dry-station': {
+                    stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                    orderStatus: ORDER_STATUS.WASHING,
+                },
+                'pressing-and-ironing-station': {
+                    stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    orderStatus: ORDER_STATUS.IRONING,
+                },
+                'qc-station': {
+                    stationStatus: STATION_STATUS.QC_STATION,
+                    orderStatus: ORDER_STATUS.QC,
+                },
+            }
+
+            const target = stationOrderStatusMap[type]
+            if (!target)
+                return BaseService.sendFailedResponse({
+                    error: `Invalid station. Must be one of: ${Object.keys(stationOrderStatusMap).join(', ')}`,
+                })
+
+            const now = new Date()
+
+            // close hold — order returns to normal flow at the specified station
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'stage.status': target.orderStatus,
+                        'stage.note': note,
+                        'stage.updatedAt': now,
+                        stationStatus: target.stationStatus,
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: target.orderStatus,
+                            note: `Hold resolved. Returned to ${type}: ${note}`,
+                            updatedAt: now,
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
+
+            await ActivityModel.create({
+                title: 'Hold Resolved',
+                description: `Order ${order.oscNumber} hold resolved by admin. Returned to ${type}. Note: ${note}`,
+                type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId,
+                title: 'Hold Resolved',
+                body: `Order ${order.oscNumber} hold has been resolved and returned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: `Order ${order.oscNumber} hold resolved. Returned to ${type}`,
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to resolve order hold',
             })
         }
     }
@@ -1736,6 +1948,106 @@ class AdminService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    async adminSendToHold(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+            const { reason, assignTo, note = '' } = req.body
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!reason || !reason.trim())
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required',
+                })
+            if (!assignTo)
+                return BaseService.sendFailedResponse({
+                    error: 'An assignee is required',
+                })
+
+            const stationMap = {
+                // [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
+                [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                [ROLE.SORT_AND_PRETREAT]:
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                [ROLE.WASH_AND_DRY]: STATION_STATUS.WASH_AND_DRY_STATION,
+                [ROLE.PRESS]: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                [ROLE.QC]: STATION_STATUS.QC_STATION,
+            }
+
+            if (!stationMap[assignTo])
+                return BaseService.sendFailedResponse({
+                    error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            // admin can hold any order regardless of current stage
+            const order = await BookOrderModel.findById(orderId)
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            const holdNote = note ? `${reason}: ${note}` : reason
+            const now = new Date()
+
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'stage.status': ORDER_STATUS.HOLD,
+                        'stage.note': holdNote,
+                        'stage.updatedAt': now,
+                        stationStatus: stationMap[assignTo],
+                    },
+                    $push: {
+                        stageHistory: {
+                            status: ORDER_STATUS.HOLD,
+                            note: holdNote,
+                            updatedAt: now,
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
+
+            await ActivityModel.create({
+                title: 'Order Placed on Hold by Admin',
+                description: `Order ${order.oscNumber} placed on hold by admin ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
+                type: ACTIVITY_TYPE.ORDER_ON_HOLD,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
+
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Order Placed on Hold',
+                    body: `Your order ${order.oscNumber} has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                })
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: 'Order placed on hold successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to place order on hold',
             })
         }
     }

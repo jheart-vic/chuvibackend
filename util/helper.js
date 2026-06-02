@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const {ulid} =  require("ulid");
+const { DELIVERY_SPEED } = require("./constants");
 const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET;
 const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET;
 
@@ -169,3 +170,27 @@ const normalizePhone = (phone) => {
 }
 
 module.exports.normalizePhone = normalizePhone
+
+
+const calculateDueDate = (deliverySpeed) => {
+    const now = new Date()
+    const evening = new Date(now)
+    evening.setHours(20, 0, 0, 0)
+
+    switch (deliverySpeed) {
+        case DELIVERY_SPEED.SAME_DAY:
+            return evening
+        case DELIVERY_SPEED.EXPRESS:
+            const nextEvening = new Date(evening)
+            nextEvening.setDate(nextEvening.getDate() + 1)
+            return nextEvening
+        case DELIVERY_SPEED.STANDARD:
+        default:
+            const stdEvening = new Date(evening)
+            stdEvening.setDate(stdEvening.getDate() + 2)
+            return stdEvening
+    }
+}
+
+module.exports.calculateDueDate = calculateDueDate;
+
