@@ -11,6 +11,7 @@ const {
     NOTIFICATION_TYPE,
     DELIVERY_STATUS,
     PICKUP_STATUS,
+    DRY_DURATION_MINUTES,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
@@ -57,8 +58,7 @@ class WashAndDryService extends BaseService {
                 }),
 
                 BookOrderModel.countDocuments({
-                    'stageHistory.status': ORDER_STATUS.DRYING,
-                    'stageHistory.updatedAt': { $gte: startOfToday },
+                    'washDetails.dryingCompletedAt': { $gte: startOfToday },
                     'stage.status': {
                         $nin: [ORDER_STATUS.WASHING, ORDER_STATUS.DRYING],
                     },
@@ -276,115 +276,6 @@ class WashAndDryService extends BaseService {
             })
         }
     }
-    // async confirmItemForWashing(req) {
-
-    //     try {
-    //         const orderId = req.params.id
-    //         const itemId = req.params.itemId
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-    //         if (!itemId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findOne({
-    //             _id: orderId,
-    //             'stage.status': ORDER_STATUS.WASHING,
-    //         })
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found or not in washing stage',
-    //             })
-
-    //         const item = order.items.id(itemId)
-    //         if (!item)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item not found in order',
-    //             })
-    //         if (item.washStatus === 'complete')
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item already confirmed for washing',
-    //             })
-
-    //         await BookOrderModel.updateOne(
-    //             { _id: orderId, 'items._id': itemId },
-    //             {
-    //                 $set: {
-    //                     'items.$.washStatus': 'complete',
-    //                     'items.$.washConfirmedAt': new Date(),
-    //                     'items.$.washConfirmedByOperatorId': userId,
-    //                 },
-    //                 $push: {
-    //                     'items.$.actionLog': {
-    //                         action: 'wash_confirmed',
-    //                         note: 'Item confirmed as present and ready for washing',
-    //                         timestamp: new Date(),
-    //                     },
-    //                 },
-    //             },
-    //         )
-
-    //         // Re-fetch to check if all items are now confirmed
-    //         const updatedOrder = await BookOrderModel.findById(orderId).lean()
-    //         const allItemsConfirmed = updatedOrder.items.every(
-    //             (i) => i.washStatus === 'complete',
-    //         )
-
-    //         // Auto-promote: when all items confirmed set order-level startedAt + stationStatus
-    //         if (allItemsConfirmed) {
-    //             await BookOrderModel.updateOne(
-    //                 { _id: orderId },
-    //                 {
-    //                     $set: {
-    //                         stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
-    //                         'washDetails.startedAt': new Date(),
-    //                         'washDetails.operatorId': userId,
-    //                     },
-    //                 },
-    //             )
-    //         }
-
-    //         await ActivityModel.create({
-    //             title: 'Item Confirmed for Washing',
-    //             description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} confirmed as present and ready for washing`,
-    //             type: ACTIVITY_TYPE.ORDER_ITEM_WASH_CONFIRMED,
-    //             orderId: order._id,
-    //             userId,
-    //             reference: order.oscNumber,
-    //         })
-
-    //         await createNotification({
-    //             userId,
-    //             title: 'Item Confirmed for Washing',
-    //             body: "Item confirmed for washing",
-    //             type: NOTIFICATION_TYPE.ORDER_WASHING,
-    //         })
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 message: 'Item confirmed for washing',
-    //                 allItemsConfirmed,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to confirm item for washing',
-    //         })
-    //     }
-    // }
-
     // UNDO ITEM(S) WASH CONFIRMATION
 
     async undoConfirmItemForWashing(req) {
@@ -492,94 +383,13 @@ class WashAndDryService extends BaseService {
         }
     }
 
-    // async undoConfirmItemForWashing(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const itemId = req.params.itemId
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-    //         if (!itemId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findOne({
-    //             _id: orderId,
-    //             'stage.status': ORDER_STATUS.WASHING,
-    //         })
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found or not in washing stage',
-    //             })
-
-    //         const item = order.items.id(itemId)
-    //         if (!item)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item not found in order',
-    //             })
-
-    //         if (item.washStatus === 'pending') {
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item wash has not been confirmed yet',
-    //             })
-    //         }
-
-    //         await BookOrderModel.updateOne(
-    //             { _id: orderId, 'items._id': itemId },
-    //             {
-    //                 $set: {
-    //                     'items.$.washStatus': 'pending',
-    //                     'items.$.washConfirmedAt': null,
-    //                     'items.$.washConfirmedByOperatorId': null,
-    //                     'washDetails.startedAt': null,
-    //                     'washDetails.operatorId': null,
-    //                     stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
-    //                 },
-    //                 $push: {
-    //                     'items.$.actionLog': {
-    //                         action: 'undo_wash_confirmed',
-    //                         note: '',
-    //                         timestamp: new Date(),
-    //                     },
-    //                 },
-    //             },
-    //         )
-
-    //         await createNotification({
-    //             userId,
-    //             title: 'Item Wash Confirmation Undone',
-    //             body: 'Item wash confirmation has been undone',
-    //             type: NOTIFICATION_TYPE.ORDER_WASHING,
-    //         })
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: 'Item wash confirmation undone',
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to undo item wash confirmation',
-    //         })
-    //     }
-    // }
-
     // SEND ITEM TO HOLD
     async sendToHold(req) {
         try {
             const orderId = req.params.id
             const itemId = req.params.itemId
             const userId = req.user.id
-            const { reason, assignTo } = req.body
+            const { reason, assignTo, note = '' } = req.body
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
@@ -598,7 +408,7 @@ class WashAndDryService extends BaseService {
                     error: 'An assignee is required',
                 })
 
-            const allowedReasons = ['item_missing', 'item_mismatched']
+            // const allowedReasons = ['item_missing', 'item_mismatched']
 
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
@@ -607,16 +417,19 @@ class WashAndDryService extends BaseService {
                 [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
             }
 
-            if (!allowedReasons.includes(reason)) {
+            if (!reason || !reason.trim())
                 return BaseService.sendFailedResponse({
-                    error: `reason must be one of: ${allowedReasons.join(', ')}`,
+                    error: 'A reason is required',
                 })
-            }
-            if (!stationMap[assignTo]) {
+            // if (!allowedReasons.includes(reason))
+            //     return BaseService.sendFailedResponse({
+            //         error: `reason must be one of: ${allowedReasons.join(', ')}`,
+            //     })
+
+            if (!stationMap[assignTo])
                 return BaseService.sendFailedResponse({
                     error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
                 })
-            }
 
             const user = await UserModel.findById(userId)
             if (!user)
@@ -639,13 +452,16 @@ class WashAndDryService extends BaseService {
                     error: 'Item not found in order',
                 })
 
+            const holdNote = note ? `${reason}: ${note}` : reason
+
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
                 {
                     $set: {
                         'items.$.flaggedForReview': true,
-                        'items.$.flagNote': reason,
+                        'items.$.flagNote': holdNote,
                         'items.$.holdDetails.reason': reason,
+                        'items.$.holdDetails.note': note,
                         'items.$.holdDetails.assignTo': assignTo,
                         'items.$.holdDetails.heldAt': new Date(),
                         'items.$.holdDetails.heldByOperatorId': userId,
@@ -655,7 +471,7 @@ class WashAndDryService extends BaseService {
                     $push: {
                         'items.$.actionLog': {
                             action: 'item_held',
-                            note: `Reason: ${reason}, Assigned to: ${assignTo}`,
+                            note: holdNote,
                             timestamp: new Date(),
                         },
                     },
@@ -667,13 +483,13 @@ class WashAndDryService extends BaseService {
                 buildStageUpdate(
                     ORDER_STATUS.HOLD,
                     stationMap[assignTo],
-                    reason,
+                    holdNote,
                 ),
             )
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}. Assigned to: ${assignTo}`,
+                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
@@ -683,7 +499,7 @@ class WashAndDryService extends BaseService {
             await createNotification({
                 userId,
                 title: 'Item Placed on Hold',
-                body: `An item has been placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`,
+                body: `An item has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
 
@@ -727,7 +543,7 @@ class WashAndDryService extends BaseService {
             const ordersWithMeta = data.map((order) => {
                 const startedAt = order.washDetails?.startedAt
                 const durationMinutes =
-                    WASH_DURATION_MINUTES[order.serviceTier] ?? 60
+                    WASH_DURATION_MINUTES[order.deliverySpeed] ?? 60
                 const estimatedFinish = startedAt
                     ? new Date(
                           new Date(startedAt).getTime() +
@@ -855,9 +671,30 @@ class WashAndDryService extends BaseService {
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails createdAt updatedAt',
                 lean: true,
             })
+            const ordersWithMeta = data.map((order) => {
+                const startedAt = order.washDetails?.movedToDryingAt
+                const durationMinutes =
+                    DRY_DURATION_MINUTES[order.deliverySpeed] ?? 30
+                const estimatedFinish = startedAt
+                    ? new Date(
+                          new Date(startedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...order,
+                    itemCount: (order.items || []).length,
+                    washDetails: {
+                        ...order.washDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
 
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { data: ordersWithMeta, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -1210,137 +1047,6 @@ class WashAndDryService extends BaseService {
         }
     }
 
-    // GET ORDER TIMELINE
-    // async getOrderTimeline(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findById(orderId).lean()
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found',
-    //             })
-
-    //         const PIPELINE = [
-    //             {
-    //                 key: 'intake',
-    //                 label: 'Intake',
-    //                 status: ORDER_STATUS.PENDING,
-    //             },
-    //             { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
-    //             {
-    //                 key: 'pretreated',
-    //                 label: 'Pretreated',
-    //                 status: ORDER_STATUS.SORT_AND_PRETREAT,
-    //             },
-    //             {
-    //                 key: 'washed',
-    //                 label: 'Washed',
-    //                 status: ORDER_STATUS.WASHING,
-    //             },
-    //             {
-    //                 key: 'ironing',
-    //                 label: 'Ironing',
-    //                 status: ORDER_STATUS.IRONING,
-    //             },
-    //             {
-    //                 key: 'qc_passed',
-    //                 label: 'QC Passed',
-    //                 status: ORDER_STATUS.QC,
-    //             },
-    //             {
-    //                 key: 'ready',
-    //                 label: 'Ready',
-    //                 status: ORDER_STATUS.READY,
-    //             },
-    //             {
-    //                 key: 'delivered',
-    //                 label: 'Delivered',
-    //                 status: ORDER_STATUS.DELIVERED,
-    //             },
-    //         ]
-
-    //         const stageTimestampMap = {}
-    //         for (const entry of order.stageHistory || []) {
-    //             if (!stageTimestampMap[entry.status]) {
-    //                 stageTimestampMap[entry.status] = entry.updatedAt
-    //             }
-    //         }
-    //         stageTimestampMap[ORDER_STATUS.PENDING] =
-    //             stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-
-    //         const pipeline = PIPELINE.map((step) => {
-    //             const timestamp = stageTimestampMap[step.status] || null
-    //             return {
-    //                 key: step.key,
-    //                 label: step.label,
-    //                 completed: !!timestamp,
-    //                 timestamp,
-    //             }
-    //         })
-
-    //         // Per-item action log for the detailed audit section
-    //         const itemTimeline = []
-    //         for (const item of order.items || []) {
-    //             for (const log of item.actionLog || []) {
-    //                 itemTimeline.push({
-    //                     itemId: item._id,
-    //                     itemType: item.type,
-    //                     tagId: item.tagId,
-    //                     action: log.action,
-    //                     note: log.note || '',
-    //                     timestamp: log.timestamp,
-    //                 })
-    //             }
-    //         }
-    //         itemTimeline.sort(
-    //             (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-    //         )
-
-    //         const trackingStatus =
-    //             order.stage.status === ORDER_STATUS.DELIVERED
-    //                 ? 'completed'
-    //                 : 'in_progress'
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 order: {
-    //                     _id: order._id,
-    //                     oscNumber: order.oscNumber,
-    //                     fullName: order.fullName,
-    //                     serviceType: order.serviceType,
-    //                     serviceTier: order.serviceTier,
-    //                     amount: order.amount,
-    //                     stage: order.stage,
-    //                     stationStatus: order.stationStatus,
-    //                     trackingStatus,
-    //                     washDetails: order.washDetails,
-    //                     createdAt: order.createdAt,
-    //                 },
-    //                 pipeline,
-    //                 itemTimeline,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to fetch order timeline',
-    //         })
-    //     }
-    // }
-
     async getOrderTimeline(req) {
         try {
             const orderId = req.params.id
@@ -1382,12 +1088,12 @@ class WashAndDryService extends BaseService {
                 {
                     key: 'washed',
                     label: 'Washed',
-                    completedBy: ORDER_STATUS.IRONING,
+                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
                 },
                 {
                     key: 'ironing',
                     label: 'Ironing',
-                    completedBy: ORDER_STATUS.QC,
+                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
                 },
                 {
                     key: 'qc_passed',
@@ -1397,7 +1103,10 @@ class WashAndDryService extends BaseService {
                 {
                     key: 'ready',
                     label: 'Ready',
-                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                    completedBy: [
+                        ORDER_STATUS.OUT_FOR_DELIVERY,
+                        ORDER_STATUS.DELIVERED,
+                    ], // DELIVERED covers self-pickup
                 },
                 {
                     key: 'delivered',

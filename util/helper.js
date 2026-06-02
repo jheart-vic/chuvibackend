@@ -162,3 +162,12 @@ const cookieOptions = {
 }
 
 module.exports.cookieOptions = cookieOptions;
+
+const normalizePhone = (phone) => {
+    if (!phone) return ''
+    const digits = phone.replace(/\D/g, '') // strip all non-digits
+    if (digits.startsWith('234')) return '0' + digits.slice(3)
+    return digits
+}
+
+module.exports.normalizePhone = normalizePhone

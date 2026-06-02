@@ -4,6 +4,7 @@ const { image_uploader, video_uploader, document_uploader } = require("../util/i
 const {
   ROUTE_IMAGE_UPLOAD_MULTIPLE,
   ROUTE_IMAGE_UPLOAD_SINGLE,
+  ROUTE_GET_HOLD_REASONS,
 } = require("../util/page-route");
 
 const router = require("express").Router();
@@ -109,6 +110,85 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /utils/hold-reasons:
+ *   get:
+ *     summary: Get suggested hold reasons by station role
+ *     description: |
+ *       Returns a list of suggested hold reasons for a given station role.
+ *       Each station passes its own role as a query parameter.
+ *       The frontend uses these to populate a dropdown, but operators
+ *       may still type a custom reason via the `note` field in `sendToHold`.
+ *
+ *       **Valid roles:**
+ *       - `intake-and-tag`
+ *       - `sort-and-pretreat`
+ *       - `wash-and-dry`
+ *       - `press`
+ *       - `qc`
+ *     tags:
+ *       - Utils
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: role
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - intake-and-tag
+ *             - sort-and-pretreat
+ *             - wash-and-dry
+ *             - press
+ *             - qc
+ *           example: "press"
+ *         description: The station role to fetch hold reasons for
+ *     responses:
+ *       200:
+ *         description: Hold reasons returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     role:
+ *                       type: string
+ *                       example: "press"
+ *                     reasons:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["item_missing", "item_mismatched", "fabric_damage_risk", "delicate_requires_attention", "other"]
+ *                     note:
+ *                       type: string
+ *                       example: "You may type a custom reason if yours is not listed."
+ *       400:
+ *         description: |
+ *           Invalid or missing role.
+ *           - `role` query param is required
+ *           - `role` must be one of the valid station roles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid role. Must be one of: intake-and-tag, sort-and-pretreat, wash-and-dry, press, qc"
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_GET_HOLD_REASONS, auth, (req, res) => {
+    const utilController = new UtilController()
+    return utilController.getHoldReasons(req, res)
+})
 
 
 module.exports = router;

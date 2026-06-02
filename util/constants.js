@@ -79,11 +79,12 @@ const STATION_STATUS = {
     RIDER_STATION: 'rider-station',
 }
 
-const WASH_DURATION_MINUTES = {
-    standard: 45,
-    premium: 90,
-    express: 30,
-}
+const WASH_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
+const DRY_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
+const PRESS_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
+const QC_DURATION_MINUTES = { standard: 25, express: 15, same_day: 10 }
+const PICKUP_DURATION_MINUTES = 30  // flat estimate — no tier variation
+const DELIVERY_DURATION_MINUTES = 45
 
 const ORDER_STATUS = {
     PENDING: 'pending',
@@ -245,6 +246,46 @@ const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 const ITEM_ENUM_TYPES = Object.values(ORDER_ITEMS)
 const STANDARD_ITEMS_ENUM_TYPES = Object.values(STANDARD_ORDER_ITEMS)
 
+const HOLD_REASONS = {
+    [ROLE.INTAKE_AND_TAG]: [
+        'item_missing',
+        'item_mismatched',
+        'wrong_label',
+        'damaged_on_arrival',
+        'other',
+    ],
+    [ROLE.SORT_AND_PRETREAT]: [
+        'fabric_incompatible',
+        'item_missing',
+        'item_mismatched',
+        'stain_requires_special_treatment',
+        'color_bleed_risk',
+        'other',
+    ],
+    [ROLE.WASH_AND_DRY]: [
+        'item_missing',
+        'item_mismatched',
+        'color_bleed_risk',
+        'fabric_damage_risk',
+        'other',
+    ],
+    [ROLE.PRESS]: [
+        'item_missing',
+        'item_mismatched',
+        'fabric_damage_risk',
+        'delicate_requires_attention',
+        'other',
+    ],
+    [ROLE.QC]: [
+        'item_missing',
+        'item_mismatched',
+        'quality_not_met',
+        'wrong_item_returned',
+        'packaging_issue',
+        'other',
+    ],
+}
+
 module.exports = {
     EXPIRES_AT,
     DELIVERY_CHARGE,
@@ -278,4 +319,9 @@ module.exports = {
     ACTIVITY_TYPE,
     STATION_STATUS,
     WASH_DURATION_MINUTES,
+    DRY_DURATION_MINUTES,
+    PRESS_DURATION_MINUTES,
+    PICKUP_DURATION_MINUTES,
+    DELIVERY_DURATION_MINUTES,
+    QC_DURATION_MINUTES,
 }

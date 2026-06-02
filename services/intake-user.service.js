@@ -199,6 +199,7 @@ class IntakeUserService extends BaseService {
                     // pending orders — unchanged
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.PENDING,
+                        paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     }),
 
                     // tagging queue — matches getTaggingQueue exactly
@@ -612,8 +613,8 @@ class IntakeUserService extends BaseService {
                 {
                     $set: {
                         'items.$.tagState': [],
-                        'items.$.tagColor': '',
-                        'items.$.tagStatus': '',
+                        'items.$.tagColor': null,
+                        'items.$.tagStatus': 'pending',
                         'items.$.tagId': '',
                     },
                 },
@@ -1233,16 +1234,33 @@ class IntakeUserService extends BaseService {
 
             const query = {
                 'stage.status': ORDER_STATUS.PENDING,
-                channel: {
-                    $in: [ORDER_CHANNEL.WHATSAPP, ORDER_CHANNEL.WEBSITE],
-                },
+                paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+                $or: [
+                    {
+                        channel: {
+                            $in: [
+                                ORDER_CHANNEL.WHATSAPP,
+                                ORDER_CHANNEL.WEBSITE,
+                            ],
+                        },
+                    },
+                    {
+                        isPickUp: true,
+                        'dispatchDetails.pickup.status':
+                            PICKUP_STATUS.PICKED_UP,
+                    },
+                ],
             }
 
             if (search) {
-                query.$or = [
-                    { oscNumber: { $regex: search, $options: 'i' } },
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { phoneNumber: { $regex: search, $options: 'i' } },
+                query.$and = [
+                    {
+                        $or: [
+                            { oscNumber: { $regex: search, $options: 'i' } },
+                            { fullName: { $regex: search, $options: 'i' } },
+                            { phoneNumber: { $regex: search, $options: 'i' } },
+                        ],
+                    },
                 ]
             }
 
@@ -1252,7 +1270,7 @@ class IntakeUserService extends BaseService {
                     .skip(skip)
                     .limit(Number(limit))
                     .select(
-                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt',
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage dispatchDetails createdAt',
                     )
                     .lean(),
                 BookOrderModel.countDocuments(query),
@@ -1649,8 +1667,25 @@ class IntakeUserService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+            for (const order of data) {
+                const movedAt =
+                    order.stageHistory?.find(
+                        (h) => h.status === ORDER_STATUS.SORT_AND_PRETREAT,
+                    )?.updatedAt || order.updatedAt
+                if (new Date(movedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -1747,12 +1782,12 @@ class IntakeUserService extends BaseService {
                 {
                     key: 'washed',
                     label: 'Washed',
-                    completedBy: ORDER_STATUS.IRONING,
+                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
                 },
                 {
                     key: 'ironing',
                     label: 'Ironing',
-                    completedBy: ORDER_STATUS.QC,
+                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
                 },
                 {
                     key: 'qc_passed',
@@ -1762,7 +1797,10 @@ class IntakeUserService extends BaseService {
                 {
                     key: 'ready',
                     label: 'Ready',
-                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                    completedBy: [
+                        ORDER_STATUS.OUT_FOR_DELIVERY,
+                        ORDER_STATUS.DELIVERED,
+                    ], // DELIVERED covers self-pickup
                 },
                 {
                     key: 'delivered',
@@ -1934,6 +1972,165 @@ class IntakeUserService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to mark order as collected',
+            })
+        }
+    }
+
+    async unassignRiderFromPickupOrder(req) {
+        try {
+            const orderId = req.params.id
+            const riderId = req.params.riderId
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!riderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Rider ID is required',
+                })
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            if (!order.dispatchDetails.pickup.rider)
+                return BaseService.sendFailedResponse({
+                    error: 'No rider is currently assigned to this pickup',
+                })
+
+            if (order.dispatchDetails.pickup.rider.toString() !== riderId)
+                return BaseService.sendFailedResponse({
+                    error: 'This rider is not assigned to this pickup',
+                })
+
+            const activeStatuses = [
+                PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                PICKUP_STATUS.PICKED_UP,
+            ]
+            if (activeStatuses.includes(order.dispatchDetails.pickup.status))
+                return BaseService.sendFailedResponse({
+                    error: 'Cannot unassign a rider who has already started or completed the pickup',
+                })
+
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'dispatchDetails.pickup.rider': null,
+                        'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
+                        'dispatchDetails.pickup.updatedAt': new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
+
+            await ActivityModel.create({
+                title: 'Pickup Rider Unassigned',
+                description: `Rider unassigned from pickup for order ${order.oscNumber}`,
+                type: ACTIVITY_TYPE.ORDER_PICKED,
+                orderId: order._id,
+                userId: riderId,
+                reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId: riderId,
+                title: 'Pickup Assignment Removed',
+                body: `You have been unassigned from the pickup for order ${order.oscNumber}.`,
+                subBody: `Please check your dispatch dashboard for updates.`,
+                type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: 'Rider unassigned from pickup successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to unassign rider from pickup',
+            })
+        }
+    }
+
+    async unassignRiderFromDeliveryOrder(req) {
+        try {
+            const orderId = req.params.id
+            const riderId = req.params.riderId
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!riderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Rider ID is required',
+                })
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            if (!order.dispatchDetails.delivery.rider)
+                return BaseService.sendFailedResponse({
+                    error: 'No rider is currently assigned to this delivery',
+                })
+
+            if (order.dispatchDetails.delivery.rider.toString() !== riderId)
+                return BaseService.sendFailedResponse({
+                    error: 'This rider is not assigned to this delivery',
+                })
+
+            const activeStatuses = [
+                DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                DELIVERY_STATUS.DELIVERED,
+            ]
+            if (activeStatuses.includes(order.dispatchDetails.delivery.status))
+                return BaseService.sendFailedResponse({
+                    error: 'Cannot unassign a rider who has already started or completed the delivery',
+                })
+
+            await BookOrderModel.findByIdAndUpdate(
+                orderId,
+                {
+                    $set: {
+                        'dispatchDetails.delivery.rider': null,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.READY,
+                        'dispatchDetails.delivery.updatedAt': new Date(),
+                    },
+                },
+                { runValidators: false },
+            )
+
+            await ActivityModel.create({
+                title: 'Delivery Rider Unassigned',
+                description: `Rider unassigned from delivery for order ${order.oscNumber}`,
+                type: ACTIVITY_TYPE.ORDER_DELIVERED,
+                orderId: order._id,
+                userId: riderId,
+                reference: order.oscNumber,
+            })
+
+            await createNotification({
+                userId: riderId,
+                title: 'Delivery Assignment Removed',
+                body: `You have been unassigned from the delivery for order ${order.oscNumber}.`,
+                subBody: `Please check your dispatch dashboard for updates.`,
+                type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: 'Rider unassigned from delivery successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to unassign rider from delivery',
             })
         }
     }

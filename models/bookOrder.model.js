@@ -41,7 +41,8 @@ const ItemSchema = new mongoose.Schema(
         ],
         tagColor: {
             type: String,
-            enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE],
+            enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE, null],
+            default: null,
         },
         tagStatus: {
             type: String,
@@ -75,12 +76,12 @@ const ItemSchema = new mongoose.Schema(
         },
         sortStatus: {
             type: String,
-            enum: ['pending', 'complete'],
+            enum: ['pending', 'complete', 'not_required'],
             default: 'pending',
         },
         pretreatStatus: {
             type: String,
-            enum: ['pending', 'complete'],
+            enum: ['pending', 'complete', 'not_required'],
             default: 'pending',
         },
         washStatus: {
@@ -120,7 +121,8 @@ const ItemSchema = new mongoose.Schema(
         },
         flaggedForReview: { type: Boolean, default: false },
         holdDetails: {
-            reason: { type: String, enum: ['item_missing', 'item_mismatched'] },
+            reason: { type: String },
+            note: { type: String, default: '' },
             assignTo: {
                 type: String,
                 enum: [
@@ -306,6 +308,7 @@ const bookOrderSchema = new mongoose.Schema(
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
                 isVerified: { type: Boolean, default: false },
+                startedAt: { type: Date },
                 updatedAt: { type: Date },
             },
             delivery: {
@@ -316,6 +319,7 @@ const bookOrderSchema = new mongoose.Schema(
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
                 note: { type: String },
+                startedAt: { type: Date },
                 updatedAt: { type: Date },
             },
         },

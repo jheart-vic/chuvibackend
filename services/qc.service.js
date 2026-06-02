@@ -9,6 +9,7 @@ const {
     NOTIFICATION_TYPE,
     DELIVERY_STATUS,
     PICKUP_STATUS,
+    QC_DURATION_MINUTES,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')
@@ -28,27 +29,32 @@ class QCService extends BaseService {
                     error: 'User not found',
                 })
 
-            const [qcQueue, activeQC, packing, ready, recentQueueResult] =
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const [qcQueue, activeQC, packing, completedToday, recentQueueResult] =
                 await Promise.all([
-                    // awaiting QC — no startedAt
+                    // awaiting QC — no startedAt, arrived today
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.QC,
                         'qcDetails.startedAt': { $exists: false },
+                        'stage.updatedAt': { $gte: startOfToday },
                     }),
-                    // active QC — started but not passed
+                    // active QC — started but not passed, today
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.QC,
-                        'qcDetails.startedAt': { $exists: true },
+                        'qcDetails.startedAt': { $gte: startOfToday },
                         'qcDetails.passedAt': { $exists: false },
                     }),
-                    // pack & seal — passed QC but not yet packed
+                    // pack & seal — passed QC today but not yet packed
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.QC,
-                        'qcDetails.passedAt': { $exists: true },
+                        'qcDetails.passedAt': { $gte: startOfToday },
                         'qcDetails.packCompletedAt': { $exists: false },
                     }),
-                    // ready for delivery
+                    // completed today — pack completed today
                     BookOrderModel.countDocuments({
+                        'qcDetails.packCompletedAt': { $gte: startOfToday },
                         'stage.status': ORDER_STATUS.READY,
                     }),
                     // recent queue
@@ -67,7 +73,7 @@ class QCService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: {
-                    stats: { qcQueue, activeQC, packing, ready },
+                    stats: { qcQueue, activeQC, packing, completedToday },
                     recentQueue: recentQueueResult.data,
                 },
             })
@@ -113,13 +119,29 @@ class QCService extends BaseService {
                 lean: true,
             })
 
-            const ordersWithMeta = data.map((o) => ({
-                ...o,
-                itemCount: (o.items || []).length,
-                flaggedItemCount: (o.items || []).filter(
-                    (i) => i.flaggedForReview,
-                ).length,
-            }))
+            const ordersWithMeta = data.map((o) => {
+                const arrivedAt = o.stage?.updatedAt
+                const durationMinutes = QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
+                const estimatedFinish = arrivedAt
+                    ? new Date(
+                          new Date(arrivedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...o,
+                    itemCount: (o.items || []).length,
+                    flaggedItemCount: (o.items || []).filter(
+                        (i) => i.flaggedForReview,
+                    ).length,
+                    qcDetails: {
+                        ...o.qcDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
 
             return BaseService.sendSuccessResponse({
                 message: { data: ordersWithMeta, pagination },
@@ -158,12 +180,31 @@ class QCService extends BaseService {
                     error: 'Order not found or not in QC stage',
                 })
 
+            const arrivedAt = order.stage?.updatedAt
+            const durationMinutes = QC_DURATION_MINUTES[order.deliverySpeed] ?? 20
+            const estimatedFinish = arrivedAt
+                ? new Date(
+                      new Date(arrivedAt).getTime() +
+                          durationMinutes * 60 * 1000,
+                  )
+                : null
+
             const allItemsPassed = order.items.every(
                 (i) => i.qcStatus === 'passed',
             )
 
             return BaseService.sendSuccessResponse({
-                message: { order, allItemsPassed },
+                message: {
+                    order: {
+                        ...order,
+                        qcDetails: {
+                            ...order.qcDetails,
+                            estimatedFinish,
+                            durationMinutes,
+                        },
+                    },
+                    allItemsPassed,
+                },
             })
         } catch (error) {
             console.log(error)
@@ -361,189 +402,6 @@ class QCService extends BaseService {
         }
     }
 
-    // async confirmItemQC(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const itemId = req.params.itemId
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-    //         if (!itemId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findOne({
-    //             _id: orderId,
-    //             'stage.status': ORDER_STATUS.QC,
-    //         })
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found or not in QC stage',
-    //             })
-
-    //         const item = order.items.id(itemId)
-    //         if (!item)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item not found in order',
-    //             })
-    //         if (item.qcStatus === 'passed')
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item already passed QC',
-    //             })
-
-    //         const now = new Date()
-
-    //         // set startedAt on first item confirmation
-    //         const setPayload = {
-    //             'items.$.qcStatus': 'passed',
-    //         }
-    //         if (!order.qcDetails?.startedAt) {
-    //             setPayload['qcDetails.startedAt'] = now
-    //             setPayload['qcDetails.operatorId'] = userId
-    //         }
-
-    //         await BookOrderModel.updateOne(
-    //             { _id: orderId, 'items._id': itemId },
-    //             {
-    //                 $set: setPayload,
-    //                 $push: {
-    //                     'items.$.actionLog': {
-    //                         action: 'qc_passed',
-    //                         note: '',
-    //                         timestamp: now,
-    //                     },
-    //                 },
-    //             },
-    //         )
-
-    //         const updatedOrder = await BookOrderModel.findById(orderId).lean()
-    //         const allItemsPassed = updatedOrder.items.every(
-    //             (i) => i.qcStatus === 'passed',
-    //         )
-
-    //         await ActivityModel.create({
-    //             title: 'Item QC Passed',
-    //             description: `Item ${itemId} on order ${order.oscNumber} marked as QC passed by ${user.fullName}`,
-    //             type: ACTIVITY_TYPE.ORDER_UPDATED,
-    //             orderId: order._id,
-    //             userId,
-    //             reference: order.oscNumber,
-    //         })
-
-    //         await createNotification({
-    //             userId: userId,
-    //             title: 'Item QC Passed',
-    //             body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has passed quality control.`,
-    //             subBody: `Order ID: ${order.oscNumber}`,
-    //             type: NOTIFICATION_TYPE.ORDER_UPDATED,
-    //         })
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: {
-    //                 message: 'Item marked as QC passed',
-    //                 allItemsPassed,
-    //             },
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to confirm item QC',
-    //         })
-    //     }
-    // }
-
-    // ── Undo Confirm Item QC ───────────────────────────────────────────────────
-    // async undoConfirmItemQC(req) {
-    //     try {
-    //         const orderId = req.params.id
-    //         const itemId = req.params.itemId
-    //         const userId = req.user.id
-
-    //         if (!orderId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-    //         if (!itemId)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item ID is required',
-    //             })
-
-    //         const user = await UserModel.findById(userId)
-    //         if (!user)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'User not found',
-    //             })
-
-    //         const order = await BookOrderModel.findOne({
-    //             _id: orderId,
-    //             'stage.status': ORDER_STATUS.QC,
-    //         })
-    //         if (!order)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found or not in QC stage',
-    //             })
-
-    //         const item = order.items.id(itemId)
-    //         if (!item)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item not found in order',
-    //             })
-    //         if (item.qcStatus !== 'passed')
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Item is not marked as passed',
-    //             })
-
-    //         await BookOrderModel.updateOne(
-    //             { _id: orderId, 'items._id': itemId },
-    //             {
-    //                 $set: { 'items.$.qcStatus': 'pending' },
-    //                 $push: {
-    //                     'items.$.actionLog': {
-    //                         action: 'qc_undo',
-    //                         note: '',
-    //                         timestamp: new Date(),
-    //                     },
-    //                 },
-    //             },
-    //         )
-
-    //         await ActivityModel.create({
-    //             title: 'Item QC Undone',
-    //             description: `QC status undone for item ${itemId} on order ${order.oscNumber} by ${user.fullName}`,
-    //             type: ACTIVITY_TYPE.ORDER_UPDATED,
-    //             orderId: order._id,
-    //             userId,
-    //             reference: order.oscNumber,
-    //         })
-
-    //         await createNotification({
-    //             userId: userId,
-    //             title: 'Item QC Status Undone',
-    //             body: `The QC status for item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been undone. Please review the item again.`,
-    //             subBody: `Order ID: ${order.oscNumber}`,
-    //             type: NOTIFICATION_TYPE.ORDER_UPDATED,
-    //         })
-
-    //         return BaseService.sendSuccessResponse({
-    //             message: 'Item QC status undone',
-    //         })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Failed to undo item QC',
-    //         })
-    //     }
-    // }
 
     // ── Pass QC — send to Pack & Seal ──────────────────────────────────────────
     async passQC(req) {
@@ -796,7 +654,13 @@ class QCService extends BaseService {
 
             const { page = 1, limit = 20, search = '' } = req.query
 
-            const query = { 'stage.status': ORDER_STATUS.READY }
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const query = {
+                'stage.status': ORDER_STATUS.READY,
+                'qcDetails.packCompletedAt': { $gte: startOfToday },
+            }
 
             if (search) {
                 query.$or = [
@@ -836,7 +700,7 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const itemId = req.params.itemId
             const userId = req.user.id
-            const { reason, assignTo } = req.body
+            const { reason, assignTo, note = '' } = req.body // ← add note
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
@@ -855,24 +719,31 @@ class QCService extends BaseService {
                     error: 'An assignee is required',
                 })
 
-            const allowedReasons = ['item_missing', 'item_mismatched']
+            // const allowedReasons = ['item_missing', 'item_mismatched']
 
             const stationMap = {
                 [ROLE.ADMIN]: STATION_STATUS.ADMIN_STATION,
                 [ROLE.PRESS]: STATION_STATUS.PRESSING_AND_IRONING_STATION,
                 [ROLE.WASH_AND_DRY]: STATION_STATUS.WASH_AND_DRY_STATION,
+                [ROLE.SORT_AND_PRETREAT]:
+                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                [ROLE.INTAKE_AND_TAG]: STATION_STATUS.INTAKE_AND_TAG_STATION,
             }
 
-            if (!allowedReasons.includes(reason)) {
+            // if (!allowedReasons.includes(reason))
+            //     return BaseService.sendFailedResponse({
+            //         error: `reason must be one of: ${allowedReasons.join(', ')}`,
+            //     })
+
+            if (!reason || !reason.trim())
                 return BaseService.sendFailedResponse({
-                    error: `reason must be one of: ${allowedReasons.join(', ')}`,
+                    error: 'A reason is required',
                 })
-            }
-            if (!stationMap[assignTo]) {
+
+            if (!stationMap[assignTo])
                 return BaseService.sendFailedResponse({
                     error: `assignTo must be one of: ${Object.keys(stationMap).join(', ')}`,
                 })
-            }
 
             const user = await UserModel.findById(userId)
             if (!user)
@@ -895,13 +766,17 @@ class QCService extends BaseService {
                     error: 'Item not found in order',
                 })
 
+            // build the hold note — reason label + operator's custom note if provided
+            const holdNote = note ? `${reason}: ${note}` : reason
+
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
                 {
                     $set: {
                         'items.$.flaggedForReview': true,
-                        'items.$.flagNote': reason,
+                        'items.$.flagNote': holdNote, // ← stores combined note
                         'items.$.holdDetails.reason': reason,
+                        'items.$.holdDetails.note': note, // ← stores raw operator note separately
                         'items.$.holdDetails.assignTo': assignTo,
                         'items.$.holdDetails.heldAt': new Date(),
                         'items.$.holdDetails.heldByOperatorId': userId,
@@ -911,7 +786,7 @@ class QCService extends BaseService {
                     $push: {
                         'items.$.actionLog': {
                             action: 'item_held',
-                            note: `Reason: ${reason}, Assigned to: ${assignTo}`,
+                            note: holdNote, // ← full note in action log
                             timestamp: new Date(),
                         },
                     },
@@ -923,13 +798,13 @@ class QCService extends BaseService {
                 buildStageUpdate(
                     ORDER_STATUS.HOLD,
                     stationMap[assignTo],
-                    reason,
+                    holdNote, // ← stage note also carries it
                 ),
             )
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
-                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}. Assigned to: ${assignTo}`,
+                description: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: ACTIVITY_TYPE.ORDER_ON_HOLD,
                 orderId: order._id,
                 userId,
@@ -937,9 +812,9 @@ class QCService extends BaseService {
             })
 
             await createNotification({
-                userId: userId,
+                userId,
                 title: 'An item on your order has been placed on hold',
-                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been placed on hold. Reason: ${reason}. Assigned to: ${assignTo}. Please contact support for more details.`,
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been placed on hold.${note ? ` Note: ${note}.` : ''} Please contact support for more details.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
@@ -1194,8 +1069,23 @@ class QCService extends BaseService {
                 lean: true,
             })
 
+            // group by date
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+            for (const order of data) {
+                const completedAt = order.qcDetails?.packCompletedAt || order.updatedAt
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -1204,132 +1094,6 @@ class QCService extends BaseService {
             })
         }
     }
-
-    // ── Order Timeline ─────────────────────────────────────────────────────────
-    //     async getOrderTimeline(req) {
-    //         try {
-    //             const orderId = req.params.id
-    //             const userId = req.user.id
-
-    //             if (!orderId)
-    //                 return BaseService.sendFailedResponse({
-    //                     error: 'Order ID is required',
-    //                 })
-
-    //             const user = await UserModel.findById(userId)
-    //             if (!user)
-    //                 return BaseService.sendFailedResponse({
-    //                     error: 'User not found',
-    //                 })
-
-    //             const order = await BookOrderModel.findById(orderId).lean()
-    //             if (!order)
-    //                 return BaseService.sendFailedResponse({
-    //                     error: 'Order not found',
-    //                 })
-
-    //             // const PIPELINE = [
-    //             //     {
-    //             //         key: 'intake',
-    //             //         label: 'Intake',
-    //             //         status: ORDER_STATUS.PENDING,
-    //             //     },
-    //             //     { key: 'tagged', label: 'Tagged', status: ORDER_STATUS.QUEUE },
-    //             //     {
-    //             //         key: 'pretreated',
-    //             //         label: 'Pretreated',
-    //             //         status: ORDER_STATUS.SORT_AND_PRETREAT,
-    //             //     },
-    //             //     {
-    //             //         key: 'washed',
-    //             //         label: 'Washed',
-    //             //         status: ORDER_STATUS.WASHING,
-    //             //     },
-    //             //     {
-    //             //         key: 'ironing',
-    //             //         label: 'Ironing',
-    //             //         status: ORDER_STATUS.IRONING,
-    //             //     },
-    //             //     {
-    //             //         key: 'qc_passed',
-    //             //         label: 'QC Passed',
-    //             //         status: ORDER_STATUS.QC,
-    //             //     },
-    //             //     { key: 'ready', label: 'Ready', status: ORDER_STATUS.READY },
-    //             //     {
-    //             //         key: 'delivered',
-    //             //         label: 'Delivered',
-    //             //         status: ORDER_STATUS.DELIVERED,
-    //             //     },
-    //             // ]
-
-    //             const stageTimestampMap = {}
-    //             for (const entry of order.stageHistory || []) {
-    //                 if (!stageTimestampMap[entry.status]) {
-    //                     stageTimestampMap[entry.status] = entry.updatedAt
-    //                 }
-    //             }
-    //             stageTimestampMap[ORDER_STATUS.PENDING] =
-    //                 stageTimestampMap[ORDER_STATUS.PENDING] || order.createdAt
-
-    //             const pipeline = PIPELINE.map((step) => {
-    //                 const timestamp = stageTimestampMap[step.status] || null
-    //                 return {
-    //                     key: step.key,
-    //                     label: step.label,
-    //                     completed: !!timestamp,
-    //                     timestamp,
-    //                 }
-    //             })
-
-    //             const itemTimeline = []
-    //             for (const item of order.items || []) {
-    //                 for (const log of item.actionLog || []) {
-    //                     itemTimeline.push({
-    //                         itemId: item._id,
-    //                         itemType: item.type,
-    //                         tagId: item.tagId,
-    //                         action: log.action,
-    //                         note: log.note || '',
-    //                         timestamp: log.timestamp,
-    //                     })
-    //                 }
-    //             }
-    //             itemTimeline.sort(
-    //                 (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-    //             )
-
-    //             const trackingStatus =
-    //                 order.stage.status === ORDER_STATUS.DELIVERED
-    //                     ? 'completed'
-    //                     : 'in_progress'
-
-    //             return BaseService.sendSuccessResponse({
-    //                 message: {
-    //                     order: {
-    //                         _id: order._id,
-    //                         oscNumber: order.oscNumber,
-    //                         fullName: order.fullName,
-    //                         serviceType: order.serviceType,
-    //                         serviceTier: order.serviceTier,
-    //                         amount: order.amount,
-    //                         stage: order.stage,
-    //                         stationStatus: order.stationStatus,
-    //                         trackingStatus,
-    //                         qcDetails: order.qcDetails,
-    //                         createdAt: order.createdAt,
-    //                     },
-    //                     pipeline,
-    //                     itemTimeline,
-    //                 },
-    //             })
-    //         } catch (error) {
-    //             console.log(error)
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Failed to fetch order timeline',
-    //             })
-    //         }
-    //     }
 
     async getOrderTimeline(req) {
         try {
@@ -1372,12 +1136,12 @@ class QCService extends BaseService {
                 {
                     key: 'washed',
                     label: 'Washed',
-                    completedBy: ORDER_STATUS.IRONING,
+                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
                 },
                 {
                     key: 'ironing',
                     label: 'Ironing',
-                    completedBy: ORDER_STATUS.QC,
+                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
                 },
                 {
                     key: 'qc_passed',
@@ -1387,7 +1151,10 @@ class QCService extends BaseService {
                 {
                     key: 'ready',
                     label: 'Ready',
-                    completedBy: ORDER_STATUS.OUT_FOR_DELIVERY,
+                    completedBy: [
+                        ORDER_STATUS.OUT_FOR_DELIVERY,
+                        ORDER_STATUS.DELIVERED,
+                    ], // DELIVERED covers self-pickup
                 },
                 {
                     key: 'delivered',
