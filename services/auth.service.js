@@ -179,6 +179,7 @@ class AuthService extends BaseService {
                 ...cookieOptions,
                 maxAge: 60 * 60 * 1000,
             })
+
             res.cookie('refreshToken', refreshToken, {
                 ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,

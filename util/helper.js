@@ -151,11 +151,13 @@ module.exports.roundToNearestHundred = (amount, strategy = 'round')=> {
   }
 }
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const cookieOptions = {
     httpOnly: true,
-    secure: true,
-    sameSite: 'none',
-    domain: '.chuvilaundry.com',
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    ...(isProduction && { domain: ".chuvilaundry.com"}),
     path: '/',
 }
 
