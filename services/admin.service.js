@@ -612,7 +612,6 @@ class AdminService extends BaseService {
             })
         }
     }
-
     async orderManagement(req, res) {
         try {
             const { type, page = 1, limit = 10 } = req.query
@@ -891,6 +890,7 @@ class AdminService extends BaseService {
                 { $set: updateData },
                 { new: true },
             )
+            
 
             return BaseService.sendSuccessResponse({
                 message: 'Setting has been updated',

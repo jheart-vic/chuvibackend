@@ -286,6 +286,21 @@ const HOLD_REASONS = {
     ],
 }
 
+const AUDIT_LOG_CATEGORIES = {
+    ORDER: 'order',
+    PAYMENT: 'payment',
+    WALLET: 'wallet',
+    DISPATCH: 'dispatch',
+    SYSTEM: 'system',
+    AUTH: 'auth',
+    PRESSING: 'pressing',
+    QC: 'qc',
+    RIDER: 'rider',
+    USER: 'user',
+    SORT: 'sort',
+    WASH: 'wash',
+}
+
 module.exports = {
     EXPIRES_AT,
     DELIVERY_CHARGE,
@@ -324,4 +339,5 @@ module.exports = {
     PICKUP_DURATION_MINUTES,
     DELIVERY_DURATION_MINUTES,
     QC_DURATION_MINUTES,
+    AUDIT_LOG_CATEGORIES
 }
