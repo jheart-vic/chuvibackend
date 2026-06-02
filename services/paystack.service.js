@@ -72,7 +72,7 @@ class PaystackService extends BaseService {
           return BaseService.sendFailedResponse({error: 'Plan not found'})
         }
 
-        subExists = await SubscriptionModel.findOne({userId})
+        subExists = await SubscriptionModel.findOne({userId, status: 'active'})
 
         if(subExists && subExists.status == 'active'){
             return BaseService.sendFailedResponse({error: 'You are already subscribed. Please cancel your current subscription to subscribe to a new plan'})
