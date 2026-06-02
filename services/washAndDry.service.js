@@ -19,6 +19,7 @@ const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
 const createNotification = require('../util/createNotification')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
+const createAuditLog = require('../util/createAuditLog')
 
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
@@ -262,6 +263,7 @@ class WashAndDryService extends BaseService {
                 body: `${updatedCount} item(s) confirmed for washing`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+            await createAuditLog({userId, orderId, category: 'wash', action: `${updatedCount} item(s) confirmed for washing`})
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -371,6 +373,7 @@ class WashAndDryService extends BaseService {
                 body: `${targetItems.length} item(s) wash confirmation has been undone`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+                await createAuditLog({userId, orderId, category: 'wash', action: `${targetItems.length} item(s) wash confirmation undone`})
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) wash confirmation undone`,
@@ -502,6 +505,7 @@ class WashAndDryService extends BaseService {
                 body: `An item has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+            await createAuditLog({userId, orderId, category: 'wash', action: `Item ${item.type} (Tag: ${item.tagId || itemId}) placed on hold for reason: ${reason}, assigned to ${assignTo}`})
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -637,6 +641,7 @@ class WashAndDryService extends BaseService {
                 body: `Order ${order.oscNumber} has been transferred to the dryer.`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+            await createAuditLog({userId, orderId, category: 'wash', action: `Order moved to drying`})
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been transferred to the dryer`,
@@ -781,6 +786,7 @@ class WashAndDryService extends BaseService {
                     ? NOTIFICATION_TYPE.ORDER_WASHING
                     : NOTIFICATION_TYPE.ORDER_IRONING,
             })
+            await createAuditLog({userId, orderId, category: 'wash', action: `Wash & dry completed, moved to ${nextStatus}`})
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been successfully processed and sent to ${nextStatus}`,
@@ -973,6 +979,7 @@ class WashAndDryService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+            await createAuditLog({userId, orderId, category: 'wash', action: `Order released from hold and returned to wash queue`})
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to wash queue',

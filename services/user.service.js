@@ -27,6 +27,7 @@ const BookOrderModel = require('../models/bookOrder.model')
 const SubscriptionModel = require('../models/subscription.model')
 const paginate = require('../util/paginate')
 const bcrypt = require('bcryptjs')
+const createAuditLog = require('../util/createAuditLog')
 
 class UserService extends BaseService {
     async getDashboard(req) {
@@ -438,6 +439,7 @@ class UserService extends BaseService {
                     error: 'User not found',
                 })
             }
+            await createAuditLog({userId, category: 'user', action: 'User deleted their account'})
 
             return BaseService.sendSuccessResponse({
                 message: 'User profile deleted successfully',

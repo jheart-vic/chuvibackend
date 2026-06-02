@@ -15,6 +15,7 @@ const {
 const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require('../util/constants')
 const FreePlanModel = require('../models/freeplan.model')
 const WalletModel = require('../models/wallet.model')
+const createAuditLog = require('../util/createAuditLog')
 
 class AuthService extends BaseService {
     async createUser(req) {
@@ -136,6 +137,7 @@ class AuthService extends BaseService {
             )
 
             // await sendSmsOtp(newUser.phoneNumber, `${otp}`);
+            await createAuditLog({userId: newUser._id, action: 'User Registration', category: 'auth'})
 
             return BaseService.sendSuccessResponse({
                 message: 'Registration successful. Please verify your email.',
@@ -184,6 +186,8 @@ class AuthService extends BaseService {
                 ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
             })
+
+            await createAuditLog({userId: user._id, action: 'User Login', category: 'auth'})
 
             return BaseService.sendSuccessResponse({
                 // message: accessToken,
@@ -288,6 +292,7 @@ class AuthService extends BaseService {
                     maxAge: 28 * 24 * 60 * 60 * 1000,
                 })
 
+                await createAuditLog({userId: userWithSub._id, action: 'Google Login', category: 'auth'})
                 return BaseService.sendSuccessResponse({
                     message: userWithSub,
                     requiresPhone: !userWithSub.phoneNumber, // ✅ using phoneNumber (not phone)
@@ -779,6 +784,8 @@ class AuthService extends BaseService {
             // Optional SMS delivery
             await sendSmsOtp(userExists.phoneNumber, `${otp}`)
 
+            await createAuditLog({userId: userExists._id, action: 'Password Reset Requested', category: 'auth'})
+
             // Send response
             return BaseService.sendSuccessResponse({
                 message: 'Password Reset Request Successful',
@@ -891,6 +898,8 @@ class AuthService extends BaseService {
             user.password = password
             await user.save()
 
+            await createAuditLog({userId: user._id, action: 'Password Reset Successful', category: 'auth'})
+
             return BaseService.sendSuccessResponse({
                 message: 'Password reset successful',
             })
@@ -978,6 +987,8 @@ class AuthService extends BaseService {
 
             await admin.save()
 
+            await createAuditLog({userId: admin._id, action: 'Admin Seeded', category: 'auth'})
+
             return BaseService.sendSuccessResponse({
                 message: '🎉 Admin seeded successfully:',
             })
@@ -1016,6 +1027,8 @@ class AuthService extends BaseService {
                 ...cookieOptions,
                 maxAge: 28 * 24 * 60 * 60 * 1000,
             })
+
+            await createAuditLog({userId: user._id, action: 'Admin Login', category: 'auth'})
 
             return BaseService.sendSuccessResponse({
                 message: user,
@@ -1070,6 +1083,7 @@ class AuthService extends BaseService {
 
             const isMatch = await user.comparePassword(password)
             if (!isMatch) {
+                await createAuditLog({userId: user._id, action: 'Failed Login Attempt', category: 'auth'})
                 return { success: false, error: 'Wrong email or password' }
             }
         }

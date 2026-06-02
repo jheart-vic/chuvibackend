@@ -19,6 +19,7 @@ const {
     ROLE,
     SERVICE_TIERS,
 } = require('../util/constants')
+const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const {
     generateOscNumber,
@@ -183,6 +184,8 @@ class IntakeUserService extends BaseService {
                 type: 'order',
                 //   alertType: "debit",
             })
+
+            await createAuditLog({userId, action: `Created order ${oscNumber} with amount ${totalPrice}`, category: 'order', orderId: newOrder._id})
 
             return BaseService.sendSuccessResponse({
                 message: newOrder,
@@ -387,6 +390,7 @@ class IntakeUserService extends BaseService {
                 userId: userId || null,
                 reference: order.oscNumber,
             })
+            await createAuditLog({userId, action: `Flagged order ${order.oscNumber} with message: ${message}`, category: 'order', orderId: order._id})
 
             // ✅ Fix 2 — only notify customer if order has a linked userId
             if (order.userId) {
@@ -469,6 +473,8 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to tag the items in the order.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+
+            await createAuditLog({userId, action: `Moved order ${order.oscNumber} to tag and queue`, category: 'order', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Order moved to tag and queue successfully',
@@ -567,6 +573,8 @@ class IntakeUserService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
+            await createAuditLog({userId, action: `Confirmed tag for item ${itemId} in order ${order.oscNumber}`, category: 'order', orderId: order._id})
+
             return BaseService.sendSuccessResponse({
                 message: 'Tag successfully confirmed',
             })
@@ -636,6 +644,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to tag the item again.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, action: `Undid tag confirmation for item ${itemId} in order ${order.oscNumber}`, category: 'order', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Tag successfully undone',
@@ -707,6 +716,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to sort and pretreat the items in the order.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, action: `Moved order ${order.oscNumber} to sort and pretreat`, category: 'order', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} successfully sent`,
@@ -790,6 +800,7 @@ class IntakeUserService extends BaseService {
                 await sendSms(order.phoneNumber, smsMessage)
             }
 
+            await createAuditLog({userId, action: `Sent top-up request of ₦${amount} for order ${order.oscNumber} with message: ${message || 'N/A'}`, category: 'order', orderId: order._id})
             return BaseService.sendSuccessResponse({
                 message: 'Top up request sent successfully',
             })
@@ -889,6 +900,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Reason: ${message}`,
                 type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
             })
+            await createAuditLog({userId, action: `Adjusted wallet with a ${type} of ₦${amount} for user ${order.userId.fullName} with message: ${message}`, category: 'wallet', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: `Wallet ${type} request successful of ${amount} Reason: ${message}`,
@@ -1024,6 +1036,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for details.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+            await createAuditLog({userId: riderId, action: `Assigned to pickup for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
@@ -1091,6 +1104,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for details.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+            await createAuditLog({userId: riderId, action: `Assigned to delivery for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
@@ -1152,6 +1166,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please review the tags and proceed to complete tagging.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, action: `Auto-generated tags for order ${order.oscNumber}`, category: 'order', orderId: order._id})
 
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
             return BaseService.sendSuccessResponse({
@@ -1216,6 +1231,7 @@ class IntakeUserService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
+            await createAuditLog({userId, action: `Completed tagging for order ${order.oscNumber}`, category: 'order', orderId: order._id})
             return BaseService.sendSuccessResponse({
                 message: 'All items tagged. Ready to send to Sort & Pretreat.',
             })
@@ -1604,6 +1620,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to tag the items in the order.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, action: `Released order ${order.oscNumber} from hold`, category: 'order', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message:
@@ -1724,6 +1741,7 @@ class IntakeUserService extends BaseService {
                     },
                 ],
             }).lean()
+            await createAuditLog({userId, action: `Resumed order ${order?.oscNumber || orderId} from draft`, category: 'order', orderId: order?._id})
 
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1964,6 +1982,7 @@ class IntakeUserService extends BaseService {
                     `Hi ${order.fullName}, your laundry order (${order.oscNumber}) has been collected. Thank you for visiting us!`,
                 )
             }
+            await createAuditLog({userId, action: `Marked order ${order.oscNumber} as collected in person`, category: 'order', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as collected successfully',
@@ -2043,6 +2062,7 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for updates.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+            await createAuditLog({userId: riderId, action: `Unassigned from pickup for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider unassigned from pickup successfully',
@@ -2059,6 +2079,7 @@ class IntakeUserService extends BaseService {
         try {
             const orderId = req.params.id
             const riderId = req.params.riderId
+            const userId = req.user.id
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
@@ -2123,6 +2144,8 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for updates.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+
+            await createAuditLog({userId, action: `Unassigned rider ${riderId} from delivery for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider unassigned from delivery successfully',

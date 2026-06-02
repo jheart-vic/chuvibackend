@@ -4,11 +4,14 @@ const SubscriptionModel = require("../models/subscription.model");
 const validateData = require("../util/validate");
 const BaseService = require("./base.service");
 const paystackAxios = require("./paystack.client.service");
+const createAuditLog = require('../util/createAuditLog');
+
 
 class SubscriptionService extends BaseService {
   async createPlan(req) {
     try {
       const post = req.body;
+      const userId = req.user.id;
 
       const validateRule = {
         title: "string|required",
@@ -45,6 +48,8 @@ class SubscriptionService extends BaseService {
 
       const newPlan = await PlanModel.create(post);
 
+      await createAuditLog({userId, description: 'subscription', action: `Created a new plan with title ${post.title}`})
+
       return BaseService.sendSuccessResponse({
         message: "Plan created successfully",
         data: newPlan,
@@ -61,6 +66,7 @@ class SubscriptionService extends BaseService {
     try {
       const planId = req.params.id;
       const post = req.body;
+      const userId = req.user.id;
 
       const plan = await PlanModel.findById(planId);
 
@@ -73,6 +79,8 @@ class SubscriptionService extends BaseService {
       const updatedPlan = await PlanModel.findByIdAndUpdate(planId, post, {
         new: true,
       });
+
+      await createAuditLog({userId, category: 'subscription', action: `Updated plan with title ${updatedPlan.title}`})
       return BaseService.sendSuccessResponse({
         message: "Plan updated successfully",
       });
@@ -95,6 +103,7 @@ class SubscriptionService extends BaseService {
       }
 
       await PlanModel.findByIdAndDelete(planId);
+      await createAuditLog({userId: req.user.id, category: 'subscription', action: `Deleted plan with title ${plan.title}`})
       return BaseService.sendSuccessResponse({
         message: "Plan deleted successfully",
       });
@@ -208,6 +217,7 @@ class SubscriptionService extends BaseService {
       }
 
       await SubscriptionModel.findByIdAndDelete(subscription._id);
+      await createAuditLog({userId, category: 'subscription', action: `Cancelled subscription with code ${sub_code}`})
 
       return BaseService.sendSuccessResponse({
         message:

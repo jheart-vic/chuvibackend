@@ -27,6 +27,7 @@ const WalletModel = require("../models/wallet.model");
 const AdminSettingModel = require("../models/adminSetting.model");
 const WalletTransactionModel = require("../models/walletTransaction.model");
 const PaymentModel = require("../models/payment.model");
+const createAuditLog = require("../util/createAuditLog");
 
 class BookOrderService extends BaseService {
   async postBookOrder(req, res) {
@@ -423,6 +424,8 @@ class BookOrderService extends BaseService {
         userId: userId || null,
         reference: oscNumber,
       });
+
+      await createAuditLog({userId: userId, action: `Created order ${oscNumber} with id ${newOrder._id}`, category: "order", orderId: newOrder._id})
       return BaseService.sendSuccessResponse({
         message: finalMessage,
         order: newOrder,
@@ -559,6 +562,8 @@ class BookOrderService extends BaseService {
         subBody: note || "",
         type: NOTIFICATION_TYPE.ORDER_UPDATED,
       });
+
+      await createAuditLog({userId: req.user.id, action: `Updated order ${bookOrder.oscNumber} to stage ${stage}`, category: "order", orderId: bookOrder._id})
 
       return BaseService.sendSuccessResponse({
         message: "Book order stage updated successfully",

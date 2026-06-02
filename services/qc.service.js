@@ -17,6 +17,7 @@ const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
 const createNotification = require('../util/createNotification')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
+const createAuditLog = require('../util/createAuditLog')
 
 class QCService extends BaseService {
     // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -291,6 +292,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, orderId, category: 'qc', action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`})
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -390,6 +392,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, orderId, category: 'qc', action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`})
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) QC status undone`,
@@ -459,6 +462,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, orderId, category: 'qc', action: 'Order passed QC and sent to Pack & Seal'})
 
             return BaseService.sendSuccessResponse({
                 message: 'Order passed QC and sent to Pack & Seal',
@@ -818,6 +822,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+            await createAuditLog({userId, orderId, category: 'qc', action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`})
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -1010,6 +1015,7 @@ class QCService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+            await createAuditLog({userId, orderId, category: 'qc', action: 'Order released from hold and returned to QC queue'})
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to QC queue',

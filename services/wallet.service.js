@@ -12,6 +12,7 @@ const paginate = require("../util/paginate");
 const { generateReferenceId } = require("../util/helper");
 const createNotification = require("../util/createNotification");
 const { NOTIFICATION_TYPE } = require("../util/constants");
+const createAuditLog = require("../util/createAuditLog");
 
 class WalletService extends BaseService {
   async walletTopUp(req, res) {
@@ -75,6 +76,7 @@ class WalletService extends BaseService {
       //   body: `Your wallet top-up of ₦${amount / 100} has been initiated. Please complete the payment to add funds to your wallet.`,
       //   type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
       // })
+      await createAuditLog({userId, action: `Initiated wallet top-up of ₦${amount} with reference ${reference}`, category: 'wallet'})
 
       return BaseService.sendSuccessResponse({
         message: response.data,
@@ -375,6 +377,7 @@ async fetchUserTransactions(req) {
         body: `Your payment proof for ₦${amount} has been uploaded successfully. Our team will verify it shortly.`,
         type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
       })
+      await createAuditLog({userId, action: `Uploaded payment proof for ₦${amount} with reference ${reference}`, category: 'wallet'})
 
       return BaseService.sendSuccessResponse({message: 'Payment proof uploaded successfully. Awaiting verification.'})
 
