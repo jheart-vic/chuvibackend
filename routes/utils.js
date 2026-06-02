@@ -5,6 +5,7 @@ const {
   ROUTE_IMAGE_UPLOAD_MULTIPLE,
   ROUTE_IMAGE_UPLOAD_SINGLE,
   ROUTE_GET_HOLD_REASONS,
+  ROUTE_REPORT_DELIVERY_ISSUES,
 } = require("../util/page-route");
 
 const router = require("express").Router();
@@ -190,5 +191,70 @@ router.get(ROUTE_GET_HOLD_REASONS, auth, (req, res) => {
     return utilController.getHoldReasons(req, res)
 })
 
+/**
+ * @swagger
+ * /utils/order/{id}/report-issue:
+ *   patch:
+ *     summary: Report a delivery or pickup issue
+ *     description: |
+ *       Unified endpoint for reporting dispatch issues from three sources:
+ *
+ *       - **pickup_problem** — raised by rider or intake staff when pickup fails
+ *       - **delivery_problem** — raised by rider when delivery fails
+ *       - **walkin_problem** — raised by front desk when walk-in collection fails
+ *
+ *       All three feed the `deliveryIssues` count on the admin dashboard.
+ *       Sets the appropriate dispatch failure status on the order.
+ *     tags:
+ *       - Utils
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [issueType]
+ *             properties:
+ *               issueType:
+ *                 type: string
+ *                 enum: [pickup_problem, delivery_problem, walkin_problem]
+ *                 example: "delivery_problem"
+ *                 description: Source and type of the issue
+ *               note:
+ *                 type: string
+ *                 example: "Customer not at address, phone unreachable"
+ *                 description: Optional explanation of what happened
+ *     responses:
+ *       200:
+ *         description: Delivery issue reported successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Delivery issue reported successfully"
+ *       400:
+ *         description: |
+ *           - Order ID is required
+ *           - issueType is required or invalid
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_REPORT_DELIVERY_ISSUES, auth, (req, res) => {
+    const utilController = new UtilController()
+    return utilController.reportDeliveryIssue(req, res)
+})
 
 module.exports = router;

@@ -113,6 +113,115 @@ class UtilService extends BaseService {
             })
         }
     }
+
+    async reportDeliveryIssue(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+            const { issueType, note = '' } = req.body
+
+            // issueType: 'pickup_problem' | 'delivery_problem' | 'walkin_problem'
+            const allowedIssueTypes = [
+                'pickup_problem',
+                'delivery_problem',
+                'walkin_problem',
+            ]
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+            if (!issueType || !allowedIssueTypes.includes(issueType))
+                return BaseService.sendFailedResponse({
+                    error: `issueType must be one of: ${allowedIssueTypes.join(', ')}`,
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            const now = new Date()
+
+            // set the appropriate dispatch failure status
+            if (issueType === 'pickup_problem') {
+                await BookOrderModel.findByIdAndUpdate(
+                    orderId,
+                    {
+                        $set: {
+                            'dispatchDetails.pickup.status':
+                                PICKUP_STATUS.FAILED,
+                            'dispatchDetails.pickup.note': note,
+                            'dispatchDetails.pickup.updatedAt': now,
+                        },
+                    },
+                    { runValidators: false },
+                )
+            } else if (issueType === 'delivery_problem') {
+                await BookOrderModel.findByIdAndUpdate(
+                    orderId,
+                    {
+                        $set: {
+                            'dispatchDetails.delivery.status':
+                                DELIVERY_STATUS.FAILED,
+                            'dispatchDetails.delivery.note': note,
+                            'dispatchDetails.delivery.updatedAt': now,
+                        },
+                    },
+                    { runValidators: false },
+                )
+            } else if (issueType === 'walkin_problem') {
+                // walk-in collection failed — log it but keep stage as READY
+                await BookOrderModel.findByIdAndUpdate(
+                    orderId,
+                    {
+                        $set: {
+                            'dispatchDetails.delivery.status':
+                                DELIVERY_STATUS.FAILED,
+                            'dispatchDetails.delivery.note': `Walk-in collection failed: ${note}`,
+                            'dispatchDetails.delivery.updatedAt': now,
+                        },
+                    },
+                    { runValidators: false },
+                )
+            }
+
+            await ActivityModel.create({
+                title: 'Delivery Issue Reported',
+                description: `${issueType.replace(/_/g, ' ')} reported for order ${order.oscNumber} by ${user.fullName}.${note ? ` Note: ${note}` : ''}`,
+                type: ACTIVITY_TYPE.ORDER_DELIVERED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
+
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Delivery Update',
+                    body: `There was an issue with your order ${order.oscNumber}. Our team has been notified and will follow up.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: 'Delivery issue reported successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to report delivery issue',
+            })
+        }
+    }
 }
 
 module.exports = UtilService

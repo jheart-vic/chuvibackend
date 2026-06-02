@@ -7,6 +7,7 @@ const {
   generateOscNumber,
   generateReferenceId,
   roundToNearestHundred,
+  calculateDueDate,
 } = require("../util/helper");
 const SubscriptionModel = require("../models/subscription.model");
 const { v4: uuidv4 } = require("uuid");
@@ -183,6 +184,7 @@ class BookOrderService extends BaseService {
           paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
           paymentDate: new Date(),
           ...post,
+         deliveryDate: calculateDueDate(post.deliverySpeed),
         };
 
         newOrder = new BookOrderModel(newOrderItem);
