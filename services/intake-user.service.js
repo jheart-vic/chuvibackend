@@ -153,7 +153,7 @@ class IntakeUserService extends BaseService {
                 ],
                 ...(customerId && { userId: customerId }),
                 ...post,
-               deliveryDate: calculateDueDate(post.deliverySpeed),
+                deliveryDate: calculateDueDate(post.deliverySpeed),
             }
             const newOrder = new BookOrderModel(newOrderItem)
             await newOrder.save()
@@ -1301,25 +1301,67 @@ class IntakeUserService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
             const skip = (Number(page) - 1) * Number(limit)
 
-            const query = {
+            const baseConditions = {
                 'stage.status': ORDER_STATUS.QUEUE,
-                $and: [
-                    { items: { $elemMatch: { tagStatus: 'complete' } } },
+                $or: [
+                    // partially tagged — some complete, some not
+                    {
+                        $and: [
+                            {
+                                items: {
+                                    $elemMatch: { tagStatus: 'complete' },
+                                },
+                            },
+                            {
+                                items: {
+                                    $elemMatch: {
+                                        tagStatus: { $ne: 'complete' },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    // fully tagged but not yet moved to sort & pretreat
                     {
                         items: {
-                            $elemMatch: { tagStatus: { $ne: 'complete' } },
+                            $not: {
+                                $elemMatch: { tagStatus: { $ne: 'complete' } },
+                            },
                         },
                     },
                 ],
             }
 
-            if (search) {
-                query.$or = [
-                    { oscNumber: { $regex: search, $options: 'i' } },
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { phoneNumber: { $regex: search, $options: 'i' } },
-                ]
-            }
+            const query = search
+                ? {
+                      ...baseConditions,
+                      $and: [
+                          ...(baseConditions.$and || []),
+                          {
+                              $or: [
+                                  {
+                                      oscNumber: {
+                                          $regex: search,
+                                          $options: 'i',
+                                      },
+                                  },
+                                  {
+                                      fullName: {
+                                          $regex: search,
+                                          $options: 'i',
+                                      },
+                                  },
+                                  {
+                                      phoneNumber: {
+                                          $regex: search,
+                                          $options: 'i',
+                                      },
+                                  },
+                              ],
+                          },
+                      ],
+                  }
+                : baseConditions
 
             const [orders, total] = await Promise.all([
                 BookOrderModel.find(query)
@@ -1333,16 +1375,22 @@ class IntakeUserService extends BaseService {
                 BookOrderModel.countDocuments(query),
             ])
 
-            const ordersWithMeta = orders.map((order) => ({
-                ...order,
-                itemCount: order.items.length,
-                taggedCount: order.items.filter(
+            const ordersWithMeta = orders.map((order) => {
+                const taggedCount = order.items.filter(
                     (i) => i.tagStatus === 'complete',
-                ).length,
-                untaggedCount: order.items.filter(
+                ).length
+                const untaggedCount = order.items.filter(
                     (i) => i.tagStatus !== 'complete',
-                ).length,
-            }))
+                ).length
+
+                return {
+                    ...order,
+                    itemCount: order.items.length,
+                    taggedCount,
+                    untaggedCount,
+                    fullyTagged: untaggedCount === 0, // true = ready to proceed, false = still tagging
+                }
+            })
 
             return BaseService.sendSuccessResponse({
                 message: {
