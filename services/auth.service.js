@@ -254,7 +254,9 @@ class AuthService extends BaseService {
         // }
 
         // Keep provider consistent
-        userWithSub.servicePlatform = SERVICE_PLATFORM.GOOGLE;
+        if(!userWithSub.servicePlatform){
+            userWithSub.servicePlatform = SERVICE_PLATFORM.GOOGLE;
+        }
         userWithSub.googleId = userWithSub.googleId || googleId;
 
         // Fill missing profile info
