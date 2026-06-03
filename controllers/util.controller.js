@@ -27,6 +27,14 @@ class UtilController extends BaseController{
         }
         return BaseController.sendSuccessResponse(res, holdReasons.data)
     }
+    async reportDeliveryIssue(req, res){
+        const utilService = new UtilService()
+        const deliveryIssue = await utilService.reportDeliveryIssue(req)
+        if(!deliveryIssue.success){
+            return BaseController.sendFailedResponse(res, deliveryIssue.data)
+        }
+        return BaseController.sendSuccessResponse(res, deliveryIssue.data)
+    }
 }
 
 module.exports = UtilController;

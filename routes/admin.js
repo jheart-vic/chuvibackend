@@ -26,8 +26,7 @@ const {
     ROUTE_DELETE_ORDER_ITEM_ID,
     ROUTE_UPDATE_ORDER_DETAILS,
     ROUTE_UPDATE_ADMIN_SETTING,
-    ROUTE_GET_ADMIN_SETTING,
-    ROUTE_GET_AUDIT_LOGS
+    ROUTE_GET_ADMIN_SETTING
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -1024,7 +1023,13 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT, adminAuth, (req, res)=>{
  *     summary: Get orders filtered by operational state
  *     tags:
  *       - Admin
- *     description: Retrieves paginated orders based on logistics state such as delivery, pickup, assignment, or completion status.
+ *     description: |
+ *       Retrieves paginated orders based on logistics state.
+ *       Optionally filter by date range using startDate and endDate.
+ *
+ *       **Examples:**
+ *       - All delivery orders: `/admin/orders/by-state?type=delivery`
+ *       - Delivered in May: `/admin/orders/by-state?type=delivered&startDate=2026-05-01&endDate=2026-05-31`
  *     parameters:
  *       - in: query
  *         name: type
@@ -1034,16 +1039,22 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT, adminAuth, (req, res)=>{
  *           enum: [all, delivery, pendingPickup, assigned, delivered]
  *         description: Type of order state filter
  *       - in: query
+ *         name: startDate
+ *         required: false
+ *         schema: { type: string, format: date, example: "2026-05-01" }
+ *         description: Filter orders created on or after this date
+ *       - in: query
+ *         name: endDate
+ *         required: false
+ *         schema: { type: string, format: date, example: "2026-05-31" }
+ *         description: Filter orders created on or before this date
+ *       - in: query
  *         name: page
- *         schema:
- *           type: integer
- *           default: 1
+ *         schema: { type: integer, default: 1 }
  *         description: Page number for pagination
  *       - in: query
  *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
+ *         schema: { type: integer, default: 10 }
  *         description: Number of orders per page
  *     responses:
  *       200:
@@ -1061,80 +1072,70 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT, adminAuth, (req, res)=>{
  *                       items:
  *                         type: object
  *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "+1234567890"
- *                           pickupAddress:
- *                             type: string
- *                             example: "123 Main Street"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
+ *                           _id:          { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *                           fullName:     { type: string, example: "John Doe" }
+ *                           phoneNumber:  { type: string, example: "+1234567890" }
+ *                           pickupAddress: { type: string, example: "123 Main Street" }
+ *                           deliveryDate: { type: string, format: date }
  *                           stage:
  *                             type: object
  *                             properties:
- *                               status:
- *                                 type: string
- *                                 example: "out-for-delivery"
+ *                               status: { type: string, example: "out-for-delivery" }
  *                           dispatchDetails:
  *                             type: object
  *                             properties:
  *                               pickup:
  *                                 type: object
  *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "dispatched"
+ *                                   status: { type: string, example: "scheduled" }
  *                               delivery:
  *                                 type: object
  *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "in-progress"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
+ *                                   status: { type: string, example: "out-for-delivery" }
+ *                           createdAt: { type: string, format: date-time }
  *                     pagination:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 120
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         totalPages:
- *                           type: integer
- *                           example: 12
+ *                         total:      { type: integer, example: 120 }
+ *                         page:       { type: integer, example: 1 }
+ *                         limit:      { type: integer, example: 10 }
+ *                         totalPages: { type: integer, example: 12 }
  *       400:
- *         description: Invalid type supplied
+ *         description: Invalid or missing type parameter
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_ADMIN_ORDER_BY_STATE, adminAuth, (req, res)=>{
-    const adminController = new AdminController();
-    return adminController.getOrdersByState(req, res);
-});
+router.get(ROUTE_ADMIN_ORDER_BY_STATE, adminAuth, (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getOrdersByState(req, res)
+})
 
 /**
  * @swagger
  * /admin/dispatch/data-count:
  *   get:
- *     summary: Get dispatch dashboard counts
+ *     summary: Get dispatch dashboard counts with per-day breakdown
  *     tags:
  *       - Admin
- *     description: Returns summary counts for dispatch operations including pending pickups, assigned orders, and delivered orders.
+ *     description: |
+ *       Returns summary counts and per-day breakdown for dispatch operations.
+ *       Defaults to today if no date range is provided.
+ *
+ *       **Examples:**
+ *       - Today only: `/admin/dispatch/data-count`
+ *       - From date: `/admin/dispatch/data-count?startDate=2026-06-01`
+ *       - Full range: `/admin/dispatch/data-count?startDate=2026-05-01&endDate=2026-05-31`
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: false
+ *         schema: { type: string, format: date, example: "2026-05-01" }
+ *         description: Start of date range (defaults to today)
+ *       - in: query
+ *         name: endDate
+ *         required: false
+ *         schema: { type: string, format: date, example: "2026-05-31" }
+ *         description: End of date range (defaults to today)
  *     responses:
  *       200:
  *         description: Dispatch counts retrieved successfully
@@ -1146,22 +1147,52 @@ router.get(ROUTE_ADMIN_ORDER_BY_STATE, adminAuth, (req, res)=>{
  *                 message:
  *                   type: object
  *                   properties:
- *                     pendingPickupOrders:
- *                       type: integer
- *                       example: 25
- *                     assignedOrders:
- *                       type: integer
- *                       example: 40
- *                     deliveredOrders:
- *                       type: integer
- *                       example: 120
+ *                     range:
+ *                       type: object
+ *                       properties:
+ *                         from: { type: string, format: date-time }
+ *                         to:   { type: string, format: date-time }
+ *                     totals:
+ *                       type: object
+ *                       properties:
+ *                         pendingPickupOrders: { type: integer, example: 5 }
+ *                         scheduledPickups:    { type: integer, example: 8 }
+ *                         inProgressPickups:   { type: integer, example: 3 }
+ *                         pickedUpToday:       { type: integer, example: 12 }
+ *                         outForDelivery:      { type: integer, example: 6 }
+ *                         deliveredToday:      { type: integer, example: 20 }
+ *                         deliveryFailed:      { type: integer, example: 1 }
+ *                     dayBreakdown:
+ *                       type: object
+ *                       properties:
+ *                         pickedUp:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:   { type: string, example: "2026-05-28" }
+ *                               count: { type: integer, example: 4 }
+ *                         delivered:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:   { type: string, example: "2026-05-28" }
+ *                               count: { type: integer, example: 7 }
+ *                         failed:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:   { type: string, example: "2026-05-28" }
+ *                               count: { type: integer, example: 1 }
  *       500:
  *         description: Server error
  */
-router.get(ROUTE_ADMIN_DISPATCH_DATA_COUNT, adminAuth, (req, res)=>{
-    const adminController = new AdminController();
-    return adminController.getDispatchAdminDataCount(req, res);
-});
+router.get(ROUTE_ADMIN_DISPATCH_DATA_COUNT, adminAuth, (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getDispatchAdminDataCount(req, res)
+})
 
 /**
  * @swagger
@@ -1264,46 +1295,47 @@ router.get(ROUTE_HOLD_ORDERS, adminAuth, (req, res)=>{
 
 /**
  * @swagger
- * /admin/orders/{id}/reassign-station:
- *   put:
- *     summary: Reassign order to a different processing station
+ * /admin/order/{id}/send-to-hold:
+ *   patch:
+ *     summary: Admin raises a hold on any order
+ *     description: |
+ *       Admin can place any order on hold regardless of its current stage,
+ *       assign it to a specific station to resolve, and add a reason and note.
+ *       Unlike station-level holds this acts on the whole order not a single item.
  *     tags:
  *       - Admin
- *     description: Moves an order to a specific internal station (intake, sorting, washing, ironing, QC) and updates its stage history with an admin note.
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *         description: Unique order ID
- *       - in: query
- *         name: type
- *         required: true
- *         schema:
- *           type: string
- *           enum:
- *             [
- *               intake-and-tag-station,
- *               sort-and-pretreat-station,
- *               wash-and-dry-station,
- *               pressing-and-ironing-station,
- *               qc-station
- *             ]
- *         description: Target station to reassign the order to
- *       - in: body
- *         name: note
- *         required: true
- *         schema:
- *           type: object
- *           properties:
- *             note:
- *               type: string
- *               example: "Reassigned due to missing tags"
- *         description: Admin note explaining the reassignment
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason, assignTo]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 example: "item_missing"
+ *                 description: Reason for hold — free text, use hold-reasons endpoint for suggestions
+ *               assignTo:
+ *                 type: string
+ *                 enum: [admin, intake-and-tag, sort-and-pretreat, wash-and-dry, press, qc]
+ *                 example: "intake-and-tag"
+ *                 description: Station role responsible for resolving the hold
+ *               note:
+ *                 type: string
+ *                 example: "Customer declared 5 shirts but only 4 received"
+ *                 description: Optional additional explanation
  *     responses:
  *       200:
- *         description: Order reassigned successfully
+ *         description: Order placed on hold successfully
  *         content:
  *           application/json:
  *             schema:
@@ -1311,18 +1343,166 @@ router.get(ROUTE_HOLD_ORDERS, adminAuth, (req, res)=>{
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Order OSC12345 has been assigned and sent to be resolved"
+ *                   example: "Order placed on hold successfully"
  *       400:
- *         description: Invalid input (missing orderId, note, or invalid station type)
+ *         description: Missing reason, assignTo, or invalid assignTo value
  *       404:
  *         description: Order not found
  *       500:
  *         description: Server error
  */
-router.put(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res)=>{
-    const adminController = new AdminController();
-    return adminController.reAssignOrderStation(req, res);
-});
+router.patch(ROUTE_ADMIN_SEND_TO_HOLD_ORDERS, adminAuth, (req, res) => {
+    const adminController = new AdminController()
+    return adminController.adminSendToHold(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/orders/{id}/reassign-station:
+ *   patch:
+ *     summary: Reassign a held order to a different station
+ *     description: |
+ *       Shifts the hold to another station without closing it.
+ *       The hold remains open — only stationStatus changes so the target
+ *       station can see and action it. stage.status stays HOLD throughout.
+ *
+ *       **Order must currently be in HOLD status.**
+ *       Use `/admin/resolve-order-hold` to close the hold completely.
+ *     tags:
+ *       - Admin
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *       - in: query
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - intake-and-tag-station
+ *             - sort-and-pretreat-station
+ *             - wash-and-dry-station
+ *             - pressing-and-ironing-station
+ *             - qc-station
+ *         description: Target station to reassign the hold to
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [note]
+ *             properties:
+ *               note:
+ *                 type: string
+ *                 example: "Reassigned to intake — tags need to be re-verified"
+ *     responses:
+ *       200:
+ *         description: Hold reassigned successfully — hold remains open
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order OSC-20260528-123456 hold reassigned to intake-and-tag-station"
+ *       400:
+ *         description: |
+ *           - Order is not currently on hold
+ *           - Missing note
+ *           - Invalid station type
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res) => {
+    const adminController = new AdminController()
+    return adminController.reAssignOrderStation(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/order/{id}/resolve-hold:
+ *   patch:
+ *     summary: Resolve a hold and return order to normal flow
+ *     description: |
+ *       Closes the hold completely and returns the order to the specified
+ *       station's normal processing flow. stage.status changes from HOLD
+ *       back to the station's active ORDER_STATUS.
+ *
+ *       **Order must currently be in HOLD status.**
+ *
+ *       Station → ORDER_STATUS mapping:
+ *       - `intake-and-tag-station`        → queue
+ *       - `sort-and-pretreat-station`     → sort-and-pretreat
+ *       - `wash-and-dry-station`          → washing
+ *       - `pressing-and-ironing-station`  → ironing
+ *       - `qc-station`                    → qc
+ *     tags:
+ *       - Admin
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - intake-and-tag-station
+ *             - sort-and-pretreat-station
+ *             - wash-and-dry-station
+ *             - pressing-and-ironing-station
+ *             - qc-station
+ *         description: Station the order returns to after hold is resolved
+ *       - in: query
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *         description: Order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [note]
+ *             properties:
+ *               note:
+ *                 type: string
+ *                 example: "Missing item has been located and added to the order"
+ *     responses:
+ *       200:
+ *         description: Hold resolved — order returned to normal flow
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Order OSC-20260528-123456 hold resolved. Returned to qc-station"
+ *       400:
+ *         description: |
+ *           - Order is not currently on hold
+ *           - Missing resolution note
+ *           - Invalid station type
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(ROUTE_ADMIN_RESOLVE_ORDER_HOLD, adminAuth, (req, res) => {
+    const adminController = new AdminController()
+    return adminController.resolveOrderHold(req, res)
+})
 
 /**
  * @swagger

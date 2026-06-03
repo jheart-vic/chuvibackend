@@ -172,6 +172,8 @@ exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT = '/payment/:id/reject'
 exports.ROUTE_ADMIN_ORDER_BY_STATE = '/orders/by-state'
 exports.ROUTE_ADMIN_DISPATCH_DATA_COUNT = '/dispatch/data-count'
 exports.ROUTE_HOLD_ORDERS = '/hold-orders'
+exports.ROUTE_ADMIN_SEND_TO_HOLD_ORDERS = '/order/:id/send-to-hold'
+exports.ROUTE_ADMIN_RESOLVE_ORDER_HOLD = '/order/:id/resolve-hold'
 exports.ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION = '/orders/:id/reassign-station'
 exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/:id/add-fund'
 exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/:id/deduct-fund'
@@ -254,6 +256,8 @@ exports.ROUTE_RIDER_MARK_PICKUP_ID         = '/mark-pickup/:id'
 exports.ROUTE_RIDER_MARK_PICKUP_FAILED_ID   = '/mark-pickup-failed/:id'
 exports.ROUTE_RIDER_HISTORY                = '/orders/history'
 exports.ROUTE_RIDER_HISTORY_TIMELINE       = '/order/history/:id/timeline'
+exports.ROUTE_REPORT_DELIVERY_ISSUES       = '/order/:id/report-issue'
+
 
 //Notifications
 exports.ROUTE_GET_ALL_USER_NOTIFICATIONS       = '/'
