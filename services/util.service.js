@@ -127,7 +127,7 @@ class UtilService extends BaseService {
             const userId = req.user.id
             const { issueType, note = '' } = req.body
 
-            // issueType: 'pickup_problem' | 'delivery_problem' | 'walkin_problem'
+
             const allowedIssueTypes = [
                 'pickup_problem',
                 'delivery_problem',
