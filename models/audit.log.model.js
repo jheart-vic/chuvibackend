@@ -3,8 +3,8 @@ const { Schema, model } = require("mongoose");
 const { AUDIT_LOG_CATEGORIES } = require("../util/constants");
 
 const AuditLogSchema = new Schema({
-    userId: { type: String, required: true, index: true },
-    action: { type: String, required: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    action: { type: Schema.Types.ObjectId, ref: 'BookOrder', required: true, index: true },
     orderId: { type: String, index: true },
     category: { 
       type: String, 

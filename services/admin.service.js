@@ -1,6 +1,7 @@
 const ActivityModel = require('../models/activity.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const AdminSettingModel = require('../models/adminSetting.model')
+const AuditLogModel = require('../models/audit.log.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
 const OrderItemModel = require('../models/orderItem.model')
@@ -2049,6 +2050,26 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({
                 error: 'Failed to place order on hold',
             })
+        }
+    }
+
+    async getAuditLogs(req){
+        try {
+            const auditLogs = await AuditLogModel.find({})
+            const result = await paginate(
+                AuditLogModel, {},
+                {
+                    page: req.query.page,
+                    limit: req.query.limit,
+                    sort: { createdAt: -1 },
+                    populate: [{ path: 'userId' }, { path: 'orderId' }],
+                },
+            )
+
+            return BaseService.sendSuccessResponse({message: auditLogs})
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong fetching the audit logs'})
         }
     }
 }
