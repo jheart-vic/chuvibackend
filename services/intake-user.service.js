@@ -215,16 +215,33 @@ class IntakeUserService extends BaseService {
                     // drafts — matches getDrafts exactly
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.QUEUE,
-                        $and: [
+                        $or: [
+                            // partially tagged — some complete, some not
                             {
-                                items: {
-                                    $elemMatch: { tagStatus: 'complete' },
-                                },
+                                $and: [
+                                    {
+                                        items: {
+                                            $elemMatch: {
+                                                tagStatus: 'complete',
+                                            },
+                                        },
+                                    },
+                                    {
+                                        items: {
+                                            $elemMatch: {
+                                                tagStatus: { $ne: 'complete' },
+                                            },
+                                        },
+                                    },
+                                ],
                             },
+                            // fully tagged but not yet moved to sort & pretreat
                             {
                                 items: {
-                                    $elemMatch: {
-                                        tagStatus: { $ne: 'complete' },
+                                    $not: {
+                                        $elemMatch: {
+                                            tagStatus: { $ne: 'complete' },
+                                        },
                                     },
                                 },
                             },
