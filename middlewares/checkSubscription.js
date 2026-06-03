@@ -3,7 +3,7 @@ const SubscriptionModel = require("../models/subscription.model");
 async function checkSubscription(req, res, next) {
   if (req.body.billingType == "pay-from-subscription") {
     const sub = await SubscriptionModel.findOne({
-      user: req.user.id,
+      userId: req.user.id,
       status: "active",
     });
 

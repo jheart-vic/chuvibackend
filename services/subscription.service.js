@@ -252,13 +252,14 @@ class SubscriptionService extends BaseService {
         ],
       };
 
+      
       let subscription = await SubscriptionModel.findOne(filter).populate(
         "planId"
       );
 
       if (!subscription) {
         return BaseService.sendSuccessResponse({
-          message: "No active subscription",
+          message: "No active subscription1",
           subscription: null,
         });
       }
@@ -305,7 +306,6 @@ class SubscriptionService extends BaseService {
           (sub) =>
             sub && sub.plan?.plan_code === subscription.paystackSubscriptionId
         );
-        console.log({ matchedSub });
 
         if (matchedSub && matchedSub.status !== "active") {
           // await SubscriptionModel.findByIdAndDelete(subscription._id);
@@ -315,7 +315,6 @@ class SubscriptionService extends BaseService {
           });
         }
 
-        console.log(matchedSub, "matched subscription details");
         if (matchedSub) {
           if (!subscription.subscriptionCode) {
             subscription.subscriptionCode = matchedSub.subscription_code;
@@ -330,20 +329,21 @@ class SubscriptionService extends BaseService {
 
           await subscription.save(); // ✅ single save
           subscription = subscription.toObject();
-        } else {
-          await SubscriptionModel.findByIdAndDelete(subscription._id);
-          return BaseService.sendFailedResponse({
-            error:
-              "Your subscription is no longer active, please subscribe again to continue enjoying our services",
-          });
         }
-      }else{
-        await SubscriptionModel.findByIdAndDelete(subscription._id);
-        return BaseService.sendSuccessResponse({
-            message: "Your subscription is no longer active, please subscribe again to continue enjoying our services",
-            subscription,
-          });
+        //  else {
+        //   return BaseService.sendFailedResponse({
+        //     error:
+        //       "Your subscription is no longer active, please subscribe again to continue enjoying our services",
+        //   });
+        // }
       }
+      // else{
+      //   // await SubscriptionModel.findByIdAndDelete(subscription._id);
+      //   // return BaseService.sendSuccessResponse({
+      //   //     message: "Your subscription is no longer active, please subscribe again to continue enjoying our services",
+      //   //     subscription,
+      //   //   });
+      // }
 
 
       return BaseService.sendSuccessResponse({
