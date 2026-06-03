@@ -17,6 +17,7 @@ const {
     PICKUP_STATUS,
     STATION_STATUS,
     NOTIFICATION_TYPE,
+    DELIVERY_SPEED,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const paginate = require('../util/paginate')
@@ -1341,6 +1342,7 @@ class AdminService extends BaseService {
                 limit,
                 sort: { 'stage.updatedAt': 1 },
                 populate: [{ path: 'userId' }],
+                lean: true,
             })
 
             const enriched = result.data.map((order) => {
