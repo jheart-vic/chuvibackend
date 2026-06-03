@@ -26,7 +26,8 @@ const {
     ROUTE_DELETE_ORDER_ITEM_ID,
     ROUTE_UPDATE_ORDER_DETAILS,
     ROUTE_UPDATE_ADMIN_SETTING,
-    ROUTE_GET_ADMIN_SETTING
+    ROUTE_GET_ADMIN_SETTING,
+    ROUTE_ADMIN_SEND_TO_HOLD_ORDERS
 } = require("../util/page-route");
 const router = require("express").Router();
 
