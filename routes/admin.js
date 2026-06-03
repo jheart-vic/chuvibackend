@@ -27,7 +27,9 @@ const {
     ROUTE_UPDATE_ORDER_DETAILS,
     ROUTE_UPDATE_ADMIN_SETTING,
     ROUTE_GET_ADMIN_SETTING,
-    ROUTE_ADMIN_SEND_TO_HOLD_ORDERS
+    ROUTE_ADMIN_SEND_TO_HOLD_ORDERS,
+    ROUTE_ADMIN_RESOLVE_ORDER_HOLD,
+    ROUTE_GET_AUDIT_LOGS
 } = require("../util/page-route");
 const router = require("express").Router();
 
