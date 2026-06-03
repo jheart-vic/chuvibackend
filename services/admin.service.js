@@ -18,6 +18,7 @@ const {
     PICKUP_STATUS,
     STATION_STATUS,
     NOTIFICATION_TYPE,
+    DELIVERY_SPEED,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const paginate = require('../util/paginate')
