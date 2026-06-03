@@ -1343,6 +1343,7 @@ class AdminService extends BaseService {
                 limit,
                 sort: { 'stage.updatedAt': 1 },
                 populate: [{ path: 'userId' }],
+                lean: true,
             })
 
             const enriched = result.data.map((order) => {
