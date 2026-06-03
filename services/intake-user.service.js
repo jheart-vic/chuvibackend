@@ -1781,12 +1781,30 @@ class IntakeUserService extends BaseService {
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.QUEUE,
-                items: { $elemMatch: { tagStatus: 'complete' } },
-                // at least one still untagged — confirming it's still a draft
-                $and: [
+                $or: [
+                    // partially tagged
+                    {
+                        $and: [
+                            {
+                                items: {
+                                    $elemMatch: { tagStatus: 'complete' },
+                                },
+                            },
+                            {
+                                items: {
+                                    $elemMatch: {
+                                        tagStatus: { $ne: 'complete' },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    // fully tagged but not yet moved
                     {
                         items: {
-                            $elemMatch: { tagStatus: { $ne: 'complete' } },
+                            $not: {
+                                $elemMatch: { tagStatus: { $ne: 'complete' } },
+                            },
                         },
                     },
                 ],
@@ -1799,7 +1817,7 @@ class IntakeUserService extends BaseService {
                 })
 
             return BaseService.sendSuccessResponse({
-                message: order, // frontend uses this to navigate to the tagging screen
+                message: order,
             })
         } catch (error) {
             console.log(error)
