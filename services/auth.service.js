@@ -187,7 +187,7 @@ class AuthService extends BaseService {
                 maxAge: 28 * 24 * 60 * 60 * 1000,
             })
 
-            await createAuditLog({userId: user._id, action: 'User Login', category: 'auth'})
+            // await createAuditLog({userId: user._id, action: 'User Login', category: 'auth'})
 
             return BaseService.sendSuccessResponse({
                 // message: accessToken,

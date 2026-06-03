@@ -308,7 +308,7 @@ class SubscriptionService extends BaseService {
         console.log({ matchedSub });
 
         if (matchedSub && matchedSub.status !== "active") {
-          await SubscriptionModel.findByIdAndDelete(subscription._id);
+          // await SubscriptionModel.findByIdAndDelete(subscription._id);
           return BaseService.sendFailedResponse({
             error:
               "Your subscription is no longer active, please subscribe again to continue enjoying our services",
