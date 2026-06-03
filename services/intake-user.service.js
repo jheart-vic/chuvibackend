@@ -237,6 +237,7 @@ class IntakeUserService extends BaseService {
                             },
                             // fully tagged but not yet moved to sort & pretreat
                             {
+                                'items.0': { $exists: true },
                                 items: {
                                     $not: {
                                         $elemMatch: {
@@ -1340,6 +1341,7 @@ class IntakeUserService extends BaseService {
                     },
                     // fully tagged but not yet moved to sort & pretreat
                     {
+                        'items.0': { $exists: true },
                         items: {
                             $not: {
                                 $elemMatch: { tagStatus: { $ne: 'complete' } },
@@ -1801,6 +1803,7 @@ class IntakeUserService extends BaseService {
                     },
                     // fully tagged but not yet moved
                     {
+                        'items.0': { $exists: true },
                         items: {
                             $not: {
                                 $elemMatch: { tagStatus: { $ne: 'complete' } },
