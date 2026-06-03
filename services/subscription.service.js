@@ -235,6 +235,7 @@ class SubscriptionService extends BaseService {
   async getCurrentSubscription(req) {
     try {
       const userId = req.user.id;
+      console.log(userId)
 
       const user = await UserModel.findById(userId);
       if (!user) {
