@@ -1,6 +1,7 @@
 const ActivityModel = require('../models/activity.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const AdminSettingModel = require('../models/adminSetting.model')
+const AuditLogModel = require('../models/audit.log.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
 const OrderItemModel = require('../models/orderItem.model')
@@ -1737,6 +1738,15 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({
                 error: 'Something went wrong. Please try again later',
             })
+        }
+    }
+    async getAuditLogs(req){
+        try {
+            const auditLogs = await AuditLogModel.find({})
+            return BaseService.sendSuccessResponse({message: auditLogs})
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({error: 'Something went wrong fetching audit logs'})
         }
     }
 }

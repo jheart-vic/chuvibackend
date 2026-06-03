@@ -26,7 +26,8 @@ const {
     ROUTE_DELETE_ORDER_ITEM_ID,
     ROUTE_UPDATE_ORDER_DETAILS,
     ROUTE_UPDATE_ADMIN_SETTING,
-    ROUTE_GET_ADMIN_SETTING
+    ROUTE_GET_ADMIN_SETTING,
+    ROUTE_GET_AUDIT_LOGS
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -2006,6 +2007,94 @@ router.get(ROUTE_GET_ORDER_ITEM_ID, [auth], (req, res) => {
 router.delete(ROUTE_DELETE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.deleteItem(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/audit-logs:
+ *   get:
+ *     summary: Get all audit logs
+ *     tags:
+ *       - Admin
+ *     description: Retrieve a list of system audit logs with optional filtering.
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter logs by the ID of the user who performed the action.
+ *       - in: query
+ *         name: action
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter logs by specific action type.
+ *       - in: query
+ *         name: orderId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter logs related to a specific order ID.
+ *       - in: query
+ *         name: category
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter logs by category.
+ *     responses:
+ *       200:
+ *         description: Audit logs retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                         example: "65cb3f8e21a4b3d8f28c1101"
+ *                       userId:
+ *                         type: string
+ *                         example: "user_99238"
+ *                       action:
+ *                         type: string
+ *                         example: "DELETE_ORDER_ITEM"
+ *                       orderId:
+ *                         type: string
+ *                         example: "order_55102"
+ *                       category:
+ *                         type: string
+ *                         example: "ORDER_MANAGEMENT"
+ *                       metadata:
+ *                         type: object
+ *                         additionalProperties: true
+ *                         example: { "deletedItemId": "item_112", "reason": "Customer request" }
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-06-03T12:00:00.000Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-06-03T12:00:00.000Z"
+ *       401:
+ *         description: Unauthorized access (Missing or invalid token)
+ *       403:
+ *         description: Forbidden access (Admin privilege required)
+ *       500:
+ *         description: Internal server error
+ */
+router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getAuditLogs(req, res)
 })
 
 module.exports = router;

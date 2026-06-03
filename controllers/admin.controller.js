@@ -184,6 +184,14 @@ class AdminController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async getAuditLogs(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.getAuditLogs(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 }
 
 module.exports = AdminController
