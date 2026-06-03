@@ -2056,6 +2056,15 @@ class AdminService extends BaseService {
     async getAuditLogs(req){
         try {
             const auditLogs = await AuditLogModel.find({})
+            const result = await paginate(
+                AuditLogModel, {},
+                {
+                    page: req.query.page,
+                    limit: req.query.limit,
+                    sort: { createdAt: -1 },
+                    populate: [{ path: 'userId' }, { path: 'orderId' }],
+                },
+            )
 
             return BaseService.sendSuccessResponse({message: auditLogs})
         } catch (error) {
