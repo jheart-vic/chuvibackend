@@ -1,4 +1,3 @@
-const UserModel = require('../models/user.model')
 const { empty } = require('../util')
 const BaseService = require('./base.service')
 const {ROLE} = require('../util/constants')
