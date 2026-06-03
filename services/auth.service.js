@@ -243,18 +243,15 @@ class AuthService extends BaseService {
         name || [given_name, family_name].filter(Boolean).join(" ");
 
       // Check if user exists
-      const userWithSub = await UserModel.findOne({
-        $or: [{ googleId }, { email }],
-        // userType: userType,
-      });
+      const userWithSub = await UserModel.findOne({email});
 
       if (userWithSub) {
-        if (userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL) {
-          return BaseService.sendFailedResponse({
-            error:
-              "This email was registered with password. Please login manually.",
-          });
-        }
+        // if (userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL) {
+        //   return BaseService.sendFailedResponse({
+        //     error:
+        //       "This email was registered with password. Please login manually.",
+        //   });
+        // }
 
         // Keep provider consistent
         userWithSub.servicePlatform = SERVICE_PLATFORM.GOOGLE;
