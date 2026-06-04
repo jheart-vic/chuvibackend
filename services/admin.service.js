@@ -642,10 +642,7 @@ class AdminService extends BaseService {
                 case 'active':
                     filter = {
                         'stage.status': {
-                            $nin: [
-                                ORDER_STATUS.DELIVERED,
-                                ORDER_STATUS.HOLD,
-                            ],
+                            $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.HOLD],
                         },
                     }
                     break
@@ -1443,6 +1440,10 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not currently on hold',
                 })
+            if (order.stationStatus === target.stationStatus)
+                return BaseService.sendFailedResponse({
+                    error: `Order is already assigned to ${type}. Choose a different station to reassign to.`,
+                })
 
             const target = stationMap[type]
 
@@ -1572,6 +1573,18 @@ class AdminService extends BaseService {
             const target = stationOrderStatusMap[type]
             const now = new Date()
 
+            // if returning to intake reset all tags so order lands in
+            // tagging queue not drafts — staff re-tags from scratch
+            const extraUpdates =
+                type === 'intake-and-tag-station'
+                    ? {
+                          'items.$[].tagStatus': 'pending',
+                          'items.$[].tagId': '',
+                          'items.$[].tagState': [],
+                          'items.$[].tagColor': null,
+                      }
+                    : {}
+
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
@@ -1580,6 +1593,7 @@ class AdminService extends BaseService {
                         'stage.note': note,
                         'stage.updatedAt': now,
                         stationStatus: target.stationStatus,
+                        ...extraUpdates,
                     },
                     $push: {
                         stageHistory: {
