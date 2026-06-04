@@ -33,44 +33,49 @@ class QCService extends BaseService {
             const startOfToday = new Date()
             startOfToday.setHours(0, 0, 0, 0)
 
-            const [qcQueue, activeQC, packing, completedToday, recentQueueResult] =
-                await Promise.all([
-                    // awaiting QC — no startedAt, arrived today
-                    BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.QC,
-                        'qcDetails.startedAt': { $exists: false },
-                        'stage.updatedAt': { $gte: startOfToday },
-                    }),
-                    // active QC — started but not passed, today
-                    BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.QC,
-                        'qcDetails.startedAt': { $gte: startOfToday },
-                        'qcDetails.passedAt': { $exists: false },
-                    }),
-                    // pack & seal — passed QC today but not yet packed
-                    BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.QC,
-                        'qcDetails.passedAt': { $gte: startOfToday },
-                        'qcDetails.packCompletedAt': { $exists: false },
-                    }),
-                    // completed today — pack completed today
-                    BookOrderModel.countDocuments({
-                        'qcDetails.packCompletedAt': { $gte: startOfToday },
-                        'stage.status': ORDER_STATUS.READY,
-                    }),
-                    // recent queue
-                    paginate(
-                        BookOrderModel,
-                        { 'stage.status': ORDER_STATUS.QC },
-                        {
-                            page: 1,
-                            limit: 5,
-                            sort: { 'stage.updatedAt': 1 },
-                            select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt qcDetails',
-                            lean: true,
-                        },
-                    ),
-                ])
+            const [
+                qcQueue,
+                activeQC,
+                packing,
+                completedToday,
+                recentQueueResult,
+            ] = await Promise.all([
+                // awaiting QC — no startedAt, arrived today
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.QC,
+                    'qcDetails.startedAt': { $exists: false },
+                    'stage.updatedAt': { $gte: startOfToday },
+                }),
+                // active QC — started but not passed, today
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.QC,
+                    'qcDetails.startedAt': { $gte: startOfToday },
+                    'qcDetails.passedAt': { $exists: false },
+                }),
+                // pack & seal — passed QC today but not yet packed
+                BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.QC,
+                    'qcDetails.passedAt': { $gte: startOfToday },
+                    'qcDetails.packCompletedAt': { $exists: false },
+                }),
+                // completed today — pack completed today
+                BookOrderModel.countDocuments({
+                    'qcDetails.packCompletedAt': { $gte: startOfToday },
+                    'stage.status': ORDER_STATUS.READY,
+                }),
+                // recent queue
+                paginate(
+                    BookOrderModel,
+                    { 'stage.status': ORDER_STATUS.QC },
+                    {
+                        page: 1,
+                        limit: 5,
+                        sort: { 'stage.updatedAt': 1 },
+                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt qcDetails',
+                        lean: true,
+                    },
+                ),
+            ])
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -122,7 +127,8 @@ class QCService extends BaseService {
 
             const ordersWithMeta = data.map((o) => {
                 const arrivedAt = o.stage?.updatedAt
-                const durationMinutes = QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
+                const durationMinutes =
+                    QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
                 const estimatedFinish = arrivedAt
                     ? new Date(
                           new Date(arrivedAt).getTime() +
@@ -182,7 +188,8 @@ class QCService extends BaseService {
                 })
 
             const arrivedAt = order.stage?.updatedAt
-            const durationMinutes = QC_DURATION_MINUTES[order.deliverySpeed] ?? 20
+            const durationMinutes =
+                QC_DURATION_MINUTES[order.deliverySpeed] ?? 20
             const estimatedFinish = arrivedAt
                 ? new Date(
                       new Date(arrivedAt).getTime() +
@@ -292,7 +299,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId, orderId, category: 'qc', action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'qc',
+                action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -392,7 +404,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId, orderId, category: 'qc', action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'qc',
+                action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) QC status undone`,
@@ -404,7 +421,6 @@ class QCService extends BaseService {
             })
         }
     }
-
 
     // ── Pass QC — send to Pack & Seal ──────────────────────────────────────────
     async passQC(req) {
@@ -462,7 +478,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId, orderId, category: 'qc', action: 'Order passed QC and sent to Pack & Seal'})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'qc',
+                action: 'Order passed QC and sent to Pack & Seal',
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order passed QC and sent to Pack & Seal',
@@ -822,7 +843,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId, orderId, category: 'qc', action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'qc',
+                action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -1015,7 +1041,12 @@ class QCService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
-            await createAuditLog({userId, orderId, category: 'qc', action: 'Order released from hold and returned to QC queue'})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'qc',
+                action: 'Order released from hold and returned to QC queue',
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to QC queue',
@@ -1082,7 +1113,8 @@ class QCService extends BaseService {
             const today = []
             const earlier = []
             for (const order of data) {
-                const completedAt = order.qcDetails?.packCompletedAt || order.updatedAt
+                const completedAt =
+                    order.qcDetails?.packCompletedAt || order.updatedAt
                 if (new Date(completedAt) >= startOfToday) {
                     today.push(order)
                 } else {
@@ -1123,6 +1155,20 @@ class QCService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -1139,16 +1185,32 @@ class QCService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
@@ -1160,7 +1222,7 @@ class QCService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
-                    ], // DELIVERED covers self-pickup
+                    ],
                 },
                 {
                     key: 'delivered',

@@ -169,8 +169,19 @@ class RiderService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_DELIVERED,
                 })
             }
-            await createNotification({userId, title: 'Delivery Completed', body: `Delivery for order ${order.oscNumber} has been marked as delivered.`, subBody: `Order ID: ${order.oscNumber}`, type: NOTIFICATION_TYPE.DELIVERY_STARTED})
-            await createAuditLog({userId, orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivered by rider`})
+            await createNotification({
+                userId,
+                title: 'Delivery Completed',
+                body: `Delivery for order ${order.oscNumber} has been marked as delivered.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.DELIVERY_STARTED,
+            })
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as delivered by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as delivered successfully',
@@ -247,7 +258,12 @@ class RiderService extends BaseService {
                 body: `Delivery for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
                 subBody: `Order ID: ${order.oscNumber}`,
             })
-            await createAuditLog({userId, orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery marked as failed successfully',
@@ -424,7 +440,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
-            await createAuditLog({userId, orderId, category: 'rider', action: `Pickup for order ${order.oscNumber} started by rider`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Pickup for order ${order.oscNumber} started by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup started successfully',
@@ -513,7 +534,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
-            await createAuditLog({userId, orderId, category: 'rider', action: `Order ${order.oscNumber} marked as picked up by rider`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as picked up by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as picked up successfully',
@@ -593,7 +619,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_FAILED,
             })
-            await createAuditLog({userId, orderId, category: 'rider', action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup marked as failed successfully',
@@ -667,7 +698,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.DELIVERY_STARTED,
             })
-            await createAuditLog({userId, orderId, category: 'rider', action: `Delivery for order ${order.oscNumber} started by rider`})
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Delivery for order ${order.oscNumber} started by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery started successfully',
@@ -805,6 +841,20 @@ class RiderService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -821,16 +871,32 @@ class RiderService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
@@ -842,7 +908,7 @@ class RiderService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
-                    ], // DELIVERED covers self-pickup
+                    ],
                 },
                 {
                     key: 'delivered',
