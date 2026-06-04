@@ -1431,7 +1431,7 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: `Invalid station. Must be one of: ${Object.keys(stationMap).join(', ')}`,
                 })
-
+            const target = stationMap[type]
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
@@ -1444,8 +1444,6 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: `Order is already assigned to ${type}. Choose a different station to reassign to.`,
                 })
-
-            const target = stationMap[type]
 
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
