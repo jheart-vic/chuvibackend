@@ -9,6 +9,7 @@ const {
     STATION_STATUS,
     PICKUP_DURATION_MINUTES,
     DELIVERY_DURATION_MINUTES,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const paginate = require('../util/paginate')
 
