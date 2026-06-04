@@ -895,7 +895,6 @@ class AdminService extends BaseService {
                 { new: true },
             )
 
-
             return BaseService.sendSuccessResponse({
                 message: 'Setting has been updated',
             })
@@ -1495,22 +1494,7 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Resolution note is required',
                 })
-            if (!type || !Object.values(STATION_STATUS).includes(type))
-                return BaseService.sendFailedResponse({
-                    error: 'Invalid type query parameter',
-                })
 
-            // ← only held orders can be resolved
-            const order = await BookOrderModel.findOne({
-                _id: orderId,
-                'stage.status': ORDER_STATUS.HOLD,
-            })
-            if (!order)
-                return BaseService.sendFailedResponse({
-                    error: 'Order not found or not currently on hold',
-                })
-
-            // map station back to the correct ORDER_STATUS it should resume at
             const stationOrderStatusMap = {
                 'intake-and-tag-station': {
                     stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
@@ -1534,20 +1518,29 @@ class AdminService extends BaseService {
                 },
             }
 
-            const target = stationOrderStatusMap[type]
-            if (!target)
+            // ← validate against map keys not STATION_STATUS enum
+            if (!type || !stationOrderStatusMap[type])
                 return BaseService.sendFailedResponse({
                     error: `Invalid station. Must be one of: ${Object.keys(stationOrderStatusMap).join(', ')}`,
                 })
 
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.HOLD,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found or not currently on hold',
+                })
+
+            const target = stationOrderStatusMap[type]
             const now = new Date()
 
-            // close hold — order returns to normal flow at the specified station
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
                     $set: {
-                        'stage.status': target.orderStatus,
+                        'stage.status': target.orderStatus, // ← moves OUT of HOLD
                         'stage.note': note,
                         'stage.updatedAt': now,
                         stationStatus: target.stationStatus,
@@ -2057,11 +2050,12 @@ class AdminService extends BaseService {
         }
     }
 
-    async getAuditLogs(req){
+    async getAuditLogs(req) {
         try {
             const auditLogs = await AuditLogModel.find({})
             const result = await paginate(
-                AuditLogModel, {},
+                AuditLogModel,
+                {},
                 {
                     page: req.query.page,
                     limit: req.query.limit,
@@ -2070,10 +2064,12 @@ class AdminService extends BaseService {
                 },
             )
 
-            return BaseService.sendSuccessResponse({message: auditLogs})
+            return BaseService.sendSuccessResponse({ message: auditLogs })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({error: 'Something went wrong fetching the audit logs'})
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong fetching the audit logs',
+            })
         }
     }
 }
