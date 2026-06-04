@@ -829,7 +829,7 @@ class PressAndIronService extends BaseService {
             const query = {
                 'stageHistory.status': ORDER_STATUS.IRONING,
                 'stage.status': {
-                    $nin: [ORDER_STATUS.IRONING, ORDER_STATUS.HOLD],
+                    $nin: [ORDER_STATUS.IRONING], // ← removed HOLD
                 },
             }
 
@@ -843,8 +843,14 @@ class PressAndIronService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -855,8 +861,29 @@ class PressAndIronService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                const completedAt =
+                    order.pressDetails?.completedAt ||
+                    order.stageHistory?.find(
+                        (h) => h.status === ORDER_STATUS.QC,
+                    )?.updatedAt ||
+                    order.updatedAt
+
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)

@@ -1785,14 +1785,12 @@ class IntakeUserService extends BaseService {
                 endDate,
             } = req.query
 
+            // intake history = orders that went through tagging (have QUEUE in history)
+            // and have moved beyond intake (no longer PENDING, QUEUE, or stuck in HOLD at intake)
             const query = {
                 'stageHistory.status': ORDER_STATUS.QUEUE,
                 'stage.status': {
-                    $nin: [
-                        ORDER_STATUS.PENDING,
-                        ORDER_STATUS.QUEUE,
-                        ORDER_STATUS.HOLD,
-                    ],
+                    $nin: [ORDER_STATUS.PENDING, ORDER_STATUS.QUEUE],
                 },
             }
 
@@ -1806,8 +1804,14 @@ class IntakeUserService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1823,12 +1827,24 @@ class IntakeUserService extends BaseService {
 
             const today = []
             const earlier = []
+
             for (const order of data) {
-                const movedAt =
+                // use when the order left the intake queue — first SORT_AND_PRETREAT entry
+                // fallback to first non-QUEUE/PENDING stageHistory entry
+                // fallback to updatedAt
+                const leftIntakeAt =
                     order.stageHistory?.find(
                         (h) => h.status === ORDER_STATUS.SORT_AND_PRETREAT,
-                    )?.updatedAt || order.updatedAt
-                if (new Date(movedAt) >= startOfToday) {
+                    )?.updatedAt ||
+                    order.stageHistory?.find(
+                        (h) =>
+                            h.status !== ORDER_STATUS.QUEUE &&
+                            h.status !== ORDER_STATUS.PENDING &&
+                            h.status !== ORDER_STATUS.HOLD,
+                    )?.updatedAt ||
+                    order.updatedAt
+
+                if (new Date(leftIntakeAt) >= startOfToday) {
                     today.push(order)
                 } else {
                     earlier.push(order)
