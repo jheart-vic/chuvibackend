@@ -178,6 +178,22 @@ class BookOrderService extends BaseService {
                     updatedAt: new Date(),
                 }
 
+                const deliveryDate = calculateDueDate(post.deliverySpeed)
+
+                if (deliveryDate === null) {
+                    if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                        return BaseService.sendFailedResponse({
+                            error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
+                        })
+                    }
+
+                    if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                        return BaseService.sendFailedResponse({
+                            error: 'Express orders must be placed before 2pm. Please select standard delivery.',
+                        })
+                    }
+                }
+
                 const newOrderItem = {
                     userId,
                     oscNumber,
@@ -189,7 +205,7 @@ class BookOrderService extends BaseService {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
                     ...post,
-                    deliveryDate: calculateDueDate(post.deliverySpeed),
+                    deliveryDate,
                 }
 
                 newOrder = new BookOrderModel(newOrderItem)
