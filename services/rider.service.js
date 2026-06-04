@@ -770,8 +770,14 @@ class RiderService extends BaseService {
 
             if (startDate || endDate) {
                 query['updatedAt'] = {}
-                if (startDate) query['updatedAt'].$gte = new Date(startDate)
-                if (endDate) query['updatedAt'].$lte = new Date(endDate)
+                if (startDate)
+                    query['updatedAt'].$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query['updatedAt'].$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -782,8 +788,29 @@ class RiderService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                // use the most recent dispatch action as anchor
+                const deliveryUpdatedAt =
+                    order.dispatchDetails?.delivery?.updatedAt
+                const pickupUpdatedAt = order.dispatchDetails?.pickup?.updatedAt
+                const completedAt =
+                    deliveryUpdatedAt || pickupUpdatedAt || order.updatedAt
+
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.error('Error in getHistoryList:', error)

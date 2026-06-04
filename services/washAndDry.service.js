@@ -1043,11 +1043,7 @@ class WashAndDryService extends BaseService {
             const query = {
                 'stageHistory.status': ORDER_STATUS.DRYING,
                 'stage.status': {
-                    $nin: [
-                        ORDER_STATUS.WASHING,
-                        ORDER_STATUS.DRYING,
-                        ORDER_STATUS.HOLD,
-                    ],
+                    $nin: [ORDER_STATUS.WASHING, ORDER_STATUS.DRYING],
                 },
             }
 
@@ -1061,8 +1057,14 @@ class WashAndDryService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1073,8 +1075,29 @@ class WashAndDryService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                const completedAt =
+                    order.washDetails?.dryingCompletedAt ||
+                    order.stageHistory?.find(
+                        (h) => h.status === ORDER_STATUS.IRONING,
+                    )?.updatedAt ||
+                    order.updatedAt
+
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)

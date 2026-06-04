@@ -1077,10 +1077,11 @@ class QCService extends BaseService {
                 endDate,
             } = req.query
 
+            // QC history = orders that passed through QC and moved beyond it
             const query = {
                 'stageHistory.status': ORDER_STATUS.QC,
                 'stage.status': {
-                    $nin: [ORDER_STATUS.QC, ORDER_STATUS.HOLD],
+                    $nin: [ORDER_STATUS.QC], // ← removed HOLD
                 },
             }
 
@@ -1094,8 +1095,14 @@ class QCService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1106,15 +1113,23 @@ class QCService extends BaseService {
                 lean: true,
             })
 
-            // group by date
             const startOfToday = new Date()
             startOfToday.setHours(0, 0, 0, 0)
 
             const today = []
             const earlier = []
+
             for (const order of data) {
+                // use packCompletedAt as primary anchor — most accurate for QC completion
+                // fallback to when READY entered stageHistory
+                // fallback to updatedAt
                 const completedAt =
-                    order.qcDetails?.packCompletedAt || order.updatedAt
+                    order.qcDetails?.packCompletedAt ||
+                    order.stageHistory?.find(
+                        (h) => h.status === ORDER_STATUS.READY,
+                    )?.updatedAt ||
+                    order.updatedAt
+
                 if (new Date(completedAt) >= startOfToday) {
                     today.push(order)
                 } else {

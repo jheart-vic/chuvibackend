@@ -1460,11 +1460,10 @@ class SortAndPretreatService extends BaseService {
             const userId = req.user.id
 
             const user = await UserModel.findById(userId)
-            if (!user) {
+            if (!user)
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
                 })
-            }
 
             const {
                 page = 1,
@@ -1476,6 +1475,14 @@ class SortAndPretreatService extends BaseService {
 
             const query = {
                 'stageHistory.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                // only show orders that have moved beyond sort & pretreat
+                'stage.status': {
+                    $nin: [
+                        ORDER_STATUS.SORT_AND_PRETREAT,
+                        ORDER_STATUS.PENDING,
+                        ORDER_STATUS.QUEUE,
+                    ],
+                },
             }
 
             if (search) {
@@ -1488,8 +1495,14 @@ class SortAndPretreatService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1500,11 +1513,29 @@ class SortAndPretreatService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                // anchor = when order left sort & pretreat
+                // i.e. first stageHistory entry after SORT_AND_PRETREAT
+                const sortEntry = order.stageHistory?.find(
+                    (h) => h.status === ORDER_STATUS.SORT_AND_PRETREAT,
+                )
+                const leftSortAt = sortEntry?.updatedAt || order.updatedAt
+
+                if (new Date(leftSortAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: {
-                    data,
-                    pagination,
-                },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)
