@@ -19,6 +19,8 @@ const {
     STATION_STATUS,
     NOTIFICATION_TYPE,
     DELIVERY_SPEED,
+    ROLE,
+    ACTIVITY_TYPE,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const paginate = require('../util/paginate')
@@ -892,7 +894,7 @@ class AdminService extends BaseService {
                 { $set: updateData },
                 { new: true },
             )
-            
+
 
             return BaseService.sendSuccessResponse({
                 message: 'Setting has been updated',
