@@ -132,6 +132,19 @@ class IntakeUserService extends BaseService {
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
+            deliveryDate = calculateDueDate(post.deliverySpeed)
+            if (deliveryDate === null) {
+                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
+                    })
+                }
+                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Express orders must be placed before 2pm. Please select standard delivery.',
+                    })
+                }
+            }
 
             const oscNumber = generateOscNumber()
             const newOrderItem = {
@@ -154,7 +167,7 @@ class IntakeUserService extends BaseService {
                 ],
                 ...(customerId && { userId: customerId }),
                 ...post,
-                deliveryDate: calculateDueDate(post.deliverySpeed),
+                deliveryDate,
             }
             const newOrder = new BookOrderModel(newOrderItem)
             await newOrder.save()
