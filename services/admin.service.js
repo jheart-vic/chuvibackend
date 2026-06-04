@@ -1440,6 +1440,10 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not currently on hold',
                 })
+            if (order.stationStatus === target.stationStatus)
+                return BaseService.sendFailedResponse({
+                    error: `Order is already assigned to ${type}. Choose a different station to reassign to.`,
+                })
 
             const target = stationMap[type]
 
