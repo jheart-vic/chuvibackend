@@ -641,7 +641,12 @@ class AdminService extends BaseService {
             switch (type) {
                 case 'active':
                     filter = {
-                        'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        'stage.status': {
+                            $nin: [
+                                ORDER_STATUS.DELIVERED,
+                                ORDER_STATUS.HOLD,
+                            ],
+                        },
                     }
                     break
 
