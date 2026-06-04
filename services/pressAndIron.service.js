@@ -9,6 +9,7 @@ const {
     DELIVERY_STATUS,
     PICKUP_STATUS,
     PRESS_DURATION_MINUTES,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')

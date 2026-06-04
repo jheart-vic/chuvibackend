@@ -10,6 +10,7 @@ const {
     DELIVERY_STATUS,
     PICKUP_STATUS,
     QC_DURATION_MINUTES,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const { buildStageUpdate } = require('../util/helper')
 const BaseService = require('./base.service')

@@ -18,6 +18,7 @@ const {
     NOTIFICATION_TYPE,
     ROLE,
     SERVICE_TIERS,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
