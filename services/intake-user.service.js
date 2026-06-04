@@ -132,7 +132,7 @@ class IntakeUserService extends BaseService {
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
-            deliveryDate = calculateDueDate(post.deliverySpeed)
+           const deliveryDate = calculateDueDate(post.deliverySpeed)
             if (deliveryDate === null) {
                 if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
                     return BaseService.sendFailedResponse({
