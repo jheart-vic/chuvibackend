@@ -4,7 +4,7 @@ const {ROLE} = require('../util/constants')
 const UserModel = require('../models/user.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const ActivityModel = require('../models/activity.model')
-const { createNotification } = require('../util/createNotification')
+const  createNotification  = require('../util/createNotification')
 const { NOTIFICATION_TYPE, PICKUP_STATUS, DELIVERY_STATUS, ACTIVITY_TYPE } = require('../util/constants')
 
 class UtilService extends BaseService {
