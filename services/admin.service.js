@@ -56,17 +56,28 @@ class AdminService extends BaseService {
             })
 
             const overdueOrders = await BookOrderModel.countDocuments({
-                deliveryDate: { $lt: todayStart },
-                'stage.status': {
-                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
-                },
+                deliveryDate: { $lt: now },
+                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                // READY orders are overdue if not yet delivered
+                $nor: [
+                    {
+                        'stage.status': ORDER_STATUS.READY,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.DELIVERED,
+                    },
+                ],
             })
 
             const dueToday = await BookOrderModel.countDocuments({
-                deliveryDate: { $gte: todayStart, $lte: todayEnd },
-                'stage.status': {
-                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
-                },
+                deliveryDate: { $gte: now, $lte: todayEnd },
+                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                $nor: [
+                    {
+                        'stage.status': ORDER_STATUS.READY,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.DELIVERED,
+                    },
+                ],
             })
 
             const revenueTodayAgg = await PaymentModel.aggregate([
@@ -651,13 +662,27 @@ class AdminService extends BaseService {
                     filter = {
                         deliveryDate: { $lt: now },
                         'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        $nor: [
+                            {
+                                'stage.status': ORDER_STATUS.READY,
+                                'dispatchDetails.delivery.status':
+                                    DELIVERY_STATUS.DELIVERED,
+                            },
+                        ],
                     }
                     break
 
                 case 'dueToday':
                     filter = {
-                        deliveryDate: { $gte: todayStart, $lte: todayEnd },
+                        deliveryDate: { $gte: now, $lte: todayEnd },
                         'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        $nor: [
+                            {
+                                'stage.status': ORDER_STATUS.READY,
+                                'dispatchDetails.delivery.status':
+                                    DELIVERY_STATUS.DELIVERED,
+                            },
+                        ],
                     }
                     break
 
