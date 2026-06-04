@@ -176,21 +176,47 @@ module.exports.normalizePhone = normalizePhone
 
 const calculateDueDate = (deliverySpeed) => {
     const now = new Date()
-    const evening = new Date(now)
-    evening.setHours(20, 0, 0, 0)
 
     switch (deliverySpeed) {
-        case DELIVERY_SPEED.SAME_DAY:
-            return evening
-        case DELIVERY_SPEED.EXPRESS:
-            const nextEvening = new Date(evening)
-            nextEvening.setDate(nextEvening.getDate() + 1)
-            return nextEvening
+        case DELIVERY_SPEED.SAME_DAY: {
+            // cutoff: 10am — orders accepted from midnight to 10am only
+            const cutoff = new Date(now)
+            cutoff.setHours(10, 0, 0, 0)
+
+            if (now > cutoff) {
+                return null // ← signal to block the order at creation
+            }
+
+            // due today by 7pm
+            const due = new Date(now)
+            due.setHours(19, 0, 0, 0)
+            return due
+        }
+
+        case DELIVERY_SPEED.EXPRESS: {
+            // cutoff: 2pm — orders accepted from midnight to 2pm only
+            const cutoff = new Date(now)
+            cutoff.setHours(14, 0, 0, 0)
+
+            if (now > cutoff) {
+                return null // ← signal to block the order at creation
+            }
+
+            // due tomorrow by 7pm
+            const due = new Date(now)
+            due.setDate(due.getDate() + 1)
+            due.setHours(19, 0, 0, 0)
+            return due
+        }
+
         case DELIVERY_SPEED.STANDARD:
-        default:
-            const stdEvening = new Date(evening)
-            stdEvening.setDate(stdEvening.getDate() + 2)
-            return stdEvening
+        default: {
+            // no cutoff for standard — due day after tomorrow by 7pm
+            const due = new Date(now)
+            due.setDate(due.getDate() + 2)
+            due.setHours(19, 0, 0, 0)
+            return due
+        }
     }
 }
 
