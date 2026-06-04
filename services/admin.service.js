@@ -1401,12 +1401,35 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Note is required to reassign order station',
                 })
-            if (!type || !Object.values(STATION_STATUS).includes(type))
+
+            const stationMap = {
+                'intake-and-tag-station': {
+                    stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    role: ROLE.INTAKE_AND_TAG,
+                },
+                'sort-and-pretreat-station': {
+                    stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    role: ROLE.SORT_AND_PRETREAT,
+                },
+                'wash-and-dry-station': {
+                    stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                    role: ROLE.WASH_AND_DRY,
+                },
+                'pressing-and-ironing-station': {
+                    stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    role: ROLE.PRESS,
+                },
+                'qc-station': {
+                    stationStatus: STATION_STATUS.QC_STATION,
+                    role: ROLE.QC,
+                },
+            }
+
+            if (!type || !stationMap[type])
                 return BaseService.sendFailedResponse({
-                    error: 'Invalid type query parameter',
+                    error: `Invalid station. Must be one of: ${Object.keys(stationMap).join(', ')}`,
                 })
 
-            // ← only held orders can be reassigned
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
@@ -1416,28 +1439,13 @@ class AdminService extends BaseService {
                     error: 'Order not found or not currently on hold',
                 })
 
-            const stationMap = {
-                'intake-and-tag-station': STATION_STATUS.INTAKE_AND_TAG_STATION,
-                'sort-and-pretreat-station':
-                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                'wash-and-dry-station': STATION_STATUS.WASH_AND_DRY_STATION,
-                'pressing-and-ironing-station':
-                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                'qc-station': STATION_STATUS.QC_STATION,
-            }
+            const target = stationMap[type]
 
-            if (!stationMap[type])
-                return BaseService.sendFailedResponse({
-                    error: `Invalid station. Must be one of: ${Object.keys(stationMap).join(', ')}`,
-                })
-
-            // hold stays open — only stationStatus changes so the right station sees it
-            // stage.status remains HOLD throughout
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
                     $set: {
-                        stationStatus: stationMap[type],
+                        stationStatus: target.stationStatus,
                         'stage.note': note,
                         'stage.updatedAt': new Date(),
                     },
@@ -1461,12 +1469,31 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            // notify admin who performed the action
             await createNotification({
                 userId,
                 title: 'Hold Reassigned',
                 body: `Order ${order.oscNumber} hold has been reassigned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+
+            // notify all operators at the target station
+            const stationOperators = await UserModel.find({
+                userType: target.role,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                stationOperators.map((operator) =>
+                    createNotification({
+                        userId: operator._id,
+                        title: 'Hold Order Assigned to Your Station',
+                        body: `Order ${order.oscNumber} has been reassigned to your station for resolution. Note: ${note}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    }),
+                ),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold reassigned to ${type}`,
@@ -1499,26 +1526,30 @@ class AdminService extends BaseService {
                 'intake-and-tag-station': {
                     stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
                     orderStatus: ORDER_STATUS.QUEUE,
+                    role: ROLE.INTAKE_AND_TAG,
                 },
                 'sort-and-pretreat-station': {
                     stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
                     orderStatus: ORDER_STATUS.SORT_AND_PRETREAT,
+                    role: ROLE.SORT_AND_PRETREAT,
                 },
                 'wash-and-dry-station': {
                     stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
                     orderStatus: ORDER_STATUS.WASHING,
+                    role: ROLE.WASH_AND_DRY,
                 },
                 'pressing-and-ironing-station': {
                     stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
                     orderStatus: ORDER_STATUS.IRONING,
+                    role: ROLE.PRESS,
                 },
                 'qc-station': {
                     stationStatus: STATION_STATUS.QC_STATION,
                     orderStatus: ORDER_STATUS.QC,
+                    role: ROLE.QC,
                 },
             }
 
-            // ← validate against map keys not STATION_STATUS enum
             if (!type || !stationOrderStatusMap[type])
                 return BaseService.sendFailedResponse({
                     error: `Invalid station. Must be one of: ${Object.keys(stationOrderStatusMap).join(', ')}`,
@@ -1540,7 +1571,7 @@ class AdminService extends BaseService {
                 orderId,
                 {
                     $set: {
-                        'stage.status': target.orderStatus, // ← moves OUT of HOLD
+                        'stage.status': target.orderStatus,
                         'stage.note': note,
                         'stage.updatedAt': now,
                         stationStatus: target.stationStatus,
@@ -1565,12 +1596,42 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            // notify admin who performed the action
             await createNotification({
                 userId,
                 title: 'Hold Resolved',
                 body: `Order ${order.oscNumber} hold has been resolved and returned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+
+            // notify all operators at the target station
+            const stationOperators = await UserModel.find({
+                userType: target.role,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                stationOperators.map((operator) =>
+                    createNotification({
+                        userId: operator._id,
+                        title: 'Order Returned to Your Station',
+                        body: `Order ${order.oscNumber} hold has been resolved and returned to your station. Note: ${note}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    }),
+                ),
+            )
+
+            // notify customer if linked account exists
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Order Update',
+                    body: `Your order ${order.oscNumber} is back in processing after a hold.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+            }
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold resolved. Returned to ${type}`,
@@ -1990,7 +2051,6 @@ class AdminService extends BaseService {
                     error: 'User not found',
                 })
 
-            // admin can hold any order regardless of current stage
             const order = await BookOrderModel.findById(orderId)
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -2038,6 +2098,23 @@ class AdminService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
                 })
             }
+
+            const stationOperators = await UserModel.find({
+                userType: assignTo,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                stationOperators.map((operator) =>
+                    createNotification({
+                        userId: operator._id,
+                        title: 'Hold Order Assigned to Your Station',
+                        body: `Order ${order.oscNumber} has been placed on hold by admin and assigned to your station for resolution. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                    }),
+                ),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Order placed on hold successfully',
