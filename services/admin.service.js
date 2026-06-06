@@ -744,105 +744,196 @@ class AdminService extends BaseService {
             })
         }
     }
-    //   async orderManagement(req, res) {
+    // async getOrderDetails(req, res) {
     //     try {
-    //       const now = new Date();
+    //         const { id } = req.params
+    //         if (!id) {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order ID is required',
+    //             })
+    //         }
 
-    //       const todayStart = new Date();
-    //       todayStart.setHours(0, 0, 0, 0);
+    //         const order = await BookOrderModel.findById(id)
 
-    //       const todayEnd = new Date();
-    //       todayEnd.setHours(23, 59, 59, 999);
+    //         if (!order) {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order not found',
+    //             })
+    //         }
 
-    //       const [
-    //         totalActiveOrders,
-    //         overdueOrders,
-    //         dueToday,
-    //         activeHolds,
-    //         assignedForDelivery,
-    //         pendingPayment,
-    //       ] = await Promise.all([
-    //         // Active Orders (not delivered)
-    //         BookOrderModel.find({
-    //           "stage.status": { $ne: ORDER_STATUS.DELIVERED },
-    //         }),
-
-    //         // Overdue Orders
-    //         BookOrderModel.find({
-    //           deliveryDate: { $lt: now },
-    //           "stage.status": { $ne: ORDER_STATUS.DELIVERED },
-    //         }),
-
-    //         // Due Today
-    //         // BookOrderModel.find({
-    //         //   deliveryDate: { $gte: todayStart, $lte: todayEnd },
-    //         //   "stage.status": { $ne: ORDER_STATUS.DELIVERED }
-    //         // }),
-    //         BookOrderModel.find({
-    //           deliveryDate: {
-    //             $gte: todayStart,
-    //             $lte: todayEnd,
-    //           },
-    //           "stage.status": { $ne: ORDER_STATUS.DELIVERED },
-    //         }),
-
-    //         // Active Holds
-    //         BookOrderModel.find({
-    //           "stage.status": ORDER_STATUS.HOLD,
-    //         }),
-
-    //         // Assigned for Delivery
-    //         BookOrderModel.find({
-    //           "stage.status": {
-    //             $in: [
-    //               ORDER_STATUS.OUT_FOR_DELIVERY,
-    //               //   ORDER_STATUS.READY
-    //             ],
-    //           },
-    //         }),
-
-    //         // Pending Payment
-    //         BookOrderModel.find({
-    //           paymentStatus: PAYMENT_ORDER_STATUS.PENDING,
-    //         }),
-    //       ]);
-
-    //       const response = {
-    //         totalActiveOrders,
-    //         overdueOrders,
-    //         dueToday,
-    //         activeHolds,
-    //         assignedForDelivery,
-    //         pendingPayment,
-    //       };
-
-    //       return BaseService.sendSuccessResponse({ message: response });
+    //         return BaseService.sendSuccessResponse({ message: order })
     //     } catch (error) {
-    //       console.log(error);
-    //       return BaseService.sendFailedResponse({
-    //         error: "Something went wrong. Please try again later.",
-    //       });
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Something went wrong. Please try again later.',
+    //         })
     //     }
-    //   }
+    // }
 
     async getOrderDetails(req, res) {
         try {
             const { id } = req.params
-            if (!id) {
+            if (!id)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            }
 
             const order = await BookOrderModel.findById(id)
+                .populate('userId', 'fullName email phoneNumber')
+                .populate('intakeStaffId', 'fullName')
+                .populate('washDetails.operatorId', 'fullName')
+                .populate('pressDetails.operatorId', 'fullName')
+                .populate('qcDetails.operatorId', 'fullName')
+                .populate('qcDetails.packOperatorId', 'fullName')
+                .populate(
+                    'dispatchDetails.pickup.rider',
+                    'fullName phoneNumber',
+                )
+                .populate(
+                    'dispatchDetails.delivery.rider',
+                    'fullName phoneNumber',
+                )
+                .lean()
 
-            if (!order) {
+            if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found',
                 })
+
+            const payments = await PaymentModel.find({ order: id })
+                .populate('verifiedBy', 'fullName')
+                .lean()
+
+            const walletTransactions =
+                order.billingType === 'pay-from-wallet'
+                    ? await WalletTransactionModel.find({
+                          userId: order.userId?._id || order.userId,
+                          type: 'debit',
+                          description: 'Order Payment',
+                      })
+                          .sort({ createdAt: -1 })
+                          .limit(1)
+                          .lean()
+                    : []
+
+            let holdMeta = null
+            if (order.stage?.status === ORDER_STATUS.HOLD) {
+                const now = new Date()
+                const heldSince = order.stage?.updatedAt
+                const heldMinutes = heldSince
+                    ? Math.floor((now - new Date(heldSince)) / 60000)
+                    : null
+                const slaThresholdMinutes =
+                    order.deliverySpeed === DELIVERY_SPEED.SAME_DAY
+                        ? 120
+                        : order.deliverySpeed === DELIVERY_SPEED.EXPRESS
+                          ? 240
+                          : 360
+                holdMeta = {
+                    heldSince,
+                    heldMinutes,
+                    slaThresholdMinutes,
+                    slaBreached:
+                        heldMinutes !== null
+                            ? heldMinutes > slaThresholdMinutes
+                            : false,
+                    stationStatus: order.stationStatus,
+                    holdNote: order.stage?.note,
+                }
             }
 
-            return BaseService.sendSuccessResponse({ message: order })
+            const flaggedItems = (order.items || [])
+                .filter((i) => i.flaggedForReview)
+                .map((i) => ({
+                    itemId: i._id,
+                    type: i.type,
+                    tagId: i.tagId,
+                    flagNote: i.flagNote,
+                    holdDetails: i.holdDetails,
+                    flagHistory: (i.actionLog || []).filter(
+                        (log) => log.action === 'item_held',
+                    ),
+                }))
+
+            const paymentSummary = {
+                billingType: order.billingType,
+                paymentMethod: order.paymentMethod,
+                paymentStatus: order.paymentStatus,
+                amount: order.amount,
+                deliveryAmount: order.deliveryAmount,
+                // Paystack — auto verified
+                isPaystack: order.paymentMethod === 'paystack',
+                // bank transfer — needs admin verification
+                isBankTransfer: order.paymentMethod === 'bank-transfer',
+                // wallet — no payment record
+                isWallet: order.billingType === 'pay-from-wallet',
+                // subscription — covered by plan
+                isSubscription: order.billingType === 'pay-from-subscription',
+                records: payments.map((p) => ({
+                    _id: p._id,
+                    amount: p.amount,
+                    status: p.status,
+                    type: p.type,
+                    paymentMethod: p.paymentMethod,
+                    reference: p.reference,
+                    proofOfPayment: p.proofOfPayment,
+                    verifiedBy: p.verifiedBy?.fullName || null,
+                    verifiedAt: p.verifiedAt,
+                    createdAt: p.createdAt,
+                    requiresVerification:
+                        p.paymentMethod === 'bank-transfer' &&
+                        p.status === 'pending',
+                })),
+                walletTransactions,
+            }
+
+            // dispatch summary for drawer
+            const dispatchSummary = {
+                isPickUp: order.isPickUp,
+                isDelivery: order.isDelivery,
+                pickupAddress: order.pickupAddress,
+                deliveryAddress: order.deliveryAddress,
+                pickup: order.isPickUp
+                    ? {
+                          status: order.dispatchDetails?.pickup?.status,
+                          rider: order.dispatchDetails?.pickup?.rider,
+                          isVerified: order.dispatchDetails?.pickup?.isVerified,
+                          updatedAt: order.dispatchDetails?.pickup?.updatedAt,
+                      }
+                    : null,
+                delivery: order.isDelivery
+                    ? {
+                          status: order.dispatchDetails?.delivery?.status,
+                          rider: order.dispatchDetails?.delivery?.rider,
+                          note: order.dispatchDetails?.delivery?.note,
+                          startedAt: order.dispatchDetails?.delivery?.startedAt,
+                          updatedAt: order.dispatchDetails?.delivery?.updatedAt,
+                      }
+                    : null,
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    order,
+                    paymentSummary,
+                    dispatchSummary,
+                    holdMeta,
+                    flaggedItems,
+                    meta: {
+                        isOnHold: order.stage?.status === ORDER_STATUS.HOLD,
+                        hasDispatch: order.isPickUp || order.isDelivery,
+                        hasPayments: payments.length > 0,
+                        hasFlaggedItems: flaggedItems.length > 0,
+                        paymentMethod: order.paymentMethod,
+                        billingType: order.billingType,
+                        requiresPaymentVerification: payments.some(
+                            (p) =>
+                                p.paymentMethod === 'bank-transfer' &&
+                                p.status === 'pending',
+                        ),
+                    },
+                },
+            })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
