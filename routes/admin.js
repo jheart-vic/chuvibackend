@@ -1425,7 +1425,7 @@ router.patch(ROUTE_ADMIN_SEND_TO_HOLD_ORDERS, adminAuth, (req, res) => {
  *       500:
  *         description: Server error
  */
-router.put(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res) => {
+router.patch(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res) => {
     const adminController = new AdminController()
     return adminController.reAssignOrderStation(req, res)
 })
@@ -2275,7 +2275,7 @@ router.delete(ROUTE_DELETE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.get(ROUTE_GET_AUDIT_LOGS, [], (req, res) => {
+router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAuditLogs(req, res)
 })
