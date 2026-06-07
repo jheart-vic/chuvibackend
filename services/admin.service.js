@@ -19,6 +19,8 @@ const {
     STATION_STATUS,
     NOTIFICATION_TYPE,
     DELIVERY_SPEED,
+    ROLE,
+    ACTIVITY_TYPE,
 } = require('../util/constants')
 const createNotification = require('../util/createNotification')
 const paginate = require('../util/paginate')
@@ -54,17 +56,28 @@ class AdminService extends BaseService {
             })
 
             const overdueOrders = await BookOrderModel.countDocuments({
-                deliveryDate: { $lt: todayStart },
-                'stage.status': {
-                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
-                },
+                deliveryDate: { $lt: now },
+                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                // READY orders are overdue if not yet delivered
+                $nor: [
+                    {
+                        'stage.status': ORDER_STATUS.READY,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.DELIVERED,
+                    },
+                ],
             })
 
             const dueToday = await BookOrderModel.countDocuments({
-                deliveryDate: { $gte: todayStart, $lte: todayEnd },
-                'stage.status': {
-                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
-                },
+                deliveryDate: { $gte: now, $lte: todayEnd },
+                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                $nor: [
+                    {
+                        'stage.status': ORDER_STATUS.READY,
+                        'dispatchDetails.delivery.status':
+                            DELIVERY_STATUS.DELIVERED,
+                    },
+                ],
             })
 
             const revenueTodayAgg = await PaymentModel.aggregate([
@@ -639,7 +652,9 @@ class AdminService extends BaseService {
             switch (type) {
                 case 'active':
                     filter = {
-                        'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        'stage.status': {
+                            $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.HOLD],
+                        },
                     }
                     break
 
@@ -647,13 +662,27 @@ class AdminService extends BaseService {
                     filter = {
                         deliveryDate: { $lt: now },
                         'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        $nor: [
+                            {
+                                'stage.status': ORDER_STATUS.READY,
+                                'dispatchDetails.delivery.status':
+                                    DELIVERY_STATUS.DELIVERED,
+                            },
+                        ],
                     }
                     break
 
                 case 'dueToday':
                     filter = {
-                        deliveryDate: { $gte: todayStart, $lte: todayEnd },
+                        deliveryDate: { $gte: now, $lte: todayEnd },
                         'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        $nor: [
+                            {
+                                'stage.status': ORDER_STATUS.READY,
+                                'dispatchDetails.delivery.status':
+                                    DELIVERY_STATUS.DELIVERED,
+                            },
+                        ],
                     }
                     break
 
@@ -715,105 +744,196 @@ class AdminService extends BaseService {
             })
         }
     }
-    //   async orderManagement(req, res) {
+    // async getOrderDetails(req, res) {
     //     try {
-    //       const now = new Date();
+    //         const { id } = req.params
+    //         if (!id) {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order ID is required',
+    //             })
+    //         }
 
-    //       const todayStart = new Date();
-    //       todayStart.setHours(0, 0, 0, 0);
+    //         const order = await BookOrderModel.findById(id)
 
-    //       const todayEnd = new Date();
-    //       todayEnd.setHours(23, 59, 59, 999);
+    //         if (!order) {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Order not found',
+    //             })
+    //         }
 
-    //       const [
-    //         totalActiveOrders,
-    //         overdueOrders,
-    //         dueToday,
-    //         activeHolds,
-    //         assignedForDelivery,
-    //         pendingPayment,
-    //       ] = await Promise.all([
-    //         // Active Orders (not delivered)
-    //         BookOrderModel.find({
-    //           "stage.status": { $ne: ORDER_STATUS.DELIVERED },
-    //         }),
-
-    //         // Overdue Orders
-    //         BookOrderModel.find({
-    //           deliveryDate: { $lt: now },
-    //           "stage.status": { $ne: ORDER_STATUS.DELIVERED },
-    //         }),
-
-    //         // Due Today
-    //         // BookOrderModel.find({
-    //         //   deliveryDate: { $gte: todayStart, $lte: todayEnd },
-    //         //   "stage.status": { $ne: ORDER_STATUS.DELIVERED }
-    //         // }),
-    //         BookOrderModel.find({
-    //           deliveryDate: {
-    //             $gte: todayStart,
-    //             $lte: todayEnd,
-    //           },
-    //           "stage.status": { $ne: ORDER_STATUS.DELIVERED },
-    //         }),
-
-    //         // Active Holds
-    //         BookOrderModel.find({
-    //           "stage.status": ORDER_STATUS.HOLD,
-    //         }),
-
-    //         // Assigned for Delivery
-    //         BookOrderModel.find({
-    //           "stage.status": {
-    //             $in: [
-    //               ORDER_STATUS.OUT_FOR_DELIVERY,
-    //               //   ORDER_STATUS.READY
-    //             ],
-    //           },
-    //         }),
-
-    //         // Pending Payment
-    //         BookOrderModel.find({
-    //           paymentStatus: PAYMENT_ORDER_STATUS.PENDING,
-    //         }),
-    //       ]);
-
-    //       const response = {
-    //         totalActiveOrders,
-    //         overdueOrders,
-    //         dueToday,
-    //         activeHolds,
-    //         assignedForDelivery,
-    //         pendingPayment,
-    //       };
-
-    //       return BaseService.sendSuccessResponse({ message: response });
+    //         return BaseService.sendSuccessResponse({ message: order })
     //     } catch (error) {
-    //       console.log(error);
-    //       return BaseService.sendFailedResponse({
-    //         error: "Something went wrong. Please try again later.",
-    //       });
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Something went wrong. Please try again later.',
+    //         })
     //     }
-    //   }
+    // }
 
     async getOrderDetails(req, res) {
         try {
             const { id } = req.params
-            if (!id) {
+            if (!id)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
                 })
-            }
 
             const order = await BookOrderModel.findById(id)
+                .populate('userId', 'fullName email phoneNumber')
+                .populate('intakeStaffId', 'fullName')
+                .populate('washDetails.operatorId', 'fullName')
+                .populate('pressDetails.operatorId', 'fullName')
+                .populate('qcDetails.operatorId', 'fullName')
+                .populate('qcDetails.packOperatorId', 'fullName')
+                .populate(
+                    'dispatchDetails.pickup.rider',
+                    'fullName phoneNumber',
+                )
+                .populate(
+                    'dispatchDetails.delivery.rider',
+                    'fullName phoneNumber',
+                )
+                .lean()
 
-            if (!order) {
+            if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found',
                 })
+
+            const payments = await PaymentModel.find({ order: id })
+                .populate('verifiedBy', 'fullName')
+                .lean()
+
+            const walletTransactions =
+                order.billingType === 'pay-from-wallet'
+                    ? await WalletTransactionModel.find({
+                          userId: order.userId?._id || order.userId,
+                          type: 'debit',
+                          description: 'Order Payment',
+                      })
+                          .sort({ createdAt: -1 })
+                          .limit(1)
+                          .lean()
+                    : []
+
+            let holdMeta = null
+            if (order.stage?.status === ORDER_STATUS.HOLD) {
+                const now = new Date()
+                const heldSince = order.stage?.updatedAt
+                const heldMinutes = heldSince
+                    ? Math.floor((now - new Date(heldSince)) / 60000)
+                    : null
+                const slaThresholdMinutes =
+                    order.deliverySpeed === DELIVERY_SPEED.SAME_DAY
+                        ? 120
+                        : order.deliverySpeed === DELIVERY_SPEED.EXPRESS
+                          ? 240
+                          : 360
+                holdMeta = {
+                    heldSince,
+                    heldMinutes,
+                    slaThresholdMinutes,
+                    slaBreached:
+                        heldMinutes !== null
+                            ? heldMinutes > slaThresholdMinutes
+                            : false,
+                    stationStatus: order.stationStatus,
+                    holdNote: order.stage?.note,
+                }
             }
 
-            return BaseService.sendSuccessResponse({ message: order })
+            const flaggedItems = (order.items || [])
+                .filter((i) => i.flaggedForReview)
+                .map((i) => ({
+                    itemId: i._id,
+                    type: i.type,
+                    tagId: i.tagId,
+                    flagNote: i.flagNote,
+                    holdDetails: i.holdDetails,
+                    flagHistory: (i.actionLog || []).filter(
+                        (log) => log.action === 'item_held',
+                    ),
+                }))
+
+            const paymentSummary = {
+                billingType: order.billingType,
+                paymentMethod: order.paymentMethod,
+                paymentStatus: order.paymentStatus,
+                amount: order.amount,
+                deliveryAmount: order.deliveryAmount,
+                // Paystack — auto verified
+                isPaystack: order.paymentMethod === 'paystack',
+                // bank transfer — needs admin verification
+                isBankTransfer: order.paymentMethod === 'bank-transfer',
+                // wallet — no payment record
+                isWallet: order.billingType === 'pay-from-wallet',
+                // subscription — covered by plan
+                isSubscription: order.billingType === 'pay-from-subscription',
+                records: payments.map((p) => ({
+                    _id: p._id,
+                    amount: p.amount,
+                    status: p.status,
+                    type: p.type,
+                    paymentMethod: p.paymentMethod,
+                    reference: p.reference,
+                    proofOfPayment: p.proofOfPayment,
+                    verifiedBy: p.verifiedBy?.fullName || null,
+                    verifiedAt: p.verifiedAt,
+                    createdAt: p.createdAt,
+                    requiresVerification:
+                        p.paymentMethod === 'bank-transfer' &&
+                        p.status === 'pending',
+                })),
+                walletTransactions,
+            }
+
+            // dispatch summary for drawer
+            const dispatchSummary = {
+                isPickUp: order.isPickUp,
+                isDelivery: order.isDelivery,
+                pickupAddress: order.pickupAddress,
+                deliveryAddress: order.deliveryAddress,
+                pickup: order.isPickUp
+                    ? {
+                          status: order.dispatchDetails?.pickup?.status,
+                          rider: order.dispatchDetails?.pickup?.rider,
+                          isVerified: order.dispatchDetails?.pickup?.isVerified,
+                          updatedAt: order.dispatchDetails?.pickup?.updatedAt,
+                      }
+                    : null,
+                delivery: order.isDelivery
+                    ? {
+                          status: order.dispatchDetails?.delivery?.status,
+                          rider: order.dispatchDetails?.delivery?.rider,
+                          note: order.dispatchDetails?.delivery?.note,
+                          startedAt: order.dispatchDetails?.delivery?.startedAt,
+                          updatedAt: order.dispatchDetails?.delivery?.updatedAt,
+                      }
+                    : null,
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    order,
+                    paymentSummary,
+                    dispatchSummary,
+                    holdMeta,
+                    flaggedItems,
+                    meta: {
+                        isOnHold: order.stage?.status === ORDER_STATUS.HOLD,
+                        hasDispatch: order.isPickUp || order.isDelivery,
+                        hasPayments: payments.length > 0,
+                        hasFlaggedItems: flaggedItems.length > 0,
+                        paymentMethod: order.paymentMethod,
+                        billingType: order.billingType,
+                        requiresPaymentVerification: payments.some(
+                            (p) =>
+                                p.paymentMethod === 'bank-transfer' &&
+                                p.status === 'pending',
+                        ),
+                    },
+                },
+            })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
@@ -892,7 +1012,6 @@ class AdminService extends BaseService {
                 { $set: updateData },
                 { new: true },
             )
-            
 
             return BaseService.sendSuccessResponse({
                 message: 'Setting has been updated',
@@ -1400,12 +1519,35 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Note is required to reassign order station',
                 })
-            if (!type || !Object.values(STATION_STATUS).includes(type))
-                return BaseService.sendFailedResponse({
-                    error: 'Invalid type query parameter',
-                })
 
-            // ← only held orders can be reassigned
+            const stationMap = {
+                'intake-and-tag-station': {
+                    stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    role: ROLE.INTAKE_AND_TAG,
+                },
+                'sort-and-pretreat-station': {
+                    stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    role: ROLE.SORT_AND_PRETREAT,
+                },
+                'wash-and-dry-station': {
+                    stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                    role: ROLE.WASH_AND_DRY,
+                },
+                'pressing-and-ironing-station': {
+                    stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    role: ROLE.PRESS,
+                },
+                'qc-station': {
+                    stationStatus: STATION_STATUS.QC_STATION,
+                    role: ROLE.QC,
+                },
+            }
+
+            if (!type || !stationMap[type])
+                return BaseService.sendFailedResponse({
+                    error: `Invalid station. Must be one of: ${Object.keys(stationMap).join(', ')}`,
+                })
+            const target = stationMap[type]
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
@@ -1414,29 +1556,16 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not currently on hold',
                 })
-
-            const stationMap = {
-                'intake-and-tag-station': STATION_STATUS.INTAKE_AND_TAG_STATION,
-                'sort-and-pretreat-station':
-                    STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                'wash-and-dry-station': STATION_STATUS.WASH_AND_DRY_STATION,
-                'pressing-and-ironing-station':
-                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                'qc-station': STATION_STATUS.QC_STATION,
-            }
-
-            if (!stationMap[type])
+            if (order.stationStatus === target.stationStatus)
                 return BaseService.sendFailedResponse({
-                    error: `Invalid station. Must be one of: ${Object.keys(stationMap).join(', ')}`,
+                    error: `Order is already assigned to ${type}. Choose a different station to reassign to.`,
                 })
 
-            // hold stays open — only stationStatus changes so the right station sees it
-            // stage.status remains HOLD throughout
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
                     $set: {
-                        stationStatus: stationMap[type],
+                        stationStatus: target.stationStatus,
                         'stage.note': note,
                         'stage.updatedAt': new Date(),
                     },
@@ -1460,12 +1589,31 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            // notify admin who performed the action
             await createNotification({
                 userId,
                 title: 'Hold Reassigned',
                 body: `Order ${order.oscNumber} hold has been reassigned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+
+            // notify all operators at the target station
+            const stationOperators = await UserModel.find({
+                userType: target.role,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                stationOperators.map((operator) =>
+                    createNotification({
+                        userId: operator._id,
+                        title: 'Hold Order Assigned to Your Station',
+                        body: `Order ${order.oscNumber} has been reassigned to your station for resolution. Note: ${note}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    }),
+                ),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold reassigned to ${type}`,
@@ -1493,12 +1641,40 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Resolution note is required',
                 })
-            if (!type || !Object.values(STATION_STATUS).includes(type))
+
+            const stationOrderStatusMap = {
+                'intake-and-tag-station': {
+                    stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+                    orderStatus: ORDER_STATUS.QUEUE,
+                    role: ROLE.INTAKE_AND_TAG,
+                },
+                'sort-and-pretreat-station': {
+                    stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                    orderStatus: ORDER_STATUS.SORT_AND_PRETREAT,
+                    role: ROLE.SORT_AND_PRETREAT,
+                },
+                'wash-and-dry-station': {
+                    stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
+                    orderStatus: ORDER_STATUS.WASHING,
+                    role: ROLE.WASH_AND_DRY,
+                },
+                'pressing-and-ironing-station': {
+                    stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                    orderStatus: ORDER_STATUS.IRONING,
+                    role: ROLE.PRESS,
+                },
+                'qc-station': {
+                    stationStatus: STATION_STATUS.QC_STATION,
+                    orderStatus: ORDER_STATUS.QC,
+                    role: ROLE.QC,
+                },
+            }
+
+            if (!type || !stationOrderStatusMap[type])
                 return BaseService.sendFailedResponse({
-                    error: 'Invalid type query parameter',
+                    error: `Invalid station. Must be one of: ${Object.keys(stationOrderStatusMap).join(', ')}`,
                 })
 
-            // ← only held orders can be resolved
             const order = await BookOrderModel.findOne({
                 _id: orderId,
                 'stage.status': ORDER_STATUS.HOLD,
@@ -1508,39 +1684,21 @@ class AdminService extends BaseService {
                     error: 'Order not found or not currently on hold',
                 })
 
-            // map station back to the correct ORDER_STATUS it should resume at
-            const stationOrderStatusMap = {
-                'intake-and-tag-station': {
-                    stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
-                    orderStatus: ORDER_STATUS.QUEUE,
-                },
-                'sort-and-pretreat-station': {
-                    stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                    orderStatus: ORDER_STATUS.SORT_AND_PRETREAT,
-                },
-                'wash-and-dry-station': {
-                    stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
-                    orderStatus: ORDER_STATUS.WASHING,
-                },
-                'pressing-and-ironing-station': {
-                    stationStatus: STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                    orderStatus: ORDER_STATUS.IRONING,
-                },
-                'qc-station': {
-                    stationStatus: STATION_STATUS.QC_STATION,
-                    orderStatus: ORDER_STATUS.QC,
-                },
-            }
-
             const target = stationOrderStatusMap[type]
-            if (!target)
-                return BaseService.sendFailedResponse({
-                    error: `Invalid station. Must be one of: ${Object.keys(stationOrderStatusMap).join(', ')}`,
-                })
-
             const now = new Date()
 
-            // close hold — order returns to normal flow at the specified station
+            // if returning to intake reset all tags so order lands in
+            // tagging queue not drafts — staff re-tags from scratch
+            const extraUpdates =
+                type === 'intake-and-tag-station'
+                    ? {
+                          'items.$[].tagStatus': 'pending',
+                          'items.$[].tagId': '',
+                          'items.$[].tagState': [],
+                          'items.$[].tagColor': null,
+                      }
+                    : {}
+
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
@@ -1549,6 +1707,7 @@ class AdminService extends BaseService {
                         'stage.note': note,
                         'stage.updatedAt': now,
                         stationStatus: target.stationStatus,
+                        ...extraUpdates,
                     },
                     $push: {
                         stageHistory: {
@@ -1570,12 +1729,42 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            // notify admin who performed the action
             await createNotification({
                 userId,
                 title: 'Hold Resolved',
                 body: `Order ${order.oscNumber} hold has been resolved and returned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+
+            // notify all operators at the target station
+            const stationOperators = await UserModel.find({
+                userType: target.role,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                stationOperators.map((operator) =>
+                    createNotification({
+                        userId: operator._id,
+                        title: 'Order Returned to Your Station',
+                        body: `Order ${order.oscNumber} hold has been resolved and returned to your station. Note: ${note}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    }),
+                ),
+            )
+
+            // notify customer if linked account exists
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Order Update',
+                    body: `Your order ${order.oscNumber} is back in processing after a hold.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+            }
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold resolved. Returned to ${type}`,
@@ -1995,7 +2184,6 @@ class AdminService extends BaseService {
                     error: 'User not found',
                 })
 
-            // admin can hold any order regardless of current stage
             const order = await BookOrderModel.findById(orderId)
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -2044,6 +2232,23 @@ class AdminService extends BaseService {
                 })
             }
 
+            const stationOperators = await UserModel.find({
+                userType: assignTo,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                stationOperators.map((operator) =>
+                    createNotification({
+                        userId: operator._id,
+                        title: 'Hold Order Assigned to Your Station',
+                        body: `Order ${order.oscNumber} has been placed on hold by admin and assigned to your station for resolution. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                    }),
+                ),
+            )
+
             return BaseService.sendSuccessResponse({
                 message: 'Order placed on hold successfully',
             })
@@ -2071,7 +2276,11 @@ class AdminService extends BaseService {
     
             // 2. Fetch the clean, paginated data with populate working perfectly
             const result = await paginate(
+<<<<<<< HEAD
                 AuditLogModel, 
+=======
+                AuditLogModel,
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
                 {},
                 {
                     page: req.query.page,
@@ -2079,6 +2288,7 @@ class AdminService extends BaseService {
                     sort: { createdAt: -1 },
                     populate: [{ path: 'userId' }, { path: 'orderId' }],
                 },
+<<<<<<< HEAD
             );
     
             // 3. Return the actual paginated result instead of the raw auditLogs array
@@ -2089,6 +2299,16 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({ 
                 error: 'Something went wrong fetching the audit logs' 
             });
+=======
+            )
+
+            return BaseService.sendSuccessResponse({ message: auditLogs })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong fetching the audit logs',
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
         }
     }    
 }

@@ -9,6 +9,7 @@ const {
     DELIVERY_STATUS,
     PICKUP_STATUS,
     PRESS_DURATION_MINUTES,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
@@ -224,7 +225,16 @@ class PressAndIronService extends BaseService {
                 reference: order.oscNumber,
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `${updatedCount} item(s) confirmed for pressing on order ${order.oscNumber}`, category: 'pressing', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `${updatedCount} item(s) confirmed for pressing on order ${order.oscNumber}`,
+                category: 'pressing',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
             return BaseService.sendSuccessResponse({
                 message: {
                     message: `${updatedCount} item(s) confirmed for pressing`,
@@ -320,7 +330,16 @@ class PressAndIronService extends BaseService {
                     },
                 )
             }
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `${targetItems.length} item(s) press confirmation undone on order ${order.oscNumber}`, category: 'pressing', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `${targetItems.length} item(s) press confirmation undone on order ${order.oscNumber}`,
+                category: 'pressing',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) press confirmation undone`,
@@ -446,7 +465,16 @@ class PressAndIronService extends BaseService {
                 reference: order.oscNumber,
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`, category: 'pressing', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`,
+                category: 'pressing',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -573,7 +601,16 @@ class PressAndIronService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Order ${order.oscNumber} pressing completed and sent to QC`, category: 'pressing', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Order ${order.oscNumber} pressing completed and sent to QC`,
+                category: 'pressing',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been successfully processed and sent to QC`,
@@ -772,7 +809,16 @@ class PressAndIronService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Order ${order.oscNumber} released from hold and returned to press queue`, category: 'pressing', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Order ${order.oscNumber} released from hold and returned to press queue`,
+                category: 'pressing',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to press queue',
@@ -804,7 +850,7 @@ class PressAndIronService extends BaseService {
             const query = {
                 'stageHistory.status': ORDER_STATUS.IRONING,
                 'stage.status': {
-                    $nin: [ORDER_STATUS.IRONING, ORDER_STATUS.HOLD],
+                    $nin: [ORDER_STATUS.IRONING], // ← removed HOLD
                 },
             }
 
@@ -818,8 +864,14 @@ class PressAndIronService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -830,8 +882,29 @@ class PressAndIronService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                const completedAt =
+                    order.pressDetails?.completedAt ||
+                    order.stageHistory?.find(
+                        (h) => h.status === ORDER_STATUS.QC,
+                    )?.updatedAt ||
+                    order.updatedAt
+
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -840,7 +913,6 @@ class PressAndIronService extends BaseService {
             })
         }
     }
-
 
     async getOrderTimeline(req) {
         try {
@@ -864,6 +936,20 @@ class PressAndIronService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -880,16 +966,32 @@ class PressAndIronService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',

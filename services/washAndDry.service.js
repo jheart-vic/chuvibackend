@@ -262,7 +262,16 @@ class WashAndDryService extends BaseService {
                 body: `${updatedCount} item(s) confirmed for washing`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'wash', action: `${updatedCount} item(s) confirmed for washing`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'wash',
+                action: `${updatedCount} item(s) confirmed for washing`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -372,7 +381,16 @@ class WashAndDryService extends BaseService {
                 body: `${targetItems.length} item(s) wash confirmation has been undone`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+<<<<<<< HEAD
                 await createAuditLog({userId: getObjectId(userId), orderId, category: 'wash', action: `${targetItems.length} item(s) wash confirmation undone`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'wash',
+                action: `${targetItems.length} item(s) wash confirmation undone`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) wash confirmation undone`,
@@ -504,7 +522,16 @@ class WashAndDryService extends BaseService {
                 body: `An item has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'wash', action: `Item ${item.type} (Tag: ${item.tagId || itemId}) placed on hold for reason: ${reason}, assigned to ${assignTo}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'wash',
+                action: `Item ${item.type} (Tag: ${item.tagId || itemId}) placed on hold for reason: ${reason}, assigned to ${assignTo}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -640,7 +667,16 @@ class WashAndDryService extends BaseService {
                 body: `Order ${order.oscNumber} has been transferred to the dryer.`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'wash', action: `Order moved to drying`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'wash',
+                action: `Order moved to drying`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been transferred to the dryer`,
@@ -785,7 +821,16 @@ class WashAndDryService extends BaseService {
                     ? NOTIFICATION_TYPE.ORDER_WASHING
                     : NOTIFICATION_TYPE.ORDER_IRONING,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'wash', action: `Wash & dry completed, moved to ${nextStatus}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'wash',
+                action: `Wash & dry completed, moved to ${nextStatus}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been successfully processed and sent to ${nextStatus}`,
@@ -978,7 +1023,16 @@ class WashAndDryService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'wash', action: `Order released from hold and returned to wash queue`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'wash',
+                action: `Order released from hold and returned to wash queue`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to wash queue',
@@ -1012,11 +1066,7 @@ class WashAndDryService extends BaseService {
             const query = {
                 'stageHistory.status': ORDER_STATUS.DRYING,
                 'stage.status': {
-                    $nin: [
-                        ORDER_STATUS.WASHING,
-                        ORDER_STATUS.DRYING,
-                        ORDER_STATUS.HOLD,
-                    ],
+                    $nin: [ORDER_STATUS.WASHING, ORDER_STATUS.DRYING],
                 },
             }
 
@@ -1030,8 +1080,14 @@ class WashAndDryService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1042,8 +1098,29 @@ class WashAndDryService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                const completedAt =
+                    order.washDetails?.dryingCompletedAt ||
+                    order.stageHistory?.find(
+                        (h) => h.status === ORDER_STATUS.IRONING,
+                    )?.updatedAt ||
+                    order.updatedAt
+
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -1075,6 +1152,20 @@ class WashAndDryService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -1091,16 +1182,32 @@ class WashAndDryService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
@@ -1112,7 +1219,7 @@ class WashAndDryService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
-                    ], // DELIVERED covers self-pickup
+                    ],
                 },
                 {
                     key: 'delivered',
@@ -1120,7 +1227,6 @@ class WashAndDryService extends BaseService {
                     completedBy: ORDER_STATUS.DELIVERED,
                 },
             ]
-
             const pipeline = PIPELINE.map((step) => {
                 const completedByStatuses = Array.isArray(step.completedBy)
                     ? step.completedBy

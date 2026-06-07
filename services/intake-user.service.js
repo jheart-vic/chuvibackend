@@ -18,6 +18,7 @@ const {
     NOTIFICATION_TYPE,
     ROLE,
     SERVICE_TIERS,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
@@ -133,6 +134,19 @@ class IntakeUserService extends BaseService {
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
+           const deliveryDate = calculateDueDate(post.deliverySpeed)
+            if (deliveryDate === null) {
+                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
+                    })
+                }
+                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Express orders must be placed before 2pm. Please select standard delivery.',
+                    })
+                }
+            }
 
             const oscNumber = generateOscNumber()
             const newOrderItem = {
@@ -155,7 +169,7 @@ class IntakeUserService extends BaseService {
                 ],
                 ...(customerId && { userId: customerId }),
                 ...post,
-                deliveryDate: calculateDueDate(post.deliverySpeed),
+                deliveryDate,
             }
             const newOrder = new BookOrderModel(newOrderItem)
             await newOrder.save()
@@ -188,7 +202,16 @@ class IntakeUserService extends BaseService {
                 //   alertType: "debit",
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Created order ${oscNumber} with amount ${totalPrice}`, category: 'order', orderId: newOrder._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Created order ${oscNumber} with amount ${totalPrice}`,
+                category: 'order',
+                orderId: newOrder._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: newOrder,
@@ -411,7 +434,16 @@ class IntakeUserService extends BaseService {
                 userId: userId || null,
                 reference: order.oscNumber,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Flagged order ${order.oscNumber} with message: ${message}`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Flagged order ${order.oscNumber} with message: ${message}`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             // ✅ Fix 2 — only notify customer if order has a linked userId
             if (order.userId) {
@@ -495,7 +527,16 @@ class IntakeUserService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Moved order ${order.oscNumber} to tag and queue`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Moved order ${order.oscNumber} to tag and queue`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order moved to tag and queue successfully',
@@ -594,7 +635,16 @@ class IntakeUserService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Confirmed tag for item ${itemId} in order ${order.oscNumber}`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Confirmed tag for item ${itemId} in order ${order.oscNumber}`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Tag successfully confirmed',
@@ -665,7 +715,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to tag the item again.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Undid tag confirmation for item ${itemId} in order ${order.oscNumber}`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Undid tag confirmation for item ${itemId} in order ${order.oscNumber}`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Tag successfully undone',
@@ -737,7 +796,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to sort and pretreat the items in the order.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Moved order ${order.oscNumber} to sort and pretreat`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Moved order ${order.oscNumber} to sort and pretreat`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} successfully sent`,
@@ -821,7 +889,16 @@ class IntakeUserService extends BaseService {
                 await sendSms(order.phoneNumber, smsMessage)
             }
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Sent top-up request of ₦${amount} for order ${order.oscNumber} with message: ${message || 'N/A'}`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Sent top-up request of ₦${amount} for order ${order.oscNumber} with message: ${message || 'N/A'}`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
             return BaseService.sendSuccessResponse({
                 message: 'Top up request sent successfully',
             })
@@ -921,7 +998,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Reason: ${message}`,
                 type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Adjusted wallet with a ${type} of ₦${amount} for user ${order.userId.fullName} with message: ${message}`, category: 'wallet', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Adjusted wallet with a ${type} of ₦${amount} for user ${order.userId.fullName} with message: ${message}`,
+                category: 'wallet',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Wallet ${type} request successful of ${amount} Reason: ${message}`,
@@ -1057,7 +1143,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for details.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(riderId), action: `Assigned to pickup for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
+=======
+            await createAuditLog({
+                userId: riderId,
+                action: `Assigned to pickup for order ${order.oscNumber}`,
+                category: 'dispatch',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
@@ -1125,7 +1220,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for details.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(riderId), action: `Assigned to delivery for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
+=======
+            await createAuditLog({
+                userId: riderId,
+                action: `Assigned to delivery for order ${order.oscNumber}`,
+                category: 'dispatch',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
@@ -1187,7 +1291,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please review the tags and proceed to complete tagging.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Auto-generated tags for order ${order.oscNumber}`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Auto-generated tags for order ${order.oscNumber}`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
             return BaseService.sendSuccessResponse({
@@ -1252,7 +1365,16 @@ class IntakeUserService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Completed tagging for order ${order.oscNumber}`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Completed tagging for order ${order.oscNumber}`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
             return BaseService.sendSuccessResponse({
                 message: 'All items tagged. Ready to send to Sort & Pretreat.',
             })
@@ -1690,7 +1812,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please proceed to tag the items in the order.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Released order ${order.oscNumber} from hold`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Released order ${order.oscNumber} from hold`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message:
@@ -1721,14 +1852,12 @@ class IntakeUserService extends BaseService {
                 endDate,
             } = req.query
 
+            // intake history = orders that went through tagging (have QUEUE in history)
+            // and have moved beyond intake (no longer PENDING, QUEUE, or stuck in HOLD at intake)
             const query = {
                 'stageHistory.status': ORDER_STATUS.QUEUE,
                 'stage.status': {
-                    $nin: [
-                        ORDER_STATUS.PENDING,
-                        ORDER_STATUS.QUEUE,
-                        ORDER_STATUS.HOLD,
-                    ],
+                    $nin: [ORDER_STATUS.PENDING, ORDER_STATUS.QUEUE],
                 },
             }
 
@@ -1742,8 +1871,14 @@ class IntakeUserService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1759,12 +1894,24 @@ class IntakeUserService extends BaseService {
 
             const today = []
             const earlier = []
+
             for (const order of data) {
-                const movedAt =
+                // use when the order left the intake queue — first SORT_AND_PRETREAT entry
+                // fallback to first non-QUEUE/PENDING stageHistory entry
+                // fallback to updatedAt
+                const leftIntakeAt =
                     order.stageHistory?.find(
                         (h) => h.status === ORDER_STATUS.SORT_AND_PRETREAT,
-                    )?.updatedAt || order.updatedAt
-                if (new Date(movedAt) >= startOfToday) {
+                    )?.updatedAt ||
+                    order.stageHistory?.find(
+                        (h) =>
+                            h.status !== ORDER_STATUS.QUEUE &&
+                            h.status !== ORDER_STATUS.PENDING &&
+                            h.status !== ORDER_STATUS.HOLD,
+                    )?.updatedAt ||
+                    order.updatedAt
+
+                if (new Date(leftIntakeAt) >= startOfToday) {
                     today.push(order)
                 } else {
                     earlier.push(order)
@@ -1830,7 +1977,16 @@ class IntakeUserService extends BaseService {
                     },
                 ],
             }).lean()
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Resumed order ${order?.oscNumber || orderId} from draft`, category: 'order', orderId: order?._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Resumed order ${order?.oscNumber || orderId} from draft`,
+                category: 'order',
+                orderId: order?._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1870,6 +2026,20 @@ class IntakeUserService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -1886,16 +2056,32 @@ class IntakeUserService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
@@ -1907,7 +2093,7 @@ class IntakeUserService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
-                    ], // DELIVERED covers self-pickup
+                    ],
                 },
                 {
                     key: 'delivered',
@@ -2071,7 +2257,16 @@ class IntakeUserService extends BaseService {
                     `Hi ${order.fullName}, your laundry order (${order.oscNumber}) has been collected. Thank you for visiting us!`,
                 )
             }
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Marked order ${order.oscNumber} as collected in person`, category: 'order', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Marked order ${order.oscNumber} as collected in person`,
+                category: 'order',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as collected successfully',
@@ -2151,7 +2346,16 @@ class IntakeUserService extends BaseService {
                 subBody: `Please check your dispatch dashboard for updates.`,
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(riderId), action: `Unassigned from pickup for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
+=======
+            await createAuditLog({
+                userId: riderId,
+                action: `Unassigned from pickup for order ${order.oscNumber}`,
+                category: 'dispatch',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider unassigned from pickup successfully',
@@ -2234,7 +2438,16 @@ class IntakeUserService extends BaseService {
                 type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
             })
 
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), action: `Unassigned rider ${riderId} from delivery for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
+=======
+            await createAuditLog({
+                userId,
+                action: `Unassigned rider ${riderId} from delivery for order ${order.oscNumber}`,
+                category: 'dispatch',
+                orderId: order._id,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider unassigned from delivery successfully',

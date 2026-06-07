@@ -9,6 +9,7 @@ const {
     STATION_STATUS,
     PICKUP_DURATION_MINUTES,
     DELIVERY_DURATION_MINUTES,
+    ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const paginate = require('../util/paginate')
 
@@ -169,8 +170,24 @@ class RiderService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_DELIVERED,
                 })
             }
+<<<<<<< HEAD
             await createNotification({userId, title: 'Delivery Completed', body: `Delivery for order ${order.oscNumber} has been marked as delivered.`, subBody: `Order ID: ${order.oscNumber}`, type: NOTIFICATION_TYPE.DELIVERY_STARTED})
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivered by rider`})
+=======
+            await createNotification({
+                userId,
+                title: 'Delivery Completed',
+                body: `Delivery for order ${order.oscNumber} has been marked as delivered.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.DELIVERY_STARTED,
+            })
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as delivered by rider`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as delivered successfully',
@@ -247,7 +264,16 @@ class RiderService extends BaseService {
                 body: `Delivery for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
                 subBody: `Order ID: ${order.oscNumber}`,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery marked as failed successfully',
@@ -424,7 +450,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Pickup for order ${order.oscNumber} started by rider`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Pickup for order ${order.oscNumber} started by rider`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup started successfully',
@@ -513,7 +548,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as picked up by rider`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as picked up by rider`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as picked up successfully',
@@ -593,7 +637,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_FAILED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup marked as failed successfully',
@@ -667,7 +720,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.DELIVERY_STARTED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Delivery for order ${order.oscNumber} started by rider`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'rider',
+                action: `Delivery for order ${order.oscNumber} started by rider`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery started successfully',
@@ -734,8 +796,14 @@ class RiderService extends BaseService {
 
             if (startDate || endDate) {
                 query['updatedAt'] = {}
-                if (startDate) query['updatedAt'].$gte = new Date(startDate)
-                if (endDate) query['updatedAt'].$lte = new Date(endDate)
+                if (startDate)
+                    query['updatedAt'].$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query['updatedAt'].$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -746,8 +814,29 @@ class RiderService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                // use the most recent dispatch action as anchor
+                const deliveryUpdatedAt =
+                    order.dispatchDetails?.delivery?.updatedAt
+                const pickupUpdatedAt = order.dispatchDetails?.pickup?.updatedAt
+                const completedAt =
+                    deliveryUpdatedAt || pickupUpdatedAt || order.updatedAt
+
+                if (new Date(completedAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: { data, pagination },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.error('Error in getHistoryList:', error)
@@ -805,6 +894,20 @@ class RiderService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -821,16 +924,32 @@ class RiderService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
@@ -842,7 +961,7 @@ class RiderService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
-                    ], // DELIVERED covers self-pickup
+                    ],
                 },
                 {
                     key: 'delivered',

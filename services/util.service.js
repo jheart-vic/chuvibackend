@@ -1,11 +1,16 @@
 const { empty } = require('../util')
 const BaseService = require('./base.service')
-const {ROLE} = require('../util/constants')
+const { ROLE } = require('../util/constants')
 const UserModel = require('../models/user.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const ActivityModel = require('../models/activity.model')
-const { createNotification } = require('../util/createNotification')
-const { NOTIFICATION_TYPE, PICKUP_STATUS, DELIVERY_STATUS, ACTIVITY_TYPE } = require('../util/constants')
+const createNotification = require('../util/createNotification')
+const {
+    NOTIFICATION_TYPE,
+    PICKUP_STATUS,
+    DELIVERY_STATUS,
+    ACTIVITY_TYPE,
+} = require('../util/constants')
 
 class UtilService extends BaseService {
     async uploadSingleImage(req) {
@@ -126,7 +131,6 @@ class UtilService extends BaseService {
             const userId = req.user.id
             const { issueType, note = '' } = req.body
 
-
             const allowedIssueTypes = [
                 'pickup_problem',
                 'delivery_problem',
@@ -217,6 +221,23 @@ class UtilService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_UPDATED,
                 })
             }
+
+            const admins = await UserModel.find({
+                userType: ROLE.ADMIN,
+                status: 'active',
+            }).select('_id')
+
+            await Promise.all(
+                admins.map((admin) =>
+                    createNotification({
+                        userId: admin._id,
+                        title: 'Delivery Issue Reported',
+                        body: `${issueType.replace(/_/g, ' ')} reported for order ${order.oscNumber} by ${user.fullName}.${note ? ` Note: ${note}` : ''}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    }),
+                ),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery issue reported successfully',

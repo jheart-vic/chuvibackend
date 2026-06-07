@@ -401,7 +401,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Updated sort details for item ${itemId}. Changes: ${changeSummaryParts.join(' | ')}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Updated sort details for item ${itemId}. Changes: ${changeSummaryParts.join(' | ')}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item details saved successfully',
@@ -490,7 +499,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Marked item ${itemId} as sorted`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Marked item ${itemId} as sorted`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
             return BaseService.sendSuccessResponse({
                 message: { message: 'Item marked as sorted', allItemsSorted },
             })
@@ -575,7 +593,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Undid sorted status for item ${itemId}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Undid sorted status for item ${itemId}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item sort undone successfully',
@@ -644,7 +671,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: 'Marked all items as sorted'})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: 'Marked all items as sorted',
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -740,7 +776,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Marked item ${itemId} as pretreated`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Marked item ${itemId} as pretreated`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -823,7 +868,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Undid pretreat status for item ${itemId}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Undid pretreat status for item ${itemId}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item pretreat status undone successfully',
@@ -911,7 +965,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_FLAGGED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Flagged item ${itemId} for review with note: ${note}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Flagged item ${itemId} for review with note: ${note}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item flagged for review successfully',
@@ -950,7 +1013,6 @@ class SortAndPretreatService extends BaseService {
                     error: 'Order not found or not in sort & pretreat stage',
                 })
 
-            // ← flexible check: only validate what each item actually requires
             const pendingSortItems = order.items.filter(
                 (i) =>
                     i.sortStatus !== 'complete' &&
@@ -962,25 +1024,30 @@ class SortAndPretreatService extends BaseService {
                     i.pretreatStatus !== 'not_required',
             )
 
-            if (pendingSortItems.length > 0) {
+            if (pendingSortItems.length > 0)
                 return BaseService.sendFailedResponse({
                     error: `${pendingSortItems.length} item(s) still pending sorting. Mark as sorted or not required before proceeding.`,
                 })
-            }
 
-            if (pendingPretreatItems.length > 0) {
+            if (pendingPretreatItems.length > 0)
                 return BaseService.sendFailedResponse({
                     error: `${pendingPretreatItems.length} item(s) still pending pretreatment. Mark as pretreated or not required before proceeding.`,
                 })
-            }
 
-            const isIroningOnly =
-                order.serviceType === ORDER_SERVICE_TYPE.IRONING_ONLY
+            // service types that skip washing and go straight to ironing
+            const skipWashingTypes = [
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+                'iron-only',
+                'ironing-only',
+            ]
 
-            const nextOrderStatus = isIroningOnly
+            const goesToIroning = skipWashingTypes.includes(order.serviceType)
+
+            const nextOrderStatus = goesToIroning
                 ? ORDER_STATUS.IRONING
                 : ORDER_STATUS.WASHING
-            const nextStationStatus = isIroningOnly
+
+            const nextStationStatus = goesToIroning
                 ? STATION_STATUS.PRESSING_AND_IRONING_STATION
                 : STATION_STATUS.WASH_AND_DRY_STATION
 
@@ -1011,18 +1078,28 @@ class SortAndPretreatService extends BaseService {
 
             await createNotification({
                 userId,
-                title: isIroningOnly
+                title: goesToIroning
                     ? 'Your order is being ironed'
                     : 'Your order is being washed',
-                body: isIroningOnly
+                body: goesToIroning
                     ? `Order ${order.oscNumber} has been sorted and is now being ironed.`
                     : `Order ${order.oscNumber} has been sorted and is now in the wash.`,
                 subBody: `Order ID: ${order.oscNumber}`,
-                type: isIroningOnly
+                type: goesToIroning
                     ? NOTIFICATION_TYPE.ORDER_IRONING
                     : NOTIFICATION_TYPE.ORDER_WASHING,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Sent order to next stage: ${nextOrderStatus}`})
+=======
+
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Sent order to next stage: ${nextOrderStatus}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} successfully sent to ${nextOrderStatus}`,
@@ -1415,11 +1492,10 @@ class SortAndPretreatService extends BaseService {
             const userId = req.user.id
 
             const user = await UserModel.findById(userId)
-            if (!user) {
+            if (!user)
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
                 })
-            }
 
             const {
                 page = 1,
@@ -1431,6 +1507,14 @@ class SortAndPretreatService extends BaseService {
 
             const query = {
                 'stageHistory.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                // only show orders that have moved beyond sort & pretreat
+                'stage.status': {
+                    $nin: [
+                        ORDER_STATUS.SORT_AND_PRETREAT,
+                        ORDER_STATUS.PENDING,
+                        ORDER_STATUS.QUEUE,
+                    ],
+                },
             }
 
             if (search) {
@@ -1443,8 +1527,14 @@ class SortAndPretreatService extends BaseService {
 
             if (startDate || endDate) {
                 query.createdAt = {}
-                if (startDate) query.createdAt.$gte = new Date(startDate)
-                if (endDate) query.createdAt.$lte = new Date(endDate)
+                if (startDate)
+                    query.createdAt.$gte = new Date(
+                        new Date(startDate).setHours(0, 0, 0, 0),
+                    )
+                if (endDate)
+                    query.createdAt.$lte = new Date(
+                        new Date(endDate).setHours(23, 59, 59, 999),
+                    )
             }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
@@ -1455,11 +1545,29 @@ class SortAndPretreatService extends BaseService {
                 lean: true,
             })
 
+            const startOfToday = new Date()
+            startOfToday.setHours(0, 0, 0, 0)
+
+            const today = []
+            const earlier = []
+
+            for (const order of data) {
+                // anchor = when order left sort & pretreat
+                // i.e. first stageHistory entry after SORT_AND_PRETREAT
+                const sortEntry = order.stageHistory?.find(
+                    (h) => h.status === ORDER_STATUS.SORT_AND_PRETREAT,
+                )
+                const leftSortAt = sortEntry?.updatedAt || order.updatedAt
+
+                if (new Date(leftSortAt) >= startOfToday) {
+                    today.push(order)
+                } else {
+                    earlier.push(order)
+                }
+            }
+
             return BaseService.sendSuccessResponse({
-                message: {
-                    data,
-                    pagination,
-                },
+                message: { today, earlier, pagination },
             })
         } catch (error) {
             console.log(error)
@@ -1491,6 +1599,20 @@ class SortAndPretreatService extends BaseService {
                     error: 'Order not found',
                 })
 
+            const skipWashingTypes = [
+                'iron-only',
+                'ironing-only',
+                ORDER_SERVICE_TYPE.IRONING_ONLY,
+            ]
+            const skipIroningTypes = [
+                'wash-only',
+                'washing-only',
+                ORDER_SERVICE_TYPE.WASHING_ONLY,
+            ]
+
+            const isIronOnly = skipWashingTypes.includes(order.serviceType)
+            const isWashOnly = skipIroningTypes.includes(order.serviceType)
+
             const PIPELINE = [
                 {
                     key: 'intake',
@@ -1507,16 +1629,32 @@ class SortAndPretreatService extends BaseService {
                     label: 'Pretreated',
                     completedBy: [ORDER_STATUS.WASHING, ORDER_STATUS.IRONING],
                 },
-                {
-                    key: 'washed',
-                    label: 'Washed',
-                    completedBy: [ORDER_STATUS.IRONING, ORDER_STATUS.READY],
-                },
-                {
-                    key: 'ironing',
-                    label: 'Ironing',
-                    completedBy: [ORDER_STATUS.QC, ORDER_STATUS.READY],
-                },
+                // washed — only show for non iron-only orders
+                ...(!isIronOnly
+                    ? [
+                          {
+                              key: 'washed',
+                              label: 'Washed',
+                              completedBy: [
+                                  ORDER_STATUS.IRONING,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
+                // ironing — only show for non wash-only orders
+                ...(!isWashOnly
+                    ? [
+                          {
+                              key: 'ironing',
+                              label: 'Ironing',
+                              completedBy: [
+                                  ORDER_STATUS.QC,
+                                  ORDER_STATUS.READY,
+                              ],
+                          },
+                      ]
+                    : []),
                 {
                     key: 'qc_passed',
                     label: 'QC Passed',
@@ -1528,7 +1666,7 @@ class SortAndPretreatService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
-                    ], // DELIVERED covers self-pickup
+                    ],
                 },
                 {
                     key: 'delivered',
@@ -1728,7 +1866,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Placed item ${itemId} on hold with reason: ${reason} and note: ${note}`})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: `Placed item ${itemId} on hold with reason: ${reason} and note: ${note}`,
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -1912,7 +2059,16 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
+<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: 'Released order from hold and returned to sort & pretreat queue'})
+=======
+            await createAuditLog({
+                userId,
+                orderId,
+                category: 'sort',
+                action: 'Released order from hold and returned to sort & pretreat queue',
+            })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message:
