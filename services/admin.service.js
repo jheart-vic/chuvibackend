@@ -2276,11 +2276,7 @@ class AdminService extends BaseService {
     
             // 2. Fetch the clean, paginated data with populate working perfectly
             const result = await paginate(
-<<<<<<< HEAD
                 AuditLogModel, 
-=======
-                AuditLogModel,
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
                 {},
                 {
                     page: req.query.page,
@@ -2288,7 +2284,6 @@ class AdminService extends BaseService {
                     sort: { createdAt: -1 },
                     populate: [{ path: 'userId' }, { path: 'orderId' }],
                 },
-<<<<<<< HEAD
             );
     
             // 3. Return the actual paginated result instead of the raw auditLogs array
@@ -2299,16 +2294,6 @@ class AdminService extends BaseService {
             return BaseService.sendFailedResponse({ 
                 error: 'Something went wrong fetching the audit logs' 
             });
-=======
-            )
-
-            return BaseService.sendSuccessResponse({ message: auditLogs })
-        } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({
-                error: 'Something went wrong fetching the audit logs',
-            })
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
         }
     }    
 }
