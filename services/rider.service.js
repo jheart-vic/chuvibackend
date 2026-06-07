@@ -15,7 +15,7 @@ const paginate = require('../util/paginate')
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
-const { buildStageUpdate, normalizePhone } = require('../util/helper')
+const { buildStageUpdate, normalizePhone, getObjectId } = require('../util/helper')
 const createAuditLog = require('../util/createAuditLog')
 
 class RiderService extends BaseService {
@@ -170,6 +170,10 @@ class RiderService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_DELIVERED,
                 })
             }
+<<<<<<< HEAD
+            await createNotification({userId, title: 'Delivery Completed', body: `Delivery for order ${order.oscNumber} has been marked as delivered.`, subBody: `Order ID: ${order.oscNumber}`, type: NOTIFICATION_TYPE.DELIVERY_STARTED})
+            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivered by rider`})
+=======
             await createNotification({
                 userId,
                 title: 'Delivery Completed',
@@ -183,6 +187,7 @@ class RiderService extends BaseService {
                 category: 'rider',
                 action: `Order ${order.oscNumber} marked as delivered by rider`,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as delivered successfully',
@@ -259,12 +264,16 @@ class RiderService extends BaseService {
                 body: `Delivery for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
                 subBody: `Order ID: ${order.oscNumber}`,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`})
+=======
             await createAuditLog({
                 userId,
                 orderId,
                 category: 'rider',
                 action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery marked as failed successfully',
@@ -441,12 +450,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Pickup for order ${order.oscNumber} started by rider`})
+=======
             await createAuditLog({
                 userId,
                 orderId,
                 category: 'rider',
                 action: `Pickup for order ${order.oscNumber} started by rider`,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup started successfully',
@@ -535,12 +548,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as picked up by rider`})
+=======
             await createAuditLog({
                 userId,
                 orderId,
                 category: 'rider',
                 action: `Order ${order.oscNumber} marked as picked up by rider`,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as picked up successfully',
@@ -620,12 +637,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_FAILED,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`})
+=======
             await createAuditLog({
                 userId,
                 orderId,
                 category: 'rider',
                 action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup marked as failed successfully',
@@ -699,12 +720,16 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.DELIVERY_STARTED,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Delivery for order ${order.oscNumber} started by rider`})
+=======
             await createAuditLog({
                 userId,
                 orderId,
                 category: 'rider',
                 action: `Delivery for order ${order.oscNumber} started by rider`,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery started successfully',

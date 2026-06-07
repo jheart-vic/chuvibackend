@@ -2262,9 +2262,21 @@ class AdminService extends BaseService {
 
     async getAuditLogs(req) {
         try {
-            const auditLogs = await AuditLogModel.find({})
+            // 1. Permanently migrate any legacy String userIds to ObjectIds in the database
+            // await AuditLogModel.updateMany(
+            //     { userId: { $type: "string" } },
+            //     [
+            //         {
+            //             $set: {
+            //                 userId: { $toObjectId: "$userId" }
+            //             }
+            //         }
+            //     ]
+            // );
+    
+            // 2. Fetch the clean, paginated data with populate working perfectly
             const result = await paginate(
-                AuditLogModel,
+                AuditLogModel, 
                 {},
                 {
                     page: req.query.page,
@@ -2272,16 +2284,18 @@ class AdminService extends BaseService {
                     sort: { createdAt: -1 },
                     populate: [{ path: 'userId' }, { path: 'orderId' }],
                 },
-            )
-
-            return BaseService.sendSuccessResponse({ message: auditLogs })
+            );
+    
+            // 3. Return the actual paginated result instead of the raw auditLogs array
+            return BaseService.sendSuccessResponse({ message: result });
+    
         } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({
-                error: 'Something went wrong fetching the audit logs',
-            })
+            console.error("Error fetching audit logs:", error);
+            return BaseService.sendFailedResponse({ 
+                error: 'Something went wrong fetching the audit logs' 
+            });
         }
-    }
+    }    
 }
 
 module.exports = AdminService

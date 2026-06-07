@@ -13,7 +13,7 @@ const {
 } = require('../util/constants')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
-const { buildStageUpdate } = require('../util/helper')
+const { buildStageUpdate, getObjectId } = require('../util/helper')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
 
@@ -225,12 +225,16 @@ class PressAndIronService extends BaseService {
                 reference: order.oscNumber,
             })
 
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), action: `${updatedCount} item(s) confirmed for pressing on order ${order.oscNumber}`, category: 'pressing', orderId: order._id})
+=======
             await createAuditLog({
                 userId,
                 action: `${updatedCount} item(s) confirmed for pressing on order ${order.oscNumber}`,
                 category: 'pressing',
                 orderId: order._id,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
             return BaseService.sendSuccessResponse({
                 message: {
                     message: `${updatedCount} item(s) confirmed for pressing`,
@@ -326,12 +330,16 @@ class PressAndIronService extends BaseService {
                     },
                 )
             }
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), action: `${targetItems.length} item(s) press confirmation undone on order ${order.oscNumber}`, category: 'pressing', orderId: order._id})
+=======
             await createAuditLog({
                 userId,
                 action: `${targetItems.length} item(s) press confirmation undone on order ${order.oscNumber}`,
                 category: 'pressing',
                 orderId: order._id,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) press confirmation undone`,
@@ -457,12 +465,16 @@ class PressAndIronService extends BaseService {
                 reference: order.oscNumber,
             })
 
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), action: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`, category: 'pressing', orderId: order._id})
+=======
             await createAuditLog({
                 userId,
                 action: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} placed on hold. Reason: ${reason}. Assigned to: ${assignTo}`,
                 category: 'pressing',
                 orderId: order._id,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -589,12 +601,16 @@ class PressAndIronService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), action: `Order ${order.oscNumber} pressing completed and sent to QC`, category: 'pressing', orderId: order._id})
+=======
             await createAuditLog({
                 userId,
                 action: `Order ${order.oscNumber} pressing completed and sent to QC`,
                 category: 'pressing',
                 orderId: order._id,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} has been successfully processed and sent to QC`,
@@ -793,12 +809,16 @@ class PressAndIronService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
+<<<<<<< HEAD
+            await createAuditLog({userId: getObjectId(userId), action: `Order ${order.oscNumber} released from hold and returned to press queue`, category: 'pressing', orderId: order._id})
+=======
             await createAuditLog({
                 userId,
                 action: `Order ${order.oscNumber} released from hold and returned to press queue`,
                 category: 'pressing',
                 orderId: order._id,
             })
+>>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to press queue',
