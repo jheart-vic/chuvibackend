@@ -8,7 +8,7 @@ const paystackAxios = require("./paystack.client.service");
 const SubscriptionModel = require("../models/subscription.model");
 const PlanModel = require("../models/plan.model");
 const BookOrderModel = require("../models/bookOrder.model");
-const { generateReferenceId } = require("../util/helper");
+const { generateReferenceId, getObjectId } = require("../util/helper");
 const PaymentModel = require("../models/payment.model");
 const createAuditLog = require("../util/createAuditLog");
 
@@ -124,7 +124,7 @@ class PaystackService extends BaseService {
           callback_url: "https://www.chuvilaundry.com/user/payment/callback",
         }
       );
-      await createAuditLog({userId: user._id, action: `Initialized ${transactionType} payment with reference ${reference}`, category: 'payment'})
+      await createAuditLog({userId: getObjectId(user._id), action: `Initialized ${transactionType} payment with reference ${reference}`, category: 'payment'})
 
       return BaseService.sendSuccessResponse({ message: response.data });
     } catch (error) {

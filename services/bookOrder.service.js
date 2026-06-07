@@ -8,6 +8,7 @@ const {
   generateReferenceId,
   roundToNearestHundred,
   calculateDueDate,
+  getObjectId,
 } = require("../util/helper");
 const SubscriptionModel = require("../models/subscription.model");
 const { v4: uuidv4 } = require("uuid");
@@ -427,7 +428,7 @@ class BookOrderService extends BaseService {
         reference: oscNumber,
       });
 
-      await createAuditLog({userId: userId, action: `Created order ${oscNumber} with id ${newOrder._id}`, category: "order", orderId: newOrder._id})
+      await createAuditLog({userId: getObjectId(userId), action: `Created order ${oscNumber} with id ${newOrder._id}`, category: "order", orderId: newOrder._id})
       return BaseService.sendSuccessResponse({
         message: finalMessage,
         order: newOrder,
@@ -565,7 +566,7 @@ class BookOrderService extends BaseService {
         type: NOTIFICATION_TYPE.ORDER_UPDATED,
       });
 
-      await createAuditLog({userId: req.user.id, action: `Updated order ${bookOrder.oscNumber} to stage ${stage}`, category: "order", orderId: bookOrder._id})
+      await createAuditLog({userId: getObjectId(req.user.id), action: `Updated order ${bookOrder.oscNumber} to stage ${stage}`, category: "order", orderId: bookOrder._id})
 
       return BaseService.sendSuccessResponse({
         message: "Book order stage updated successfully",

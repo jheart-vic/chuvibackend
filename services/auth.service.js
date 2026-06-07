@@ -11,6 +11,7 @@ const {
   verifyRefreshToken,
   signAccessToken,
   cookieOptions,
+  getObjectId,
 } = require("../util/helper");
 const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require("../util/constants");
 const FreePlanModel = require("../models/freeplan.model");
@@ -134,7 +135,7 @@ class AuthService extends BaseService {
 
       // await sendSmsOtp(newUser.phoneNumber, `${otp}`);
       await createAuditLog({
-        userId: newUser._id,
+        userId: getObjectId(newUser._id),
         action: "User Registration",
         category: "auth",
       });
@@ -288,7 +289,7 @@ class AuthService extends BaseService {
         });
 
         await createAuditLog({
-          userId: userWithSub._id,
+          userId: getObjectId(userWithSub._id),
           action: "Google Login",
           category: "auth",
         });
@@ -785,7 +786,7 @@ class AuthService extends BaseService {
       await sendSmsOtp(userExists.phoneNumber, `${otp}`);
 
       await createAuditLog({
-        userId: userExists._id,
+        userId: getObjectId(userExists._id),
         action: "Password Reset Requested",
         category: "auth",
       });
@@ -898,7 +899,7 @@ class AuthService extends BaseService {
       await user.save();
 
       await createAuditLog({
-        userId: user._id,
+        userId: getObjectId(user._id),
         action: "Password Reset Successful",
         category: "auth",
       });
@@ -991,7 +992,7 @@ class AuthService extends BaseService {
       await admin.save();
 
       await createAuditLog({
-        userId: admin._id,
+        userId: getObjectId(admin._id),
         action: "Admin Seeded",
         category: "auth",
       });
@@ -1036,7 +1037,7 @@ class AuthService extends BaseService {
       });
 
       await createAuditLog({
-        userId: user._id,
+        userId: getObjectId(user._id),
         action: "Admin Login",
         category: "auth",
       });
@@ -1096,7 +1097,7 @@ class AuthService extends BaseService {
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
         await createAuditLog({
-          userId: user._id,
+          userId: getObjectId(user._id),
           action: "Failed Login Attempt",
           category: "auth",
         });

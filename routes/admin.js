@@ -2275,7 +2275,7 @@ router.delete(ROUTE_DELETE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
+router.get(ROUTE_GET_AUDIT_LOGS, [], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAuditLogs(req, res)
 })

@@ -11,6 +11,7 @@ const {
     signAccessToken,
     formatNotificationTime,
     getWeightImprovementTipsByWeight,
+    getObjectId,
 } = require('../util/helper')
 const { deleteImage } = require('../util/imageUpload')
 const {
@@ -439,7 +440,7 @@ class UserService extends BaseService {
                     error: 'User not found',
                 })
             }
-            await createAuditLog({userId, category: 'user', action: 'User deleted their account'})
+            await createAuditLog({userId: getObjectId(userId), category: 'user', action: 'User deleted their account'})
 
             return BaseService.sendSuccessResponse({
                 message: 'User profile deleted successfully',

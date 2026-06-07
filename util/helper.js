@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const {ulid} =  require("ulid");
 const { DELIVERY_SPEED } = require("./constants");
+const mongoose = require("mongoose");
 const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET;
 const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET;
 
@@ -196,3 +197,14 @@ const calculateDueDate = (deliverySpeed) => {
 
 module.exports.calculateDueDate = calculateDueDate;
 
+
+function getObjectId(userId) {
+  // Always check if the string is a valid 24-character hex ID first
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return null; // Or throw an error, depending on your needs
+  }
+  
+  return new mongoose.Types.ObjectId(userId);
+}
+
+module.exports.getObjectId = getObjectId
