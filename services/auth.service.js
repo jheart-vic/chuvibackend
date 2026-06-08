@@ -627,7 +627,7 @@ class AuthService extends BaseService {
                     error: 'UserType is required',
                 })
 
-            const user = await UserModel.findOne({ email, userType })
+            const user = await UserModel.findOne({ email, userType }).select('+otp +otpExpiresAt')
             if (!user)
                 return BaseService.sendFailedResponse({
                     error: 'User not found. Please register as a new user',
