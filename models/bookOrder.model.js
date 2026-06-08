@@ -7,7 +7,7 @@ const {
     ORDER_SERVICE_TYPE,
     PAYMENT_METHOD,
     BILLING_TYPE,
-    ITEM_ENUM_TYPES,
+    // ITEM_ENUM_TYPES,
     ORDER_CHANNEL,
     TAG_STATE,
     TAG_COLOR,
@@ -23,7 +23,7 @@ const {
 
 const ItemSchema = new mongoose.Schema(
     {
-        type: { type: String, required: true, enum: ITEM_ENUM_TYPES },
+        type: { type: String, required: true },
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
         tagId: { type: String },

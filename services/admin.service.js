@@ -293,20 +293,6 @@ class AdminService extends BaseService {
                 deliveryDate: { $gte: todayStart, $lte: todayEnd },
             })
 
-            // const bottleneckAgg = await BookOrderModel.aggregate([
-            //     {
-            //         $match: {
-            //             'stage.status': {
-            //                 $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
-            //             },
-            //         },
-            //     },
-            //     { $group: { _id: '$stage.status', count: { $sum: 1 } } },
-            //     { $sort: { count: -1 } },
-            //     { $limit: 1 },
-            // ])
-            // const bottleNeckStation = bottleneckAgg[0] || null
-
             const [bottleneckOrderCount, bottleneckItemCount] =
                 await Promise.all([
                     BookOrderModel.countDocuments({
@@ -354,18 +340,18 @@ class AdminService extends BaseService {
                 status: 'active',
             })
 
-            const monthlyRevenueAgg = await PaymentModel.aggregate([
+           const monthlyOrderRevenueAgg = await PaymentModel.aggregate([
                 {
                     $match: {
                         status: 'success',
-                        verifiedAt: { $exists: true, $ne: null },
+                        type: 'order', // ← order payments only
                     },
                 },
                 {
                     $group: {
                         _id: {
-                            year: { $year: '$verifiedAt' },
-                            month: { $month: '$verifiedAt' },
+                            year: { $year: '$createdAt' },
+                            month: { $month: '$createdAt' },
                         },
                         totalRevenue: { $sum: '$amount' },
                         orderCount: { $sum: 1 },
@@ -409,6 +395,72 @@ class AdminService extends BaseService {
                     },
                 },
             ])
+
+            // monthly revenue — subscriptions only
+            const monthlySubscriptionRevenueAgg =
+                await SubscriptionModel.aggregate([
+                    {
+                        $match: {
+                            lastPaymentAt: { $exists: true, $ne: null }, // ← payment was made
+                        },
+                    },
+                    {
+                        $lookup: {
+                            from: 'plans',
+                            localField: 'planId',
+                            foreignField: '_id',
+                            as: 'plan',
+                        },
+                    },
+                    { $unwind: '$plan' },
+                    {
+                        $group: {
+                            _id: {
+                                year: { $year: '$lastPaymentAt' },
+                                month: { $month: '$lastPaymentAt' },
+                            },
+                            totalRevenue: { $sum: '$plan.price' },
+                            subscriptionCount: { $sum: 1 },
+                        },
+                    },
+                    { $sort: { '_id.year': -1, '_id.month': -1 } },
+                    { $limit: 12 },
+                    {
+                        $project: {
+                            _id: 0,
+                            year: '$_id.year',
+                            month: '$_id.month',
+                            totalRevenue: 1,
+                            subscriptionCount: 1,
+                            label: {
+                                $concat: [
+                                    {
+                                        $arrayElemAt: [
+                                            [
+                                                '',
+                                                'Jan',
+                                                'Feb',
+                                                'Mar',
+                                                'Apr',
+                                                'May',
+                                                'Jun',
+                                                'Jul',
+                                                'Aug',
+                                                'Sep',
+                                                'Oct',
+                                                'Nov',
+                                                'Dec',
+                                            ],
+                                            '$_id.month',
+                                        ],
+                                    },
+                                    ' ',
+                                    { $toString: '$_id.year' },
+                                ],
+                            },
+                        },
+                    },
+                ])
 
             const planDistributionAgg = await SubscriptionModel.aggregate([
                 { $match: { status: 'active' } },
@@ -642,7 +694,9 @@ class AdminService extends BaseService {
                     subscriptionAnalytics,
                     totalSubscribers,
                     planDistributionAgg,
-                    monthlyRevenueAgg,
+                    // monthlyRevenueAgg,
+                    monthlyOrderRevenueAgg,
+                    monthlySubscriptionRevenueAgg,
                     graphResult,
                     activities,
                 },

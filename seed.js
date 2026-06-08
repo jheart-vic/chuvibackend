@@ -1,43 +1,52 @@
-// seeds/fixAdminSetting.seed.js
-const mongoose = require('mongoose')
 require('dotenv').config()
+const mongoose = require('mongoose')
+const bcrypt = require('bcryptjs')
 
-const AdminSettingModel = require('./models/adminSetting.model')
+// adjust path to match your project structure
+const UserModel = require('./models/user.model')
 
-const run = async () => {
+const MONGODB_URL = process.env.MONGODB_URL || process.env.DATABASE_URL
+
+const seedAdmin = async () => {
     try {
-        await mongoose.connect(process.env.MONGODB_URL)
-        console.log('Connected to MongoDB')
+        console.log('🔌 Connecting to database...')
+        await mongoose.connect(MONGODB_URL)
+        console.log('✅ Connected')
 
-        // ✅ delete the old document entirely and insert a fresh one
-        await AdminSettingModel.deleteMany({})
-        console.log('🗑️ Old AdminSetting deleted')
+        const adminEmail = 'admin@chuvi.com'
 
-        await AdminSettingModel.create({
-            serviceTypes: [
-                { name: 'wash-and-iron', pricePerPiece: 700 },
-                { name: 'washing-only', pricePerPiece: 700 },
-                { name: 'ironing-only', pricePerPiece: 700 },
-                { name: 'dry-clean', pricePerPiece: 700 },
-            ],
-            sameDayCharge: 300,
-            expressCharge: 100,
-            premiumServiceTierCharge: 1.5,
-            vipServiceTierCharge: 2,
-            pickupTimeSlots: ['10am-12pm', '4pm-6pm'],
-            standardCapacity: 100,
-            sameDayCapacity: 50,
-            expressCapacity: 30,
-            standardDeliveryPeriod: 2,
+        const adminExists = await UserModel.findOne({
+            email: adminEmail,
+            userType: 'admin',
         })
 
-        console.log('✅ AdminSetting seeded successfully')
-    } catch (error) {
-        console.error('❌ Seed failed:', error)
-    } finally {
-        await mongoose.disconnect()
+        if (adminExists) {
+            console.log('⚠️  Admin already exists. Skipping seed.')
+            process.exit(0)
+        }
+
+        const admin = new UserModel({
+            email: adminEmail,
+            password: 'Admin@1234',
+            fullName: 'Super Admin',
+            phoneNumber: '08000000000',
+            userType: 'admin',
+            servicePlatform: 'local',
+            isVerified: true,
+        })
+
+        await admin.save()
+
+        console.log('🎉 Admin seeded successfully')
+        console.log('   Email:    admin@chuvi.com')
+        console.log('   Password: Admin@1234')
+        console.log('   ⚠️  Change the password after first login')
+
         process.exit(0)
+    } catch (error) {
+        console.error('❌ Seed failed:', error.message)
+        process.exit(1)
     }
 }
 
-run()
+seedAdmin()
