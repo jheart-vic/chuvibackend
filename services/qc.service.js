@@ -300,16 +300,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`})
-=======
-            await createAuditLog({
-                userId,
-                orderId,
-                category: 'qc',
-                action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`,
-            })
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -409,16 +400,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`})
-=======
-            await createAuditLog({
-                userId,
-                orderId,
-                category: 'qc',
-                action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`,
-            })
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) QC status undone`,
@@ -487,16 +469,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: 'Order passed QC and sent to Pack & Seal'})
-=======
-            await createAuditLog({
-                userId,
-                orderId,
-                category: 'qc',
-                action: 'Order passed QC and sent to Pack & Seal',
-            })
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order passed QC and sent to Pack & Seal',
@@ -856,16 +829,7 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`})
-=======
-            await createAuditLog({
-                userId,
-                orderId,
-                category: 'qc',
-                action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`,
-            })
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -1058,16 +1022,7 @@ class QCService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
-<<<<<<< HEAD
             await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: 'Order released from hold and returned to QC queue'})
-=======
-            await createAuditLog({
-                userId,
-                orderId,
-                category: 'qc',
-                action: 'Order released from hold and returned to QC queue',
-            })
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to QC queue',

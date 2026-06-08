@@ -4,24 +4,14 @@ const validateData = require('../util/validate')
 const BookOrderModel = require('../models/bookOrder.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const {
-<<<<<<< HEAD
-  generateOscNumber,
-  generateReferenceId,
-  roundToNearestHundred,
-  calculateDueDate,
-  getObjectId,
-} = require("../util/helper");
-const SubscriptionModel = require("../models/subscription.model");
-const { v4: uuidv4 } = require("uuid");
-=======
     generateOscNumber,
     generateReferenceId,
     roundToNearestHundred,
     calculateDueDate,
+    getObjectId,
 } = require('../util/helper')
 const SubscriptionModel = require('../models/subscription.model')
 const { v4: uuidv4 } = require('uuid')
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
 const {
     NOTIFICATION_TYPE,
     ORDER_STATUS,
@@ -492,7 +482,7 @@ class BookOrderService extends BaseService {
             })
 
             await createAuditLog({
-                userId: userId,
+                userId: getObjectId(userId),
                 action: `Created order ${oscNumber} with id ${newOrder._id}`,
                 category: 'order',
                 orderId: newOrder._id,
@@ -635,7 +625,7 @@ class BookOrderService extends BaseService {
             })
 
             await createAuditLog({
-                userId: req.user.id,
+                userId: getObjectId(req.user.id),
                 action: `Updated order ${bookOrder.oscNumber} to stage ${stage}`,
                 category: 'order',
                 orderId: bookOrder._id,
@@ -648,102 +638,6 @@ class BookOrderService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({ error })
         }
-<<<<<<< HEAD
-
-        wallet.balance -= totalPrice;
-        await wallet.save();
-
-        const referencee = uuidv4();
-        await WalletTransactionModel.create({
-          userId,
-          walletId: wallet._id,
-          type: "debit",
-          amount: totalPrice,
-          reference: referencee,
-          status: "success",
-          description: "Order Payment",
-        });
-
-        const stage = {
-          status: ORDER_STATUS.PENDING,
-          updatedAt: new Date(),
-        };
-        const stageHistory = {
-          status: ORDER_STATUS.PENDING,
-          note: "Order created",
-          updatedAt: new Date(),
-        };
-
-        const newOrderItem = {
-          userId,
-          oscNumber,
-          amount: totalPrice,
-          deliveryAmount: extraDeliveryCost,
-          stage,
-          stageHistory: [stageHistory],
-          paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
-          paymentDate: new Date(),
-          ...post,
-        };
-        newOrder = new BookOrderModel(newOrderItem);
-        await newOrder.save();
-
-        const reference = generateReferenceId();
-        await PaymentModel.create({
-          userId: userId,
-          amount: totalPrice,
-          reference: reference,
-          status: "success",
-          order: newOrder._id,
-          type: "order",
-          alertType: "debit",
-        });
-
-        await createNotification({
-          userId: userId,
-          title: "Order Created Successfully",
-          body: `Your laundry order has been received. We will pick it up shortly.`,
-          subBody: `Order ID: ${oscNumber}.`,
-          type: NOTIFICATION_TYPE.ORDER_CREATED,
-        });
-      }
-      // update the capacity in admin order settings
-      if (
-        post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-        adminOrderDetails.sameDayCapacity > 0
-      ) {
-        adminOrderDetails.sameDayCapacity -= post.items.length;
-      } else if (
-        post.deliverySpeed === DELIVERY_SPEED.EXPRESS &&
-        adminOrderDetails.expressCapacity > 0
-      ) {
-        adminOrderDetails.expressCapacity -= post.items.length;
-      } else if (
-        post.deliverySpeed === DELIVERY_SPEED.STANDARD &&
-        adminOrderDetails.standardCapacity > 0
-      ) {
-        adminOrderDetails.standardCapacity -= post.items.length;
-      }
-      await adminOrderDetails.save();
-      await ActivityModel.create({
-        title: "New Order Registered",
-        description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
-        type: ACTIVITY_TYPE.ORDER_CREATED,
-        orderId: newOrder._id,
-        userId: userId || null,
-        reference: oscNumber,
-      });
-
-      await createAuditLog({userId: getObjectId(userId), action: `Created order ${oscNumber} with id ${newOrder._id}`, category: "order", orderId: newOrder._id})
-      return BaseService.sendSuccessResponse({
-        message: finalMessage,
-        order: newOrder,
-      });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({ error });
-=======
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
     }
     async getBookOrderHistory(req, res) {
         try {
@@ -807,68 +701,6 @@ class BookOrderService extends BaseService {
                 })
             }
 
-<<<<<<< HEAD
-      const bookOrder = await BookOrderModel.findById(bookOrderId);
-      if (!bookOrder) {
-        return BaseService.sendFailedResponse({
-          error: "Book order not found!",
-        });
-      }
-      bookOrder.stage.status = stage;
-      bookOrder.stage.note = note;
-      await bookOrder.save();
-
-      let message = "";
-      let title = "";
-
-      switch (stage) {
-        case ORDER_STATUS.PICKED_UP:
-          message = "Your laundry has been picked up successfully";
-          title = "Picked Up";
-          break;
-        case ORDER_STATUS.WASHING:
-          message = "Your laundry is being washed";
-          title = "Washing";
-          break;
-        case ORDER_STATUS.IRONING:
-          message = "Your laundry is being ironed";
-          title = "Ironing";
-          break;
-        case ORDER_STATUS.DELIVERED:
-          message = "Your order has been delivered successfully";
-          title = "Delivered";
-          break;
-        case ORDER_STATUS.OUT_FOR_DELIVERY:
-          message = "Your order is out for delivery";
-          title = "Delivered";
-        case ORDER_STATUS.RECEIVED:
-          message = "Your order has been received";
-          title = "Received";
-        case ORDER_STATUS.READY:
-          message = "Your order is ready for pickup";
-          title = "Ready";
-          break;
-        default:
-          message = "Status updated";
-      }
-
-      await createNotification({
-        userId: bookOrder.userId,
-        title: title,
-        body: message,
-        subBody: note || "",
-        type: NOTIFICATION_TYPE.ORDER_UPDATED,
-      });
-
-      await createAuditLog({userId: getObjectId(req.user.id), action: `Updated order ${bookOrder.oscNumber} to stage ${stage}`, category: "order", orderId: bookOrder._id})
-
-      return BaseService.sendSuccessResponse({
-        message: "Book order stage updated successfully",
-      });
-    } catch (error) {
-      console.log(error);
-      return BaseService.sendFailedResponse({ error });
-=======
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({
                 message: bookOrder,
@@ -877,7 +709,6 @@ class BookOrderService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({ error })
         }
->>>>>>> 792b072446d60dbada9897693986c718dfab2e63
     }
 }
 
