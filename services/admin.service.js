@@ -84,7 +84,8 @@ class AdminService extends BaseService {
                 {
                     $match: {
                         status: 'success',
-                        verifiedAt: { $gte: todayStart, $lte: todayEnd },
+                        type: { $in: ['order', 'subscription'] },
+                        createdAt: { $gte: todayStart, $lte: todayEnd },
                     },
                 },
                 { $group: { _id: null, total: { $sum: '$amount' } } },
@@ -95,10 +96,8 @@ class AdminService extends BaseService {
                 {
                     $match: {
                         status: 'success',
-                        verifiedAt: {
-                            $gte: yesterdayStart,
-                            $lte: yesterdayEnd,
-                        },
+                        type: { $in: ['order', 'subscription'] },
+                        createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd }, // ← createdAt
                     },
                 },
                 { $group: { _id: null, total: { $sum: '$amount' } } },
@@ -122,7 +121,8 @@ class AdminService extends BaseService {
                 {
                     $match: {
                         status: 'success',
-                        verifiedAt: { $gte: sevenDaysAgo, $lte: todayEnd },
+                        type: { $in: ['order', 'subscription'] },
+                        createdAt: { $gte: sevenDaysAgo, $lte: todayEnd },
                     },
                 },
                 {
@@ -130,7 +130,7 @@ class AdminService extends BaseService {
                         _id: {
                             $dateToString: {
                                 format: '%Y-%m-%d',
-                                date: '$verifiedAt',
+                                date: '$createdAt',
                             },
                         },
                         dailyTotal: { $sum: '$amount' },
@@ -336,11 +336,22 @@ class AdminService extends BaseService {
                 activeHolds,
             }
 
-            const totalSubscribers = await SubscriptionModel.countDocuments({
-                status: 'active',
-            })
+            const totalSubscribersAgg = await SubscriptionModel.aggregate([
+                { $match: { status: 'active' } },
+                {
+                    $lookup: {
+                        from: 'plans',
+                        localField: 'planId',
+                        foreignField: '_id',
+                        as: 'plan',
+                    },
+                },
+                { $match: { 'plan.0': { $exists: true } } },
+                { $count: 'total' },
+            ])
+            const totalSubscribers = totalSubscribersAgg[0]?.total || 0
 
-           const monthlyOrderRevenueAgg = await PaymentModel.aggregate([
+            const monthlyOrderRevenueAgg = await PaymentModel.aggregate([
                 {
                     $match: {
                         status: 'success',
@@ -515,6 +526,7 @@ class AdminService extends BaseService {
                         as: 'plan',
                     },
                 },
+                { $match: { 'plan.0': { $exists: true } } }, // ← add this
                 { $unwind: '$plan' },
                 {
                     $group: {
