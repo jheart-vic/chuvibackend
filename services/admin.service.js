@@ -49,16 +49,17 @@ class AdminService extends BaseService {
             const twelveHoursAgo = new Date()
             twelveHoursAgo.setHours(now.getHours() - 12)
 
+            // ── Active orders ───────────────────────────────────────────────
             const totalActiveOrders = await BookOrderModel.countDocuments({
                 'stage.status': {
                     $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
                 },
             })
 
+            // ── Overdue & due today ─────────────────────────────────────────
             const overdueOrders = await BookOrderModel.countDocuments({
                 deliveryDate: { $lt: now },
                 'stage.status': { $ne: ORDER_STATUS.DELIVERED },
-                // READY orders are overdue if not yet delivered
                 $nor: [
                     {
                         'stage.status': ORDER_STATUS.READY,
@@ -80,6 +81,7 @@ class AdminService extends BaseService {
                 ],
             })
 
+            // ── Revenue today ───────────────────────────────────────────────
             const revenueTodayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
@@ -92,12 +94,13 @@ class AdminService extends BaseService {
             ])
             const revenueTodayVerified = revenueTodayAgg[0]?.total || 0
 
+            // ── Revenue yesterday ───────────────────────────────────────────
             const revenueYesterdayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
                         status: 'success',
                         type: { $in: ['order', 'subscription'] },
-                        createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd }, // ← createdAt
+                        createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd },
                     },
                 },
                 { $group: { _id: null, total: { $sum: '$amount' } } },
@@ -117,6 +120,7 @@ class AdminService extends BaseService {
                           ).toFixed(2),
                       )
 
+            // ── 7-day average revenue (running average with zero-fill) ──────
             const revenue7DayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
@@ -137,20 +141,43 @@ class AdminService extends BaseService {
                     },
                 },
             ])
-            const avgDailyRevenue7Days =
-                revenue7DayAgg.length > 0
-                    ? Math.round(
-                          revenue7DayAgg.reduce((s, d) => s + d.dailyTotal, 0) /
-                              7,
-                      )
-                    : 0
 
+            // fill in missing days as 0 so empty days pull the average down
+            const allRevenueDays = []
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date()
+                d.setDate(d.getDate() - i)
+                const key = d.toISOString().split('T')[0]
+                const found = revenue7DayAgg.find((r) => r._id === key)
+                allRevenueDays.push({
+                    _id: key,
+                    dailyTotal: found?.dailyTotal || 0,
+                })
+            }
+
+            // running average — divides cumulative sum by days so far
+            let revenueRunningSum = 0
+            let avgDailyRevenue7Days = 0
+            allRevenueDays.forEach((day, index) => {
+                revenueRunningSum += day.dailyTotal
+                avgDailyRevenue7Days = Math.round(
+                    revenueRunningSum / (index + 1),
+                )
+            })
+
+            // ── Total all-time revenue ──────────────────────────────────────
             const totalRevenueAgg = await PaymentModel.aggregate([
-                { $match: { status: 'success' } },
+                {
+                    $match: {
+                        status: 'success',
+                        type: { $in: ['order', 'subscription'] },
+                    },
+                },
                 { $group: { _id: null, total: { $sum: '$amount' } } },
             ])
             const totalRevenue = totalRevenueAgg[0]?.total || 0
 
+            // ── Avg processing time (today's delivered orders) ──────────────
             const avgProcessingTimeAgg = await BookOrderModel.aggregate([
                 {
                     $match: {
@@ -162,7 +189,6 @@ class AdminService extends BaseService {
                     $project: {
                         processingTime: {
                             $subtract: [
-                                // ← get the updatedAt from the DELIVERED stageHistory entry
                                 {
                                     $let: {
                                         vars: {
@@ -180,11 +206,11 @@ class AdminService extends BaseService {
                                                             },
                                                         },
                                                     },
-                                                    0, // ← take the first match
+                                                    0,
                                                 ],
                                             },
                                         },
-                                        in: '$$deliveredEntry.updatedAt', // ← now access the field
+                                        in: '$$deliveredEntry.updatedAt',
                                     },
                                 },
                                 '$createdAt',
@@ -203,6 +229,7 @@ class AdminService extends BaseService {
             const avgProcessingTime = avgProcessingTimeAgg[0]?.avgTime || 0
             const ordersProcessedToday = avgProcessingTimeAgg[0]?.count || 0
 
+            // ── Avg cost per item 7-day (running average with zero-fill) ────
             const avgCostPerItem7DaysAgg = await BookOrderModel.aggregate([
                 {
                     $match: {
@@ -237,18 +264,30 @@ class AdminService extends BaseService {
                 { $sort: { _id: 1 } },
             ])
 
-            const avgCostPerItem7Days =
-                avgCostPerItem7DaysAgg.length > 0
-                    ? Math.round(
-                          avgCostPerItem7DaysAgg.reduce(
-                              (s, d) => s + d.dailyCostPerItem,
-                              0,
-                          ) / avgCostPerItem7DaysAgg.length,
-                      )
-                    : 0
+            // fill in missing days as 0
+            const allCostDays = []
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date()
+                d.setDate(d.getDate() - i)
+                const key = d.toISOString().split('T')[0]
+                const found = avgCostPerItem7DaysAgg.find((r) => r._id === key)
+                allCostDays.push({
+                    _id: key,
+                    dailyCostPerItem: found?.dailyCostPerItem || 0,
+                })
+            }
 
-            const recent3 = avgCostPerItem7DaysAgg.slice(-3)
-            const prior4 = avgCostPerItem7DaysAgg.slice(0, 4)
+            // running average
+            let costRunningSum = 0
+            let avgCostPerItem7Days = 0
+            allCostDays.forEach((day, index) => {
+                costRunningSum += day.dailyCostPerItem
+                avgCostPerItem7Days = Math.round(costRunningSum / (index + 1))
+            })
+
+            // cost trend — compare last 3 days vs prior 4 days
+            const recent3 = allCostDays.slice(-3)
+            const prior4 = allCostDays.slice(0, 4)
             const avgRecent =
                 recent3.length > 0
                     ? recent3.reduce((s, d) => s + d.dailyCostPerItem, 0) /
@@ -268,17 +307,18 @@ class AdminService extends BaseService {
                         ? 'down_good'
                         : 'neutral'
 
+            // ── Pending payments ────────────────────────────────────────────
             const pendingVerification = await PaymentModel.countDocuments({
                 status: PAYMENT_ORDER_STATUS.PENDING,
                 type: { $in: ['order', 'wallet-top-up'] },
                 paymentMethod: 'bank-transfer',
             })
 
-            // ALL: total pending (for reference section)
             const pendingPayment = await PaymentModel.countDocuments({
                 status: PAYMENT_ORDER_STATUS.PENDING,
             })
 
+            // ── Holds ───────────────────────────────────────────────────────
             const activeHolds = await BookOrderModel.countDocuments({
                 'stage.status': ORDER_STATUS.HOLD,
             })
@@ -293,6 +333,7 @@ class AdminService extends BaseService {
                 deliveryDate: { $gte: todayStart, $lte: todayEnd },
             })
 
+            // ── Bottleneck station (press & iron) ───────────────────────────
             const [bottleneckOrderCount, bottleneckItemCount] =
                 await Promise.all([
                     BookOrderModel.countDocuments({
@@ -315,6 +356,7 @@ class AdminService extends BaseService {
                 itemCount: bottleneckItemCount,
             }
 
+            // ── Ready & waiting, delivery issues ────────────────────────────
             const readyAndWaiting = await BookOrderModel.countDocuments({
                 'stage.status': ORDER_STATUS.READY,
                 'dispatchDetails.delivery.status': {
@@ -326,6 +368,7 @@ class AdminService extends BaseService {
                 'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
             })
 
+            // ── Priority alerts ─────────────────────────────────────────────
             const priorityAlerts = {
                 overdueOrders,
                 dueToday,
@@ -336,6 +379,7 @@ class AdminService extends BaseService {
                 activeHolds,
             }
 
+            // ── Total subscribers (only with valid plan) ────────────────────
             const totalSubscribersAgg = await SubscriptionModel.aggregate([
                 { $match: { status: 'active' } },
                 {
@@ -351,11 +395,12 @@ class AdminService extends BaseService {
             ])
             const totalSubscribers = totalSubscribersAgg[0]?.total || 0
 
+            // ── Monthly order revenue ───────────────────────────────────────
             const monthlyOrderRevenueAgg = await PaymentModel.aggregate([
                 {
                     $match: {
                         status: 'success',
-                        type: 'order', // ← order payments only
+                        type: 'order',
                     },
                 },
                 {
@@ -407,12 +452,12 @@ class AdminService extends BaseService {
                 },
             ])
 
-            // monthly revenue — subscriptions only
+            // ── Monthly subscription revenue ────────────────────────────────
             const monthlySubscriptionRevenueAgg =
                 await SubscriptionModel.aggregate([
                     {
                         $match: {
-                            lastPaymentAt: { $exists: true, $ne: null }, // ← payment was made
+                            lastPaymentAt: { $exists: true, $ne: null },
                         },
                     },
                     {
@@ -423,6 +468,7 @@ class AdminService extends BaseService {
                             as: 'plan',
                         },
                     },
+                    { $match: { 'plan.0': { $exists: true } } },
                     { $unwind: '$plan' },
                     {
                         $group: {
@@ -473,8 +519,18 @@ class AdminService extends BaseService {
                     },
                 ])
 
+            // ── Plan distribution ───────────────────────────────────────────
             const planDistributionAgg = await SubscriptionModel.aggregate([
                 { $match: { status: 'active' } },
+                {
+                    $lookup: {
+                        from: 'plans',
+                        localField: 'planId',
+                        foreignField: '_id',
+                        as: 'plan',
+                    },
+                },
+                { $match: { 'plan.0': { $exists: true } } },
                 { $group: { _id: '$planId', count: { $sum: 1 } } },
                 {
                     $lookup: {
@@ -516,6 +572,7 @@ class AdminService extends BaseService {
                 { $sort: { percentage: -1 } },
             ])
 
+            // ── Subscription analytics ──────────────────────────────────────
             const subscriptionAnalytics = await SubscriptionModel.aggregate([
                 { $match: { status: 'active' } },
                 {
@@ -526,7 +583,7 @@ class AdminService extends BaseService {
                         as: 'plan',
                     },
                 },
-                { $match: { 'plan.0': { $exists: true } } }, // ← add this
+                { $match: { 'plan.0': { $exists: true } } },
                 { $unwind: '$plan' },
                 {
                     $group: {
@@ -593,6 +650,7 @@ class AdminService extends BaseService {
                 { $sort: { planRevenue: -1 } },
             ])
 
+            // ── Orders graph (12hr) ─────────────────────────────────────────
             const ordersGraphAgg = await BookOrderModel.aggregate([
                 {
                     $facet: {
@@ -675,6 +733,7 @@ class AdminService extends BaseService {
                 })
             }
 
+            // ── Recent activity ─────────────────────────────────────────────
             const activities = await ActivityModel.find()
                 .sort({ createdAt: -1 })
                 .limit(10)
@@ -689,11 +748,12 @@ class AdminService extends BaseService {
                     revenueYesterday,
                     revenueTodayChange,
                     avgDailyRevenue7Days,
+                    avgDailyRevenue7DayBreakdown: allRevenueDays,
                     avgProcessingTime,
                     ordersProcessedToday,
                     avgCostPerItem7Days,
                     costTrend,
-                    avgCostPerItem7DayBreakdown: avgCostPerItem7DaysAgg,
+                    avgCostPerItem7DayBreakdown: allCostDays,
                     pendingVerification,
                     pendingPayment,
                     activeHolds,
@@ -703,10 +763,9 @@ class AdminService extends BaseService {
                     readyAndWaiting,
                     deliveryIssues,
                     priorityAlerts,
-                    subscriptionAnalytics,
                     totalSubscribers,
+                    subscriptionAnalytics,
                     planDistributionAgg,
-                    // monthlyRevenueAgg,
                     monthlyOrderRevenueAgg,
                     monthlySubscriptionRevenueAgg,
                     graphResult,
@@ -809,6 +868,9 @@ class AdminService extends BaseService {
                         error: 'Invalid type supplied',
                     })
             }
+const p = await PaymentModel.findOne({ status: PAYMENT_ORDER_STATUS.PENDING })
+console.log('payment type:', p?.type)
+console.log('payment paymentMethod:', p?.paymentMethod)
 
             const [orders, total] = await Promise.all([
                 BookOrderModel.find(filter)
@@ -1163,6 +1225,8 @@ class AdminService extends BaseService {
                     populate: [{ path: 'userId' }, { path: 'order' }],
                 },
             )
+
+
             return BaseService.sendSuccessResponse({ message: result })
         } catch (error) {
             console.log(error)
@@ -1417,52 +1481,48 @@ class AdminService extends BaseService {
                 deliveryFailed,
             ] = await Promise.all([
                 // pending today
+                // pending — current state, no date filter
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
-                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
 
-                // scheduled today
+                // scheduled — current state, no date filter
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
-                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
 
-                // pickup in progress today
+                // in progress — current state, no date filter
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status':
                         PICKUP_STATUS.PICKUP_IN_PROGRESS,
-                    'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
 
-                // picked up today
+                // picked up today — date filter makes sense here
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
                     'dispatchDetails.pickup.updatedAt': todayRange,
                 }),
 
-                // out for delivery today
+                // out for delivery — current state, no date filter
                 BookOrderModel.countDocuments({
                     isDelivery: true,
                     'dispatchDetails.delivery.status':
                         DELIVERY_STATUS.OUT_FOR_DELIVERY,
-                    'dispatchDetails.delivery.updatedAt': todayRange,
                 }),
 
-                // delivered today
+                // delivered today — date filter makes sense here
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.DELIVERED,
                     'stage.updatedAt': todayRange,
                 }),
 
-                // failed delivery today
+                // failed — current state, no date filter
                 BookOrderModel.countDocuments({
                     'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
-                    'dispatchDetails.delivery.updatedAt': todayRange,
                 }),
             ])
 
