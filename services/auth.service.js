@@ -559,9 +559,18 @@ class AuthService extends BaseService {
                 return BaseService.sendFailedResponse({ error: 'OTP expired' })
             }
 
-            if (userExists.otp !== otp) {
+            // Fix 1 — type mismatch on comparison
+            if (String(userExists.otp) !== String(otp)) {
                 return BaseService.sendFailedResponse({ error: 'Invalid OTP' })
             }
+
+            // Fix 2 — expiry check direction is correct but verify EXPIRES_AT is set right
+            // EXPIRES_AT should be a number like 10 * 60 * 1000 (10 mins in ms)
+            // if it's a string or undefined, otpExpiresAt will be invalid
+            console.log('EXPIRES_AT:', EXPIRES_AT)
+            console.log('otp from db:', userExists.otp, typeof userExists.otp)
+            console.log('otp from req:', otp, typeof otp)
+            console.log('expiresAt:', userExists.otpExpiresAt)
 
             userExists.isVerified = true
             userExists.otp = ''

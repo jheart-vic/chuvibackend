@@ -161,7 +161,34 @@ class AdminService extends BaseService {
                 {
                     $project: {
                         processingTime: {
-                            $subtract: ['$updatedAt', '$createdAt'],
+                            $subtract: [
+                                // ← get the updatedAt from the DELIVERED stageHistory entry
+                                {
+                                    $let: {
+                                        vars: {
+                                            deliveredEntry: {
+                                                $arrayElemAt: [
+                                                    {
+                                                        $filter: {
+                                                            input: '$stageHistory',
+                                                            as: 'h',
+                                                            cond: {
+                                                                $eq: [
+                                                                    '$$h.status',
+                                                                    ORDER_STATUS.DELIVERED,
+                                                                ],
+                                                            },
+                                                        },
+                                                    },
+                                                    0, // ← take the first match
+                                                ],
+                                            },
+                                        },
+                                        in: '$$deliveredEntry.updatedAt', // ← now access the field
+                                    },
+                                },
+                                '$createdAt',
+                            ],
                         },
                     },
                 },
@@ -2273,10 +2300,10 @@ class AdminService extends BaseService {
             //         }
             //     ]
             // );
-    
+
             // 2. Fetch the clean, paginated data with populate working perfectly
             const result = await paginate(
-                AuditLogModel, 
+                AuditLogModel,
                 {},
                 {
                     page: req.query.page,
@@ -2284,18 +2311,17 @@ class AdminService extends BaseService {
                     sort: { createdAt: -1 },
                     populate: [{ path: 'userId' }, { path: 'orderId' }],
                 },
-            );
-    
+            )
+
             // 3. Return the actual paginated result instead of the raw auditLogs array
-            return BaseService.sendSuccessResponse({ message: result });
-    
+            return BaseService.sendSuccessResponse({ message: result })
         } catch (error) {
-            console.error("Error fetching audit logs:", error);
-            return BaseService.sendFailedResponse({ 
-                error: 'Something went wrong fetching the audit logs' 
-            });
+            console.error('Error fetching audit logs:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong fetching the audit logs',
+            })
         }
-    }    
+    }
 }
 
 module.exports = AdminService
