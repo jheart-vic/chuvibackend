@@ -607,103 +607,7 @@ class AuthService extends BaseService {
             return BaseService.sendFailedResponse({ error })
         }
     }
-    // async resendOtp(req, res) {
-    //   try {
-    //     const { email, userType } = req.body;
 
-    //     // validate email
-    //     if (!email) {
-    //       return BaseService.sendFailedResponse({
-    //         error: "Email is required",
-    //       });
-    //     }
-    //     if (!userType) {
-    //       return BaseService.sendFailedResponse({
-    //         error: "UserType is required",
-    //       });
-    //     }
-
-    //     const userExists = await UserModel.findOne({
-    //       email,
-    //       userType,
-    //     }).select("+password");
-
-    //     if (empty(userExists)) {
-    //       return BaseService.sendFailedResponse({
-    //         error: "User not found. Please register as a new user",
-    //       });
-    //     }
-
-    //     // if (userExists.isVerified) {
-    //     //   return BaseService.sendFailedResponse(
-    //     //     {
-    //     //       error: "Email is verified. Please verifiy your email",
-    //     //     },
-    //     //     405
-    //     //   );
-    //     // }
-
-    //     if (userExists.servicePlatform === "google") {
-    //       // If the user signed up via Google, prevent local login attempt
-    //       if (password) {
-    //         return BaseService.sendFailedResponse({
-    //           error:
-    //             "This account was created using Google. Please log in using Google.",
-    //         });
-    //       }
-    //     }
-
-    //     if (userExists.servicePlatform === "local") {
-    //       if (!userExists.password) {
-    //         return BaseService.sendFailedResponse({
-    //           error:
-    //             "Account created via a different platform. Please use the appropriate platform to log in.",
-    //         });
-    //       }
-
-    //       // Check if the provided password matches the stored password
-    //       //   if (!(await userExists.comparePassword(password))) {
-    //       //     return BaseService.sendFailedResponse({
-    //       //       error: "Wrong email or password",
-    //       //     });
-    //       //   }
-    //     }
-
-    //     // if (!(await userExists.comparePassword(password))) {
-    //     //   return BaseService.sendFailedResponse({
-    //     //     error: "Wrong email or password",
-    //     //   });
-    //     // }
-
-    //     const accessToken = await userExists.generateAccessToken(
-    //       process.env.ACCESS_TOKEN_SECRET || ""
-    //     );
-    //     const refreshToken = await userExists.generateRefreshToken(
-    //       process.env.REFRESH_TOKEN_SECRET || ""
-    //     );
-
-    //     userExists.password = undefined;
-
-    //     res.cookie("accessToken", accessToken, {
-    //       ...cookieOptions,
-    //       maxAge: 60 * 60 * 1000,
-    //     });
-
-    //     res.cookie("refreshToken", refreshToken, {
-    //       ...cookieOptions,
-    //       maxAge: 28 * 24 * 60 * 60 * 1000,
-    //     });
-
-    //     return BaseService.sendSuccessResponse({
-    //       message: userExists,
-    //       // user: userExists,
-    //       // refreshToken,
-    //     });
-    //   } catch (error) {
-    //     console.log(error, "the error");
-    //     return BaseService.sendFailedResponse({ error });
-    //   }
-    // }
     async resendOtp(req, res) {
         try {
             const { email, userType } = req.body
@@ -718,27 +622,61 @@ class AuthService extends BaseService {
                 })
 
             const user = await UserModel.findOne({ email, userType })
-
             if (!user)
                 return BaseService.sendFailedResponse({
                     error: 'User not found. Please register as a new user',
                 })
 
-            if (user.isVerified)
-                return BaseService.sendFailedResponse({
-                    error: 'Email is already verified',
-                })
+            // if (user.isVerified)
+            //     return BaseService.sendFailedResponse({
+            //         error: 'Email is already verified',
+            //     })
 
-            // generate new OTP and send it
-            const otp = generateOtp() // use whatever OTP helper you have
+            const otp = generateOTP()
             user.otp = otp
-            user.otpExpiry = new Date(Date.now() + 10 * 60 * 1000) // 10 mins
+            user.otpExpiresAt = new Date(Date.now() + EXPIRES_AT)
             await user.save()
 
+            const emailHtml = `
+<div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
+  <h1 style="color: #1A73E8;">Your OTP Code</h1>
+
+  <p>Hi <strong>${user.fullName || email}</strong>,</p>
+
+  <p>
+    You requested a new OTP for your
+    <strong>Chuvi Laundry</strong> account.
+    Use the code below to proceed.
+  </p>
+
+  <h2 style="color: #1A73E8; font-size: 32px; margin: 20px 0;">${otp}</h2>
+
+  <p>
+    This code is valid for <strong>10 minutes</strong>.
+    If you did not request this, kindly ignore this message.
+  </p>
+
+  <br>
+
+  <p>
+    Best regards,<br>
+    <strong>Chuvi Laundry Support Team</strong>
+  </p>
+</div>
+`
+
             await sendEmail({
+                subject: 'Chuvi Laundry — Your OTP Code',
                 to: email,
-                subject: 'Your OTP Code',
-                body: `Your OTP is ${otp}. It expires in 10 minutes.`,
+                html: emailHtml,
+            })
+
+            await sendSmsOtp(user.phoneNumber, `${otp}`)
+
+            await createAuditLog({
+                userId: getObjectId(user._id),
+                action: 'OTP Resent',
+                category: 'auth',
             })
 
             return BaseService.sendSuccessResponse({
@@ -746,7 +684,9 @@ class AuthService extends BaseService {
             })
         } catch (error) {
             console.log(error)
-            return BaseService.sendFailedResponse({ error })
+            return BaseService.sendFailedResponse({
+                error: error.message || 'Something went wrong',
+            })
         }
     }
     async getUser(req) {
