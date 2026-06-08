@@ -526,7 +526,7 @@ class AuthService extends BaseService {
             const validateRule = {
                 email: 'email|required',
                 otp: 'string|required',
-                // userType: 'string|required',
+                userType: 'string|required',
             }
 
             const validateResult = validateData(post, validateRule)
@@ -541,7 +541,7 @@ class AuthService extends BaseService {
 
             const userExists = await UserModel.findOne({
                 email,
-                // userType,
+                userType,
             }).select('+otp +otpExpiresAt')
             if (empty(userExists)) {
                 return BaseService.sendFailedResponse({
@@ -806,48 +806,46 @@ class AuthService extends BaseService {
         try {
             const { email, otp, userType } = req.body
 
-            if (!email || !otp) {
+            if (!email || !otp)
                 return BaseService.sendFailedResponse({
                     error: 'Email and OTP are required',
                 })
-            }
 
-            const user = await UserModel.findOne({ email, userType }).select(
+            // ← find by email only, userType optional
+            const query = userType ? { email, userType } : { email }
+
+            const user = await UserModel.findOne(query).select(
                 '+resetPasswordOtp +resetPasswordOtpExpiresAt',
             )
 
-            if (!user) {
+            if (!user)
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
                 })
-            }
 
-            if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiresAt) {
+            if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiresAt)
                 return BaseService.sendFailedResponse({
-                    error: 'No active OTP found',
+                    error: 'No active OTP found. Please request a new one',
                 })
-            }
 
-            if (user.resetPasswordOtp !== otp) {
+            // ← check expiry before comparing
+            if (user.resetPasswordOtpExpiresAt.getTime() < Date.now())
+                return BaseService.sendFailedResponse({
+                    error: 'OTP has expired. Please request a new one',
+                })
+
+            // ← String comparison to avoid type mismatch
+            if (String(user.resetPasswordOtp) !== String(otp))
                 return BaseService.sendFailedResponse({
                     error: 'Invalid OTP',
                 })
-            }
 
-            if (Date.now() > user.resetPasswordOtpExpiresAt) {
-                return BaseService.sendFailedResponse({
-                    error: 'OTP expired',
-                })
-            }
-
-            // Issue short-lived reset token
             const resetToken = jwt.sign(
                 { userId: user._id },
                 process.env.RESET_TOKEN_SECRET,
                 { expiresIn: '10m' },
             )
 
-            // Clear OTP immediately (VERY IMPORTANT)
             user.resetPasswordOtp = null
             user.resetPasswordOtpExpiresAt = null
             await user.save()
