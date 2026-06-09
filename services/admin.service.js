@@ -243,7 +243,6 @@ class AdminService extends BaseService {
                         paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     },
                 },
-                { $unwind: '$items' },
                 {
                     $group: {
                         _id: {
@@ -252,8 +251,20 @@ class AdminService extends BaseService {
                                 date: '$paymentDate',
                             },
                         },
+                        // ← sum amount once per order, not per item
                         dailyRevenue: { $sum: '$amount' },
-                        dailyItems: { $sum: '$items.quantity' },
+                        // ← sum all item quantities across all orders that day
+                        dailyItems: {
+                            $sum: {
+                                $reduce: {
+                                    input: '$items',
+                                    initialValue: 0,
+                                    in: {
+                                        $add: ['$$value', '$$this.quantity'],
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
                 {
@@ -338,32 +349,30 @@ class AdminService extends BaseService {
             })
 
             const overdueHolds = await BookOrderModel.countDocuments({
-
-                        'stage.status': ORDER_STATUS.HOLD,
-                        $or: [
-                            {
-                                deliverySpeed: DELIVERY_SPEED.SAME_DAY,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 2 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliverySpeed: DELIVERY_SPEED.EXPRESS,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 4 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliverySpeed: DELIVERY_SPEED.STANDARD,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 6 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliveryDate: { $lt: now },
-                            },
-                        ],
-
+                'stage.status': ORDER_STATUS.HOLD,
+                $or: [
+                    {
+                        deliverySpeed: DELIVERY_SPEED.SAME_DAY,
+                        'stage.updatedAt': {
+                            $lt: new Date(now - 2 * 60 * 60 * 1000),
+                        },
+                    },
+                    {
+                        deliverySpeed: DELIVERY_SPEED.EXPRESS,
+                        'stage.updatedAt': {
+                            $lt: new Date(now - 4 * 60 * 60 * 1000),
+                        },
+                    },
+                    {
+                        deliverySpeed: DELIVERY_SPEED.STANDARD,
+                        'stage.updatedAt': {
+                            $lt: new Date(now - 6 * 60 * 60 * 1000),
+                        },
+                    },
+                    {
+                        deliveryDate: { $lt: now },
+                    },
+                ],
             })
 
             const expiringTodayHolds = await BookOrderModel.countDocuments({
@@ -959,32 +968,6 @@ class AdminService extends BaseService {
             })
         }
     }
-    // async getOrderDetails(req, res) {
-    //     try {
-    //         const { id } = req.params
-    //         if (!id) {
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order ID is required',
-    //             })
-    //         }
-
-    //         const order = await BookOrderModel.findById(id)
-
-    //         if (!order) {
-    //             return BaseService.sendFailedResponse({
-    //                 error: 'Order not found',
-    //             })
-    //         }
-
-    //         return BaseService.sendSuccessResponse({ message: order })
-    //     } catch (error) {
-    //         console.log(error)
-    //         return BaseService.sendFailedResponse({
-    //             error: 'Something went wrong. Please try again later.',
-    //         })
-    //     }
-    // }
-
     async getOrderDetails(req, res) {
         try {
             const { id } = req.params
@@ -1548,11 +1531,24 @@ class AdminService extends BaseService {
 
                 // scheduled — current state, no date filter
                 BookOrderModel.countDocuments({
-                    isPickUp: true,
-                    'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
-                    'dispatchDetails.delivery.status':
-                        DELIVERY_STATUS.READY,
+                    $or: [
+                        {
+                            isPickUp: true,
+                            'dispatchDetails.pickup.status':
+                                PICKUP_STATUS.SCHEDULED,
+                        },
+                        {
+                            isDelivery: true,
+                            'dispatchDetails.delivery.status':
+                                DELIVERY_STATUS.READY,
+                        },
+                    ],
                 }),
+                // BookOrderModel.countDocuments({
+                //     isPickUp: true,
+                //     'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
+                //     'dispatchDetails.delivery.status': DELIVERY_STATUS.READY,
+                // }),
 
                 // in progress — current state, no date filter
                 BookOrderModel.countDocuments({
