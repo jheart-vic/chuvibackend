@@ -1522,6 +1522,7 @@ class AdminService extends BaseService {
                 // failed — current state, no date filter
                 BookOrderModel.countDocuments({
                     'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
+                    'dispatchDetails.pickup.status': PICKUP_STATUS.FAILED,
                 }),
             ])
 
