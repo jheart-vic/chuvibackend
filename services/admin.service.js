@@ -81,7 +81,6 @@ class AdminService extends BaseService {
                 ],
             })
 
-            // ── Revenue today ───────────────────────────────────────────────
             const revenueTodayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
@@ -94,7 +93,6 @@ class AdminService extends BaseService {
             ])
             const revenueTodayVerified = revenueTodayAgg[0]?.total || 0
 
-            // ── Revenue yesterday ───────────────────────────────────────────
             const revenueYesterdayAgg = await PaymentModel.aggregate([
                 {
                     $match: {
@@ -868,9 +866,11 @@ class AdminService extends BaseService {
                         error: 'Invalid type supplied',
                     })
             }
-const p = await PaymentModel.findOne({ status: PAYMENT_ORDER_STATUS.PENDING })
-console.log('payment type:', p?.type)
-console.log('payment paymentMethod:', p?.paymentMethod)
+            const p = await PaymentModel.findOne({
+                status: PAYMENT_ORDER_STATUS.PENDING,
+            })
+            console.log('payment type:', p?.type)
+            console.log('payment paymentMethod:', p?.paymentMethod)
 
             const [orders, total] = await Promise.all([
                 BookOrderModel.find(filter)
@@ -1226,7 +1226,6 @@ console.log('payment paymentMethod:', p?.paymentMethod)
                 },
             )
 
-
             return BaseService.sendSuccessResponse({ message: result })
         } catch (error) {
             console.log(error)
@@ -1387,20 +1386,20 @@ console.log('payment paymentMethod:', p?.paymentMethod)
                     filter = {
                         $or: [
                             { 'stage.status': ORDER_STATUS.OUT_FOR_DELIVERY },
-                            {
-                                'dispatchDetails.delivery.status': {
-                                    $in: [
-                                        DELIVERY_STATUS.IN_PROGRESS,
-                                        DELIVERY_STATUS.DISPATCHED,
-                                    ],
-                                },
-                            },
+                            // {
+                            //     'dispatchDetails.delivery.status': {
+                            //         $in: [
+                            //             DELIVERY_STATUS.DELIVERED,
+                            //         ],
+                            //     },
+                            // },
                         ],
                     }
                     break
 
                 case 'pendingPickup':
                     filter = {
+                        isPickUp: true,
                         'dispatchDetails.pickup.status': PICKUP_STATUS.PENDING,
                     }
                     break
