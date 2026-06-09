@@ -388,10 +388,11 @@ class AdminService extends BaseService {
                     }),
                     BookOrderModel.aggregate([
                         { $match: { 'stage.status': ORDER_STATUS.IRONING } },
+                        { $unwind: '$items' },
                         {
                             $group: {
                                 _id: null,
-                                total: { $sum: { $size: '$items' } },
+                                total: { $sum: '$items.quantity' },
                             },
                         },
                     ]).then((r) => r[0]?.total || 0),
@@ -406,6 +407,7 @@ class AdminService extends BaseService {
             // ── Ready & waiting, delivery issues ────────────────────────────
             const readyAndWaiting = await BookOrderModel.countDocuments({
                 'stage.status': ORDER_STATUS.READY,
+                'qcDetails.packCompletedAt': { $exists: true }, // ← passed QC and packed
                 'dispatchDetails.delivery.status': {
                     $ne: DELIVERY_STATUS.DELIVERED,
                 },

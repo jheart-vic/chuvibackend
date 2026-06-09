@@ -46,23 +46,41 @@ class SortAndPretreatService extends BaseService {
                 flaggedCount,
                 recentOrdersResult,
             ] = await Promise.all([
+                // ← orders that arrived at sort & pretreat today
+                // regardless of whether they've moved on
                 BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
-                    'stage.updatedAt': { $gte: todayStart },
-                }),
-                BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
-                    'stage.updatedAt': {
-                        $gte: yesterdayStart,
-                        $lt: todayStart,
+                    stageHistory: {
+                        $elemMatch: {
+                            status: ORDER_STATUS.SORT_AND_PRETREAT,
+                            updatedAt: { $gte: todayStart },
+                        },
                     },
                 }),
+                // ← same for yesterday
+                BookOrderModel.countDocuments({
+                    stageHistory: {
+                        $elemMatch: {
+                            status: ORDER_STATUS.SORT_AND_PRETREAT,
+                            updatedAt: {
+                                $gte: yesterdayStart,
+                                $lt: todayStart,
+                            },
+                        },
+                    },
+                }),
+                // ← orders currently waiting to be sorted (reduces as orders move)
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
                 }),
+                // ← flagged items in orders currently at sort & pretreat
                 BookOrderModel.countDocuments({
-                    'items.damageRiskFlags.0': { $exists: true },
-                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                    'items.flaggedForReview': true,
+                    stageHistory: {
+                        $elemMatch: {
+                            status: ORDER_STATUS.SORT_AND_PRETREAT,
+                            updatedAt: { $gte: todayStart },
+                        },
+                    },
                 }),
                 (() => {
                     const query = {
@@ -85,18 +103,26 @@ class SortAndPretreatService extends BaseService {
                 })(),
             ])
 
-            // Items pretreated today — items inside orders where pretreatStatus flipped today
+            // pretreated today — items pretreated in orders that came through today
             const pretreatedToday = await BookOrderModel.aggregate([
+                {
+                    $match: {
+                        stageHistory: {
+                            $elemMatch: {
+                                status: ORDER_STATUS.SORT_AND_PRETREAT,
+                                updatedAt: { $gte: todayStart },
+                            },
+                        },
+                    },
+                },
                 { $unwind: '$items' },
                 {
                     $match: {
                         'items.pretreatStatus': 'complete',
-                        'items.updatedAt': { $gte: todayStart },
                     },
                 },
                 { $count: 'total' },
             ])
-
             const itemsPretreatedToday = pretreatedToday[0]?.total ?? 0
 
             const receivedDelta =
@@ -401,7 +427,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Updated sort details for item ${itemId}. Changes: ${changeSummaryParts.join(' | ')}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Updated sort details for item ${itemId}. Changes: ${changeSummaryParts.join(' | ')}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item details saved successfully',
@@ -490,7 +521,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Marked item ${itemId} as sorted`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Marked item ${itemId} as sorted`,
+            })
             return BaseService.sendSuccessResponse({
                 message: { message: 'Item marked as sorted', allItemsSorted },
             })
@@ -575,7 +611,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Undid sorted status for item ${itemId}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Undid sorted status for item ${itemId}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item sort undone successfully',
@@ -644,7 +685,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: 'Marked all items as sorted'})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: 'Marked all items as sorted',
+            })
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -740,7 +786,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Marked item ${itemId} as pretreated`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Marked item ${itemId} as pretreated`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -823,7 +874,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Undid pretreat status for item ${itemId}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Undid pretreat status for item ${itemId}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item pretreat status undone successfully',
@@ -911,7 +967,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_FLAGGED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Flagged item ${itemId} for review with note: ${note}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Flagged item ${itemId} for review with note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item flagged for review successfully',
@@ -1026,7 +1087,12 @@ class SortAndPretreatService extends BaseService {
                     ? NOTIFICATION_TYPE.ORDER_IRONING
                     : NOTIFICATION_TYPE.ORDER_WASHING,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Sent order to next stage: ${nextOrderStatus}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Sent order to next stage: ${nextOrderStatus}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} successfully sent to ${nextOrderStatus}`,
@@ -1793,7 +1859,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: `Placed item ${itemId} on hold with reason: ${reason} and note: ${note}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Placed item ${itemId} on hold with reason: ${reason} and note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -1977,7 +2048,12 @@ class SortAndPretreatService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'sort', action: 'Released order from hold and returned to sort & pretreat queue'})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: 'Released order from hold and returned to sort & pretreat queue',
+            })
 
             return BaseService.sendSuccessResponse({
                 message:
