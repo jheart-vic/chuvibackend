@@ -338,8 +338,32 @@ class AdminService extends BaseService {
             })
 
             const overdueHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-                deliveryDate: { $lt: now },
+
+                        'stage.status': ORDER_STATUS.HOLD,
+                        $or: [
+                            {
+                                deliverySpeed: DELIVERY_SPEED.SAME_DAY,
+                                'stage.updatedAt': {
+                                    $lt: new Date(now - 2 * 60 * 60 * 1000),
+                                },
+                            },
+                            {
+                                deliverySpeed: DELIVERY_SPEED.EXPRESS,
+                                'stage.updatedAt': {
+                                    $lt: new Date(now - 4 * 60 * 60 * 1000),
+                                },
+                            },
+                            {
+                                deliverySpeed: DELIVERY_SPEED.STANDARD,
+                                'stage.updatedAt': {
+                                    $lt: new Date(now - 6 * 60 * 60 * 1000),
+                                },
+                            },
+                            {
+                                deliveryDate: { $lt: now },
+                            },
+                        ],
+
             })
 
             const expiringTodayHolds = await BookOrderModel.countDocuments({
@@ -1526,6 +1550,8 @@ class AdminService extends BaseService {
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
+                    'dispatchDetails.delivery.status':
+                        DELIVERY_STATUS.READY,
                 }),
 
                 // in progress — current state, no date filter
