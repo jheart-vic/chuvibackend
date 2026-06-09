@@ -8,7 +8,6 @@ const {
     generateReferenceId,
     roundToNearestHundred,
     calculateDueDate,
-    getObjectId,
 } = require('../util/helper')
 const SubscriptionModel = require('../models/subscription.model')
 const { v4: uuidv4 } = require('uuid')
@@ -30,6 +29,7 @@ const AdminSettingModel = require('../models/adminSetting.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
 const PaymentModel = require('../models/payment.model')
 const createAuditLog = require('../util/createAuditLog')
+const OrderItemModel = require('../models/orderItem.model')
 
 class BookOrderService extends BaseService {
     async postBookOrder(req, res) {
@@ -116,13 +116,22 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                const invalidItem = post.items.find(
-                    (item) => !STANDARD_ITEMS_ENUM_TYPES.includes(item.type),
+                // ← fetch all heavy items from DB
+                const heavyItems = await OrderItemModel.find({
+                    isHeavy: true,
+                }).lean()
+                const heavyItemNames = heavyItems.map((i) =>
+                    i.name.toLowerCase(),
                 )
 
-                if (invalidItem) {
+                // ← block if any submitted item is heavy
+                const heavyItemFound = post.items.find((item) =>
+                    heavyItemNames.includes(item.type.toLowerCase()),
+                )
+
+                if (heavyItemFound) {
                     return BaseService.sendFailedResponse({
-                        error: `Your subscription plan only allows standard items. "${invalidItem.type}" is not supported. Please remove it from your order.`,
+                        error: `Your subscription plan does not cover heavy items. "${heavyItemFound.type}" is not allowed. Please remove it or switch to pay-per-item.`,
                     })
                 }
 
@@ -179,22 +188,6 @@ class BookOrderService extends BaseService {
                     updatedAt: new Date(),
                 }
 
-                const deliveryDate = calculateDueDate(post.deliverySpeed)
-
-                if (deliveryDate === null) {
-                    if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                        return BaseService.sendFailedResponse({
-                            error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
-                        })
-                    }
-
-                    if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                        return BaseService.sendFailedResponse({
-                            error: 'Express orders must be placed before 2pm. Please select standard delivery.',
-                        })
-                    }
-                }
-
                 const newOrderItem = {
                     userId,
                     oscNumber,
@@ -206,7 +199,7 @@ class BookOrderService extends BaseService {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
                     ...post,
-                    deliveryDate,
+                    deliveryDate: calculateDueDate(post.deliverySpeed),
                 }
 
                 newOrder = new BookOrderModel(newOrderItem)
@@ -282,21 +275,6 @@ class BookOrderService extends BaseService {
                     note: 'Order created',
                     updatedAt: new Date(),
                 }
-                const deliveryDate = calculateDueDate(post.deliverySpeed)
-
-                if (deliveryDate === null) {
-                    if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                        return BaseService.sendFailedResponse({
-                            error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
-                        })
-                    }
-
-                    if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                        return BaseService.sendFailedResponse({
-                            error: 'Express orders must be placed before 2pm. Please select standard delivery.',
-                        })
-                    }
-                }
 
                 const newOrderItem = {
                     userId,
@@ -306,7 +284,6 @@ class BookOrderService extends BaseService {
                     stage,
                     stageHistory: [stageHistory],
                     ...post,
-                    deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
@@ -404,21 +381,6 @@ class BookOrderService extends BaseService {
                     note: 'Order created',
                     updatedAt: new Date(),
                 }
-                const deliveryDate = calculateDueDate(post.deliverySpeed)
-
-                if (deliveryDate === null) {
-                    if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                        return BaseService.sendFailedResponse({
-                            error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
-                        })
-                    }
-
-                    if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                        return BaseService.sendFailedResponse({
-                            error: 'Express orders must be placed before 2pm. Please select standard delivery.',
-                        })
-                    }
-                }
 
                 const newOrderItem = {
                     userId,
@@ -430,7 +392,6 @@ class BookOrderService extends BaseService {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
                     ...post,
-                    deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
@@ -482,7 +443,7 @@ class BookOrderService extends BaseService {
             })
 
             await createAuditLog({
-                userId: getObjectId(userId),
+                userId: userId,
                 action: `Created order ${oscNumber} with id ${newOrder._id}`,
                 category: 'order',
                 orderId: newOrder._id,
@@ -625,7 +586,7 @@ class BookOrderService extends BaseService {
             })
 
             await createAuditLog({
-                userId: getObjectId(req.user.id),
+                userId: req.user.id,
                 action: `Updated order ${bookOrder.oscNumber} to stage ${stage}`,
                 category: 'order',
                 orderId: bookOrder._id,
