@@ -841,10 +841,10 @@ class WashAndDryService extends BaseService {
             const baseQuery = {
                 'stage.status': ORDER_STATUS.HOLD,
                 $or: [
-                    { stationStatus: STATION_STATUS.WASH_AND_DRY_STATION },
+                    { stationStatus: STATION_STATUS.WASH_AND_DRY_STATION }, // ← swap
                     {
                         'items.holdDetails.heldByStation':
-                            STATION_STATUS.WASH_AND_DRY_STATION,
+                            STATION_STATUS.WASH_AND_DRY_STATION, // ← swap
                     },
                 ],
             }
@@ -860,6 +860,7 @@ class WashAndDryService extends BaseService {
                     },
                 ]
             }
+
 
             const { data, pagination } = await paginate(
                 BookOrderModel,
