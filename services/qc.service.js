@@ -67,7 +67,10 @@ class QCService extends BaseService {
                 // recent queue
                 paginate(
                     BookOrderModel,
-                    { 'stage.status': ORDER_STATUS.QC },
+                    {
+                        'stage.status': ORDER_STATUS.QC,
+                        'qcDetails.passedAt': { $exists: false }, // ← not yet passed QC
+                    },
                     {
                         page: 1,
                         limit: 5,
@@ -300,7 +303,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'qc',
+                action: `Qc passed. Items: ${itemIds.join(', ')}. All items passed: ${allItemsCompleted}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -400,7 +408,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'qc',
+                action: `Undo QC confirmation. Items: ${itemIds.join(', ')}. All items undone: ${allItems}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `${targetItems.length} item(s) QC status undone`,
@@ -469,7 +482,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: 'Order passed QC and sent to Pack & Seal'})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'qc',
+                action: 'Order passed QC and sent to Pack & Seal',
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order passed QC and sent to Pack & Seal',
@@ -829,7 +847,12 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'qc',
+                action: `Item placed on hold. Item ID: ${itemId}. Reason: ${reason}. Assigned to: ${assignTo}. Note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item placed on hold successfully',
@@ -1022,7 +1045,12 @@ class QCService extends BaseService {
                 userId,
                 reference: order.oscNumber,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'qc', action: 'Order released from hold and returned to QC queue'})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'qc',
+                action: 'Order released from hold and returned to QC queue',
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order released from hold and returned to QC queue',
