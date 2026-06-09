@@ -50,7 +50,7 @@ class QCService extends BaseService {
                 // active QC — started but not passed, today
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.QC,
-                    'qcDetails.startedAt': { $gte: startOfToday },
+                    'qcDetails.startedAt': { $exists: true },
                     'qcDetails.passedAt': { $exists: false },
                 }),
                 // pack & seal — passed QC today but not yet packed
@@ -59,6 +59,9 @@ class QCService extends BaseService {
                     'qcDetails.passedAt': { $gte: startOfToday },
                     'qcDetails.packCompletedAt': { $exists: false },
                 }),
+    // 'stage.status': ORDER_STATUS.QC,
+    // 'qcDetails.passedAt': { $exists: true },
+    // 'qcDetails.packCompletedAt': { $exists: false },
                 // completed today — pack completed today
                 BookOrderModel.countDocuments({
                     'qcDetails.packCompletedAt': { $gte: startOfToday },
@@ -110,6 +113,74 @@ class QCService extends BaseService {
             const query = {
                 'stage.status': ORDER_STATUS.QC,
                 'qcDetails.startedAt': { $exists: false },
+                'qcDetails.passedAt': { $exists: false },
+            }
+
+            if (search) {
+                query.$or = [
+                    { oscNumber: { $regex: search, $options: 'i' } },
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
+
+            const { data, pagination } = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+                sort: { 'stage.updatedAt': 1 },
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt qcDetails',
+                lean: true,
+            })
+
+            const ordersWithMeta = data.map((o) => {
+                const arrivedAt = o.stage?.updatedAt
+                const durationMinutes =
+                    QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
+                const estimatedFinish = arrivedAt
+                    ? new Date(
+                          new Date(arrivedAt).getTime() +
+                              durationMinutes * 60 * 1000,
+                      )
+                    : null
+
+                return {
+                    ...o,
+                    itemCount: (o.items || []).length,
+                    flaggedItemCount: (o.items || []).filter(
+                        (i) => i.flaggedForReview,
+                    ).length,
+                    qcDetails: {
+                        ...o.qcDetails,
+                        estimatedFinish,
+                        durationMinutes,
+                    },
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: ordersWithMeta, pagination },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch QC queue',
+            })
+        }
+    }
+    async getActiveQCQueue(req) {
+        try {
+            const userId = req.user.id
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const { page = 1, limit = 20, search = '' } = req.query
+
+            const query = {
+                'stage.status': ORDER_STATUS.QC,
+                'qcDetails.startedAt': { $exists: true },
                 'qcDetails.passedAt': { $exists: false },
             }
 

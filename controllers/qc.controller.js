@@ -16,6 +16,12 @@ class QCController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async getActiveQCQueue(req, res) {
+        const result = await QCService.getActiveQCQueue(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
 
     async getQCQueueOrderDetails(req, res) {
         const result = await QCService.getQCQueueOrderDetails(req)

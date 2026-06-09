@@ -17,6 +17,7 @@ const {
     ROUTE_QC_HISTORY,
     ROUTE_QC_HISTORY_TIMELINE,
     ROUTE_QC_PACK_AND_SEAL,
+    ROUTE_ACTIVE_QC_QUEUE,
 } = require('../util/page-route')
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
@@ -104,6 +105,47 @@ router.get(ROUTE_QC_DASHBOARD, [qcAuth], (req, res) => {
 router.get(ROUTE_QC_QUEUE, [qcAuth], (req, res) => {
     const controller = new QCController()
     return controller.getQCQueue(req, res)
+})
+
+/**
+ * @swagger
+ * /qc-user/orders/active-queue:
+ *   get:
+ *     summary: Get active QC queue — orders currently being inspected
+ *     tags:
+ *       - QC
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-001" }
+ *     responses:
+ *       200:
+ *         description: Paginated QC queue
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                     pagination:
+ *                       $ref: '#/components/schemas/Pagination'
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_ACTIVE_QC_QUEUE, [qcAuth], (req, res) => {
+    const controller = new QCController()
+    return controller.getActiveQCQueue(req, res)
 })
 
 /**
