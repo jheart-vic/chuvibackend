@@ -140,7 +140,7 @@ class AdminService extends BaseService {
                 },
             ])
 
-            // fill in missing days as 0 so empty days pull the average down
+            // fill in missing days as 0 for the breakdown chart
             const allRevenueDays = []
             for (let i = 6; i >= 0; i--) {
                 const d = new Date()
@@ -153,14 +153,20 @@ class AdminService extends BaseService {
                 })
             }
 
-            // running average — divides cumulative sum by days so far
+            // running average — only over days that actually had revenue
+            // today with no sales yet doesn't count as a zero day
             let revenueRunningSum = 0
             let avgDailyRevenue7Days = 0
-            allRevenueDays.forEach((day, index) => {
-                revenueRunningSum += day.dailyTotal
-                avgDailyRevenue7Days = Math.round(
-                    revenueRunningSum / (index + 1),
-                )
+            let daysWithRevenue = 0
+
+            allRevenueDays.forEach((day) => {
+                if (day.dailyTotal > 0) {
+                    revenueRunningSum += day.dailyTotal
+                    daysWithRevenue++
+                    avgDailyRevenue7Days = Math.round(
+                        revenueRunningSum / daysWithRevenue,
+                    )
+                }
             })
 
             // ── Total all-time revenue ──────────────────────────────────────
@@ -278,11 +284,17 @@ class AdminService extends BaseService {
             // running average
             let costRunningSum = 0
             let avgCostPerItem7Days = 0
-            allCostDays.forEach((day, index) => {
-                costRunningSum += day.dailyCostPerItem
-                avgCostPerItem7Days = Math.round(costRunningSum / (index + 1))
-            })
+            let costDaysWithData = 0
 
+            allCostDays.forEach((day) => {
+                if (day.dailyCostPerItem > 0) {
+                    costRunningSum += day.dailyCostPerItem
+                    costDaysWithData++
+                    avgCostPerItem7Days = Math.round(
+                        costRunningSum / costDaysWithData,
+                    )
+                }
+            })
             // cost trend — compare last 3 days vs prior 4 days
             const recent3 = allCostDays.slice(-3)
             const prior4 = allCostDays.slice(0, 4)
