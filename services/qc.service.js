@@ -59,9 +59,9 @@ class QCService extends BaseService {
                     'qcDetails.passedAt': { $gte: startOfToday },
                     'qcDetails.packCompletedAt': { $exists: false },
                 }),
-    // 'stage.status': ORDER_STATUS.QC,
-    // 'qcDetails.passedAt': { $exists: true },
-    // 'qcDetails.packCompletedAt': { $exists: false },
+                // 'stage.status': ORDER_STATUS.QC,
+                // 'qcDetails.passedAt': { $exists: true },
+                // 'qcDetails.packCompletedAt': { $exists: false },
                 // completed today — pack completed today
                 BookOrderModel.countDocuments({
                     'qcDetails.packCompletedAt': { $gte: startOfToday },
@@ -951,12 +951,10 @@ class QCService extends BaseService {
             const baseQuery = {
                 'stage.status': ORDER_STATUS.HOLD,
                 $or: [
-                    // assigned to QC by another station
-                    { stationStatus: STATION_STATUS.QC_STATION },
-                    // raised by QC — sitting at another station
+                    { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
                     {
                         'items.holdDetails.heldByStation':
-                            STATION_STATUS.QC_STATION,
+                            STATION_STATUS.SORT_AND_PRETREAT_STATION,
                     },
                 ],
             }

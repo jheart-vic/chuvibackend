@@ -1141,11 +1141,52 @@ class AdminService extends BaseService {
             })
         }
     }
+    // async getAdminOrderDetails(req) {
+    //     try {
+    //         const [adminOrderDetails, adminSetting] = await Promise.all([
+    //             AdminOrderDetailsModel.findOne().lean(),
+    //             AdminSettingModel.findOne().lean(),
+    //         ])
+
+    //         const activeServiceTypes = adminSetting?.serviceTypes || []
+
+    //         return BaseService.sendSuccessResponse({
+    //             message: {
+    //                 ...adminOrderDetails,
+    //                 serviceTypes: activeServiceTypes,
+    //                 serviceType: activeServiceTypes.map((s) => s.name),
+    //                 pickupTime: adminSetting?.pickupTimeSlots || [
+    //                     '10am-12pm',
+    //                     '4pm-6pm',
+    //                 ],
+    //                 standardCapacity: adminSetting?.standardCapacity ?? 100,
+    //                 sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
+    //                 expressCapacity: adminSetting?.expressCapacity ?? 30,
+    //                 standardDeliveryPeriod:
+    //                     adminSetting?.standardDeliveryPeriod ?? 2,
+    //                 sameDayCharge: adminSetting?.sameDayCharge ?? 300,
+    //                 expressCharge: adminSetting?.expressCharge ?? 100,
+    //                 premiumServiceTierCharge:
+    //                     adminSetting?.premiumServiceTierCharge ?? 1.5,
+    //                 vipServiceTierCharge:
+    //                     adminSetting?.vipServiceTierCharge ?? 2,
+    //                 deliveryFee: adminSetting?.deliveryFee ?? 500,
+    //                 pickupFee: adminSetting?.pickupFee ?? 500,
+    //                 bankDetails: adminSetting?.bankDetails,
+    //             },
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({ error })
+    //     }
+    // }
+
     async getAdminOrderDetails(req) {
         try {
-            const [adminOrderDetails, adminSetting] = await Promise.all([
+            const [adminOrderDetails, adminSetting, orderItems] = await Promise.all([
                 AdminOrderDetailsModel.findOne().lean(),
                 AdminSettingModel.findOne().lean(),
+                OrderItemModel.find({}).lean(), // ← fetch all items
             ])
 
             const activeServiceTypes = adminSetting?.serviceTypes || []
@@ -1155,21 +1196,19 @@ class AdminService extends BaseService {
                     ...adminOrderDetails,
                     serviceTypes: activeServiceTypes,
                     serviceType: activeServiceTypes.map((s) => s.name),
-                    pickupTime: adminSetting?.pickupTimeSlots || [
-                        '10am-12pm',
-                        '4pm-6pm',
-                    ],
+                    orderItems, // ← includes name, price, isHeavy
+                    heavyItems: orderItems
+                        .filter((i) => i.isHeavy)
+                        .map((i) => i.name), // ← convenience list for frontend
+                    pickupTime: adminSetting?.pickupTimeSlots || ['10am-12pm', '4pm-6pm'],
                     standardCapacity: adminSetting?.standardCapacity ?? 100,
                     sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
                     expressCapacity: adminSetting?.expressCapacity ?? 30,
-                    standardDeliveryPeriod:
-                        adminSetting?.standardDeliveryPeriod ?? 2,
+                    standardDeliveryPeriod: adminSetting?.standardDeliveryPeriod ?? 2,
                     sameDayCharge: adminSetting?.sameDayCharge ?? 300,
                     expressCharge: adminSetting?.expressCharge ?? 100,
-                    premiumServiceTierCharge:
-                        adminSetting?.premiumServiceTierCharge ?? 1.5,
-                    vipServiceTierCharge:
-                        adminSetting?.vipServiceTierCharge ?? 2,
+                    premiumServiceTierCharge: adminSetting?.premiumServiceTierCharge ?? 1.5,
+                    vipServiceTierCharge: adminSetting?.vipServiceTierCharge ?? 2,
                     deliveryFee: adminSetting?.deliveryFee ?? 500,
                     pickupFee: adminSetting?.pickupFee ?? 500,
                     bankDetails: adminSetting?.bankDetails,
@@ -2273,22 +2312,47 @@ class AdminService extends BaseService {
             })
         }
     }
+    // async addItem(req) {
+    //     try {
+    //         const name = req.body.name
+    //         const price = req.body.price
+    //         if (!name) {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Please enter a name for the item',
+    //             })
+    //         }
+    //         if (!price) {
+    //             return BaseService.sendFailedResponse({
+    //                 error: 'Please enter a price for the item',
+    //             })
+    //         }
+
+    //         await OrderItemModel.create({ name, price })
+
+    //         return BaseService.sendSuccessResponse({
+    //             message: 'Item added successfully',
+    //         })
+    //     } catch (error) {
+    //         console.log(error)
+    //         return BaseService.sendFailedResponse({
+    //             error: 'Something went wrong. Please try again later',
+    //         })
+    //     }
+    // }
     async addItem(req) {
         try {
-            const name = req.body.name
-            const price = req.body.price
-            if (!name) {
+            const { name, price, isHeavy = false } = req.body
+
+            if (!name)
                 return BaseService.sendFailedResponse({
                     error: 'Please enter a name for the item',
                 })
-            }
-            if (!price) {
+            if (!price)
                 return BaseService.sendFailedResponse({
                     error: 'Please enter a price for the item',
                 })
-            }
 
-            await OrderItemModel.create({ name, price })
+            await OrderItemModel.create({ name, price, isHeavy })
 
             return BaseService.sendSuccessResponse({
                 message: 'Item added successfully',
