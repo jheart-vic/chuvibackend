@@ -326,6 +326,8 @@ class AdminService extends BaseService {
 
             const pendingPayment = await PaymentModel.countDocuments({
                 status: PAYMENT_ORDER_STATUS.PENDING,
+                type: { $in: ['order', 'wallet-top-up'] },
+                paymentMethod: 'bank-transfer',
             })
 
             // ── Holds ───────────────────────────────────────────────────────
