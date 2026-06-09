@@ -895,31 +895,19 @@ class AdminService extends BaseService {
 
                 case 'assignedForDelivery':
                     filter = {
-                        $or: [
-                            // assigned for pickup — rider assigned, not yet picked up
-                            {
-                                isPickUp: true,
-                                'dispatchDetails.pickup.rider': { $ne: null },
-                                'dispatchDetails.pickup.status': {
-                                    $in: [
-                                        PICKUP_STATUS.SCHEDULED,
-                                        PICKUP_STATUS.PICKUP_IN_PROGRESS,
-                                    ],
+                            $or: [
+                                {
+                                    isPickUp: true,
+                                    'dispatchDetails.pickup.rider': { $ne: null },
+                                    'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED, // ← assigned, not started
                                 },
-                            },
-                            // assigned for delivery — rider assigned, not yet delivered
-                            {
-                                isDelivery: true,
-                                'dispatchDetails.delivery.rider': { $ne: null },
-                                'dispatchDetails.delivery.status': {
-                                    $in: [
-                                        DELIVERY_STATUS.READY,
-                                        DELIVERY_STATUS.OUT_FOR_DELIVERY,
-                                    ],
+                                {
+                                    isDelivery: true,
+                                    'dispatchDetails.delivery.rider': { $ne: null },
+                                    'dispatchDetails.delivery.status': DELIVERY_STATUS.READY, // ← assigned, not started
                                 },
-                            },
-                        ],
-                    }
+                            ],
+                        }
                     break
                 case 'ready':
                     filter = {
@@ -1498,17 +1486,12 @@ class AdminService extends BaseService {
                             {
                                 isPickUp: true,
                                 'dispatchDetails.pickup.rider': { $ne: null },
-                                'dispatchDetails.pickup.status': {
-                                    $in: [PICKUP_STATUS.SCHEDULED, PICKUP_STATUS.PICKUP_IN_PROGRESS],
-
-                                },
+                                'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED, // ← assigned, not started
                             },
                             {
                                 isDelivery: true,
                                 'dispatchDetails.delivery.rider': { $ne: null },
-                                'dispatchDetails.delivery.status': {
-                                    $in: [DELIVERY_STATUS.READY, DELIVERY_STATUS.OUT_FOR_DELIVERY],
-                                },
+                                'dispatchDetails.delivery.status': DELIVERY_STATUS.READY, // ← assigned, not started
                             },
                         ],
                     }
@@ -1628,8 +1611,10 @@ class AdminService extends BaseService {
                 // out for delivery — current state, no date filter
                 BookOrderModel.countDocuments({
                     isDelivery: true,
-                    'dispatchDetails.delivery.status':
-                        DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                    $or: [
+                        { 'stage.status': ORDER_STATUS.OUT_FOR_DELIVERY },
+                        { 'dispatchDetails.delivery.status': DELIVERY_STATUS.OUT_FOR_DELIVERY },
+                    ],
                 }),
 
                 // delivered today — date filter makes sense here
