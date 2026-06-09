@@ -858,12 +858,32 @@ class AdminService extends BaseService {
 
                 case 'assignedForDelivery':
                     filter = {
-                        'stage.status': {
-                            $in: [ORDER_STATUS.OUT_FOR_DELIVERY],
-                        },
+                        $or: [
+                            // assigned for pickup — rider assigned, not yet picked up
+                            {
+                                isPickUp: true,
+                                'dispatchDetails.pickup.rider': { $ne: null },
+                                'dispatchDetails.pickup.status': {
+                                    $in: [
+                                        PICKUP_STATUS.SCHEDULED,
+                                        PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                                    ],
+                                },
+                            },
+                            // assigned for delivery — rider assigned, not yet delivered
+                            {
+                                isDelivery: true,
+                                'dispatchDetails.delivery.rider': { $ne: null },
+                                'dispatchDetails.delivery.status': {
+                                    $in: [
+                                        DELIVERY_STATUS.READY,
+                                        DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                                    ],
+                                },
+                            },
+                        ],
                     }
                     break
-
                 case 'ready':
                     filter = {
                         'stage.status': ORDER_STATUS.READY,
