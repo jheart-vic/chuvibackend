@@ -22,7 +22,9 @@ const {
     ROLE,
     ACTIVITY_TYPE,
 } = require('../util/constants')
+const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
+const { getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
 
@@ -1537,7 +1539,15 @@ class AdminService extends BaseService {
                 BookOrderModel.countDocuments({
                     isPickUp: true,
                     'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
-                    'dispatchDetails.pickup.updatedAt': todayRange,
+                    $or: [
+                        { 'dispatchDetails.pickup.updatedAt': todayRange },
+                        {
+                            'dispatchDetails.pickup.updatedAt': {
+                                $exists: false,
+                            },
+                            'stage.updatedAt': todayRange,
+                        },
+                    ],
                 }),
 
                 // out for delivery — current state, no date filter
@@ -1550,13 +1560,29 @@ class AdminService extends BaseService {
                 // delivered today — date filter makes sense here
                 BookOrderModel.countDocuments({
                     'stage.status': ORDER_STATUS.DELIVERED,
-                    'stage.updatedAt': todayRange,
+                    $or: [
+                        { 'dispatchDetails.delivery.updatedAt': todayRange },
+                        {
+                            'dispatchDetails.delivery.updatedAt': {
+                                $exists: false,
+                            },
+                            'stage.updatedAt': todayRange, // ← fallback for older orders
+                        },
+                    ],
                 }),
 
                 // failed — current state, no date filter
                 BookOrderModel.countDocuments({
-                    'dispatchDetails.delivery.status': DELIVERY_STATUS.FAILED,
-                    'dispatchDetails.pickup.status': PICKUP_STATUS.FAILED,
+                    $or: [
+                        {
+                            'dispatchDetails.delivery.status':
+                                DELIVERY_STATUS.FAILED,
+                        },
+                        {
+                            'dispatchDetails.pickup.status':
+                                PICKUP_STATUS.FAILED,
+                        },
+                    ],
                 }),
             ])
 
@@ -1784,6 +1810,13 @@ class AdminService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'system',
+                action: `Order ${order.oscNumber}  has been assigned to ${type} ${note ? ` Note: ${note}.` : ''}`,
+            })
+
             // notify all operators at the target station
             const stationOperators = await UserModel.find({
                 userType: target.role,
@@ -1952,6 +1985,12 @@ class AdminService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_UPDATED,
                 })
             }
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'system',
+                action: `Order ${order.oscNumber}  has been resolved from hold and returned to ${type} ${note ? ` Note: ${note}.` : ''}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold resolved. Returned to ${type}`,
@@ -2418,6 +2457,12 @@ class AdminService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
                 })
             }
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'system',
+                action: `Order ${order.oscNumber} has been placed on hold for reason: ${reason}, assigned to ${assignTo} ${note ? ` Note: ${note}.` : ''}`,
+            })
 
             const stationOperators = await UserModel.find({
                 userType: assignTo,

@@ -15,7 +15,11 @@ const paginate = require('../util/paginate')
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
-const { buildStageUpdate, normalizePhone, getObjectId } = require('../util/helper')
+const {
+    buildStageUpdate,
+    normalizePhone,
+    getObjectId,
+} = require('../util/helper')
 const createAuditLog = require('../util/createAuditLog')
 
 class RiderService extends BaseService {
@@ -150,7 +154,7 @@ class RiderService extends BaseService {
 
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED
             order.dispatchDetails.delivery.updatedAt = new Date()
-
+            order.markModified('dispatchDetails.delivery')
             await order.save()
             await BookOrderModel.updateOne(
                 { _id: orderId },
@@ -170,8 +174,19 @@ class RiderService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_DELIVERED,
                 })
             }
-            await createNotification({userId, title: 'Delivery Completed', body: `Delivery for order ${order.oscNumber} has been marked as delivered.`, subBody: `Order ID: ${order.oscNumber}`, type: NOTIFICATION_TYPE.DELIVERY_STARTED})
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivered by rider`})
+            await createNotification({
+                userId,
+                title: 'Delivery Completed',
+                body: `Delivery for order ${order.oscNumber} has been marked as delivered.`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.DELIVERY_STARTED,
+            })
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as delivered by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as delivered successfully',
@@ -240,6 +255,7 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.FAILED
             order.dispatchDetails.delivery.updatedAt = new Date()
             order.dispatchDetails.delivery.note = note
+            order.markModified('dispatchDetails.delivery')
             await order.save()
 
             await createNotification({
@@ -248,7 +264,12 @@ class RiderService extends BaseService {
                 body: `Delivery for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
                 subBody: `Order ID: ${order.oscNumber}`,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as delivery failed by rider. Note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery marked as failed successfully',
@@ -425,7 +446,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Pickup for order ${order.oscNumber} started by rider`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'rider',
+                action: `Pickup for order ${order.oscNumber} started by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup started successfully',
@@ -495,6 +521,7 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
+            order.markModified('dispatchDetails.pickup')
             await order.save()
 
             if (order.userId?._id) {
@@ -514,7 +541,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_STARTED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as picked up by rider`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as picked up by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order marked as picked up successfully',
@@ -585,6 +617,7 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.status = PICKUP_STATUS.FAILED
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.note = note
+            order.markModified('dispatchDetails.pickup')
             await order.save()
 
             await createNotification({
@@ -594,7 +627,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_FAILED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'rider',
+                action: `Order ${order.oscNumber} marked as pickup failed by rider. Note: ${note}`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Pickup marked as failed successfully',
@@ -668,7 +706,12 @@ class RiderService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.DELIVERY_STARTED,
             })
-            await createAuditLog({userId: getObjectId(userId), orderId, category: 'rider', action: `Delivery for order ${order.oscNumber} started by rider`})
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'rider',
+                action: `Delivery for order ${order.oscNumber} started by rider`,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Delivery started successfully',
