@@ -1183,11 +1183,12 @@ class AdminService extends BaseService {
 
     async getAdminOrderDetails(req) {
         try {
-            const [adminOrderDetails, adminSetting, orderItems] = await Promise.all([
-                AdminOrderDetailsModel.findOne().lean(),
-                AdminSettingModel.findOne().lean(),
-                OrderItemModel.find({}).lean(), // ← fetch all items
-            ])
+            const [adminOrderDetails, adminSetting, orderItems] =
+                await Promise.all([
+                    AdminOrderDetailsModel.findOne().lean(),
+                    AdminSettingModel.findOne().lean(),
+                    OrderItemModel.find({}).lean(), // ← fetch all items
+                ])
 
             const activeServiceTypes = adminSetting?.serviceTypes || []
 
@@ -1200,15 +1201,21 @@ class AdminService extends BaseService {
                     heavyItems: orderItems
                         .filter((i) => i.isHeavy)
                         .map((i) => i.name), // ← convenience list for frontend
-                    pickupTime: adminSetting?.pickupTimeSlots || ['10am-12pm', '4pm-6pm'],
+                    pickupTime: adminSetting?.pickupTimeSlots || [
+                        '10am-12pm',
+                        '4pm-6pm',
+                    ],
                     standardCapacity: adminSetting?.standardCapacity ?? 100,
                     sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
                     expressCapacity: adminSetting?.expressCapacity ?? 30,
-                    standardDeliveryPeriod: adminSetting?.standardDeliveryPeriod ?? 2,
+                    standardDeliveryPeriod:
+                        adminSetting?.standardDeliveryPeriod ?? 2,
                     sameDayCharge: adminSetting?.sameDayCharge ?? 300,
                     expressCharge: adminSetting?.expressCharge ?? 100,
-                    premiumServiceTierCharge: adminSetting?.premiumServiceTierCharge ?? 1.5,
-                    vipServiceTierCharge: adminSetting?.vipServiceTierCharge ?? 2,
+                    premiumServiceTierCharge:
+                        adminSetting?.premiumServiceTierCharge ?? 1.5,
+                    vipServiceTierCharge:
+                        adminSetting?.vipServiceTierCharge ?? 2,
                     deliveryFee: adminSetting?.deliveryFee ?? 500,
                     pickupFee: adminSetting?.pickupFee ?? 500,
                     bankDetails: adminSetting?.bankDetails,
@@ -1470,17 +1477,14 @@ class AdminService extends BaseService {
                     filter = {
                         $or: [
                             { 'stage.status': ORDER_STATUS.OUT_FOR_DELIVERY },
-                            // {
-                            //     'dispatchDetails.delivery.status': {
-                            //         $in: [
-                            //             DELIVERY_STATUS.DELIVERED,
-                            //         ],
-                            //     },
-                            // },
+                            {
+                                isDelivery: true,
+                                'dispatchDetails.delivery.status':
+                                    DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                            },
                         ],
                     }
                     break
-
                 case 'pendingPickup':
                     filter = {
                         isPickUp: true,
@@ -1495,20 +1499,15 @@ class AdminService extends BaseService {
                                 isPickUp: true,
                                 'dispatchDetails.pickup.rider': { $ne: null },
                                 'dispatchDetails.pickup.status': {
-                                    $in: [
-                                        PICKUP_STATUS.SCHEDULED,
-                                        PICKUP_STATUS.PICKUP_IN_PROGRESS,
-                                    ],
+                                    $in: [PICKUP_STATUS.SCHEDULED, PICKUP_STATUS.PICKUP_IN_PROGRESS],
+
                                 },
                             },
                             {
                                 isDelivery: true,
                                 'dispatchDetails.delivery.rider': { $ne: null },
                                 'dispatchDetails.delivery.status': {
-                                    $in: [
-                                        DELIVERY_STATUS.READY,
-                                        DELIVERY_STATUS.OUT_FOR_DELIVERY,
-                                    ],
+                                    $in: [DELIVERY_STATUS.READY, DELIVERY_STATUS.OUT_FOR_DELIVERY],
                                 },
                             },
                         ],
@@ -1516,8 +1515,14 @@ class AdminService extends BaseService {
                     break
                 case 'delivered':
                     filter = {
-                        'stage.status': ORDER_STATUS.DELIVERED,
-                    }
+                            $or: [
+                                { 'stage.status': ORDER_STATUS.DELIVERED },
+                                {
+                                    isDelivery: true,
+                                    'dispatchDetails.delivery.status': DELIVERY_STATUS.DELIVERED,
+                                },
+                            ],
+                        }
                     break
 
                 default:
