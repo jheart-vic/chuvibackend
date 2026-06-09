@@ -1451,21 +1451,28 @@ class AdminService extends BaseService {
                     filter = {
                         $or: [
                             {
+                                isPickUp: true,
                                 'dispatchDetails.pickup.rider': { $ne: null },
                                 'dispatchDetails.pickup.status': {
-                                    $ne: PICKUP_STATUS.SCHEDULED,
+                                    $in: [
+                                        PICKUP_STATUS.SCHEDULED,
+                                        PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                                    ],
                                 },
                             },
                             {
+                                isDelivery: true,
                                 'dispatchDetails.delivery.rider': { $ne: null },
                                 'dispatchDetails.delivery.status': {
-                                    $ne: DELIVERY_STATUS.DELIVERED,
+                                    $in: [
+                                        DELIVERY_STATUS.READY,
+                                        DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                                    ],
                                 },
                             },
                         ],
                     }
                     break
-
                 case 'delivered':
                     filter = {
                         'stage.status': ORDER_STATUS.DELIVERED,
