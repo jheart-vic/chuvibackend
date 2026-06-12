@@ -21,6 +21,7 @@ const {
     getObjectId,
 } = require('../util/helper')
 const createAuditLog = require('../util/createAuditLog')
+const notifyBot = require('../util/notifyBot')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -166,6 +167,14 @@ class RiderService extends BaseService {
             )
 
             if (order.userId?._id) {
+                await notifyBot({
+                    event: 'order-delivered',
+                    chuviUserId: String(order.userId._id),
+                    orderId: String(order._id),
+                    oscNumber: order.oscNumber,
+                    itemsCount: order.items?.length || 0,
+                    collected: false,
+                })
                 await createNotification({
                     userId: order.userId._id,
                     title: 'Your order has been delivered',

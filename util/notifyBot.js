@@ -23,7 +23,7 @@ async function notifyBot(payload) {
 
     try {
         await axios.post(url, payload, {
-            timeout: 5000,
+            timeout: 2000,
             headers: { 'x-bot-secret': secret },
         })
     } catch (err) {
