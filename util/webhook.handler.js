@@ -8,10 +8,87 @@ const PlanModel = require('../models/plan.model')
 const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
 const createNotification = require('./createNotification')
+const notifyBot = require('./notifyBot')
+
+// async function handleChargeSuccess(data) {
+//     try {
+//         // console.log({ data }, "handleChargeSuccess");
+//         const metadata = data.metadata || {}
+//         const reference = data.reference
+//         const userEmail = data.customer?.email
+
+//         if (!userEmail) {
+//             console.log('No user email in charge.success')
+//             return
+//         }
+
+//         // 1️⃣ Find user
+//         const user = await UserModel.findOne({ email: userEmail })
+//         if (!user) {
+//             console.log('User not found for email:', userEmail)
+//             return
+//         }
+
+//         // 2️⃣ Prevent duplicate payments
+//         const existingPayment = await PaymentModel.findOne({ reference })
+//         // if (existingPayment) {
+//         //     console.log('Payment already recorded:', reference)
+//         //     return
+//         // }
+
+//         // 3️⃣ Save payment
+//         console.log(metadata, 'metadata')
+//         if (!metadata.transactionType) {
+//             console.warn(
+//                 'No transaction type in metadata, cannot process payment',
+//             )
+//             return
+//         }
+
+//         if (existingPayment && existingPayment.status == 'success') {
+//             console.log('Payment already made')
+//             return
+//         }
+
+//         existingPayment.paidAt = new Date(data.paid_at)
+//         existingPayment.metadata = metadata
+//         existingPayment.status = 'success'
+//         existingPayment.amount = metadata.amount
+//         existingPayment.channel = data.channel
+//         await existingPayment.save()
+
+//         // ==========================
+//         // 🛒 ORDER PAYMENT FLOW
+//         // ==========================
+//         if (metadata.transactionType === 'order') {
+//             await handleOrderPayment(metadata, reference)
+//             return
+//         }
+
+//         if (metadata.transactionType === 'wallet-top-up') {
+//             await handleWalletTopUp(metadata, reference)
+//             return
+//         }
+
+//         if (metadata.transactionType === 'subscription') {
+//             if (!data.subscription) {
+//                 await handleNormalSubscription(data, user)
+//                 return
+//             }
+
+//             const subscriptionCode = data.subscription.subscription_code
+
+//             let subscription = await SubscriptionModel.findOne({
+//                 subscriptionCode,
+//             })
+//         }
+//     } catch (error) {
+//         console.error('Error in handleChargeSuccess:', error)
+//     }
+// }
 
 async function handleChargeSuccess(data) {
     try {
-        // console.log({ data }, "handleChargeSuccess");
         const metadata = data.metadata || {}
         const reference = data.reference
         const userEmail = data.customer?.email
@@ -28,33 +105,33 @@ async function handleChargeSuccess(data) {
             return
         }
 
-        // 2️⃣ Prevent duplicate payments
-        const existingPayment = await PaymentModel.findOne({ reference })
-        // if (existingPayment) {
-        //     console.log('Payment already recorded:', reference)
-        //     return
-        // }
-
-        // 3️⃣ Save payment
-        console.log(metadata, 'metadata')
         if (!metadata.transactionType) {
-            console.warn(
-                'No transaction type in metadata, cannot process payment',
-            )
+            console.warn('No transaction type in metadata, cannot process payment')
             return
         }
 
-        if(existingPayment && existingPayment.status == 'success'){
-            console.log('Payment already made')
+        // 2️⃣ Idempotency — never process the same reference twice
+        let payment = await PaymentModel.findOne({ reference })
+
+        if (payment && payment.status === 'success') {
+            console.log('Payment already made:', reference)
             return
         }
 
-            existingPayment.paidAt = new Date(data.paid_at)
-            existingPayment.metadata = metadata
-            existingPayment.status = 'success'
-            existingPayment.amount = metadata.amount
-            existingPayment.channel = data.channel
-            await existingPayment.save()
+        // 3️⃣ Record the payment (create if the pending record is missing —
+        //    previously this crashed on null and the whole flow died silently)
+        if (!payment) {
+            payment = new PaymentModel({
+                userId: user._id,
+                reference,
+            })
+        }
+        payment.paidAt = new Date(data.paid_at)
+        payment.metadata = metadata
+        payment.status = 'success'
+        payment.amount = metadata.amount
+        payment.channel = data.channel
+        await payment.save()
 
         // ==========================
         // 🛒 ORDER PAYMENT FLOW
@@ -70,19 +147,82 @@ async function handleChargeSuccess(data) {
         }
 
         if (metadata.transactionType === 'subscription') {
+            // First charge (no subscription object yet) — creates/activates it
             if (!data.subscription) {
                 await handleNormalSubscription(data, user)
                 return
             }
 
+            // ♻️ RECURRING RENEWAL — previously found the subscription and did
+            // nothing; renewals never updated status, limits, or the customer.
             const subscriptionCode = data.subscription.subscription_code
 
-            let subscription = await SubscriptionModel.findOne({
+            const subscription = await SubscriptionModel.findOne({
                 subscriptionCode,
             })
+            if (!subscription) {
+                console.warn('Renewal for unknown subscription:', subscriptionCode)
+                return
+            }
+
+            const plan = await PlanModel.findById(subscription.planId)
+
+            subscription.status = 'active'
+            subscription.lastPaymentAt = new Date(data.paid_at)
+            if (data.subscription.next_payment_date) {
+                subscription.nextPaymentDate = new Date(
+                    data.subscription.next_payment_date,
+                )
+            }
+            if (plan?.monthlyLimits != null) {
+                // fresh month, fresh item allowance
+                subscription.remainingItems = plan.monthlyLimits
+            }
+            await subscription.save()
+
+            // 🔔 Tell the customer their renewal went through
+            await notifyBot({
+                event: 'subscription-active',
+                chuviUserId: String(user._id),
+                email: userEmail,
+                planName: plan?.name,
+                amount: metadata.amount || plan?.price,
+            })
+            return
         }
     } catch (error) {
         console.error('Error in handleChargeSuccess:', error)
+    }
+}
+
+async function handleChargeFailed(data) {
+    try {
+        const reference = data.reference
+        const metadata = data.metadata || {}
+        const reason = data.gateway_response || 'The payment was not completed'
+
+        // Mark our payment record as failed (idempotent)
+        const payment = await PaymentModel.findOneAndUpdate(
+            { reference, status: { $ne: 'success' } },
+            { status: 'failed' },
+            { new: true },
+        )
+
+        const userId = metadata.userId || payment?.userId
+        const email = data.customer?.email
+
+        // 🔔 Tell the customer on WhatsApp (fire-and-forget)
+        await notifyBot({
+            event: 'payment-failed',
+            ...(userId && { chuviUserId: String(userId) }),
+            ...(email && { email }),
+            reason,
+            reference,
+            ...(metadata.orderId && { orderId: String(metadata.orderId) }),
+        })
+    } catch (error) {
+        console.error('Error in handleChargeFailed:', error)
+        return
     }
 }
 
@@ -183,6 +323,15 @@ async function handleInvoiceFailed(data) {
             { subscriptionCode: data.subscription.subscription_code },
             { status: 'failed' },
         )
+
+        // 🔔 Tell the customer their subscription renewal failed (fire-and-forget)
+        if (data.customer?.email) {
+          await  notifyBot({
+                event: 'payment-failed',
+                email: data.customer.email,
+                reason: 'Your subscription renewal payment did not go through',
+            })
+        }
     } catch (error) {
         console.error('Error in handleInvoiceFailed:', error)
         return
@@ -269,6 +418,14 @@ async function handleNormalSubscription(data) {
                 (subscription.lastPaymentAt = new Date(data.paid_at)))
             await subscription.save()
         }
+
+        await notifyBot({
+            event: 'subscription-active',
+            chuviUserId: String(user._id),
+            email,
+            planName: plan?.name,
+            amount: plan?.price,
+        })
     } catch (error) {
         console.error('Error in handleNormalSubscription:', error)
     }
@@ -301,6 +458,15 @@ async function handleOrderPayment(metadata, reference) {
 
         await order.save()
 
+       await notifyBot({
+            event: 'order-paid',
+            chuviUserId: String(order.userId),
+            amount: order.amount,
+            orderId: String(order._id),
+            oscNumber: order.oscNumber,
+            reference,
+        })
+
         // 🔔 Optional notification
         await createNotification({
             userId: order.userId,
@@ -315,7 +481,8 @@ async function handleOrderPayment(metadata, reference) {
         return
     }
 }
-async function handleWalletTopUp(metadata) {
+
+async function handleWalletTopUp(metadata, reference) {
     try {
         const { userId } = metadata
 
@@ -330,23 +497,8 @@ async function handleWalletTopUp(metadata) {
             return
         }
 
-        // const wallet = await WalletModel.findOne({userId})
-
-        // if(wallet){
-        //   wallet.balance += metadata.amount / 100;
-        //   await wallet.save()
-        // }
-
-        // await WalletModel.findOneAndUpdate(
-        //   { userId },
-        //   { $set: { balance: metadata.amount / 100 } }, // Updates if exists
-        //   {
-        //     upsert: true, // Creates if doesn't exist
-        //     new: true     // Returns the updated document
-        //   }
-        // );
-
-        await WalletModel.findOneAndUpdate(
+        // Credit the wallet (capture the result so we can report the new balance)
+        const updatedWallet = await WalletModel.findOneAndUpdate(
             { userId },
             { $inc: { balance: metadata.amount } },
             { upsert: true, new: true },
@@ -358,16 +510,17 @@ async function handleWalletTopUp(metadata) {
             status: 'success',
         })
 
-        // await PaymentModel.create({
-        //     userId: userId,
-        //     amount: metadata.amount / 100,
-        //     reference: metadata.reference,
-        //     status: 'pending',
-        //     type: 'wallet-top-up',
-        //     alertType: 'credit',
-        // })
+        // 🔔 WhatsApp confirmation via chatbot
+        await notifyBot({
+            event: 'wallet-top-up',
+            chuviUserId: String(userId),
+            email: user.email,
+            amount: metadata.amount,
+            balance: updatedWallet?.balance,
+            reference: reference || metadata.reference,
+        })
 
-        // 🔔 Optional notification
+        // 🔔 In-app notification
         await createNotification({
             userId: userId,
             title: 'Wallet top up Successful',
@@ -376,10 +529,84 @@ async function handleWalletTopUp(metadata) {
             type: NOTIFICATION_TYPE.WALLET_TOP_UP,
         })
     } catch (error) {
-        console.error('Error in handleOrderPayment:', error)
+        console.error('Error in handleWalletTopUp:', error)
         return
     }
 }
+
+// async function handleWalletTopUp(metadata) {
+//     try {
+//         const { userId } = metadata
+
+//         if (!userId) {
+//             console.warn('User Id missing in metadata')
+//             return
+//         }
+
+//         const user = await UserModel.findById(userId)
+//         if (!user) {
+//             console.warn(`User ${userId} not found`)
+//             return
+//         }
+
+//         // const wallet = await WalletModel.findOne({userId})
+
+//         // if(wallet){
+//         //   wallet.balance += metadata.amount / 100;
+//         //   await wallet.save()
+//         // }
+
+//         // await WalletModel.findOneAndUpdate(
+//         //   { userId },
+//         //   { $set: { balance: metadata.amount / 100 } }, // Updates if exists
+//         //   {
+//         //     upsert: true, // Creates if doesn't exist
+//         //     new: true     // Returns the updated document
+//         //   }
+//         // );
+
+//         await WalletModel.findOneAndUpdate(
+//             { userId },
+//             { $inc: { balance: metadata.amount } },
+//             { upsert: true, new: true },
+//         )
+//         await WalletTransactionModel.create({
+//             userId,
+//             type: 'credit',
+//             amount: metadata.amount,
+//             status: 'success',
+//         })
+
+//         // await PaymentModel.create({
+//         //     userId: userId,
+//         //     amount: metadata.amount / 100,
+//         //     reference: metadata.reference,
+//         //     status: 'pending',
+//         //     type: 'wallet-top-up',
+//         //     alertType: 'credit',
+//         // })
+//         await notifyBot({
+//             event: 'wallet-top-up',
+//             chuviUserId: String(userId),
+//             email: user.email,
+//             amount: metadata.amount,
+//             balance: updatedWallet?.balance,
+//             reference: reference || metadata.reference,
+//         })
+
+//         // 🔔 Optional notification
+//         await createNotification({
+//             userId: userId,
+//             title: 'Wallet top up Successful',
+//             body: 'Your wallet top up is successful.',
+//             subBody: 'Your wallet top up is successful.',
+//             type: NOTIFICATION_TYPE.WALLET_TOP_UP,
+//         })
+//     } catch (error) {
+//         console.error('Error in handleOrderPayment:', error)
+//         return
+//     }
+// }
 
 function generateNextPaymentDate(duration, startDate = new Date()) {
     const next = new Date(startDate)
@@ -396,4 +623,5 @@ module.exports = {
     handleSubscriptionDisable,
     handleSubscriptionCreate,
     handleInvoiceFailed,
+    handleChargeFailed,
 }

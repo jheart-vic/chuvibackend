@@ -21,7 +21,7 @@ require('./crons/reconcilePaystack.js')
 require('./crons/resetMonthlyLimits.js')
 
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 7000;
 const mongoURL = process.env.MONGODB_URL;
 
 const app = express();
