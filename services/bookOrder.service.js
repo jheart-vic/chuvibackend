@@ -32,7 +32,7 @@ const createAuditLog = require('../util/createAuditLog')
 const OrderItemModel = require('../models/orderItem.model')
 
 class BookOrderService extends BaseService {
-    async postBookOrder(req, res) {
+async postBookOrder(req, res) {
         try {
             const post = req.body
             const userId = req.user.id
@@ -97,6 +97,22 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // ⏰ Booking time cutoff check — same-day before 10am, express before 2pm.
+            // calculateDueDate returns null when the cutoff has passed.
+            const deliveryDate = calculateDueDate(post.deliverySpeed)
+            if (deliveryDate === null) {
+                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
+                    })
+                }
+                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Express orders must be placed before 2pm. Please select standard delivery.',
+                    })
+                }
+            }
+
             const oscNumber = generateOscNumber()
             let newOrder = null
 
@@ -149,7 +165,7 @@ class BookOrderService extends BaseService {
                     post.items.length > adminOrderDetails.expressCapacity
                 ) {
                     return BaseService.sendFailedResponse({
-                        error: `Same day delivery is currently at full capacity. Please reduce your items or choose the standard delivery speed.`,
+                        error: `Express delivery is currently at full capacity. Please reduce your items or choose the standard delivery speed.`,
                     })
                 }
 
@@ -199,7 +215,7 @@ class BookOrderService extends BaseService {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
                     ...post,
-                    deliveryDate: calculateDueDate(post.deliverySpeed),
+                    deliveryDate,
                 }
 
                 newOrder = new BookOrderModel(newOrderItem)
@@ -264,8 +280,6 @@ class BookOrderService extends BaseService {
 
                 totalPrice += extraDeliveryCost
 
-                // const oscNumber = generateOscNumber();
-
                 const stage = {
                     status: ORDER_STATUS.PENDING,
                     updatedAt: new Date(),
@@ -284,6 +298,7 @@ class BookOrderService extends BaseService {
                     stage,
                     stageHistory: [stageHistory],
                     ...post,
+                    deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
@@ -350,8 +365,6 @@ class BookOrderService extends BaseService {
 
                 totalPrice += extraDeliveryCost
 
-                // const oscNumber = generateOscNumber();
-
                 if (totalPrice > wallet.balance) {
                     return BaseService.sendFailedResponse({
                         error: 'Insufficient balance in your wallet. Please try funding your account to continue',
@@ -392,6 +405,7 @@ class BookOrderService extends BaseService {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
                     ...post,
+                    deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
@@ -415,6 +429,14 @@ class BookOrderService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_CREATED,
                 })
             }
+
+            // safety: if no branch created an order, stop before referencing newOrder
+            if (!newOrder) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order could not be created. Please try again.',
+                })
+            }
+
             // update the capacity in admin order settings
             if (
                 post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
