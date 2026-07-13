@@ -300,6 +300,111 @@ const AUDIT_LOG_CATEGORIES = {
     USER: 'user',
     SORT: 'sort',
     WASH: 'wash',
+    CRM: 'crm',
+}
+
+// ─── CRM ────────────────────────────────────────────────────────────────────
+
+const CRM_STAGE = {
+    LEAD: 'lead',
+    FIRST_ORDER: 'first-order',
+    ACTIVE: 'active',
+    LOYAL: 'loyal',
+    DORMANT: 'dormant',
+    REACTIVATED: 'reactivated',
+}
+
+const CRM_TAG = {
+    // channel
+    WHATSAPP: 'whatsapp',
+    WEBSITE: 'website',
+    WALK_IN: 'walk-in',
+    // service preference
+    EXPRESS_USER: 'express-user',
+    STANDARD_USER: 'standard-user',
+    // order pattern
+    HIGH_VOLUME: 'high-volume',
+    LOW_VOLUME: 'low-volume',
+    HIGH_FREQUENCY: 'high-frequency',
+    LOW_FREQUENCY: 'low-frequency',
+    // relationship
+    NEW_CUSTOMER: 'new-customer',
+    REPEAT_CUSTOMER: 'repeat-customer',
+    LOYAL_CUSTOMER: 'loyal-customer',
+    REACTIVATED_CUSTOMER: 'reactivated-customer',
+    // lead status
+    FRESH_LEAD: 'fresh-lead',
+    PROSPECT: 'prospect',
+    // retention
+    COMPLAINT: 'complaint',
+    RECOVERY_REQUIRED: 'recovery-required',
+    CHURNED: 'churned',
+}
+
+// Tag groups: automatic tags are replaced within their group on every
+// recompute; manual tags are only ever touched by staff.
+const CRM_TAG_GROUPS = {
+    CHANNEL: [CRM_TAG.WHATSAPP, CRM_TAG.WEBSITE, CRM_TAG.WALK_IN],
+    SERVICE_PREFERENCE: [CRM_TAG.EXPRESS_USER, CRM_TAG.STANDARD_USER],
+    ORDER_VOLUME: [CRM_TAG.HIGH_VOLUME, CRM_TAG.LOW_VOLUME],
+    ORDER_FREQUENCY: [CRM_TAG.HIGH_FREQUENCY, CRM_TAG.LOW_FREQUENCY],
+    RELATIONSHIP: [
+        CRM_TAG.NEW_CUSTOMER,
+        CRM_TAG.REPEAT_CUSTOMER,
+        CRM_TAG.LOYAL_CUSTOMER,
+        CRM_TAG.REACTIVATED_CUSTOMER,
+    ],
+    LEAD_STATUS: [CRM_TAG.FRESH_LEAD, CRM_TAG.PROSPECT],
+}
+
+const CRM_MANUAL_TAGS = [CRM_TAG.COMPLAINT, CRM_TAG.RECOVERY_REQUIRED]
+
+const CRM_WORKFLOW = {
+    LEAD: 'lead',
+    POST_DELIVERY: 'post-delivery',
+    REACTIVATION: 'reactivation',
+    BROADCAST: 'broadcast',
+}
+
+const CRM_MESSAGE_TYPE = {
+    // lead workflow
+    LEAD_WELCOME: 'lead-welcome',
+    LEAD_QUALIFY: 'lead-qualify',
+    LEAD_OFFER: 'lead-offer',
+    LEAD_CLOSE: 'lead-close',
+    LEAD_REMINDER_1: 'lead-reminder-1',
+    LEAD_REMINDER_2: 'lead-reminder-2',
+    LEAD_MARK_PROSPECT: 'lead-mark-prospect', // internal action, no message sent
+    // post-delivery workflow
+    DELIVERY_CONFIRMATION: 'delivery-confirmation',
+    FEEDBACK_REQUEST: 'feedback-request',
+    REORDER_PROMPT: 'reorder-prompt',
+    // reactivation workflow
+    REACTIVATION_1: 'reactivation-1',
+    REACTIVATION_2: 'reactivation-2',
+    REACTIVATION_3: 'reactivation-3',
+    REACTIVATION_MARK_CHURNED: 'reactivation-mark-churned', // internal action
+    // broadcasts
+    PROSPECT_BROADCAST: 'prospect-broadcast',
+    CHURN_BROADCAST: 'churn-broadcast',
+}
+
+// message types that trigger an internal state change instead of a send
+const CRM_INTERNAL_ACTIONS = [
+    CRM_MESSAGE_TYPE.LEAD_MARK_PROSPECT,
+    CRM_MESSAGE_TYPE.REACTIVATION_MARK_CHURNED,
+]
+
+const CRM_MESSAGE_STATUS = {
+    PENDING: 'pending',
+    SENT: 'sent',
+    CANCELLED: 'cancelled',
+    FAILED: 'failed',
+}
+
+const CRM_BROADCAST_LIST = {
+    PROSPECT: 'prospect',
+    CHURN: 'churn',
 }
 
 module.exports = {
@@ -340,5 +445,14 @@ module.exports = {
     PICKUP_DURATION_MINUTES,
     DELIVERY_DURATION_MINUTES,
     QC_DURATION_MINUTES,
-    AUDIT_LOG_CATEGORIES
+    AUDIT_LOG_CATEGORIES,
+    CRM_STAGE,
+    CRM_TAG,
+    CRM_TAG_GROUPS,
+    CRM_MANUAL_TAGS,
+    CRM_WORKFLOW,
+    CRM_MESSAGE_TYPE,
+    CRM_INTERNAL_ACTIONS,
+    CRM_MESSAGE_STATUS,
+    CRM_BROADCAST_LIST,
 }

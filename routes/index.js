@@ -17,6 +17,7 @@ const riderRouter = require('./rider')
 const seedRouter = require('./seed')
 const searchRouter = require('./search')
 const publicRouter = require('./public')
+const crmRouter = require('./crm')
 
 
 router.use('/admin', adminRouter)
@@ -37,4 +38,5 @@ router.use('/search', searchRouter)
 router.use('/qc-user', qcUserRouter)
 router.use('/notifications', notificationRouter)
 router.use('/public', publicRouter)
+router.use('/crm', crmRouter)
 module.exports = router

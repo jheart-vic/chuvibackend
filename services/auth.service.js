@@ -17,6 +17,7 @@ const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require('../util/constants')
 const FreePlanModel = require('../models/freeplan.model')
 const WalletModel = require('../models/wallet.model')
 const createAuditLog = require('../util/createAuditLog')
+const { crmOnUserRegistered } = require('../util/crmHooks')
 
 class AuthService extends BaseService {
     async createUser(req) {
@@ -74,6 +75,10 @@ class AuthService extends BaseService {
             })
 
             await newUser.save()
+
+            if (newUser.userType === ROLE.USER) {
+                crmOnUserRegistered(newUser)
+            }
 
             // Add OTP
             const otp = generateOTP()
@@ -322,6 +327,10 @@ class AuthService extends BaseService {
             const newUser = new UserModel(userObject)
             await newUser.save()
 
+            if (newUser.userType === ROLE.USER) {
+                crmOnUserRegistered(newUser)
+            }
+
             const accessToken = await newUser.generateAccessToken(
                 process.env.ACCESS_TOKEN_SECRET || '',
             )
@@ -485,6 +494,10 @@ class AuthService extends BaseService {
             const newUser = new UserModel(userObject)
 
             await newUser.save()
+
+            if (newUser.userType === ROLE.USER) {
+                crmOnUserRegistered(newUser)
+            }
 
             // 10. Generate JWT tokens for the newly created user
             const accessToken = await newUser.generateAccessToken(

@@ -1,5 +1,6 @@
 const AdminOrderDetailsModel = require("../models/adminOrderDetails.model");
 const AdminSettingModel = require("../models/adminSetting.model");
+const CrmSettingModel = require("../models/crmSetting.model");
 
 
 const init = async () => {
@@ -39,9 +40,22 @@ const createAdminOrderDetails = async () => {
 };
 
 
+const createCrmSettings = async () => {
+  try {
+    const crmSetting = await CrmSettingModel.findOne({});
+    if (crmSetting) {
+      return;
+    }
+    await CrmSettingModel.create({});
+  } catch (error) {
+    console.error("App init failed:", error);
+  }
+};
+
 async function setupApp() {
   init();
   createAdminOrderDetails();
+  createCrmSettings();
   console.log("App init successful");
 }
 
