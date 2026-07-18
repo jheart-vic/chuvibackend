@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const WalletController = require("../controllers/walletController");
 const auth = require("../middlewares/auth");
+const adminAuth = require("../middlewares/adminAuth");
 const {
   ROUTE_WALLET_TOP_UP,
   ROUTE_FETCH_USER_TRANSACTIONS,
@@ -8,6 +9,9 @@ const {
   ROUTE_WALLET_BALANCE,
   ROUTE_GET_MONTHLY_TRANSACTIONS,
   ROUTE_UPLOAD_PAYMENT_PROOF,
+  ROUTE_WALLET_CREDITS,
+  ROUTE_WALLET_ADMIN_ADJUST_CREDIT,
+  ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS,
 } = require("../util/page-route");
 
 /**
@@ -325,6 +329,25 @@ router.get(ROUTE_FETCH_USER_TRANSACTIONS, [auth], (req, res) => {
  *                     balance:
  *                       type: number
  *                       example: 1500.75
+ *                       description: Cash balance
+ *                     creditTotal:
+ *                       type: number
+ *                       example: 3000
+ *                       description: Total usable reward credit
+ *                     totalAvailable:
+ *                       type: number
+ *                       example: 4500.75
+ *                     creditsByType:
+ *                       type: object
+ *                       properties:
+ *                         laundry: { type: number, example: 3000 }
+ *                         referral: { type: number, example: 0 }
+ *                         recovery: { type: number, example: 0 }
+ *                         promotional: { type: number, example: 0 }
+ *                     expiringSoon:
+ *                       type: number
+ *                       example: 0
+ *                       description: Credit value expiring within 7 days
  *       400:
  *         description: Validation error
  *         content:
@@ -554,6 +577,193 @@ router.get(ROUTE_GET_MONTHLY_TRANSACTIONS, [auth], (req, res) => {
 router.post(ROUTE_UPLOAD_PAYMENT_PROOF, [auth], (req, res) => {
   const walletController = new WalletController();
   return walletController.uploadPaymentProof(req, res);
+});
+
+/**
+ * @swagger
+ * /wallet/wallet-credits:
+ *   get:
+ *     summary: Get the wallet credit breakdown for the authenticated user
+ *     description: >
+ *       Returns the cash balance plus every reward credit sub-balance
+ *       (laundry, referral, recovery, promotional) inside the single customer
+ *       wallet — including per-credit source, expiry, value expiring within 7
+ *       days, and paginated credit-related transaction history. Reward credits
+ *       are service value only and are never withdrawable as cash.
+ *     tags:
+ *       - Wallet
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *         description: Page number for the credit transaction history
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *         description: Transactions per page
+ *     responses:
+ *       200:
+ *         description: Wallet credit breakdown
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     cashBalance: { type: number, example: 5000 }
+ *                     creditTotal: { type: number, example: 3500 }
+ *                     totalAvailable: { type: number, example: 8500 }
+ *                     creditsByType:
+ *                       type: object
+ *                       properties:
+ *                         laundry: { type: number, example: 3000 }
+ *                         referral: { type: number, example: 500 }
+ *                         recovery: { type: number, example: 0 }
+ *                         promotional: { type: number, example: 0 }
+ *                     expiringSoon:
+ *                       type: number
+ *                       example: 500
+ *                       description: Credit value expiring within 7 days
+ *                     credits:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id: { type: string }
+ *                           type: { type: string, enum: [laundry, referral, recovery, promotional] }
+ *                           amount: { type: number, example: 3000 }
+ *                           remaining: { type: number, example: 3000 }
+ *                           sourceSystem: { type: string, example: offer }
+ *                           expiresAt: { type: string, format: date-time }
+ *                           status: { type: string, example: active }
+ *                     transactions:
+ *                       type: array
+ *                       items: { type: object }
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total: { type: integer, example: 12 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 20 }
+ *                         pages: { type: integer, example: 1 }
+ *       400:
+ *         description: Invalid user
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_WALLET_CREDITS, [auth], (req, res) => {
+  const walletController = new WalletController();
+  return walletController.getWalletCredits(req, res);
+});
+
+/**
+ * @swagger
+ * /wallet/admin/adjust-credit:
+ *   post:
+ *     summary: Manually grant or remove wallet credit for a customer (admin)
+ *     description: >
+ *       Staff correction path. `direction: add` creates a fresh admin-sourced
+ *       credit of the given type (default laundry); `direction: remove` pulls
+ *       value from a specific existing credit (requires `creditId`). A reason
+ *       is mandatory and the adjustment is written to the audit log.
+ *     tags:
+ *       - Wallet
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId, amount, direction, reason]
+ *             properties:
+ *               userId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *               amount: { type: integer, example: 2000 }
+ *               direction: { type: string, enum: [add, remove] }
+ *               reason: { type: string, example: "Goodwill credit after delayed order" }
+ *               type:
+ *                 type: string
+ *                 enum: [laundry, referral, recovery, promotional]
+ *                 description: Credit type when adding (default laundry)
+ *               creditId:
+ *                 type: string
+ *                 description: Required when direction is remove
+ *     responses:
+ *       200:
+ *         description: Adjustment applied
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     adjusted: { type: number, example: 2000 }
+ *                     credit: { type: object }
+ *       400:
+ *         description: Validation error, unknown user/credit, or insufficient remaining value
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_WALLET_ADMIN_ADJUST_CREDIT, [adminAuth], (req, res) => {
+  const walletController = new WalletController();
+  return walletController.adminAdjustCredit(req, res);
+});
+
+/**
+ * @swagger
+ * /wallet/admin/reverse-order-credits:
+ *   post:
+ *     summary: Return all wallet credits an order consumed (admin)
+ *     description: >
+ *       Used when an order is cancelled or corrected — restores every
+ *       non-reversed credit consumption recorded against the order back onto
+ *       the original credits, keeping their original expiry dates (an already
+ *       expired credit stays expired). Cash refunds are handled separately.
+ *     tags:
+ *       - Wallet
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [bookOrderId, reason]
+ *             properties:
+ *               bookOrderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *               reason: { type: string, example: "Order cancelled before pickup" }
+ *     responses:
+ *       200:
+ *         description: Credits restored
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     restored: { type: number, example: 1500 }
+ *                     creditsTouched: { type: integer, example: 2 }
+ *       400:
+ *         description: Validation error or order not found
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS, [adminAuth], (req, res) => {
+  const walletController = new WalletController();
+  return walletController.adminReverseOrderCredits(req, res);
 });
 
 module.exports = router;

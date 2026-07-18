@@ -1,6 +1,7 @@
 const AdminOrderDetailsModel = require("../models/adminOrderDetails.model");
 const AdminSettingModel = require("../models/adminSetting.model");
 const CrmSettingModel = require("../models/crmSetting.model");
+const RewardSettingModel = require("../models/rewardSetting.model");
 
 
 const init = async () => {
@@ -52,10 +53,23 @@ const createCrmSettings = async () => {
   }
 };
 
+const createRewardSettings = async () => {
+  try {
+    const rewardSetting = await RewardSettingModel.findOne({});
+    if (rewardSetting) {
+      return;
+    }
+    await RewardSettingModel.create({});
+  } catch (error) {
+    console.error("App init failed:", error);
+  }
+};
+
 async function setupApp() {
   init();
   createAdminOrderDetails();
   createCrmSettings();
+  createRewardSettings();
   console.log("App init successful");
 }
 

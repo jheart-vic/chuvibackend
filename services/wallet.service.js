@@ -13,6 +13,7 @@ const { generateReferenceId, getObjectId } = require("../util/helper");
 const createNotification = require("../util/createNotification");
 const { NOTIFICATION_TYPE } = require("../util/constants");
 const createAuditLog = require("../util/createAuditLog");
+const WalletCreditService = require("./walletCredit.service");
 
 class WalletService extends BaseService {
   async walletTopUp(req, res) {
@@ -123,22 +124,43 @@ class WalletService extends BaseService {
         { upsert: true }
       );
 
-      // 🔐 ATOMIC DEBIT (only succeeds if balance >= amount)
-      const wallet = await WalletModel.findOneAndUpdate(
-        {
-          userId,
-          balance: { $gte: bookOrder.amount },
-        },
-        {
-          $inc: { balance: -bookOrder.amount },
-        },
-        { new: true }
+      // 1️⃣ Spend reward credits first (oldest expiry first) — service value
+      // credits (laundry/referral/recovery/promo) always apply before cash.
+      const creditResult = await WalletCreditService.applyCreditsToAmount(
+        userId,
+        bookOrder._id,
+        bookOrder.amount,
+        description
       );
+      const cashNeeded = bookOrder.amount - creditResult.applied;
 
-      if (!wallet) {
-        return BaseService.sendFailedResponse({
-          error: "Oops! Insufficient wallet balance.",
-        });
+      // 2️⃣ ATOMIC cash debit for the remainder (only succeeds if balance >= cashNeeded)
+      let wallet = null;
+      if (cashNeeded > 0) {
+        wallet = await WalletModel.findOneAndUpdate(
+          {
+            userId,
+            balance: { $gte: cashNeeded },
+          },
+          {
+            $inc: { balance: -cashNeeded },
+          },
+          { new: true }
+        );
+
+        if (!wallet) {
+          // put the credits back — the payment did not happen
+          await WalletCreditService.rollbackApplications(
+            creditResult.breakdown,
+            bookOrder._id,
+            "Payment failed — insufficient cash balance"
+          );
+          return BaseService.sendFailedResponse({
+            error: "Oops! Insufficient wallet balance.",
+          });
+        }
+      } else {
+        wallet = await WalletModel.findOne({ userId });
       }
 
       // Update order status
@@ -147,25 +169,35 @@ class WalletService extends BaseService {
 
       const reference = uuidv4();
 
-      await WalletTransactionModel.create({
-        userId,
-        walletId: wallet._id,
-        type: "debit",
-        amount: bookOrder.amount,
-        reference,
-        status: "success",
-        description,
-      });
+      if (cashNeeded > 0) {
+        await WalletTransactionModel.create({
+          userId,
+          walletId: wallet._id,
+          type: "debit",
+          amount: cashNeeded,
+          reference,
+          status: "success",
+          description,
+          relatedOrderId: bookOrder._id,
+          balanceAfter: wallet.balance,
+        });
+      }
 
+      const creditNote =
+        creditResult.applied > 0
+          ? ` (₦${creditResult.applied.toLocaleString("en-NG")} covered by wallet credit)`
+          : "";
       await createNotification({
         userId,
         title: "Payment Successful",
-        body: `Your payment of ₦${bookOrder.amount} for Order #${bookOrder._id} was successful. Thank you for using your wallet!`,
+        body: `Your payment of ₦${bookOrder.amount} for Order #${bookOrder._id} was successful${creditNote}. Thank you for using your wallet!`,
         type: NOTIFICATION_TYPE.PAYMENT_APPROVED,
       })
 
       return BaseService.sendSuccessResponse({
         message: "Payment made successfully from wallet.",
+        creditApplied: creditResult.applied,
+        cashPaid: cashNeeded,
       });
     } catch (error) {
       console.error(error);
@@ -315,9 +347,15 @@ async fetchUserTransactions(req) {
         }
       );
 
+      const credits = await WalletCreditService.getCreditBalances(userId);
+
       return BaseService.sendSuccessResponse({
         message: {
           balance: wallet.balance,
+          creditTotal: credits.total,
+          totalAvailable: wallet.balance + credits.total,
+          creditsByType: credits.byType,
+          expiringSoon: credits.expiringSoon,
         },
       });
     } catch (error) {
@@ -327,6 +365,159 @@ async fetchUserTransactions(req) {
       });
     }
   }
+  // Wallet page: cash + credit sub-balances + every active credit with its
+  // source and expiry, plus credit-related transaction history.
+  async getWalletCredits(req) {
+    try {
+      const userId = req?.user?.id;
+      if (!userId) {
+        return BaseService.sendFailedResponse({ error: "Invalid user" });
+      }
+
+      const wallet = await WalletModel.findOneAndUpdate(
+        { userId },
+        { $setOnInsert: { balance: 0 } },
+        { new: true, upsert: true, lean: true }
+      );
+      const credits = await WalletCreditService.getCreditBalances(userId);
+
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 20;
+      const txFilter = {
+        userId,
+        creditType: { $exists: true, $ne: null },
+      };
+      const transactions = await WalletTransactionModel.find(txFilter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean();
+      const total = await WalletTransactionModel.countDocuments(txFilter);
+
+      return BaseService.sendSuccessResponse({
+        message: {
+          cashBalance: wallet.balance,
+          creditTotal: credits.total,
+          totalAvailable: wallet.balance + credits.total,
+          creditsByType: credits.byType,
+          expiringSoon: credits.expiringSoon,
+          credits: credits.credits,
+          transactions,
+          pagination: {
+            total,
+            page,
+            limit,
+            pages: Math.ceil(total / limit),
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching wallet credits:", error);
+      return BaseService.sendFailedResponse({
+        error: "Unable to fetch wallet credits",
+      });
+    }
+  }
+
+  // Admin: grant or remove credit value with a mandatory reason.
+  async adminAdjustCredit(req) {
+    try {
+      const post = req.body;
+      const validateRule = {
+        userId: "string|required",
+        amount: "integer|required",
+        direction: "string|required", // add | remove
+        reason: "string|required",
+      };
+      const validateResult = validateData(post, validateRule, {
+        required: ":attribute is required",
+      });
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
+
+      const { userId, amount, direction, reason, type, creditId } = post;
+      const targetUser = await UserModel.findById(userId);
+      if (!targetUser) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+
+      const result = await WalletCreditService.manualAdjust({
+        userId,
+        creditId,
+        type,
+        amount,
+        direction,
+        reason,
+        performedBy: getObjectId(req.user.id),
+      });
+
+      await createAuditLog({
+        userId: getObjectId(req.user.id),
+        action: `Manual wallet credit adjustment (${direction} ₦${amount}) for user ${userId}: ${reason}`,
+        category: "wallet",
+      });
+
+      return BaseService.sendSuccessResponse({
+        message: {
+          adjusted: result.adjusted,
+          credit: result.credit,
+        },
+      });
+    } catch (error) {
+      console.error("Error adjusting wallet credit:", error);
+      return BaseService.sendFailedResponse({
+        error: error.message || "Unable to adjust wallet credit",
+      });
+    }
+  }
+
+  // Admin: return every credit an order consumed (order cancelled / correction).
+  async adminReverseOrderCredits(req) {
+    try {
+      const post = req.body;
+      const validateRule = {
+        bookOrderId: "string|required",
+        reason: "string|required",
+      };
+      const validateResult = validateData(post, validateRule, {
+        required: ":attribute is required",
+      });
+      if (!validateResult.success) {
+        return BaseService.sendFailedResponse({ error: validateResult.data });
+      }
+
+      const { bookOrderId, reason } = post;
+      const bookOrder = await BookOrderModel.findById(bookOrderId);
+      if (!bookOrder) {
+        return BaseService.sendFailedResponse({ error: "Order not found" });
+      }
+
+      const result = await WalletCreditService.reverseOrderCredits(bookOrderId, {
+        reason,
+        performedBy: getObjectId(req.user.id),
+      });
+
+      await createAuditLog({
+        userId: getObjectId(req.user.id),
+        action: `Reversed ₦${result.restored} wallet credit for order ${bookOrderId}: ${reason}`,
+        category: "wallet",
+      });
+
+      return BaseService.sendSuccessResponse({
+        message: {
+          restored: result.restored,
+          creditsTouched: result.creditsTouched,
+        },
+      });
+    } catch (error) {
+      console.error("Error reversing order credits:", error);
+      return BaseService.sendFailedResponse({
+        error: error.message || "Unable to reverse order credits",
+      });
+    }
+  }
+
   async uploadPaymentProof(req){
     try {
       const userId = req.user.id
