@@ -407,6 +407,41 @@ const CRM_BROADCAST_LIST = {
     CHURN: 'churn',
 }
 
+// ─── Wallet credits (Offer/Referral/Recovery reward value inside the wallet) ─
+
+// Sub-balances inside the one customer wallet. Cash stays as Wallet.balance;
+// these are service-value credits — never withdrawable as cash.
+const CREDIT_TYPE = {
+    LAUNDRY: 'laundry',
+    REFERRAL: 'referral',
+    RECOVERY: 'recovery',
+    PROMOTIONAL: 'promotional',
+}
+
+const CREDIT_STATUS = {
+    ACTIVE: 'active', // has remaining value and is not expired
+    EXHAUSTED: 'exhausted', // fully spent
+    EXPIRED: 'expired', // expiry date passed with value unused
+    REVERSED: 'reversed', // pulled back by an admin correction
+}
+
+// Which system created a credit / wallet movement (for audit + dedupe)
+const CREDIT_SOURCE = {
+    OFFER: 'offer',
+    REFERRAL: 'referral',
+    RECOVERY: 'recovery',
+    ADMIN: 'admin',
+    ORDER: 'order',
+}
+
+const WALLET_TX_TYPE = {
+    CREDIT: 'credit',
+    DEBIT: 'debit',
+    REVERSAL: 'reversal',
+    EXPIRY: 'expiry',
+    MANUAL_ADJUSTMENT: 'manual-adjustment',
+}
+
 module.exports = {
     EXPIRES_AT,
     DELIVERY_CHARGE,
@@ -455,4 +490,8 @@ module.exports = {
     CRM_INTERNAL_ACTIONS,
     CRM_MESSAGE_STATUS,
     CRM_BROADCAST_LIST,
+    CREDIT_TYPE,
+    CREDIT_STATUS,
+    CREDIT_SOURCE,
+    WALLET_TX_TYPE,
 }
