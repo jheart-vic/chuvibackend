@@ -30,6 +30,7 @@ const WalletTransactionModel = require('../models/walletTransaction.model')
 const PaymentModel = require('../models/payment.model')
 const createAuditLog = require('../util/createAuditLog')
 const OrderItemModel = require('../models/orderItem.model')
+const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 
 class BookOrderService extends BaseService {
 async postBookOrder(req, res) {
@@ -437,6 +438,8 @@ async postBookOrder(req, res) {
                 })
             }
 
+            crmOnOrderCreated(newOrder)
+
             // update the capacity in admin order settings
             if (
                 post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
@@ -564,6 +567,10 @@ async postBookOrder(req, res) {
             bookOrder.stage.status = stage
             bookOrder.stage.note = note
             await bookOrder.save()
+
+            if (stage === ORDER_STATUS.DELIVERED) {
+                crmOnOrderDelivered(bookOrder)
+            }
 
             let message = ''
             let title = ''

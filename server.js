@@ -19,6 +19,9 @@ require('./crons/cleanUpCancelledSubs.js')
 require('./crons/expireSubscriptions.js')
 require('./crons/reconcilePaystack.js')
 require('./crons/resetMonthlyLimits.js')
+require('./crons/crmDispatcher.js')
+require('./crons/crmDormancyScan.js')
+require('./crons/crmBroadcasts.js')
 
 
 const port = process.env.PORT || 7000;

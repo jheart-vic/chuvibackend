@@ -33,6 +33,7 @@ const {
 const paginate = require('../util/paginate')
 const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
+const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const BaseService = require('./base.service')
 
 class IntakeUserService extends BaseService {
@@ -173,6 +174,8 @@ class IntakeUserService extends BaseService {
             }
             const newOrder = new BookOrderModel(newOrderItem)
             await newOrder.save()
+
+            crmOnOrderCreated(newOrder)
 
             await createNotification({
                 userId: userId,
@@ -2105,6 +2108,8 @@ class IntakeUserService extends BaseService {
                 },
                 { runValidators: false },
             )
+
+            crmOnOrderDelivered(order)
 
             await ActivityModel.create({
                 title: 'Order Collected In Person',
