@@ -226,6 +226,12 @@ exports.ROUTE_WALLET_CREDITS = "/wallet-credits"
 exports.ROUTE_WALLET_ADMIN_ADJUST_CREDIT = "/admin/adjust-credit"
 exports.ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS = "/admin/reverse-order-credits"
 
+// communication layer (admin)
+exports.ROUTE_COMM_TEMPLATES = "/templates"
+exports.ROUTE_COMM_TEMPLATE_BY_ID = "/templates/:id"
+exports.ROUTE_COMM_LOGS = "/logs"
+exports.ROUTE_COMM_RETRY_FAILED = "/retry-failed"
+
 //subscription
 exports.ROUTE_CREATE_PLAN = '/create-plan'
 exports.ROUTE_GET_PLANS = '/get-plans'

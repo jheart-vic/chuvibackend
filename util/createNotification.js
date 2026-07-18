@@ -7,6 +7,8 @@ async function createNotification({
     body,
     subBody,
     type,
+    page,
+    recordId,
   }) {
     try {
       const notification = await NotificationModel.create({
@@ -15,8 +17,10 @@ async function createNotification({
         body,
         subBody,
         type,
+        page,
+        recordId,
       });
-  
+
       return notification;
     } catch (error) {
       console.error("Failed to create notification:", error);

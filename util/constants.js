@@ -301,6 +301,7 @@ const AUDIT_LOG_CATEGORIES = {
     SORT: 'sort',
     WASH: 'wash',
     CRM: 'crm',
+    COMMUNICATION: 'communication',
 }
 
 // ─── CRM ────────────────────────────────────────────────────────────────────
@@ -442,6 +443,34 @@ const WALLET_TX_TYPE = {
     MANUAL_ADJUSTMENT: 'manual-adjustment',
 }
 
+// ─── Communication layer (the "smart messenger") ────────────────────────────
+
+// Delivery channels. WhatsApp joins later behind the same facade.
+const COMM_CHANNEL = {
+    IN_APP: 'in-app',
+    SMS: 'sms',
+}
+
+const COMM_STATUS = {
+    PENDING: 'pending',
+    SENT: 'sent',
+    DELIVERED: 'delivered',
+    READ: 'read',
+    FAILED: 'failed',
+}
+
+// Which system requested the message — the messenger never decides on its own.
+const COMM_SOURCE_SYSTEM = {
+    CRM: 'crm',
+    OFFER: 'offer',
+    ORDER: 'order',
+    FEEDBACK: 'feedback',
+    RECOVERY: 'recovery',
+    REFERRAL: 'referral',
+    BROADCAST: 'broadcast',
+    SYSTEM: 'system',
+}
+
 module.exports = {
     EXPIRES_AT,
     DELIVERY_CHARGE,
@@ -494,4 +523,7 @@ module.exports = {
     CREDIT_STATUS,
     CREDIT_SOURCE,
     WALLET_TX_TYPE,
+    COMM_CHANNEL,
+    COMM_STATUS,
+    COMM_SOURCE_SYSTEM,
 }

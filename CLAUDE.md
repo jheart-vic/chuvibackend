@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ Read the context folder FIRST
+
+Before doing anything, read these three files — they carry the working context
+across sessions and context clears:
+
+- `context/summary.md` — the whole program: five new systems being built (Offer,
+  Feedback & Recovery, Referral, Communication, Wallet & Credit), binding client
+  decisions, agreed build order, phase status, and cross-phase architecture rules.
+- `context/session.md` — what the current/most recent session did and what's next.
+- `context/feature.md` — the feature currently being built: deliverables
+  checklist, design decisions, and what later phases expect from it.
+
+Keep all three updated as you work: tick checklist items in feature.md, log
+progress in session.md, and fold completed phases / new client decisions into
+summary.md. When starting a new feature, rewrite feature.md for it.
+
 ## Project
 
 Node.js/Express backend for Chuvi Laundry (CommonJS, MongoDB via Mongoose, Node 20.x). Entry point is `server.js`. There are no tests or linters configured.
