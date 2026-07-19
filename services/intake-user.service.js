@@ -34,6 +34,7 @@ const paginate = require('../util/paginate')
 const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
+const { offerOnOrderDelivered } = require('../util/offerHooks')
 const BaseService = require('./base.service')
 
 class IntakeUserService extends BaseService {
@@ -2110,6 +2111,7 @@ class IntakeUserService extends BaseService {
             )
 
             crmOnOrderDelivered(order)
+            offerOnOrderDelivered(order)
 
             await ActivityModel.create({
                 title: 'Order Collected In Person',

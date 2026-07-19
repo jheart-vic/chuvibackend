@@ -1,39 +1,75 @@
-# Current Feature: Phase 2 — Communication Layer
+# Current Feature: Phase 3 — Offer System
 
-Branch: `feature-wallet-credits` (continue here or branch `feature-communication` off it — Phase 1 is committed at e0fca80).
+Branch: `feature-wallet-credits` (Phases 1–2 committed/complete before this).
 
 ## What it is
 
-The "smart messenger" from the client's spec: other systems decide WHO/WHEN,
-this layer only delivers (in-app notification + SMS; WhatsApp joins later via
-the same facade), uses admin-approved templates, and records every delivery.
+The "smart offer linker": staff create offers ONCE in the Offer Builder (admin
+dashboard); the system finds the matching existing offer when a CRM event
+fires, checks eligibility, links it to the customer, and applies the benefit at
+booking. Automated systems NEVER invent offers.
+
+## Binding rules (client decisions)
+
+- Baseline benefits always apply; max ONE personal offer per order; promos
+  don't combine with personal offers unless the promo has
+  `stackableWithPersonal: true`. One promo per order.
+- Eligibility checked at assignment AND again at booking.
+- REDEEMED only when the connected order is delivered; cancelled orders release
+  the linkage (never consume it).
+- Loyalty/referral rewards never assigned twice for the same event
+  (milestoneKey dedupe).
+- Per-offer credit expiry override (`creditExpiryDays`); defaults from
+  RewardSetting.
 
 ## Deliverables checklist
 
-- [x] Constants: COMM_CHANNEL, COMM_STATUS, COMM_SOURCE_SYSTEM in util/constants.js (+ exports)
-- [x] models/template.model.js — key(unique), name, title, body ({{placeholders}}: {{name}}, {{firstName}}, plus arbitrary data keys), smsBody?, channels[], active, timestamps
-- [x] models/communicationLog.model.js — userId, messageType, sourceSystem, relatedRef(ObjectId, no ref), relatedModel(String)?, channel, status(pending→sent→delivered→read→failed), content{title,body}, notificationId?, error?, retryCount; index {userId, createdAt}, {status}
-- [x] notification.model.js + util/createNotification.js: add `page` (String) + `recordId` (String) deep-link fields (additive)
-- [x] services/communication.service.js — send(), renderTemplate(), retryFailed(), getLogs(); in-app always unless channels says otherwise; SMS only when requested and phone exists (user lookup); failures logged never thrown (fire-and-forget philosophy)
-- [x] notification.service.js: when a notification is marked read (both paths), set linked CommunicationLog status='read'
-- [x] routes/communication.js + controller: adminAuth template CRUD (list/create/update/toggle), admin logs listing with filters (userId, sourceSystem, status, date range, pagination); mounted in routes/index.js at /communication; ROUTE_* constants in util/page-route.js; swagger JSDoc
-- [x] config/setup.js: seed starter templates (e.g. offer-available, referral-reward, complaint-update, generic-announcement) — skip if key exists
-- [x] Verify: lifecycle script (send with template → notification created w/ deep link → log sent; sms failure → status failed + retry; mark notification read → log read), then PORT=7999 boot
+- [x] Constants: OFFER_TYPE (personal/promotional/baseline), OFFER_STATUS
+  (draft/active/paused/expired/archived), CUSTOMER_OFFER_STATUS
+  (assigned/viewed/attached/redeemed/expired/cancelled), OFFER_TRIGGER
+  (first-experience/second-order/loyalty/referral-reward/recovery/reactivation/manual),
+  OFFER_BENEFIT_TYPE (order-discount/free-pickup/free-delivery/free-items/extra-laundry-credit)
+- [x] models/offer.model.js — builder fields: name, headline, description, type,
+  trigger (personal only), benefits[] ({benefitType, percent?, amount?,
+  minPaidItems?, freeItemCount?, eligibleItemTypes?, maxFreeValue?,
+  minOrderValue?, creditAmount?}), rules {stages[], tags[], minOrders,
+  maxOrders, daysSinceLastOrder, minOrderValue, minItems, firstOrderOnly,
+  serviceTypes[], oneUsePerCustomer}, startDate, expiryDate, usageLimit,
+  usedCount, status, stackableWithPersonal, creditExpiryDays, createdBy
+- [x] models/customerOffer.model.js — userId, offerId, status, milestoneKey
+  (unique w/ offerId when set), expiresAt, orderId, assignedBy, viewedAt,
+  redeemedAt; index userId+status
+- [x] services/offer.service.js — admin CRUD/status/performance;
+  handleTrigger(trigger, {userId, milestoneKey, data}); checkEligibility;
+  getCustomerOffers (rewards/promotions/baseline); markViewed;
+  validateAndPrice(userId, {customerOfferId?, amount, itemCount, serviceType,
+  deliveryAmount, pickupAmount}) enforcing stacking; attachToOrder;
+  redeemForOrder(orderId) (on delivered — also grants extra-laundry-credit via
+  WalletCreditService); releaseForOrder(orderId) (cancel/correction)
+- [x] util/offerHooks.js — fire-and-forget (crmHooks pattern)
+- [x] CRM wiring: createLead→first-experience; handleOrderDelivered:
+  totalOrders===1→second-order, %5===0→loyalty (milestoneKey `loyalty-N`);
+  dormant transition (setStage→DORMANT incl. dormancy scan)→reactivation
+- [x] Order wiring: crmOnOrderDelivered path also calls offer redeemForOrder
+  (via hook in rider/intake delivered handlers — same spots as crmOnOrderDelivered)
+- [x] routes/offer.js at /offers: admin builder CRUD + performance + manual
+  assign + cancel linkage; user my-offers, view, validate. Swagger everywhere.
+- [x] crons/offerExpiry.js — expire offers past expiryDate + linkages past
+  their per-customer expiresAt (daily 02:45); required in server.js
+- [x] Communication: assignment sends templateKey 'offer-available'
+- [x] Verify with lifecycle script + PORT=7999 boot
 
 ## Design decisions
 
-- CRM's messenger (crmMessenger.service + CrmSetting templates) is NOT migrated
-  in this phase — it keeps working as-is; migration happens when convenient.
-- SMS via existing util/sendSms.js; an SMS send failure marks that log entry
-  failed (retryable), it does NOT reject the whole send.
-- Templates render {{name}}/{{firstName}} from the user doc + any caller data.
-- Delivery status: in-app "delivered" = notification doc created; "read" comes
-  from the notification read hooks. SMS stops at "sent" (Termii DLR webhook is
-  out of scope this phase).
-
-## Who calls this later (don't break these expectations)
-
-- Phase 3 Offer System: "offer assigned" notifications with page='offers'.
-- Phase 4 Recovery: complaint updates with page='complaint', recordId=caseId.
-- Phase 5 Referral: reward notifications with page='referrals'.
-- Phase 6 in-app bot + WhatsApp: an extra channel behind the same facade.
+- Offer "usageLimit" = global redemption cap (usedCount incremented on
+  redemption). Linkage-level one-use enforced by linkage status.
+- Baseline benefits are Offer docs of type baseline with rules; validateAndPrice
+  auto-applies active ones (no linkage needed).
+- extra-laundry-credit benefit: promised at booking, GRANTED as wallet laundry
+  credit only on redemption (order delivered), expiry from offer override or
+  RewardSetting default.
+- Personal-offer eligibility uses CrmProfile stats when available (totalOrders,
+  stage, tags, lastOrderAt), falling back to zero-history for new users.
+- No booking-amount mutation inside bookOrder.service yet — the app calls
+  /offers/validate to quote, then attaches the offer; deeper integration into
+  order creation comes with the frontend work. attachToOrder revalidates.

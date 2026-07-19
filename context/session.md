@@ -7,6 +7,19 @@ session". When a session ends/clears, fold anything durable into summary.md.
 
 ### Done this session
 
+- **Phase 3 Offer System: COMPLETE (uncommitted).** All feature.md
+  deliverables done. New: models/offer.model.js, models/customerOffer.model.js,
+  services/offer.service.js (engine), services/offerApi.service.js,
+  controllers/offer.controller.js, routes/offer.js (/offers — specific paths
+  registered before /:id), util/offerHooks.js, crons/offerExpiry.js (02:45).
+  Modified: constants (OFFER_* enums + AUDIT_LOG_CATEGORIES.OFFER),
+  crm.service.js (trigger calls at createLead / handleOrderDelivered /
+  runDormancyScan), intake-user + rider + bookOrder services
+  (offerOnOrderDelivered beside crmOnOrderDelivered), page-route, routes/index,
+  server.js. Verified: 36-check script (triggers+dedupe, eligibility, page,
+  stacking pricing incl. free-items cap, attach/redeem/release, credit payout
+  w/ per-offer expiry override, expiry sweep, performance, real
+  CrmService.handleOrderDelivered auto-linking) + PORT=7999 boot.
 - **Phase 2 Communication layer: COMPLETE (uncommitted).** All deliverables in
   feature.md done. New files: models/template.model.js,
   models/communicationLog.model.js, services/communication.service.js (facade),

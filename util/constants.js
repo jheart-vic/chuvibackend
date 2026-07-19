@@ -302,6 +302,7 @@ const AUDIT_LOG_CATEGORIES = {
     WASH: 'wash',
     CRM: 'crm',
     COMMUNICATION: 'communication',
+    OFFER: 'offer',
 }
 
 // ─── CRM ────────────────────────────────────────────────────────────────────
@@ -459,6 +460,52 @@ const COMM_STATUS = {
     FAILED: 'failed',
 }
 
+// ─── Offer System (the "smart offer linker") ────────────────────────────────
+
+const OFFER_TYPE = {
+    PERSONAL: 'personal', // linked to individual customers on an event
+    PROMOTIONAL: 'promotional', // campaigns for eligible groups
+    BASELINE: 'baseline', // permanent policies, applied by rule at booking
+}
+
+const OFFER_STATUS = {
+    DRAFT: 'draft',
+    ACTIVE: 'active',
+    PAUSED: 'paused',
+    EXPIRED: 'expired',
+    ARCHIVED: 'archived',
+}
+
+// customer-offer linkage lifecycle
+const CUSTOMER_OFFER_STATUS = {
+    ASSIGNED: 'assigned',
+    VIEWED: 'viewed',
+    ATTACHED: 'attached', // selected during booking
+    REDEEMED: 'redeemed', // connected order delivered
+    EXPIRED: 'expired',
+    CANCELLED: 'cancelled',
+}
+
+// which event a personal offer is linked on — the trigger is the bridge from
+// CRM/referral/recovery events to the one configured offer for that moment
+const OFFER_TRIGGER = {
+    FIRST_EXPERIENCE: 'first-experience', // new lead qualifies
+    SECOND_ORDER: 'second-order', // first order completed
+    LOYALTY: 'loyalty', // every 5 completed orders
+    REFERRAL_REWARD: 'referral-reward', // referred friend's first completed order
+    RECOVERY: 'recovery', // approved after complaint resolution
+    REACTIVATION: 'reactivation', // customer went dormant
+    MANUAL: 'manual', // staff-assigned only
+}
+
+const OFFER_BENEFIT_TYPE = {
+    ORDER_DISCOUNT: 'order-discount', // percent or fixed amount off
+    FREE_PICKUP: 'free-pickup',
+    FREE_DELIVERY: 'free-delivery',
+    FREE_ITEMS: 'free-items', // pay N eligible items, get M free
+    EXTRA_LAUNDRY_CREDIT: 'extra-laundry-credit', // spend X get Y wallet credit
+}
+
 // Which system requested the message — the messenger never decides on its own.
 const COMM_SOURCE_SYSTEM = {
     CRM: 'crm',
@@ -526,4 +573,9 @@ module.exports = {
     COMM_CHANNEL,
     COMM_STATUS,
     COMM_SOURCE_SYSTEM,
+    OFFER_TYPE,
+    OFFER_STATUS,
+    CUSTOMER_OFFER_STATUS,
+    OFFER_TRIGGER,
+    OFFER_BENEFIT_TYPE,
 }

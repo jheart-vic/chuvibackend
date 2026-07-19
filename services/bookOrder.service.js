@@ -31,6 +31,7 @@ const PaymentModel = require('../models/payment.model')
 const createAuditLog = require('../util/createAuditLog')
 const OrderItemModel = require('../models/orderItem.model')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
+const { offerOnOrderDelivered } = require('../util/offerHooks')
 
 class BookOrderService extends BaseService {
 async postBookOrder(req, res) {
@@ -570,6 +571,7 @@ async postBookOrder(req, res) {
 
             if (stage === ORDER_STATUS.DELIVERED) {
                 crmOnOrderDelivered(bookOrder)
+                offerOnOrderDelivered(bookOrder)
             }
 
             let message = ''

@@ -43,9 +43,28 @@ not the bot repo) are part of the plan.
 | Phase | Status | Branch/commit |
 |---|---|---|
 | 1. Wallet & Credit | ✅ built + verified + committed | `feature-wallet-credits` @ e0fca80 |
-| 2. Communication layer | ✅ built + verified (17-check script + boot), awaiting commit | `feature-wallet-credits` working tree |
-| 3. Offer System | next up | — |
-| 4–7 | not started | — |
+| 2. Communication layer | ✅ built + verified (17-check script + boot) | `feature-wallet-credits` |
+| 3. Offer System | ✅ built + verified (36-check script incl. real CRM integration + boot) | `feature-wallet-credits` working tree |
+| 4. Feedback & Recovery | next up | — |
+| 5–7 | not started | — |
+
+### Offer System quick reference (Phase 3)
+
+- Engine: `services/offer.service.js` (singleton); request layer:
+  `services/offerApi.service.js`; routes at /api/offers (admin builder CRUD +
+  performance + manual assign + linkage cancel; user my-offers / view /
+  validate / attach). Models: offer.model.js, customerOffer.model.js.
+- Events flow in via `util/offerHooks.js`: `offerOnTrigger(trigger, {userId,
+  milestoneKey})` fired from crm.service (first-experience on lead creation,
+  second-order on 1st delivery, loyalty-N every 5th, reactivation on dormancy
+  scan) and `offerOnOrderDelivered(order)` at the 3 delivered sites (intake,
+  rider, bookOrder) → redeems attached linkages + pays extra-laundry-credit
+  into the wallet (sourceRef `offer-<linkageId>` dedupe).
+- Referral phase will fire `offerOnTrigger('referral-reward', {userId,
+  milestoneKey: 'referral-<referralId>'})`; Recovery phase fires
+  `offerOnTrigger('recovery', ...)` after approval.
+- Order cancellation must call `OfferService.releaseForOrder(orderId)` (and
+  wallet reverseOrderCredits) when a cancel flow lands.
 
 ### How other systems send messages (Phase 2 API)
 
