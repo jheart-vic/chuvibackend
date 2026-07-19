@@ -24,6 +24,9 @@ const rewardSettingSchema = new mongoose.Schema(
         // optional monthly cap on total referral rewards per customer
         // (client decision: off by default, available if abuse appears)
         referralMonthlyCap: { type: Number, default: null },
+        // welcome reward (wallet credit) for a referred customer on signup
+        // (0 = disabled)
+        referralWelcomeAmount: { type: Number, default: 0 },
     },
     { timestamps: true },
 )

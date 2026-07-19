@@ -23,6 +23,7 @@ const {
 const createAuditLog = require('../util/createAuditLog')
 const { crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
+const { referralOnOrderDelivered } = require('../util/referralHooks')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -169,6 +170,7 @@ class RiderService extends BaseService {
 
             crmOnOrderDelivered(order)
             offerOnOrderDelivered(order)
+            referralOnOrderDelivered(order)
 
             if (order.userId?._id) {
                 await createNotification({

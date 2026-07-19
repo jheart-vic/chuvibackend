@@ -7,7 +7,23 @@ session". When a session ends/clears, fold anything durable into summary.md.
 
 ### Done this session
 
-- **Phase 4 Feedback & Recovery: COMPLETE (uncommitted)** on branch
+- **Phase 5 Referral System: COMPLETE (uncommitted)** on branch
+  `feature-referral` (off `feature-feedback-recovery` @ 5d80b2e; Phase 4
+  committed by user as `5d80b2e All done for the feedback-recovery`). All
+  feature.md deliverables done. New: models/referral.model.js;
+  services/referral.service.js + referralApi.service.js; util/referralHooks.js;
+  controllers/referral.controller.js; routes/referral.js (/referral). Modified:
+  constants (REFERRAL_* enums), user.model (referralCode unique sparse),
+  rewardSetting (referralWelcomeAmount), auth.service (×3 register paths →
+  ensureCode + capture-if-referralCode), bookOrder/intake/rider services
+  (referralOnOrderCreated + referralOnOrderDelivered beside existing hooks),
+  recovery.service (referralOnEligibilityRestored in confirmResolution),
+  page-route, routes/index. Verified: 25-check script (code gen/uniqueness/
+  permanence, capture + welcome credit, self-ref/dup blocked, first-order,
+  delivered→10% reward w/ 45d credit, no-double-reward, max cap, deferred-when-
+  paused→released-on-restore, page stats, reset) + boot. Reward is direct
+  wallet credit (% of order), NOT an Offer benefit — see feature.md rationale.
+- **Phase 4 Feedback & Recovery: COMPLETE (committed 5d80b2e)** on branch
   `feature-feedback-recovery` (created off `offer-system` @ aee9434 after
   clearing a months-old orphaned interactive rebase with `git rebase --quit` —
   non-destructive, HEAD untouched). Phase 3 was already committed by user as

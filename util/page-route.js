@@ -237,6 +237,12 @@ exports.ROUTE_OFFER_VIEW = "/my-offers/:id/view"
 exports.ROUTE_OFFER_VALIDATE = "/validate"
 exports.ROUTE_OFFER_ATTACH = "/attach"
 
+// referral system
+exports.ROUTE_REFERRAL_ME = "/me"
+exports.ROUTE_REFERRAL_HISTORY = "/history"
+exports.ROUTE_REFERRAL_APPLY = "/apply-code"
+exports.ROUTE_REFERRAL_RESET = "/reset-code"
+
 // feedback & recovery — customer
 exports.ROUTE_FEEDBACK_SUBMIT = "/"
 exports.ROUTE_FEEDBACK_FOR_ORDER = "/order/:orderId"

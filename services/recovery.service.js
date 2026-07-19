@@ -8,6 +8,7 @@ const CommunicationService = require('./communication.service')
 const WalletCreditService = require('./walletCredit.service')
 const createNotification = require('../util/createNotification')
 const { offerOnTrigger } = require('../util/offerHooks')
+const { referralOnEligibilityRestored } = require('../util/referralHooks')
 const {
     COMPLAINT_STATUS,
     COMPLAINT_TRANSITIONS,
@@ -344,6 +345,8 @@ class RecoveryService {
         } catch (err) {
             console.warn('Recovery tag clear failed (non-fatal):', err.message)
         }
+        // release any referral rewards deferred while this customer was paused
+        referralOnEligibilityRestored(complaint.userId)
         await ConversationService.postSystemMessage(
             complaint.conversationId,
             'Thank you for confirming. This complaint is now closed. 🙏',

@@ -45,10 +45,27 @@ not the bot repo) are part of the plan.
 | 1. Wallet & Credit | ✅ committed | `e0fca80 wallet-credits done` |
 | 2. Communication layer | ✅ committed | `8eb638b all done for communicatios` |
 | 3. Offer System | ✅ committed | `aee9434 offer system done` (branch `offer-system`) |
-| 4. Feedback & Recovery | ✅ built + verified (27-check script + boot + 10 complaint types seeded), awaiting commit | branch `feature-feedback-recovery` |
-| 5. Referral | next up | — |
-| 6. In-app bot | not started | — |
+| 4. Feedback & Recovery | ✅ committed | `5d80b2e All done for the feedback-recovery` |
+| 5. Referral | ✅ built + verified (25-check script + boot), awaiting commit | branch `feature-referral` |
+| 6. In-app bot | next up | — |
 | 7. WhatsApp reconnection | not started | — |
+
+### Referral quick reference (Phase 5)
+
+- User.referralCode (permanent, one per customer, lazily generated everywhere
+  it's needed). Reward is a computed % of the referred customer's first order
+  → referral.service grants a `referral` wallet credit (45d) DIRECTLY (not an
+  Offer benefit). Welcome reward = configurable `promotional` credit (30d) to
+  the referred customer on capture (RewardSetting.referralWelcomeAmount, 0=off).
+- Reward config in RewardSetting: referralRewardPercent (5), referralRewardMax
+  (null), referralMonthlyCap (null), referralWelcomeAmount (0).
+- Flow via util/referralHooks.js: register→ensureCode + capture-if-code (auth
+  ×3 paths); order-created→first-order (bookOrder+intake); order-delivered→
+  reward referrer (all 3 delivered sites); recovery.confirmResolution→
+  referralOnEligibilityRestored (releases rewards deferred while referrer had
+  an open complaint via crmProfile.referralPaused).
+- Routes /api/referral: me (page: code/link/stats/history), history, apply-code
+  (post-registration), reset-code (admin). Models: referral.model.js.
 
 ### Feedback & Recovery quick reference (Phase 4)
 
