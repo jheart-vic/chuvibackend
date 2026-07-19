@@ -3,6 +3,30 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-07-19 — Swagger response shapes for all 5 systems + wallet
+
+### Done this session
+
+- **Swagger examples/responses pass (uncommitted).** Frontend couldn't see the
+  shape of returned data for Communication, Offer, Feedback & Recovery, Referral
+  (and asked to align Wallet too). Fixed by establishing a reusable pattern:
+  - Added ~20 reusable `components.schemas` to `swagger/schemas.js` with realistic
+    examples + spelled-out enums: WalletCredit, WalletTransaction, OfferBenefit,
+    Offer, CustomerOffer, OfferPage, OfferQuote, Referral, ReferralPage, Feedback,
+    ComplaintType, RecoveryAction, RecoveryCredit, ComplaintCase, Conversation,
+    ChatMessage, CommunicationTemplate, CommunicationLog, plus shared ErrorResponse.
+  - Rewrote route responses to `$ref` those schemas inside the `{ success, message }`
+    envelope (arrays, `{data,pagination}`, and single-object variants) across
+    routes/feedback.js, recovery.js, referral.js, offer.js, communication.js, and
+    pointed wallet.js placeholder `type: object` items to WalletCredit/WalletTransaction.
+  - Verified each example against the real service return (e.g. submitFeedback →
+    `{feedback, complaint, referralEligible}`; listMessages → `{data, pagination}`;
+    approveCredit → ComplaintCase; getPerformance → `{offer, performance}`) — not assumed.
+  - Codified the pattern as a standing rule in CLAUDE.md → API docs and summary.md
+    (Key architecture rules) so future routes follow it.
+  - "CX" = **Customer Experience Officer** (ROLE `customer-experience`), the staff
+    role that owns all complaint cases in the Recovery system.
+
 ## Session: 2026-07-18 (continuing from 2026-07-15..17 planning sessions)
 
 ### Done this session

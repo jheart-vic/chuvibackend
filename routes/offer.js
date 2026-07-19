@@ -40,19 +40,7 @@ const controller = new OfferController()
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: object
- *                   properties:
- *                     rewards:
- *                       type: array
- *                       description: CustomerOffer linkages with the offer populated
- *                       items: { type: object }
- *                     promotions:
- *                       type: array
- *                       items: { type: object }
- *                     baseline:
- *                       type: array
- *                       items: { type: object }
+ *                 message: { $ref: '#/components/schemas/OfferPage' }
  *       500:
  *         description: Server error
  */
@@ -75,8 +63,18 @@ router.get(ROUTE_OFFER_MY_OFFERS, [auth], controller.myOffers)
  *     responses:
  *       200:
  *         description: Updated linkage
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Offer not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_OFFER_VIEW, [auth], controller.viewOffer)
 
@@ -127,24 +125,7 @@ router.post(ROUTE_OFFER_VIEW, [auth], controller.viewOffer)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: object
- *                   properties:
- *                     baseline: { type: array, items: { type: object } }
- *                     personal: { type: object, nullable: true }
- *                     promotion: { type: object, nullable: true }
- *                     totalDiscount: { type: number, example: 600 }
- *                     freePickup: { type: boolean }
- *                     freeDelivery: { type: boolean }
- *                     creditPromised: { type: number, example: 0 }
- *                     rejected:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           which: { type: string, example: promotion }
- *                           reason: { type: string, example: "This promotion cannot be combined with a personal reward" }
- *                     payable: { type: number, example: 6400 }
+ *                 message: { $ref: '#/components/schemas/OfferQuote' }
  *       500:
  *         description: Server error
  */
@@ -175,8 +156,18 @@ router.post(ROUTE_OFFER_VALIDATE, [auth], controller.validateOffer)
  *     responses:
  *       200:
  *         description: Linkage now attached to the order
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Offer/order not found, expired, already used, or another reward already on the order
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_OFFER_ATTACH, [auth], controller.attachOffer)
 
@@ -203,8 +194,18 @@ router.post(ROUTE_OFFER_ATTACH, [auth], controller.attachOffer)
  *     responses:
  *       200:
  *         description: Created linkage
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Validation error, unknown user/offer, or customer already has this offer
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_OFFER_ASSIGN, [adminAuth], controller.assignOffer)
 
@@ -234,8 +235,18 @@ router.post(ROUTE_OFFER_ASSIGN, [adminAuth], controller.assignOffer)
  *     responses:
  *       200:
  *         description: Cancelled linkage
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Not found, redeemed, or missing reason
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_OFFER_CANCEL_LINKAGE, [adminAuth], controller.cancelLinkage)
 
@@ -263,6 +274,25 @@ router.post(ROUTE_OFFER_CANCEL_LINKAGE, [adminAuth], controller.cancelLinkage)
  *     responses:
  *       200:
  *         description: Paginated offers
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/Offer' }
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total: { type: integer, example: 9 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 20 }
+ *                         pages: { type: integer, example: 1 }
  *   post:
  *     summary: Create an offer (admin Offer Builder)
  *     description: >
@@ -329,8 +359,18 @@ router.post(ROUTE_OFFER_CANCEL_LINKAGE, [adminAuth], controller.cancelLinkage)
  *     responses:
  *       200:
  *         description: Created offer
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/Offer' }
  *       400:
  *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.get(ROUTE_OFFERS, [adminAuth], controller.listOffers)
 router.post(ROUTE_OFFERS, [adminAuth], controller.createOffer)
@@ -351,8 +391,35 @@ router.post(ROUTE_OFFERS, [adminAuth], controller.createOffer)
  *     responses:
  *       200:
  *         description: Offer with byStatus counts and redemptionRate %
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     offer: { $ref: '#/components/schemas/Offer' }
+ *                     performance:
+ *                       type: object
+ *                       properties:
+ *                         byStatus:
+ *                           type: object
+ *                           properties:
+ *                             assigned: { type: integer, example: 12 }
+ *                             viewed: { type: integer, example: 8 }
+ *                             attached: { type: integer, example: 5 }
+ *                             redeemed: { type: integer, example: 4 }
+ *                             expired: { type: integer, example: 2 }
+ *                             cancelled: { type: integer, example: 1 }
+ *                         assignedTotal: { type: integer, example: 32 }
+ *                         redemptionRate: { type: integer, example: 13, description: Percentage of linkages redeemed }
  *       400:
  *         description: Offer not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.get(ROUTE_OFFER_PERFORMANCE, [adminAuth], controller.getOfferPerformance)
 
@@ -380,8 +447,18 @@ router.get(ROUTE_OFFER_PERFORMANCE, [adminAuth], controller.getOfferPerformance)
  *     responses:
  *       200:
  *         description: Updated offer
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/Offer' }
  *       400:
  *         description: Offer not found or validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.put(ROUTE_OFFER_BY_ID, [adminAuth], controller.updateOffer)
 

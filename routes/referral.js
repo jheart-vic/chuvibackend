@@ -35,24 +35,7 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: object
- *                   properties:
- *                     referralCode: { type: string, example: CHUVIA1B2C3 }
- *                     referralLink: { type: string, example: "https://www.chuvilaundry.com/join?ref=CHUVIA1B2C3" }
- *                     totalSuccessfulReferrals: { type: integer, example: 3 }
- *                     pendingReferrals: { type: integer, example: 1 }
- *                     totalRewardsEarned: { type: number, example: 1500 }
- *                     history:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           referredName: { type: string }
- *                           referralDate: { type: string, format: date-time }
- *                           status: { type: string, enum: [pending, registered, first-order, completed, rewarded] }
- *                           rewardStatus: { type: string, enum: [none, deferred, granted] }
- *                           rewardAmount: { type: number }
+ *                 message: { $ref: '#/components/schemas/ReferralPage' }
  */
 router.get(ROUTE_REFERRAL_ME, [auth], (req, res) =>
     new ReferralController().getMyReferralPage(req, res),
@@ -66,7 +49,24 @@ router.get(ROUTE_REFERRAL_ME, [auth], (req, res) =>
  *     tags: [Referral]
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: Array of the customer's referrals }
+ *       200:
+ *         description: Array of the customer's referrals
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       referredName: { type: string, example: Ada Obi }
+ *                       referralDate: { type: string, format: date-time }
+ *                       status: { type: string, enum: [pending, registered, first-order, completed, rewarded], example: completed }
+ *                       rewardStatus: { type: string, enum: [none, deferred, granted], example: granted }
+ *                       rewardAmount: { type: number, example: 400 }
  */
 router.get(ROUTE_REFERRAL_HISTORY, [auth], (req, res) =>
     new ReferralController().getMyHistory(req, res),
@@ -93,8 +93,24 @@ router.get(ROUTE_REFERRAL_HISTORY, [auth], (req, res) =>
  *             properties:
  *               code: { type: string, example: CHUVIA1B2C3 }
  *     responses:
- *       200: { description: Code applied }
- *       400: { description: Unknown/own code, or already referred }
+ *       200:
+ *         description: Code applied
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     applied: { type: boolean, example: true }
+ *                     referralId: { type: string, example: 665f1c2ab9e77a0012d4e200 }
+ *       400:
+ *         description: Unknown/own code, or already referred
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_REFERRAL_APPLY, [auth], (req, res) =>
     new ReferralController().applyCode(req, res),
@@ -117,8 +133,23 @@ router.post(ROUTE_REFERRAL_APPLY, [auth], (req, res) =>
  *             properties:
  *               userId: { type: string }
  *     responses:
- *       200: { description: New referral code }
- *       400: { description: User not found }
+ *       200:
+ *         description: New referral code
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     referralCode: { type: string, example: CHUVID4E5F6 }
+ *       400:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_REFERRAL_RESET, [adminAuth], (req, res) =>
     new ReferralController().resetCode(req, res),
