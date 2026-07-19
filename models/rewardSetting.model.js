@@ -14,6 +14,9 @@ const rewardSettingSchema = new mongoose.Schema(
         },
         // recovery compensation above this needs Ops Manager / Founder approval
         recoveryApprovalThreshold: { type: Number, default: 10000 },
+        // complaint SLA (hours): first review + target resolution
+        complaintReviewHours: { type: Number, default: 24 },
+        complaintResolutionHours: { type: Number, default: 72 },
         // referrer reward as % of the referred customer's first completed order
         referralRewardPercent: { type: Number, default: 5 },
         // optional per-referral reward ceiling in naira (null = no ceiling)

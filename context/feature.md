@@ -1,75 +1,86 @@
-# Current Feature: Phase 3 — Offer System
+# Current Feature: Phase 4 — Feedback & Recovery
 
-Branch: `feature-wallet-credits` (Phases 1–2 committed/complete before this).
+Branch: `feature-feedback-recovery` (off `offer-system` @ aee9434; Phases 1–3 committed).
 
 ## What it is
 
-The "smart offer linker": staff create offers ONCE in the Offer Builder (admin
-dashboard); the system finds the matching existing offer when a CRM event
-fires, checks eligibility, links it to the customer, and applies the benefit at
-booking. Automated systems NEVER invent offers.
+The "smart satisfaction manager": collect feedback on delivered orders; when a
+customer reports a problem, open a complaint CASE, run it through a status
+machine to a confirmed resolution, and recover the customer. Includes the first
+in-app CHAT (order-based complaint conversation, REST/polling — sockets later
+in Phase 6). Ties into CRM (Complaint/Recovery-Required tags, referral pause),
+Wallet (recovery credit with approval), and Offer (recovery offer trigger).
 
 ## Binding rules (client decisions)
 
-- Baseline benefits always apply; max ONE personal offer per order; promos
-  don't combine with personal offers unless the promo has
-  `stackableWithPersonal: true`. One promo per order.
-- Eligibility checked at assignment AND again at booking.
-- REDEEMED only when the connected order is delivered; cancelled orders release
-  the linkage (never consume it).
-- Loyalty/referral rewards never assigned twice for the same event
-  (milestoneKey dedupe).
-- Per-offer credit expiry override (`creditExpiryDays`); defaults from
-  RewardSetting.
+- Customer Experience Officer OWNS all complaint cases (new ROLE
+  `customer-experience` + middleware; escalation targets admin/founder).
+- SLA: first review 24h, resolution 72h; overdue → auto-escalate (cron).
+- Recovery credit: CX approves ≤ ₦10,000 with evidence; above needs
+  Ops Manager/Founder (reuse ADMIN as the approver tier for now).
+- Complaint opens → apply Complaint + Recovery-Required tags, PAUSE referral
+  eligibility; customer-confirmed resolution → remove tags, restore referral.
+- Feedback linked to a DELIVERED order only; complaint linked to the order.
+- Complaint cannot close before recovery completed + customer confirms;
+  rejected resolution reopens (→ Under Review).
+- Recovery Offer only linked AFTER approval (offerOnTrigger 'recovery').
 
 ## Deliverables checklist
 
-- [x] Constants: OFFER_TYPE (personal/promotional/baseline), OFFER_STATUS
-  (draft/active/paused/expired/archived), CUSTOMER_OFFER_STATUS
-  (assigned/viewed/attached/redeemed/expired/cancelled), OFFER_TRIGGER
-  (first-experience/second-order/loyalty/referral-reward/recovery/reactivation/manual),
-  OFFER_BENEFIT_TYPE (order-discount/free-pickup/free-delivery/free-items/extra-laundry-credit)
-- [x] models/offer.model.js — builder fields: name, headline, description, type,
-  trigger (personal only), benefits[] ({benefitType, percent?, amount?,
-  minPaidItems?, freeItemCount?, eligibleItemTypes?, maxFreeValue?,
-  minOrderValue?, creditAmount?}), rules {stages[], tags[], minOrders,
-  maxOrders, daysSinceLastOrder, minOrderValue, minItems, firstOrderOnly,
-  serviceTypes[], oneUsePerCustomer}, startDate, expiryDate, usageLimit,
-  usedCount, status, stackableWithPersonal, creditExpiryDays, createdBy
-- [x] models/customerOffer.model.js — userId, offerId, status, milestoneKey
-  (unique w/ offerId when set), expiresAt, orderId, assignedBy, viewedAt,
-  redeemedAt; index userId+status
-- [x] services/offer.service.js — admin CRUD/status/performance;
-  handleTrigger(trigger, {userId, milestoneKey, data}); checkEligibility;
-  getCustomerOffers (rewards/promotions/baseline); markViewed;
-  validateAndPrice(userId, {customerOfferId?, amount, itemCount, serviceType,
-  deliveryAmount, pickupAmount}) enforcing stacking; attachToOrder;
-  redeemForOrder(orderId) (on delivered — also grants extra-laundry-credit via
-  WalletCreditService); releaseForOrder(orderId) (cancel/correction)
-- [x] util/offerHooks.js — fire-and-forget (crmHooks pattern)
-- [x] CRM wiring: createLead→first-experience; handleOrderDelivered:
-  totalOrders===1→second-order, %5===0→loyalty (milestoneKey `loyalty-N`);
-  dormant transition (setStage→DORMANT incl. dormancy scan)→reactivation
-- [x] Order wiring: crmOnOrderDelivered path also calls offer redeemForOrder
-  (via hook in rider/intake delivered handlers — same spots as crmOnOrderDelivered)
-- [x] routes/offer.js at /offers: admin builder CRUD + performance + manual
-  assign + cancel linkage; user my-offers, view, validate. Swagger everywhere.
-- [x] crons/offerExpiry.js — expire offers past expiryDate + linkages past
-  their per-customer expiresAt (daily 02:45); required in server.js
-- [x] Communication: assignment sends templateKey 'offer-available'
-- [x] Verify with lifecycle script + PORT=7999 boot
+- [x] Constants: FEEDBACK_TYPE (satisfied/neutral/complaint), FEEDBACK_STATUS
+  (pending/completed), COMPLAINT_STATUS (submitted→under-review→awaiting-item→
+  item-received→recovery-in-progress→ready→resolved→customer-confirmed +
+  reopened + closed), RECOVERY_ACTION (rewash/rework/repair/replace/compensate),
+  RECOVERY_CREDIT_STATUS (pending-approval/approved/rejected),
+  ESCALATION_REASON, CONVERSATION_TYPE (complaint/support),
+  CHAT_SENDER (customer/staff/bot/system); ROLE.CUSTOMER_EXPERIENCE;
+  AUDIT category 'recovery'; NOTIFICATION types
+- [x] middlewares/customerExperienceAuth.js (CX + admin), reuse adminAuth as approver
+- [x] crmProfile: add referralPaused (Boolean). CrmService programmatic helpers
+  applyRecoveryTags(userId) / clearRecoveryTags(userId) (tags + referralPaused)
+- [x] models: feedback.model, complaintType.model, complaintCase.model,
+  conversation.model, chatMessage.model
+- [x] services/feedback.service — submitFeedback (satisfied/neutral/complaint),
+  getFeedbackForOrder, list; opening a complaint delegates to recovery.service
+- [x] services/recovery.service — openCase (tags+pause+conversation+notify CX+
+  offer? no, offer only after approval), transitionStatus (guarded machine),
+  addRecoveryAction, requestRecoveryCredit (approval gate by amount+role),
+  approveRecoveryCredit (→ wallet recovery credit + offer recovery trigger),
+  confirmResolution / rejectResolution, escalate, checkSla (cron)
+- [x] services/conversation.service — complaint chat: getOrCreateForComplaint,
+  postMessage (customer/staff), listMessages, markRead, auto system messages on
+  status changes
+- [x] controllers + routes/feedback.js at /feedback and routes/recovery.js at
+  /recovery (or one module). Customer: submit feedback, my complaints, view
+  case, confirm/reject resolution, chat post/list. CX: queue, review,
+  transition, add action, request/approve credit, escalate. Admin: complaint
+  type CRUD. Swagger on all.
+- [x] crons/complaintSla.js — first-review + resolution overdue → escalate;
+  required in server.js
+- [x] config/setup.js: seed complaint types + feedback/recovery comm templates
+- [x] Verify: lifecycle script (deliver → feedback satisfied path; feedback
+  complaint → case + tags + referralPaused + conversation → transitions →
+  compensate ≤10k approve → wallet credit + recovery offer trigger → confirm →
+  tags cleared + referral restored; reject → reopen; SLA overdue → escalate)
+  + PORT=7999 boot
 
 ## Design decisions
 
-- Offer "usageLimit" = global redemption cap (usedCount incremented on
-  redemption). Linkage-level one-use enforced by linkage status.
-- Baseline benefits are Offer docs of type baseline with rules; validateAndPrice
-  auto-applies active ones (no linkage needed).
-- extra-laundry-credit benefit: promised at booking, GRANTED as wallet laundry
-  credit only on redemption (order delivered), expiry from offer override or
-  RewardSetting default.
-- Personal-offer eligibility uses CrmProfile stats when available (totalOrders,
-  stage, tags, lastOrderAt), falling back to zero-history for new users.
-- No booking-amount mutation inside bookOrder.service yet — the app calls
-  /offers/validate to quote, then attaches the offer; deeper integration into
-  order creation comes with the frontend work. attachToOrder revalidates.
+- One wallet path for recovery money: reuse WalletCreditService.grantCredit
+  with type 'recovery' (90d default). Approval state lives on the ComplaintCase
+  recoveryCredit sub-doc, credit granted only on approve.
+- Conversations are separate from CommunicationLog (spec: complaint chat not
+  mixed with general comms). CommunicationService still used for the OUT-of-app
+  nudges (feedback request, complaint update SMS/notification).
+- Feedback request scheduling (1h confirmation, 24h feedback) already exists in
+  CRM post-delivery workflow — Phase 4 provides the Feedback PAGE those messages
+  deep-link to (page='feedback'), and the complaint conversation (page=
+  'complaint'). We do NOT duplicate the scheduler.
+- Escalation = notify admins via CommunicationService + flag on case
+  (escalated, escalationReason, escalatedAt). No separate manager role yet.
+- referral pause is a CRM-profile flag now; Phase 5 Referral will read it.
+
+## Who later phases expect
+
+- Phase 5 Referral: reads crmProfile.referralPaused before rewarding.
+- Phase 6 in-app bot: support conversations reuse conversation/chatMessage models.
