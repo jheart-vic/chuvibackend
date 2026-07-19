@@ -37,6 +37,8 @@ const userSchema = new mongoose.Schema(
         resetPasswordOtp: { type: String, select: false },
         resetPasswordOtpExpiresAt: { type: Date, select: false },
         customerCode: { type: String },
+        // permanent personal referral code (one per customer, for life)
+        referralCode: { type: String, unique: true, sparse: true },
         emailToken: { type: String },
         otpExpiresAt: { type: Date, select: false },
         isVerified: { type: Boolean, default: false },

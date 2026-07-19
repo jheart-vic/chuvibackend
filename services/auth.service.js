@@ -18,6 +18,10 @@ const FreePlanModel = require('../models/freeplan.model')
 const WalletModel = require('../models/wallet.model')
 const createAuditLog = require('../util/createAuditLog')
 const { crmOnUserRegistered } = require('../util/crmHooks')
+const {
+    referralOnUserRegistered,
+    referralOnReferralCode,
+} = require('../util/referralHooks')
 
 class AuthService extends BaseService {
     async createUser(req) {
@@ -78,6 +82,10 @@ class AuthService extends BaseService {
 
             if (newUser.userType === ROLE.USER) {
                 crmOnUserRegistered(newUser)
+                referralOnUserRegistered(newUser)
+                if (req.body?.referralCode) {
+                    referralOnReferralCode(newUser._id, req.body.referralCode)
+                }
             }
 
             // Add OTP
@@ -329,6 +337,10 @@ class AuthService extends BaseService {
 
             if (newUser.userType === ROLE.USER) {
                 crmOnUserRegistered(newUser)
+                referralOnUserRegistered(newUser)
+                if (req.body?.referralCode) {
+                    referralOnReferralCode(newUser._id, req.body.referralCode)
+                }
             }
 
             const accessToken = await newUser.generateAccessToken(
@@ -497,6 +509,10 @@ class AuthService extends BaseService {
 
             if (newUser.userType === ROLE.USER) {
                 crmOnUserRegistered(newUser)
+                referralOnUserRegistered(newUser)
+                if (req.body?.referralCode) {
+                    referralOnReferralCode(newUser._id, req.body.referralCode)
+                }
             }
 
             // 10. Generate JWT tokens for the newly created user

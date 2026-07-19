@@ -35,6 +35,10 @@ const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
+const {
+    referralOnOrderCreated,
+    referralOnOrderDelivered,
+} = require('../util/referralHooks')
 const BaseService = require('./base.service')
 
 class IntakeUserService extends BaseService {
@@ -177,6 +181,7 @@ class IntakeUserService extends BaseService {
             await newOrder.save()
 
             crmOnOrderCreated(newOrder)
+            referralOnOrderCreated(newOrder)
 
             await createNotification({
                 userId: userId,
@@ -2112,6 +2117,7 @@ class IntakeUserService extends BaseService {
 
             crmOnOrderDelivered(order)
             offerOnOrderDelivered(order)
+            referralOnOrderDelivered(order)
 
             await ActivityModel.create({
                 title: 'Order Collected In Person',

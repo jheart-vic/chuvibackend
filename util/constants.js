@@ -513,6 +513,27 @@ const OFFER_BENEFIT_TYPE = {
     EXTRA_LAUNDRY_CREDIT: 'extra-laundry-credit', // spend X get Y wallet credit
 }
 
+// ─── Referral System ("smart recommendation tracker") ───────────────────────
+
+const REFERRAL_STATUS = {
+    PENDING: 'pending', // code shared, nobody registered yet (reserved)
+    REGISTERED: 'registered', // referred customer registered
+    FIRST_ORDER: 'first-order', // referred placed first order
+    COMPLETED: 'completed', // referred's first order delivered → qualifies
+    REWARDED: 'rewarded', // referrer reward granted
+}
+
+const REFERRAL_SOURCE = {
+    CODE: 'code',
+    LINK: 'link',
+}
+
+const REFERRAL_REWARD_STATUS = {
+    NONE: 'none',
+    DEFERRED: 'deferred', // earned but referrer had an open complaint
+    GRANTED: 'granted',
+}
+
 // ─── Feedback & Recovery ("smart satisfaction manager") ─────────────────────
 
 const FEEDBACK_TYPE = {
@@ -671,4 +692,7 @@ module.exports = {
     ESCALATION_REASON,
     CONVERSATION_TYPE,
     CHAT_SENDER,
+    REFERRAL_STATUS,
+    REFERRAL_SOURCE,
+    REFERRAL_REWARD_STATUS,
 }

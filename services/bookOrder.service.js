@@ -32,6 +32,10 @@ const createAuditLog = require('../util/createAuditLog')
 const OrderItemModel = require('../models/orderItem.model')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
+const {
+    referralOnOrderCreated,
+    referralOnOrderDelivered,
+} = require('../util/referralHooks')
 
 class BookOrderService extends BaseService {
 async postBookOrder(req, res) {
@@ -440,6 +444,7 @@ async postBookOrder(req, res) {
             }
 
             crmOnOrderCreated(newOrder)
+            referralOnOrderCreated(newOrder)
 
             // update the capacity in admin order settings
             if (
@@ -572,6 +577,7 @@ async postBookOrder(req, res) {
             if (stage === ORDER_STATUS.DELIVERED) {
                 crmOnOrderDelivered(bookOrder)
                 offerOnOrderDelivered(bookOrder)
+                referralOnOrderDelivered(bookOrder)
             }
 
             let message = ''

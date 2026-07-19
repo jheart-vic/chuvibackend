@@ -22,6 +22,7 @@ const communicationRouter = require('./communication')
 const offerRouter = require('./offer')
 const feedbackRouter = require('./feedback')
 const recoveryRouter = require('./recovery')
+const referralRouter = require('./referral')
 
 
 router.use('/admin', adminRouter)
@@ -47,4 +48,5 @@ router.use('/communication', communicationRouter)
 router.use('/offers', offerRouter)
 router.use('/feedback', feedbackRouter)
 router.use('/recovery', recoveryRouter)
+router.use('/referral', referralRouter)
 module.exports = router
