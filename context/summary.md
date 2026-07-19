@@ -67,6 +67,18 @@ not the bot repo) are part of the plan.
   an open complaint via crmProfile.referralPaused).
 - Routes /api/referral: me (page: code/link/stats/history), history, apply-code
   (post-registration), reset-code (admin). Models: referral.model.js.
+- **Advocacy levels (added 2026-07-19, Option A):** Member/Promoter/Ambassador/
+  Champion. Level is PERMANENT (earned by lifetime successful referrals, never
+  demoted) → permanently raises reward % + unlocks an exclusive offer. Only the
+  MONTHLY free-laundry perk is activity-gated (granted the month the monthly
+  target is met, paused otherwise, auto-restored). Config lives in
+  RewardSetting.referralLevels (admin-editable). State in referralStats.model.js.
+  Engine in referral.service (recomputeLevel called on each grant + page load;
+  no cron). Reward % follows the referrer's level; monthly perk = `laundry`
+  credit (WalletCreditService, sourceRef referral-level-laundry-<lvl>-<YYYY-MM>);
+  exclusive offer linked once via offerOnTrigger(level.offerTrigger, milestoneKey
+  level-<lvl>). Notifs: referral-level-up + referral-monthly-benefit. Page adds a
+  `level` block (current/lifetime/monthly/progress/benefits).
 
 ### Feedback & Recovery quick reference (Phase 4)
 

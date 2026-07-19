@@ -503,6 +503,10 @@ const OFFER_TRIGGER = {
     RECOVERY: 'recovery', // approved after complaint resolution
     REACTIVATION: 'reactivation', // customer went dormant
     MANUAL: 'manual', // staff-assigned only
+    // exclusive offers unlocked permanently on reaching a referral level
+    LEVEL_PROMOTER: 'level-promoter',
+    LEVEL_AMBASSADOR: 'level-ambassador',
+    LEVEL_CHAMPION: 'level-champion',
 }
 
 const OFFER_BENEFIT_TYPE = {
@@ -532,6 +536,18 @@ const REFERRAL_REWARD_STATUS = {
     NONE: 'none',
     DEFERRED: 'deferred', // earned but referrer had an open complaint
     GRANTED: 'granted',
+}
+
+// Permanent advocacy tiers. A customer's level is earned by LIFETIME successful
+// referrals and is never lost; higher levels permanently raise the referral
+// reward % and unlock an exclusive offer. The monthly free-laundry perk is the
+// only activity-gated benefit — granted in any month the monthly target is met,
+// paused (never granted) otherwise, and auto-restored when the target is met again.
+const REFERRAL_LEVEL = {
+    MEMBER: 'member',
+    PROMOTER: 'promoter',
+    AMBASSADOR: 'ambassador',
+    CHAMPION: 'champion',
 }
 
 // ─── Feedback & Recovery ("smart satisfaction manager") ─────────────────────
@@ -695,4 +711,5 @@ module.exports = {
     REFERRAL_STATUS,
     REFERRAL_SOURCE,
     REFERRAL_REWARD_STATUS,
+    REFERRAL_LEVEL,
 }

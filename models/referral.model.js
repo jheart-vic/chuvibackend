@@ -45,6 +45,9 @@ const referralSchema = new mongoose.Schema(
         },
         rewardAmount: { type: Number },
         rewardCreditId: { type: mongoose.Schema.Types.ObjectId, ref: 'WalletCredit' },
+        // when the referrer reward was actually granted — the authoritative
+        // timestamp for counting successful referrals per month (level engine)
+        rewardedAt: { type: Date },
         // welcome reward for the referred customer
         welcomeCreditId: { type: mongoose.Schema.Types.ObjectId, ref: 'WalletCredit' },
     },

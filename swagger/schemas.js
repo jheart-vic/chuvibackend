@@ -596,6 +596,36 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     ReferralLevel:
+ *       type: object
+ *       description: The customer's permanent advocacy standing plus this month's activity-gated perk state.
+ *       properties:
+ *         current: { type: string, enum: [member, promoter, ambassador, champion], example: ambassador }
+ *         name: { type: string, example: Ambassador }
+ *         lifetimeReferrals: { type: integer, example: 9 }
+ *         monthlyReferrals: { type: integer, example: 2 }
+ *         rewardPercent: { type: number, example: 10 }
+ *         benefits:
+ *           type: object
+ *           properties:
+ *             rewardPercent: { type: number, example: 10 }
+ *             exclusiveOffer: { type: boolean, example: true }
+ *             monthlyFreeLaundry: { type: number, example: 5000 }
+ *             monthlyTarget: { type: integer, example: 3 }
+ *             monthlyPerkActive: { type: boolean, example: false, description: "true when this month's referral target is met and the free-laundry perk is active" }
+ *         nextLevel:
+ *           type: object
+ *           nullable: true
+ *           description: null when already at the top level.
+ *           properties:
+ *             key: { type: string, example: champion }
+ *             name: { type: string, example: Champion }
+ *             lifetimeTarget: { type: integer, example: 15 }
+ *             referralsToGo: { type: integer, example: 6 }
+ *             monthlyTarget: { type: integer, example: 5 }
+ *             rewardPercent: { type: number, example: 15 }
+ *         progressPercent: { type: integer, example: 60 }
+ *
  *     ReferralPage:
  *       type: object
  *       properties:
@@ -604,6 +634,7 @@
  *         totalSuccessfulReferrals: { type: integer, example: 3 }
  *         pendingReferrals: { type: integer, example: 1 }
  *         totalRewardsEarned: { type: number, example: 1500 }
+ *         level: { $ref: '#/components/schemas/ReferralLevel' }
  *         history:
  *           type: array
  *           items:
