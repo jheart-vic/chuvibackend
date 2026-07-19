@@ -1,13 +1,16 @@
 const crypto = require('crypto')
 const ReferralModel = require('../models/referral.model')
+const ReferralStatsModel = require('../models/referralStats.model')
 const UserModel = require('../models/user.model')
 const CrmProfileModel = require('../models/crmProfile.model')
 const WalletCreditService = require('./walletCredit.service')
 const CommunicationService = require('./communication.service')
+const { offerOnTrigger } = require('../util/offerHooks')
 const {
     REFERRAL_STATUS,
     REFERRAL_SOURCE,
     REFERRAL_REWARD_STATUS,
+    REFERRAL_LEVEL,
     CREDIT_TYPE,
     CREDIT_SOURCE,
     COMM_SOURCE_SYSTEM,
@@ -148,8 +151,11 @@ class ReferralService {
 
     // ─── reward computation + grant ──────────────────────────────────────────
 
-    async computeReward(orderValue, settings) {
-        const percent = settings.referralRewardPercent || 0
+    // percentOverride comes from the referrer's permanent level; falls back to
+    // the base RewardSetting percent (Member) when not supplied.
+    async computeReward(orderValue, settings, percentOverride) {
+        const percent =
+            percentOverride != null ? percentOverride : settings.referralRewardPercent || 0
         let amount = Math.round((orderValue || 0) * (percent / 100))
         if (settings.referralRewardMax != null) {
             amount = Math.min(amount, settings.referralRewardMax)
@@ -180,12 +186,24 @@ class ReferralService {
         if (referral.rewardStatus === REFERRAL_REWARD_STATUS.GRANTED) return referral
 
         const settings = await WalletCreditService.getSettings()
-        let amount = await this.computeReward(referral.firstOrderValue, settings)
+        // reward % follows the referrer's PERMANENT level, counting the referral
+        // being completed now so the one that lifts them into a new tier already
+        // earns the boosted rate.
+        const levels = this.getLevelConfig(settings)
+        const lifetimeSoFar = await this.countLifetimeSuccessful(referral.referrerId)
+        const rewardLevel = this.levelForLifetime(levels, lifetimeSoFar + 1)
+        let amount = await this.computeReward(
+            referral.firstOrderValue,
+            settings,
+            rewardLevel.rewardPercent,
+        )
         if (amount <= 0) {
             referral.rewardAmount = 0
             referral.rewardStatus = REFERRAL_REWARD_STATUS.GRANTED
             referral.status = REFERRAL_STATUS.REWARDED
+            referral.rewardedAt = new Date()
             await referral.save()
+            await this.recomputeLevel(referral.referrerId)
             return referral
         }
 
@@ -226,6 +244,7 @@ class ReferralService {
         referral.rewardCreditId = credit._id
         referral.rewardStatus = REFERRAL_REWARD_STATUS.GRANTED
         referral.status = REFERRAL_STATUS.REWARDED
+        referral.rewardedAt = new Date()
         await referral.save()
 
         await CommunicationService.send({
@@ -241,6 +260,9 @@ class ReferralService {
             relatedModel: 'Referral',
             page: 'wallet',
         })
+
+        // recompute the referrer's advocacy level → notify + activate perks
+        await this.recomputeLevel(referral.referrerId)
         return referral
     }
 
@@ -261,6 +283,231 @@ class ReferralService {
             if (result.rewardStatus === REFERRAL_REWARD_STATUS.GRANTED) granted += 1
         }
         return granted
+    }
+
+    // ─── advocacy levels ─────────────────────────────────────────────────────
+    // Levels are PERMANENT (earned by lifetime successful referrals, never lost);
+    // higher levels permanently raise the referral % and unlock an exclusive
+    // offer. The monthly free-laundry perk is activity-gated: granted only in a
+    // month the monthly target is met, paused otherwise, auto-restored on requalify.
+
+    monthKeyFor(date = new Date()) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    }
+
+    monthStartFor(date = new Date()) {
+        return new Date(date.getFullYear(), date.getMonth(), 1)
+    }
+
+    // Level ladder sorted ascending by lifetimeTarget, as plain objects. Falls
+    // back to a single Member level if settings somehow carry none.
+    getLevelConfig(settings) {
+        const raw = settings?.referralLevels?.length
+            ? settings.referralLevels.map((l) => (l.toObject ? l.toObject() : l))
+            : [
+                  {
+                      key: REFERRAL_LEVEL.MEMBER,
+                      name: 'Member',
+                      lifetimeTarget: 0,
+                      monthlyTarget: 0,
+                      rewardPercent: settings?.referralRewardPercent || 0,
+                      monthlyFreeLaundryAmount: 0,
+                      offerTrigger: null,
+                  },
+              ]
+        return [...raw].sort((a, b) => a.lifetimeTarget - b.lifetimeTarget)
+    }
+
+    // Highest level whose lifetime unlock threshold is satisfied.
+    levelForLifetime(levels, lifetime) {
+        let chosen = levels[0]
+        for (const lvl of levels) if (lifetime >= lvl.lifetimeTarget) chosen = lvl
+        return chosen
+    }
+
+    levelRank(levels, key) {
+        const i = levels.findIndex((l) => l.key === key)
+        return i < 0 ? 0 : i
+    }
+
+    async countLifetimeSuccessful(referrerId) {
+        return ReferralModel.countDocuments({
+            referrerId,
+            rewardStatus: REFERRAL_REWARD_STATUS.GRANTED,
+        })
+    }
+
+    async countMonthlySuccessful(referrerId, monthStart) {
+        return ReferralModel.countDocuments({
+            referrerId,
+            rewardStatus: REFERRAL_REWARD_STATUS.GRANTED,
+            rewardedAt: { $gte: monthStart },
+        })
+    }
+
+    // Reconciles a referrer's stored level snapshot with reality (Referral rows
+    // are the source of truth), fires a one-time level-up notification + perks on
+    // a climb, and grants this month's free-laundry perk if the target is met.
+    // Idempotent and safe to call on every referral event and every page load.
+    async recomputeLevel(userId) {
+        if (!userId) return null
+        const settings = await WalletCreditService.getSettings()
+        const levels = this.getLevelConfig(settings)
+        if (!levels.length) return null
+
+        const now = new Date()
+        const monthKey = this.monthKeyFor(now)
+        const monthStart = this.monthStartFor(now)
+        const lifetime = await this.countLifetimeSuccessful(userId)
+        const monthly = await this.countMonthlySuccessful(userId, monthStart)
+
+        let stats = await ReferralStatsModel.findOne({ userId })
+        if (!stats) stats = new ReferralStatsModel({ userId })
+
+        const prevLevelKey = stats.currentLevel
+        const newLevel = this.levelForLifetime(levels, lifetime)
+        const leveledUp =
+            this.levelRank(levels, newLevel.key) > this.levelRank(levels, prevLevelKey)
+
+        stats.lifetimeSuccessful = lifetime
+        stats.monthlySuccessful = monthly
+        stats.monthKey = monthKey
+        if (leveledUp) {
+            stats.currentLevel = newLevel.key
+            stats.levelSince = now
+            if (
+                this.levelRank(levels, newLevel.key) >
+                this.levelRank(levels, stats.highestLevelReached)
+            ) {
+                stats.highestLevelReached = newLevel.key
+            }
+        }
+        await stats.save()
+
+        if (leveledUp) await this.onLevelUp(userId, newLevel)
+        await this.maybeGrantMonthlyPerk(userId, newLevel, monthly, monthKey, stats)
+
+        return stats
+    }
+
+    // Permanent perks on reaching a new level: link the exclusive offer (once
+    // ever) + congratulate the customer.
+    async onLevelUp(userId, level) {
+        if (level.offerTrigger) {
+            offerOnTrigger(level.offerTrigger, {
+                userId,
+                milestoneKey: `level-${level.key}`,
+            })
+        }
+        const benefitsLine =
+            level.monthlyFreeLaundryAmount > 0
+                ? ` and unlock up to ₦${Number(
+                      level.monthlyFreeLaundryAmount,
+                  ).toLocaleString('en-NG')} free-laundry credit in any month you hit your target`
+                : ''
+        await CommunicationService.send({
+            userId,
+            templateKey: 'referral-level-up',
+            data: {
+                levelName: level.name,
+                rewardPercent: level.rewardPercent,
+                benefitsLine,
+            },
+            sourceSystem: COMM_SOURCE_SYSTEM.REFERRAL,
+            messageType: 'referral-level-up',
+            page: 'referral',
+        })
+    }
+
+    // Activity-gated monthly perk: one free-laundry credit per user/level/month
+    // when the monthly target is met. Deduped by stored key AND by the credit
+    // sourceRef, so it never double-grants; simply not granted in a missed month.
+    async maybeGrantMonthlyPerk(userId, level, monthly, monthKey, stats) {
+        if (!level || (level.monthlyFreeLaundryAmount || 0) <= 0) return
+        if (monthly < level.monthlyTarget) return // target not met → paused this month
+        const perkKey = `${level.key}-${monthKey}`
+        if (stats.lastMonthlyPerkKey === perkKey) return
+
+        const { duplicate } = await WalletCreditService.grantCredit({
+            userId,
+            type: CREDIT_TYPE.LAUNDRY,
+            amount: level.monthlyFreeLaundryAmount,
+            sourceSystem: CREDIT_SOURCE.REFERRAL,
+            sourceRef: `referral-level-laundry-${level.key}-${monthKey}`,
+            note: `${level.name} monthly free-laundry perk (${monthKey})`,
+            notify: false,
+        })
+        stats.lastMonthlyPerkKey = perkKey
+        await stats.save()
+
+        if (!duplicate) {
+            await CommunicationService.send({
+                userId,
+                templateKey: 'referral-monthly-benefit',
+                data: {
+                    levelName: level.name,
+                    amount: Number(level.monthlyFreeLaundryAmount).toLocaleString('en-NG'),
+                },
+                sourceSystem: COMM_SOURCE_SYSTEM.REFERRAL,
+                messageType: 'referral-monthly-benefit',
+                page: 'wallet',
+            })
+        }
+    }
+
+    // Level block for the referral page (also refreshes the snapshot so monthly
+    // counters/perks are current even if no referral event happened this month).
+    async getLevelSummary(userId) {
+        const stats = (await this.recomputeLevel(userId)) || {
+            currentLevel: REFERRAL_LEVEL.MEMBER,
+            lifetimeSuccessful: 0,
+            monthlySuccessful: 0,
+        }
+        const settings = await WalletCreditService.getSettings()
+        const levels = this.getLevelConfig(settings)
+        const current =
+            levels.find((l) => l.key === stats.currentLevel) || levels[0]
+        const rank = this.levelRank(levels, current.key)
+        const next = levels[rank + 1] || null
+        const monthlyPerkActive =
+            (current.monthlyFreeLaundryAmount || 0) > 0 &&
+            stats.monthlySuccessful >= current.monthlyTarget
+
+        return {
+            current: current.key,
+            name: current.name,
+            lifetimeReferrals: stats.lifetimeSuccessful,
+            monthlyReferrals: stats.monthlySuccessful,
+            rewardPercent: current.rewardPercent,
+            benefits: {
+                rewardPercent: current.rewardPercent,
+                exclusiveOffer: !!current.offerTrigger,
+                monthlyFreeLaundry: current.monthlyFreeLaundryAmount || 0,
+                monthlyTarget: current.monthlyTarget,
+                monthlyPerkActive,
+            },
+            nextLevel: next
+                ? {
+                      key: next.key,
+                      name: next.name,
+                      lifetimeTarget: next.lifetimeTarget,
+                      referralsToGo: Math.max(
+                          next.lifetimeTarget - stats.lifetimeSuccessful,
+                          0,
+                      ),
+                      monthlyTarget: next.monthlyTarget,
+                      rewardPercent: next.rewardPercent,
+                  }
+                : null,
+            progressPercent: next
+                ? Math.min(
+                      Math.round(
+                          (stats.lifetimeSuccessful / next.lifetimeTarget) * 100,
+                      ),
+                      100,
+                  )
+                : 100,
+        }
     }
 
     // ─── referral page ───────────────────────────────────────────────────────
@@ -291,12 +538,15 @@ class ReferralService {
             rewardAmount: r.rewardAmount || 0,
         }))
 
+        const level = await this.getLevelSummary(userId)
+
         return {
             referralCode: code,
             referralLink: this.buildLink(code),
             totalSuccessfulReferrals: successful,
             pendingReferrals: pending,
             totalRewardsEarned: totalEarned,
+            level,
             history,
         }
     }

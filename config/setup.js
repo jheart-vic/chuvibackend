@@ -58,10 +58,16 @@ const createCrmSettings = async () => {
 const createRewardSettings = async () => {
   try {
     const rewardSetting = await RewardSettingModel.findOne({});
-    if (rewardSetting) {
+    if (!rewardSetting) {
+      await RewardSettingModel.create({});
       return;
     }
-    await RewardSettingModel.create({});
+    // backfill the advocacy ladder onto pre-existing settings docs
+    if (!rewardSetting.referralLevels || rewardSetting.referralLevels.length === 0) {
+      rewardSetting.referralLevels = undefined; // let schema default repopulate
+      rewardSetting.markModified("referralLevels");
+      await rewardSetting.save();
+    }
   } catch (error) {
     console.error("App init failed:", error);
   }
@@ -85,6 +91,24 @@ const DEFAULT_TEMPLATES = [
     title: "Your referral paid off 💙",
     body: "Hello {{firstName}}! {{referredName}} completed their first order, so we've added ₦{{amount}} referral credit to your wallet.",
     smsBody: "CHUVI: your referral was successful! ₦{{amount}} credit has been added to your wallet.",
+    channels: ["in-app"],
+    page: "wallet",
+  },
+  {
+    key: "referral-level-up",
+    name: "Referral Level Up",
+    title: "You've reached {{levelName}}! 🏆",
+    body: "Congratulations {{firstName}}! Thanks to your referrals you're now a CHUVI {{levelName}}. You now earn {{rewardPercent}}% referral rewards{{benefitsLine}}. Keep referring to keep the perks coming!",
+    smsBody: "CHUVI: You're now a {{levelName}}! You now earn {{rewardPercent}}% referral rewards. Keep referring to unlock more.",
+    channels: ["in-app"],
+    page: "referral",
+  },
+  {
+    key: "referral-monthly-benefit",
+    name: "Referral Monthly Benefit",
+    title: "This month's {{levelName}} reward is active 🎁",
+    body: "Nice work {{firstName}}! You hit your monthly referral target, so we've added ₦{{amount}} free-laundry credit to your wallet as a {{levelName}} perk.",
+    smsBody: "CHUVI: your {{levelName}} monthly reward is active — ₦{{amount}} free-laundry credit added to your wallet.",
     channels: ["in-app"],
     page: "wallet",
   },

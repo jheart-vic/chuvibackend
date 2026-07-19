@@ -3,6 +3,44 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-07-19 (later) — Referral Levels enhancement
+
+### Done this session (uncommitted)
+
+- **Referral advocacy levels — built + verified.** Client's FINAL decision =
+  Option A: levels are PERMANENT achievements (earned by lifetime successful
+  referrals, never lost → permanent reward % + exclusive offer); only the
+  MONTHLY free-laundry perk is activity-gated (granted in any month the monthly
+  target is met, paused otherwise, auto-restored on requalify). No demotion.
+- Levels: Member/Promoter/Ambassador/Champion. Default ladder (admin-editable in
+  RewardSetting.referralLevels): life>=0/3/8/15, monthly>=0/2/3/5, reward
+  5/7/10/15%, free-laundry ₦0/2000/5000/10000, offerTrigger level-promoter/
+  ambassador/champion.
+- New: `models/referralStats.model.js` (per-user snapshot: lifetime/monthly
+  counts, monthKey, currentLevel, highestLevelReached, levelSince,
+  lastMonthlyPerkKey). Added `rewardedAt` to referral.model (authoritative for
+  monthly counting).
+- constants: `REFERRAL_LEVEL` enum + 3 `OFFER_TRIGGER` values (LEVEL_*).
+  rewardSetting: `referralLevels` array (+ subdoc schema + DEFAULT ladder) with
+  backfill in config/setup.createRewardSettings. Seeded templates
+  `referral-level-up` + `referral-monthly-benefit`.
+- referral.service: level-aware `computeReward` (uses referrer's level %, +1
+  prospective so the promoting referral gets the boosted rate); `rewardedAt` set
+  on grant; new engine methods `getLevelConfig/levelForLifetime/levelRank/
+  countLifetimeSuccessful/countMonthlySuccessful/recomputeLevel/onLevelUp/
+  maybeGrantMonthlyPerk/getLevelSummary`. `recomputeLevel` called after every
+  grant AND on every page load (idempotent; no cron needed — monthly counts are
+  derived from rewardedAt, perks deduped by stored key + credit sourceRef).
+  `getReferralPage` now returns a `level` block. Monthly perk = `laundry` credit
+  via WalletCreditService, sourceRef `referral-level-laundry-<lvl>-<YYYY-MM>`.
+  Exclusive offer linked once via offerOnTrigger milestoneKey `level-<lvl>`.
+- swagger: added `ReferralLevel` schema + `level` on `ReferralPage`.
+- Verified: 22-check script (Member start → Promoter@3/Ambassador@8/Champion@15,
+  level-aware reward %, monthly perk grant + idempotency, permanent level on
+  missed month + perk pause, page level block) + PORT=7999 boot. No wallet/offer
+  engine changes — only calls into them. Reused offerHooks (no circular dep:
+  offer.service doesn't require referral).
+
 ## Session: 2026-07-19 — Swagger response shapes for all 5 systems + wallet
 
 ### Done this session

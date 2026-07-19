@@ -1,4 +1,30 @@
 const mongoose = require('mongoose')
+const { REFERRAL_LEVEL, OFFER_TRIGGER } = require('../util/constants')
+
+// One entry per advocacy tier. `lifetimeTarget` is the permanent unlock (once
+// lifetimeSuccessful reaches it the level is held for life); `rewardPercent` and
+// `offerTrigger` are the permanent perks; `monthlyTarget` + `monthlyFreeLaundryAmount`
+// are the activity-gated monthly perk (granted only in months the target is met).
+const referralLevelSchema = new mongoose.Schema(
+    {
+        key: { type: String, enum: Object.values(REFERRAL_LEVEL), required: true },
+        name: { type: String, required: true },
+        lifetimeTarget: { type: Number, default: 0 },
+        monthlyTarget: { type: Number, default: 0 },
+        rewardPercent: { type: Number, default: 0 },
+        monthlyFreeLaundryAmount: { type: Number, default: 0 },
+        offerTrigger: { type: String, default: null }, // OFFER_TRIGGER for the exclusive offer (null = none)
+    },
+    { _id: false },
+)
+
+// Default advocacy ladder (client-approved placeholders; admin-editable).
+const DEFAULT_REFERRAL_LEVELS = [
+    { key: REFERRAL_LEVEL.MEMBER, name: 'Member', lifetimeTarget: 0, monthlyTarget: 0, rewardPercent: 5, monthlyFreeLaundryAmount: 0, offerTrigger: null },
+    { key: REFERRAL_LEVEL.PROMOTER, name: 'Promoter', lifetimeTarget: 3, monthlyTarget: 2, rewardPercent: 7, monthlyFreeLaundryAmount: 2000, offerTrigger: OFFER_TRIGGER.LEVEL_PROMOTER },
+    { key: REFERRAL_LEVEL.AMBASSADOR, name: 'Ambassador', lifetimeTarget: 8, monthlyTarget: 3, rewardPercent: 10, monthlyFreeLaundryAmount: 5000, offerTrigger: OFFER_TRIGGER.LEVEL_AMBASSADOR },
+    { key: REFERRAL_LEVEL.CHAMPION, name: 'Champion', lifetimeTarget: 15, monthlyTarget: 5, rewardPercent: 15, monthlyFreeLaundryAmount: 10000, offerTrigger: OFFER_TRIGGER.LEVEL_CHAMPION },
+]
 
 // Single admin-editable document (like AdminSetting / CrmSetting) holding the
 // reward-economy defaults agreed with the client. Per-offer overrides live on
@@ -27,6 +53,8 @@ const rewardSettingSchema = new mongoose.Schema(
         // welcome reward (wallet credit) for a referred customer on signup
         // (0 = disabled)
         referralWelcomeAmount: { type: Number, default: 0 },
+        // permanent advocacy ladder — see referralLevelSchema
+        referralLevels: { type: [referralLevelSchema], default: DEFAULT_REFERRAL_LEVELS },
     },
     { timestamps: true },
 )

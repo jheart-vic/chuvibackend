@@ -69,7 +69,27 @@ wallet/CRM/order hooks.
   reward % to referrer w/ cap; deferred when paused then released on restore;
   page stats) + PORT=7999 boot
 
+## Enhancement (2026-07-19): Advocacy Levels — DONE (uncommitted)
+
+Client "Option A" (final): PERMANENT levels (Member/Promoter/Ambassador/Champion)
+earned by lifetime successful referrals, never demoted → permanent reward % +
+exclusive offer. Only the MONTHLY free-laundry perk is activity-gated
+(granted the month the monthly target is met, paused otherwise, auto-restored).
+
+- [x] constants: REFERRAL_LEVEL + OFFER_TRIGGER.LEVEL_{PROMOTER,AMBASSADOR,CHAMPION}
+- [x] rewardSetting.referralLevels (subdoc + DEFAULT ladder) + backfill in config/setup
+- [x] referral.model: rewardedAt; new models/referralStats.model.js
+- [x] Seeded templates referral-level-up, referral-monthly-benefit
+- [x] referral.service: level-aware computeReward; recomputeLevel/onLevelUp/
+  maybeGrantMonthlyPerk/getLevelSummary; called after each grant + on page load;
+  getReferralPage returns `level` block
+- [x] swagger ReferralLevel schema + level on ReferralPage
+- [x] Verify: 22-check script (climb thresholds, level-aware %, monthly perk
+  grant/idempotency, permanent-on-miss + perk pause, page block) + PORT=7999 boot
+- No cron (monthly counts derived from rewardedAt; perks deduped by key +
+  credit sourceRef). No wallet/offer engine changes.
+
 ## Who later phases expect
 
-- Phase 6 in-app bot: referral tools (get my code/link, referral status) call
-  referral.service.
+- Phase 6 in-app bot: referral tools (get my code/link, referral status, current
+  level/benefits) call referral.service.
