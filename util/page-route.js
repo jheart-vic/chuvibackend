@@ -237,6 +237,14 @@ exports.ROUTE_OFFER_VIEW = "/my-offers/:id/view"
 exports.ROUTE_OFFER_VALIDATE = "/validate"
 exports.ROUTE_OFFER_ATTACH = "/attach"
 
+// in-app bot (Phase 6)
+exports.ROUTE_BOT_MESSAGE = "/message"
+exports.ROUTE_BOT_CONVERSATION = "/conversation"
+exports.ROUTE_BOT_HANDOFF = "/handoff"
+exports.ROUTE_BOT_QUEUE = "/queue"
+exports.ROUTE_BOT_STAFF_REPLY = "/:conversationId/reply"
+exports.ROUTE_BOT_CLOSE = "/:conversationId/close"
+
 // referral system
 exports.ROUTE_REFERRAL_ME = "/me"
 exports.ROUTE_REFERRAL_HISTORY = "/history"

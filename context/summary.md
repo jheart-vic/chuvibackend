@@ -47,9 +47,30 @@ not the bot repo) are part of the plan.
 | 2. Communication layer | ✅ committed | `8eb638b all done for communicatios` |
 | 3. Offer System | ✅ committed | `aee9434 offer system done` (branch `offer-system`) |
 | 4. Feedback & Recovery | ✅ committed | `5d80b2e All done for the feedback-recovery` |
-| 5. Referral | ✅ built + verified (25-check script + boot), awaiting commit | branch `feature-referral` |
-| 6. In-app bot | next up | — |
-| 7. WhatsApp reconnection | not started | — |
+| 5. Referral (+ advocacy levels) | ✅ committed | `proper-swagger-prt` |
+| 6. In-app bot | ✅ built + verified (18-check script + boot), awaiting commit | `proper-swagger-prt` |
+| 7. WhatsApp reconnection | next up | — |
+
+### In-app bot quick reference (Phase 6)
+
+- Hybrid: LLM classifies intent ONLY (`services/botIntent.service.js`, Claude
+  `claude-haiku-4-5` via `@anthropic-ai/sdk`, structured tool output; keyword
+  fallback when `ANTHROPIC_API_KEY` unset/errors — never hard-fails).
+  `services/botOrchestrator.service.js` routes to deterministic workflows over
+  existing systems and can only do client-approved low-risk actions.
+- **Permission boundary is structural:** high-risk actions (refund, compensation,
+  credit edits, resolve complaint, override eligibility, record/policy edits)
+  have NO intent/workflow — they can only reach a human via handoff (conversation
+  `mode: 'human'`, Customer Experience takes over). Booking is GUIDED only — the
+  bot never calls create-order.
+- Reuses Phase 4 `Conversation`/`ChatMessage` (`type: 'support'`, sender `bot`) +
+  `conversation.service.getOrCreateSupport`. Multi-turn state on
+  `conversation.botState`. Routes `/api/bot` (customer: message/conversation/
+  handoff via auth; staff: queue/reply/close via customerExperienceAuth).
+- Real-time via WebSockets (`config/socket.js`, socket.io on the HTTP server, JWT
+  handshake, rooms `user:<id>`+`staff:support`; `emitChatMessage` non-fatal, REST
+  stays source of truth). Env: `ANTHROPIC_API_KEY`, `BOT_MODEL`.
+- Phase 7 (WhatsApp) reuses this intent+workflow layer as a channel-agnostic core.
 
 ### Referral quick reference (Phase 5)
 

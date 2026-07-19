@@ -26,7 +26,7 @@ Node.js/Express backend for Chuvi Laundry (CommonJS, MongoDB via Mongoose, Node 
 
 - `npm run dev` — start with nodemon (auto-reload)
 - `npm start` — start with node
-- Requires a `.env` file; key variables: `PORT` (default 7000), `MONGODB_URL`, `ACCESS_TOKEN_SECRET`, `PAYSTACK_SECRET_KEY`, `NODE_ENV`
+- Requires a `.env` file; key variables: `PORT` (default 7000), `MONGODB_URL`, `ACCESS_TOKEN_SECRET`, `PAYSTACK_SECRET_KEY`, `NODE_ENV`, and (Phase 6 bot) `ANTHROPIC_API_KEY` (empty ⇒ rules-only fallback), `BOT_MODEL` (default `claude-haiku-4-5`)
 
 ## Architecture
 
@@ -58,6 +58,10 @@ intake-and-tag → sort-and-pretreat → wash-and-dry → press-iron → qc → 
 ### CRM
 
 `services/crm.service.js` is the CRM engine ("smart customer notebook"): one `CrmProfile` per customer/lead (userId optional — WhatsApp/walk-in leads have no account; identity links by normalized phone). It owns stage transitions (lead → first-order → active → loyal → dormant → reactivated), automatic tags, and three workflows (lead nurture, post-delivery, reactivation) driven by a DB-backed queue (`CrmScheduledMessage`) processed by `crons/crmDispatcher.js`; `crons/crmDormancyScan.js` and `crons/crmBroadcasts.js` handle dormancy and broadcast lists. Order/auth services call in only through `util/crmHooks.js` — fire-and-forget, must never break the calling flow. Message delivery (`services/crmMessenger.service.js`) tries the WhatsApp bot (separate repo, `crm-message` event via `CHATBOT_NOTIFY_URL`), then SMS, then email; the bot registers leads via `POST /api/crm/internal/lead` with the `x-bot-secret` header. Templates/thresholds live in the single `CrmSetting` document (seeded in `config/setup.js`, admin-editable). CRM routes are two-tier: staff endpoints use `intakeUserAuth` (intake-and-tag + admin), metrics/broadcasts/settings use `adminAuth`. Backfill from existing data: `node crmBackfill.js`.
+
+### In-app bot (Phase 6, "smart assistant")
+
+Hybrid LLM + rules assistant living in THIS backend (not the WhatsApp repo). An LLM does ONE job — classify a customer message into a fixed `BOT_INTENT` (`services/botIntent.service.js`, Claude via `@anthropic-ai/sdk`, model `BOT_MODEL` default `claude-haiku-4-5`, structured tool output; a keyword fallback runs when `ANTHROPIC_API_KEY` is unset or the call fails, so it never hard-fails). `services/botOrchestrator.service.js` is the deterministic brain: it routes the intent to a workflow that follows the EXISTING systems (order status, wallet, offers, referral incl. level, apply-code, update phone/pickup address, guided booking) and can only perform client-approved low-risk actions. **The bot never places an order, approves compensation, edits credits, resolves complaints, or changes records** — high-risk requests have no workflow and can only reach a human via handoff (flips the conversation to `mode: 'human'`; Customer Experience takes over). Reuses the Phase 4 `Conversation`/`ChatMessage` models (`type: 'support'`, sender `bot`) and `conversation.service.js` (`getOrCreateSupport`). Multi-turn flows persist on `conversation.botState`. Request layer `services/botApi.service.js` → `controllers/bot.controller.js` → `routes/bot.js` at `/api/bot` (customer: message/conversation/handoff via `auth`; staff: queue/reply/close via `customerExperienceAuth`). Real-time via **WebSockets** (`config/socket.js`, socket.io on the same HTTP server, JWT handshake, rooms `user:<id>` + `staff:support`; `emitChatMessage` is a non-fatal push layer — REST stays source of truth).
 
 ### API docs
 

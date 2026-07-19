@@ -61,6 +61,8 @@ const userSchema = new mongoose.Schema(
             ],
         },
         addresses: [AddressSchema],
+        // quick default pickup address (editable via the in-app bot, Phase 6)
+        defaultPickupAddress: { type: String },
         // address2: { type: String },
         whatsappNotification: { type: Boolean, default: false },
         emailNotification: { type: Boolean, default: false },

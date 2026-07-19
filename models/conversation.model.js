@@ -24,6 +24,13 @@ const conversationSchema = new mongoose.Schema(
         orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
         // bot vs human handling (Phase 6); complaint chats are staff-handled
         mode: { type: String, enum: ['bot', 'human'], default: 'human' },
+        // Phase 6 bot: in-flight multi-turn workflow state (intent + collected
+        // slots), so a follow-up message continues where the last one left off.
+        botState: {
+            intent: { type: String, default: null },
+            step: { type: String, default: null },
+            slots: { type: mongoose.Schema.Types.Mixed, default: {} },
+        },
         open: { type: Boolean, default: true },
         lastMessageAt: { type: Date },
         // unread counters per side, for badges

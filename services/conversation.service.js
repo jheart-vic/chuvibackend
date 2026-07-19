@@ -23,6 +23,24 @@ class ConversationService {
         return convo
     }
 
+    // The single open in-app bot conversation for a customer (Phase 6). Starts
+    // in bot mode; flips to human on handoff. Reused across sessions.
+    async getOrCreateSupport(userId) {
+        let convo = await ConversationModel.findOne({
+            type: CONVERSATION_TYPE.SUPPORT,
+            userId,
+            open: true,
+        })
+        if (!convo) {
+            convo = await ConversationModel.create({
+                userId,
+                type: CONVERSATION_TYPE.SUPPORT,
+                mode: 'bot',
+            })
+        }
+        return convo
+    }
+
     // Post a message. senderType decides which unread counter increments.
     async postMessage({
         conversationId,

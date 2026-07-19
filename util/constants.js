@@ -627,6 +627,25 @@ const CHAT_SENDER = {
     SYSTEM: 'system', // automated status updates
 }
 
+// ─── In-app bot (Phase 6, "smart assistant") ────────────────────────────────
+// The LLM ONLY classifies a customer message into ONE of these intents; a
+// deterministic workflow then runs against the existing systems. High-risk
+// actions have NO intent/tool — they can only ever reach a human (handoff).
+const BOT_INTENT = {
+    GREETING: 'greeting',
+    ORDER_STATUS: 'order-status',
+    WALLET_BALANCE: 'wallet-balance',
+    VIEW_OFFERS: 'view-offers',
+    REFERRAL_INFO: 'referral-info',
+    APPLY_REFERRAL_CODE: 'apply-referral-code',
+    UPDATE_DETAILS: 'update-details', // phone / pickup address only
+    BOOKING_GUIDE: 'booking-guide', // guided flow + estimate; never places the order
+    SUBMIT_FEEDBACK: 'submit-feedback',
+    FILE_COMPLAINT: 'file-complaint',
+    TALK_TO_HUMAN: 'talk-to-human',
+    UNKNOWN: 'unknown',
+}
+
 // Which system requested the message — the messenger never decides on its own.
 const COMM_SOURCE_SYSTEM = {
     CRM: 'crm',
@@ -712,4 +731,5 @@ module.exports = {
     REFERRAL_SOURCE,
     REFERRAL_REWARD_STATUS,
     REFERRAL_LEVEL,
+    BOT_INTENT,
 }
