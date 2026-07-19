@@ -7,7 +7,27 @@ session". When a session ends/clears, fold anything durable into summary.md.
 
 ### Done this session
 
-- **Phase 3 Offer System: COMPLETE (uncommitted).** All feature.md
+- **Phase 4 Feedback & Recovery: COMPLETE (uncommitted)** on branch
+  `feature-feedback-recovery` (created off `offer-system` @ aee9434 after
+  clearing a months-old orphaned interactive rebase with `git rebase --quit` —
+  non-destructive, HEAD untouched). Phase 3 was already committed by user as
+  `aee9434 offer system done`. All feature.md deliverables done. New: models
+  feedback/complaintType/complaintCase/conversation/chatMessage; services
+  conversation/recovery/feedback/recoveryApi; controllers/feedback.controller;
+  routes/feedback.js (/feedback) + routes/recovery.js (/recovery);
+  middlewares/customerExperienceAuth; crons/complaintSla.js (hourly).
+  Modified: constants (feedback/recovery/complaint/conversation enums + CX role
+  + RECOVERY audit cat + notif types), crmProfile (referralPaused) + CrmService
+  (applyRecoveryTags/clearRecoveryTags), rewardSetting (SLA hours + already had
+  approval threshold), config/setup (seed 10 complaint types), page-route,
+  routes/index, server.js. Verified: 27-check script (satisfied/complaint
+  paths, CRM tags + referral pause, conversation + system msgs, status-machine
+  guards, compensate auto-escalate, approval gate ≤10k CX vs >10k admin, wallet
+  recovery credit + recovery offer trigger, confirm clears tags/restores
+  referral + closes convo, reject→reopen, chat unread counters, SLA sweep) +
+  boot + 10 complaint types seeded. NOTE: test left a stray complaint type on
+  first run (DB was empty); cleaned it and re-booted so the real 10 seeded.
+- **Phase 3 Offer System: COMPLETE (committed aee9434).** All feature.md
   deliverables done. New: models/offer.model.js, models/customerOffer.model.js,
   services/offer.service.js (engine), services/offerApi.service.js,
   controllers/offer.controller.js, routes/offer.js (/offers — specific paths

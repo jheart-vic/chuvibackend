@@ -3,6 +3,7 @@ const AdminSettingModel = require("../models/adminSetting.model");
 const CrmSettingModel = require("../models/crmSetting.model");
 const RewardSettingModel = require("../models/rewardSetting.model");
 const TemplateModel = require("../models/template.model");
+const ComplaintTypeModel = require("../models/complaintType.model");
 
 
 const init = async () => {
@@ -117,12 +118,38 @@ const createDefaultTemplates = async () => {
   }
 };
 
+// Default complaint types (spec examples). Created only if the collection is
+// empty, so admin edits/removals are never undone.
+const DEFAULT_COMPLAINT_TYPES = [
+  { name: "Not Washed Well", description: "Item was not properly cleaned" },
+  { name: "Stain Remains", description: "A removable stain is still present" },
+  { name: "Poor Ironing", description: "Ironing or pressing was inadequate" },
+  { name: "Wrong Packaging", description: "Item was packaged incorrectly" },
+  { name: "Missing Item", description: "An item is missing from the order" },
+  { name: "Wrong Item", description: "A wrong item was delivered" },
+  { name: "Damaged Item", description: "An item was damaged" },
+  { name: "Colour Issue", description: "Colour ran or faded" },
+  { name: "Delay", description: "Delivery was late" },
+  { name: "Other", description: "Any other issue" },
+];
+
+const createDefaultComplaintTypes = async () => {
+  try {
+    const count = await ComplaintTypeModel.countDocuments({});
+    if (count > 0) return;
+    await ComplaintTypeModel.insertMany(DEFAULT_COMPLAINT_TYPES);
+  } catch (error) {
+    console.error("App init failed:", error);
+  }
+};
+
 async function setupApp() {
   init();
   createAdminOrderDetails();
   createCrmSettings();
   createRewardSettings();
   createDefaultTemplates();
+  createDefaultComplaintTypes();
   console.log("App init successful");
 }
 

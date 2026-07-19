@@ -11,6 +11,7 @@ const ROLE = {
     SORT_AND_PRETREAT: 'sort-and-pretreat',
     USER: 'user',
     RIDER: 'rider',
+    CUSTOMER_EXPERIENCE: 'customer-experience', // owns complaint cases
 }
 const SERVICE_PLATFORM = {
     GOOGLE: 'google',
@@ -138,6 +139,11 @@ const NOTIFICATION_TYPE = {
     WALLET_ADJUSTMENT: 'wallet-adjustment',
     DISPATCH_ASSIGNMENT: 'dispatch-assignment',
     PAYMENT_UPDATE: 'payment-update',
+    OFFER: 'offer',
+    FEEDBACK: 'feedback',
+    COMPLAINT: 'complaint',
+    RECOVERY: 'recovery',
+    REFERRAL: 'referral',
 }
 
 const ORDER_SERVICE_TYPE = {
@@ -303,6 +309,7 @@ const AUDIT_LOG_CATEGORIES = {
     CRM: 'crm',
     COMMUNICATION: 'communication',
     OFFER: 'offer',
+    RECOVERY: 'recovery',
 }
 
 // ─── CRM ────────────────────────────────────────────────────────────────────
@@ -506,6 +513,83 @@ const OFFER_BENEFIT_TYPE = {
     EXTRA_LAUNDRY_CREDIT: 'extra-laundry-credit', // spend X get Y wallet credit
 }
 
+// ─── Feedback & Recovery ("smart satisfaction manager") ─────────────────────
+
+const FEEDBACK_TYPE = {
+    SATISFIED: 'satisfied',
+    NEUTRAL: 'neutral',
+    COMPLAINT: 'complaint',
+}
+
+const FEEDBACK_STATUS = {
+    PENDING: 'pending',
+    COMPLETED: 'completed',
+}
+
+// complaint case status machine (spec order)
+const COMPLAINT_STATUS = {
+    SUBMITTED: 'submitted',
+    UNDER_REVIEW: 'under-review',
+    AWAITING_ITEM: 'awaiting-item',
+    ITEM_RECEIVED: 'item-received',
+    RECOVERY_IN_PROGRESS: 'recovery-in-progress',
+    READY: 'ready',
+    RESOLVED: 'resolved', // recovery done, awaiting customer confirmation
+    CUSTOMER_CONFIRMED: 'customer-confirmed', // terminal (closed)
+    REOPENED: 'reopened', // customer rejected → back into review
+}
+
+// allowed forward transitions; REOPENED and escalation handled separately
+const COMPLAINT_TRANSITIONS = {
+    submitted: ['under-review'],
+    'under-review': ['awaiting-item', 'recovery-in-progress', 'resolved'],
+    'awaiting-item': ['item-received'],
+    'item-received': ['recovery-in-progress'],
+    'recovery-in-progress': ['ready'],
+    ready: ['resolved'],
+    resolved: ['customer-confirmed', 'reopened'],
+    reopened: ['under-review'],
+    'customer-confirmed': [],
+}
+
+const RECOVERY_ACTION = {
+    REWASH: 'rewash',
+    REWORK: 'rework',
+    REPAIR: 'repair',
+    REPLACE: 'replace',
+    COMPENSATE: 'compensate',
+}
+
+const RECOVERY_CREDIT_STATUS = {
+    PENDING_APPROVAL: 'pending-approval',
+    APPROVED: 'approved',
+    REJECTED: 'rejected',
+}
+
+const ESCALATION_REASON = {
+    MISSING_ITEM: 'missing-item',
+    SERIOUS_DAMAGE: 'serious-damage',
+    REPLACEMENT_REQUIRED: 'replacement-required',
+    COMPENSATION_REQUIRED: 'compensation-required',
+    COMPLAINT_REOPENED: 'complaint-reopened',
+    REVIEW_OVERDUE: 'review-overdue',
+    RESOLUTION_OVERDUE: 'resolution-overdue',
+    CUSTOMER_REJECTED: 'customer-rejected',
+}
+
+// in-app chat
+const CONVERSATION_TYPE = {
+    COMPLAINT: 'complaint',
+    SUPPORT: 'support', // Phase 6 in-app bot
+}
+
+const CHAT_SENDER = {
+    CUSTOMER: 'customer',
+    STAFF: 'staff',
+    BOT: 'bot',
+    SYSTEM: 'system', // automated status updates
+}
+
 // Which system requested the message — the messenger never decides on its own.
 const COMM_SOURCE_SYSTEM = {
     CRM: 'crm',
@@ -578,4 +662,13 @@ module.exports = {
     CUSTOMER_OFFER_STATUS,
     OFFER_TRIGGER,
     OFFER_BENEFIT_TYPE,
+    FEEDBACK_TYPE,
+    FEEDBACK_STATUS,
+    COMPLAINT_STATUS,
+    COMPLAINT_TRANSITIONS,
+    RECOVERY_ACTION,
+    RECOVERY_CREDIT_STATUS,
+    ESCALATION_REASON,
+    CONVERSATION_TYPE,
+    CHAT_SENDER,
 }

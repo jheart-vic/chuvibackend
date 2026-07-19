@@ -42,11 +42,30 @@ not the bot repo) are part of the plan.
 
 | Phase | Status | Branch/commit |
 |---|---|---|
-| 1. Wallet & Credit | ✅ built + verified + committed | `feature-wallet-credits` @ e0fca80 |
-| 2. Communication layer | ✅ built + verified (17-check script + boot) | `feature-wallet-credits` |
-| 3. Offer System | ✅ built + verified (36-check script incl. real CRM integration + boot) | `feature-wallet-credits` working tree |
-| 4. Feedback & Recovery | next up | — |
-| 5–7 | not started | — |
+| 1. Wallet & Credit | ✅ committed | `e0fca80 wallet-credits done` |
+| 2. Communication layer | ✅ committed | `8eb638b all done for communicatios` |
+| 3. Offer System | ✅ committed | `aee9434 offer system done` (branch `offer-system`) |
+| 4. Feedback & Recovery | ✅ built + verified (27-check script + boot + 10 complaint types seeded), awaiting commit | branch `feature-feedback-recovery` |
+| 5. Referral | next up | — |
+| 6. In-app bot | not started | — |
+| 7. WhatsApp reconnection | not started | — |
+
+### Feedback & Recovery quick reference (Phase 4)
+
+- New ROLE `customer-experience` + `middlewares/customerExperienceAuth.js` (+admin).
+- **crmProfile.referralPaused** true while an unresolved complaint is open —
+  Phase 5 Referral MUST check it before rewarding. Helpers on CrmService:
+  `applyRecoveryTags(userId)` / `clearRecoveryTags(userId)`.
+- Recovery money reuses WalletCreditService (type 'recovery', 90d). Approval
+  gate: CX ≤ ₦10,000, admin above (RewardSetting.recoveryApprovalThreshold).
+  Approved credit fires `offerOnTrigger('recovery', {userId})`.
+- In-app chat models Conversation + ChatMessage (services/conversation.service)
+  built here for complaint conversations — **Phase 6 in-app bot reuses them**
+  (type 'support', mode 'bot'). REST/polling; sockets deferred to Phase 6.
+- Routes: /api/feedback (customer: submit, my-complaints, confirm/reject, chat,
+  complaint-types) + /api/recovery (CX/admin: queue, transition, actions,
+  credit request/approve/reject, escalate, chat, complaint-type CRUD).
+- crons/complaintSla.js hourly escalates review(24h)/resolution(72h) overdue.
 
 ### Offer System quick reference (Phase 3)
 

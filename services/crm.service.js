@@ -692,6 +692,35 @@ class CrmService {
         }
     }
 
+    // ─── Programmatic tag / referral-pause helpers (called by Recovery) ──────
+
+    // Complaint opened: tag the customer and pause their referral eligibility.
+    // Keyed by userId; a no-op for customers without a CRM profile.
+    async applyRecoveryTags(userId) {
+        if (!userId) return null
+        const profile = await CrmProfileModel.findOne({ userId })
+        if (!profile) return null
+        for (const tag of [CRM_TAG.COMPLAINT, CRM_TAG.RECOVERY_REQUIRED]) {
+            if (!profile.tags.includes(tag)) profile.tags.push(tag)
+        }
+        profile.referralPaused = true
+        await profile.save()
+        return profile
+    }
+
+    // Complaint confirmed resolved: remove the tags and restore referral.
+    async clearRecoveryTags(userId) {
+        if (!userId) return null
+        const profile = await CrmProfileModel.findOne({ userId })
+        if (!profile) return null
+        profile.tags = profile.tags.filter(
+            (t) => t !== CRM_TAG.COMPLAINT && t !== CRM_TAG.RECOVERY_REQUIRED,
+        )
+        profile.referralPaused = false
+        await profile.save()
+        return profile
+    }
+
     async addManualTag(req) {
         try {
             const { tag } = req.body

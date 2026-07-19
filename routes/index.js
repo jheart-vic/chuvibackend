@@ -20,6 +20,8 @@ const publicRouter = require('./public')
 const crmRouter = require('./crm')
 const communicationRouter = require('./communication')
 const offerRouter = require('./offer')
+const feedbackRouter = require('./feedback')
+const recoveryRouter = require('./recovery')
 
 
 router.use('/admin', adminRouter)
@@ -43,4 +45,6 @@ router.use('/public', publicRouter)
 router.use('/crm', crmRouter)
 router.use('/communication', communicationRouter)
 router.use('/offers', offerRouter)
+router.use('/feedback', feedbackRouter)
+router.use('/recovery', recoveryRouter)
 module.exports = router

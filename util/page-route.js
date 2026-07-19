@@ -237,6 +237,32 @@ exports.ROUTE_OFFER_VIEW = "/my-offers/:id/view"
 exports.ROUTE_OFFER_VALIDATE = "/validate"
 exports.ROUTE_OFFER_ATTACH = "/attach"
 
+// feedback & recovery — customer
+exports.ROUTE_FEEDBACK_SUBMIT = "/"
+exports.ROUTE_FEEDBACK_FOR_ORDER = "/order/:orderId"
+exports.ROUTE_FEEDBACK_COMPLAINT_TYPES = "/complaint-types"
+exports.ROUTE_FEEDBACK_MY_COMPLAINTS = "/my-complaints"
+exports.ROUTE_FEEDBACK_COMPLAINT = "/complaints/:id"
+exports.ROUTE_FEEDBACK_COMPLAINT_CONFIRM = "/complaints/:id/confirm"
+exports.ROUTE_FEEDBACK_COMPLAINT_REJECT = "/complaints/:id/reject"
+exports.ROUTE_FEEDBACK_COMPLAINT_MESSAGES = "/complaints/:id/messages"
+
+// feedback & recovery — staff/admin
+exports.ROUTE_RECOVERY_FEEDBACK_LIST = "/feedback"
+exports.ROUTE_RECOVERY_COMPLAINT_TYPES = "/complaint-types"
+exports.ROUTE_RECOVERY_COMPLAINT_TYPE_BY_ID = "/complaint-types/:id"
+exports.ROUTE_RECOVERY_CASES = "/cases"
+exports.ROUTE_RECOVERY_CASE = "/cases/:id"
+exports.ROUTE_RECOVERY_CASE_ASSIGN = "/cases/:id/assign"
+exports.ROUTE_RECOVERY_CASE_TRANSITION = "/cases/:id/transition"
+exports.ROUTE_RECOVERY_CASE_ACTIONS = "/cases/:id/actions"
+exports.ROUTE_RECOVERY_CASE_ACTION_COMPLETE = "/cases/:id/actions/:index/complete"
+exports.ROUTE_RECOVERY_CASE_CREDIT_REQUEST = "/cases/:id/credit/request"
+exports.ROUTE_RECOVERY_CASE_CREDIT_APPROVE = "/cases/:id/credit/approve"
+exports.ROUTE_RECOVERY_CASE_CREDIT_REJECT = "/cases/:id/credit/reject"
+exports.ROUTE_RECOVERY_CASE_ESCALATE = "/cases/:id/escalate"
+exports.ROUTE_RECOVERY_CASE_MESSAGES = "/cases/:id/messages"
+
 // communication layer (admin)
 exports.ROUTE_COMM_TEMPLATES = "/templates"
 exports.ROUTE_COMM_TEMPLATE_BY_ID = "/templates/:id"

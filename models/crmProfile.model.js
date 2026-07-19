@@ -51,6 +51,10 @@ const crmProfileSchema = new mongoose.Schema(
         wasDormant: { type: Boolean, default: false },
         dormantSince: { type: Date },
 
+        // referral eligibility is paused while an unresolved complaint is open
+        // (Feedback & Recovery sets this; Phase 5 Referral reads it)
+        referralPaused: { type: Boolean, default: false },
+
         broadcastLists: {
             prospect: {
                 active: { type: Boolean, default: false },
