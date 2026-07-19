@@ -23,6 +23,7 @@ const offerRouter = require('./offer')
 const feedbackRouter = require('./feedback')
 const recoveryRouter = require('./recovery')
 const referralRouter = require('./referral')
+const botRouter = require('./bot')
 
 
 router.use('/admin', adminRouter)
@@ -49,4 +50,5 @@ router.use('/offers', offerRouter)
 router.use('/feedback', feedbackRouter)
 router.use('/recovery', recoveryRouter)
 router.use('/referral', referralRouter)
+router.use('/bot', botRouter)
 module.exports = router

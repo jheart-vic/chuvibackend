@@ -9,7 +9,7 @@ const connectToMongoDB = require("./config/db.js");
 const errorController = require("./controllers/error.controller.js");
 const AppError = require("./util/appError.js");
 const setupSwagger = require("./swagger/swagger.js");
-// const setupSocket = require("./config/socket.js");
+const { initSocket } = require("./config/socket.js");
 const limiter = require("./middlewares/rateLimiter.js");
 const corsMiddleware = require('./config/cors.js');
 const setupApp = require("./config/setup.js");
@@ -32,6 +32,9 @@ const mongoURL = process.env.MONGODB_URL;
 
 const app = express();
 const httpServer = http.createServer(app);
+
+// Real-time in-app bot / support chat (Phase 6) — attaches to the same server.
+initSocket(httpServer);
 
 // Use CORS with the specified options
 app.use(corsMiddleware);

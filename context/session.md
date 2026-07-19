@@ -3,6 +3,42 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-07-19 (later still) — Phase 6 In-app Bot
+
+### Done this session (uncommitted)
+
+- **Phase 6 in-app bot — built + verified.** Hybrid LLM+rules assistant in THIS
+  backend. Client decisions: LLM classifies intent only; low-risk actions only
+  (high-risk → human handoff, structurally no workflow); provider Claude
+  (`claude-haiku-4-5`); guided booking that never places the order;
+  authenticated customers only; WebSockets now.
+- New: services/botIntent.service.js (Claude structured tool output `{intent,
+  confidence, slots}` + keyword fallback when ANTHROPIC_API_KEY unset/errors —
+  never hard-fails); services/botOrchestrator.service.js (deterministic router +
+  workflows over existing systems: order-status, wallet-balance, view-offers,
+  referral-info incl. level, apply-referral-code, update-details phone/pickup,
+  booking-guide, feedback-ack, menu, handoff); config/socket.js (socket.io on
+  the HTTP server, JWT handshake, rooms user:<id>+staff:support, emitChatMessage
+  non-fatal); services/botApi.service.js; controllers/bot.controller.js;
+  routes/bot.js (/api/bot: message/conversation/handoff [auth]; queue/reply/close
+  [customerExperienceAuth]).
+- Modified: constants (BOT_INTENT + export); conversation.model (botState) +
+  conversation.service (getOrCreateSupport); user.model (defaultPickupAddress);
+  server.js (initSocket on httpServer; uncommented socket require); routes/index
+  + page-route (bot routes); swagger/schemas (BotReply); CLAUDE.md (In-app bot
+  section + env); .env (ANTHROPIC_API_KEY empty, BOT_MODEL=claude-haiku-4-5).
+  Installed @anthropic-ai/sdk. socket.io was already a dependency; CHAT_SENDER.BOT
+  and CONVERSATION_TYPE.SUPPORT already existed from Phase 4.
+- Verified: 18-check script (each read workflow, multi-turn apply-code +
+  update-details, unknown→menu, refund & complaint → handoff-never-acts, bot
+  silent after handoff, no credit ever granted by bot) + PORT=7999 boot with
+  sockets. NOTE: the rules fallback ordering matters — "referral code" must NOT
+  match apply-code (fixed: apply needs an actual code or apply/redeem verb),
+  else a stray pending botState hijacks later single-shot messages.
+- Permission boundary is STRUCTURAL: high-risk actions have no intent/tool, so
+  the bot can only ever hand them to a human. LLM path unused in tests (no key)
+  — rules fallback exercised; set ANTHROPIC_API_KEY to enable Claude classifier.
+
 ## Session: 2026-07-19 (later) — Referral Levels enhancement
 
 ### Done this session (uncommitted)

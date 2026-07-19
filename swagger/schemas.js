@@ -774,6 +774,25 @@
  *         readByStaff: { type: boolean, example: true }
  *         createdAt: { type: string, format: date-time }
  *
+ *     BotReply:
+ *       type: object
+ *       description: The in-app assistant's response to a customer message.
+ *       properties:
+ *         conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *         mode: { type: string, enum: [bot, human], example: bot }
+ *         handledBy: { type: string, enum: [bot, handoff, human], example: bot }
+ *         intent: { type: string, nullable: true, enum: [greeting, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, unknown], example: order-status }
+ *         replies:
+ *           type: array
+ *           description: One or more bot messages posted in reply (empty once handed to a human).
+ *           items:
+ *             type: object
+ *             properties:
+ *               _id: { type: string, example: 665f1c2ab9e77a0012d4e920 }
+ *               senderType: { type: string, example: bot }
+ *               text: { type: string, example: "Order CHUVI-1042: out for delivery\nEstimated delivery: Mon Jul 20 2026" }
+ *               createdAt: { type: string, format: date-time }
+ *
  *     # ── Communication ────────────────────────────────────────────────────
  *     CommunicationTemplate:
  *       type: object
