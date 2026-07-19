@@ -37,20 +37,7 @@ const {
  *                 success: { type: boolean, example: true }
  *                 message:
  *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id: { type: string }
- *                       key: { type: string, example: offer-available }
- *                       name: { type: string, example: Offer Available }
- *                       title: { type: string, example: "A new reward is waiting 🎁" }
- *                       body: { type: string, example: "Hello {{firstName}}, you have a new offer: {{offerName}}. Tap to view it." }
- *                       smsBody: { type: string }
- *                       channels:
- *                         type: array
- *                         items: { type: string, enum: [in-app, sms] }
- *                       page: { type: string, example: offers }
- *                       active: { type: boolean }
+ *                   items: { $ref: '#/components/schemas/CommunicationTemplate' }
  *       500:
  *         description: Server error
  *   post:
@@ -80,8 +67,18 @@ const {
  *     responses:
  *       200:
  *         description: Created template
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CommunicationTemplate' }
  *       400:
  *         description: Validation error or duplicate key
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
@@ -127,8 +124,18 @@ router.post(ROUTE_COMM_TEMPLATES, [adminAuth], (req, res) => {
  *     responses:
  *       200:
  *         description: Updated template
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CommunicationTemplate' }
  *       400:
  *         description: Template not found or invalid channels
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
@@ -185,14 +192,14 @@ router.put(ROUTE_COMM_TEMPLATE_BY_ID, [adminAuth], (req, res) => {
  *                   properties:
  *                     data:
  *                       type: array
- *                       items: { type: object }
+ *                       items: { $ref: '#/components/schemas/CommunicationLog' }
  *                     pagination:
  *                       type: object
  *                       properties:
- *                         total: { type: integer }
- *                         page: { type: integer }
- *                         limit: { type: integer }
- *                         pages: { type: integer }
+ *                         total: { type: integer, example: 240 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 20 }
+ *                         pages: { type: integer, example: 12 }
  *       500:
  *         description: Server error
  */

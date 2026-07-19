@@ -631,19 +631,10 @@ router.post(ROUTE_UPLOAD_PAYMENT_PROOF, [auth], (req, res) => {
  *                       description: Credit value expiring within 7 days
  *                     credits:
  *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id: { type: string }
- *                           type: { type: string, enum: [laundry, referral, recovery, promotional] }
- *                           amount: { type: number, example: 3000 }
- *                           remaining: { type: number, example: 3000 }
- *                           sourceSystem: { type: string, example: offer }
- *                           expiresAt: { type: string, format: date-time }
- *                           status: { type: string, example: active }
+ *                       items: { $ref: '#/components/schemas/WalletCredit' }
  *                     transactions:
  *                       type: array
- *                       items: { type: object }
+ *                       items: { $ref: '#/components/schemas/WalletTransaction' }
  *                     pagination:
  *                       type: object
  *                       properties:
@@ -707,7 +698,7 @@ router.get(ROUTE_WALLET_CREDITS, [auth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     adjusted: { type: number, example: 2000 }
- *                     credit: { type: object }
+ *                     credit: { $ref: '#/components/schemas/WalletCredit' }
  *       400:
  *         description: Validation error, unknown user/credit, or insufficient remaining value
  *       500:

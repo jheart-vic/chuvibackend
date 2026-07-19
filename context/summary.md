@@ -37,6 +37,7 @@ not the bot repo) are part of the plan.
 - Money paths must be verified end-to-end with throwaway scripts against the dev DB (no test suite exists). Scripts create synthetic users and clean up after themselves.
 - Systems talk through fire-and-forget hooks (pattern: `util/crmHooks.js`) — a downstream failure must never break the calling flow.
 - Offers are created ONCE by staff; automated systems only LINK existing offers (never invent them). Credits only deduct permanently after order completion; cancelled orders restore credits (original expiry kept).
+- **Swagger docs must show real shapes.** Model shapes live once as reusable `components.schemas` in `swagger/schemas.js` (with realistic examples + spelled-out enums); route responses `$ref` them inside the standard success envelope (`{ success, message }`) — never a bare `{ description }` or placeholder `type: object`. Errors use the shared `ErrorResponse` schema. Verify the actual response key names from the service before documenting. Full pattern in CLAUDE.md → API docs.
 
 ## Phase status
 

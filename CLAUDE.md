@@ -61,4 +61,28 @@ intake-and-tag → sort-and-pretreat → wash-and-dry → press-iron → qc → 
 
 ### API docs
 
-Swagger UI is set up in `swagger/swagger.js`; endpoint documentation is written as `@swagger` JSDoc comments directly in the `routes/*.js` files, with shared schemas in `swagger/schemas.js`. Keep these comments up to date when changing route contracts.
+Swagger UI is set up in `swagger/swagger.js` (served at `/api-docs`); endpoint documentation is written as `@swagger` JSDoc comments directly in the `routes/*.js` files, with shared component schemas in `swagger/schemas.js`. Keep these comments up to date when changing route contracts.
+
+**Swagger response pattern (required for every route).** The frontend reads these docs to know the exact shape of what the backend returns — so every response must show a real, example-filled shape, never a bare `{ description: ... }` or a placeholder `type: object`.
+
+- **Model shapes live once, in `swagger/schemas.js`** as reusable `components.schemas` entries (`Offer`, `CustomerOffer`, `Referral`, `ReferralPage`, `Feedback`, `ComplaintCase`, `ComplaintType`, `RecoveryAction`/`RecoveryCredit`, `Conversation`, `ChatMessage`, `CommunicationTemplate`, `CommunicationLog`, `WalletCredit`, `WalletTransaction`, plus composites like `OfferPage`/`OfferQuote`). Each field carries a realistic `example` and enums are spelled out. Add a new schema here when you add a model; never inline a full model shape in a route.
+- **Routes reference schemas, never redefine them.** Every controller replies through `base.controller.js`, so wrap the payload in the standard success envelope and `$ref` the schema:
+  ```yaml
+  responses:
+    200:
+      description: <what it is>
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, example: true }
+              message: { $ref: '#/components/schemas/<Schema>' }   # or type: array of $ref, or a {data,pagination} wrapper
+    400:
+      description: <when>
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  ```
+  Lists use `message: { type: array, items: { $ref: ... } }`; paginated endpoints use `message: { data: [ $ref ], pagination: {total,page,limit,pages} }`.
+- **Examples must match reality.** Confirm the actual response key names and shape from the service/controller (`sendSuccessResponse({ message: ... })`) before documenting — don't assume. `ErrorResponse` is the shared failure envelope (`{ success:false, data:{ error } }`).
