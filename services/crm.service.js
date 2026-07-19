@@ -26,7 +26,9 @@ const {
     ORDER_CHANNEL,
     DELIVERY_SPEED,
     AUDIT_LOG_CATEGORIES,
+    OFFER_TRIGGER,
 } = require('../util/constants')
+const { offerOnTrigger } = require('../util/offerHooks')
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
@@ -272,6 +274,11 @@ class CrmService {
         })
         if (created) {
             await this.startLeadWorkflow(profile)
+            // Offer System: a new qualifying lead may get the First Experience
+            // Offer (no-op for account-less leads)
+            offerOnTrigger(OFFER_TRIGGER.FIRST_EXPERIENCE, {
+                userId: profile.userId,
+            })
         }
         return { profile, created }
     }
@@ -396,6 +403,17 @@ class CrmService {
         ])
         await this.startPostDeliveryWorkflow(profile)
         await this.refreshNextFollowUp(profile._id)
+
+        // Offer System triggers (fire-and-forget; no-ops without an account)
+        if (profile.totalOrders === 1) {
+            offerOnTrigger(OFFER_TRIGGER.SECOND_ORDER, { userId: profile.userId })
+        }
+        if (profile.totalOrders >= 5 && profile.totalOrders % 5 === 0) {
+            offerOnTrigger(OFFER_TRIGGER.LOYALTY, {
+                userId: profile.userId,
+                milestoneKey: `loyalty-${profile.totalOrders}`,
+            })
+        }
     }
 
     // ─── Internal actions (executed by the dispatcher) ───────────────────────
@@ -530,6 +548,10 @@ class CrmService {
                 profile.wasDormant = true
                 await profile.save()
                 await this.startReactivationWorkflow(profile)
+                // Offer System: dormant customers may get the Reactivation Offer
+                offerOnTrigger(OFFER_TRIGGER.REACTIVATION, {
+                    userId: profile.userId,
+                })
             } catch (err) {
                 console.error('CRM dormancy error for', profile._id, err)
             }

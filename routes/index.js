@@ -18,6 +18,8 @@ const seedRouter = require('./seed')
 const searchRouter = require('./search')
 const publicRouter = require('./public')
 const crmRouter = require('./crm')
+const communicationRouter = require('./communication')
+const offerRouter = require('./offer')
 
 
 router.use('/admin', adminRouter)
@@ -39,4 +41,6 @@ router.use('/qc-user', qcUserRouter)
 router.use('/notifications', notificationRouter)
 router.use('/public', publicRouter)
 router.use('/crm', crmRouter)
+router.use('/communication', communicationRouter)
+router.use('/offers', offerRouter)
 module.exports = router

@@ -18,6 +18,9 @@ const notificationSchema = new mongoose.Schema(
             default: NOTIFICATION_TYPE.SYSTEM,
         },
         isRead: { type: Boolean, default: false },
+        // deep link: which app page this notification opens, and for which record
+        page: { type: String },
+        recordId: { type: String },
     },
     { timestamps: true },
 )

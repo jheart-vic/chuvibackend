@@ -2,6 +2,7 @@ const NotificationModel = require('../models/notification.model')
 const UserModel = require('../models/user.model')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
+const CommunicationService = require('./communication.service')
 
 class NotificationService extends BaseService {
 
@@ -59,6 +60,7 @@ class NotificationService extends BaseService {
             if (!notification.isRead) {
                 await NotificationModel.updateOne({ _id: notificationId }, { $set: { isRead: true } })
                 notification.isRead = true
+                await CommunicationService.markReadByNotification(notificationId)
             }
 
             return BaseService.sendSuccessResponse({ message: notification })
@@ -87,6 +89,7 @@ class NotificationService extends BaseService {
             }
 
             await NotificationModel.updateOne({ _id: notificationId }, { $set: { isRead: true } })
+            await CommunicationService.markReadByNotification(notificationId)
 
             return BaseService.sendSuccessResponse({ message: 'Notification marked as read' })
         } catch (error) {
@@ -103,10 +106,19 @@ class NotificationService extends BaseService {
             const user = await UserModel.findById(userId)
             if (!user) return BaseService.sendFailedResponse({ error: 'User not found' })
 
+            const unread = await NotificationModel.find(
+                { userId, isRead: false },
+                { _id: 1 },
+            ).lean()
+
             const result = await NotificationModel.updateMany(
                 { userId, isRead: false },
                 { $set: { isRead: true } },
             )
+
+            for (const n of unread) {
+                await CommunicationService.markReadByNotification(n._id)
+            }
 
             return BaseService.sendSuccessResponse({
                 message: `${result.modifiedCount} notification(s) marked as read`,
