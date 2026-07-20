@@ -3,7 +3,7 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
-## Session: 2026-07-20 — Wallet admin credit lookup + Order cancellation (Green)
+## Session: 2026-07-20 — Wallet admin credit lookup + Order cancellation (Green/Amber/Staff)
 
 ### Done this session (uncommitted)
 
@@ -58,6 +58,20 @@ session". When a session ends/clears, fold anything durable into summary.md.
     (fee withheld, visible in tx history), re-approve blocked; test data cleaned up.
   - No migration needed: `orderCancellationGraceMinutes` reads via `?? 15` fallback for
     existing AdminSetting docs.
+- **Swagger follow-up #1 done:** added `CancellationRequest` + `CancellationRequestPage`
+  schemas to swagger/schemas.js; CX queue route now `$ref`s the page schema (doc-only).
+- **Cancellation consolidation (client decisions 2026-07-20):**
+  - **Removed `/wallet/admin/reverse-order-credits`** (route+Swagger+controller+service
+    `adminReverseOrderCredits`+page-route const+import; frontend.md updated). The cancel
+    flow supersedes it (reverses credits AND refunds cash AND releases offer). The internal
+    `WalletCreditService.reverseOrderCredits` STAYS — it powers `_performCancellation`.
+  - **New `POST /bookOrder/book-order/:id/staff-cancel`** guarded by
+    `multiAuth(ROLE.ADMIN, ROLE.INTAKE_AND_TAG)` → `bookOrder.service.staffCancelOrder`.
+    Admin cancels at ANY stage (incl. Red); intake-and-tag only when not-Red
+    (pre-processing). Reuses `_performCancellation` (+ optional fee). Note: multiAuth
+    checks `req.user.userType` (not `.role`). Verified live: no-reason refused, intake
+    blocked on washing, admin voids mid-wash (₦5000 refunded), intake allowed on received,
+    double-cancel refused; swagger drops old path + adds staff-cancel.
 
 ## Session: 2026-07-19 (later still) — Phase 6 In-app Bot
 

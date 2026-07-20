@@ -26,6 +26,7 @@ const {
     WALLET_TX_TYPE,
     AUDIT_LOG_CATEGORIES,
     CANCELLATION_REQUEST_STATUS,
+    ROLE,
 } = require('../util/constants')
 const CancellationRequestModel = require('../models/cancellationRequest.model')
 const ActivityModel = require('../models/activity.model')
@@ -288,6 +289,70 @@ class BookOrderService extends BaseService {
             })
         } catch (error) {
             console.error('Error cancelling order:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to cancel order',
+            })
+        }
+    }
+
+    // Staff-initiated cancellation. Admin may cancel at ANY stage (including
+    // orders already in processing); intake-and-tag may only cancel while the
+    // order has not yet entered processing (i.e. not a Red stage). Both reuse
+    // the shared unwind (credits + cash refund + offer release + pickup).
+    async staffCancelOrder(req) {
+        try {
+            const staffId = req.user.id
+            const role = req.user.userType || req.user.role
+            const orderId = req.params.id
+            const reason = (req.body?.reason || '').trim()
+            const feeAmount = Math.max(0, Math.round(req.body?.feeAmount) || 0)
+            if (!reason) {
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required to cancel an order',
+                })
+            }
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order) {
+                return BaseService.sendFailedResponse({ error: 'Order not found' })
+            }
+            if (order.stage?.status === ORDER_STATUS.CANCELLED) {
+                return BaseService.sendFailedResponse({
+                    error: 'Order is already cancelled',
+                })
+            }
+
+            const settings = await AdminSettingModel.findOne({})
+            const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
+            const decision = this._cancelTier(order, graceMinutes)
+
+            // Intake-and-tag is scoped to pre-processing only.
+            if (role === ROLE.INTAKE_AND_TAG && decision.tier === 'red') {
+                return BaseService.sendFailedResponse({
+                    error: 'This order is already in processing — only an admin can cancel it now.',
+                })
+            }
+
+            const result = await this._performCancellation(order, {
+                reason,
+                performedBy: getObjectId(staffId),
+                tier: role === ROLE.ADMIN ? 'admin' : 'intake-and-tag',
+                feeApplied: feeAmount,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    orderId: order._id,
+                    status: order.stage.status,
+                    cancelledBy: role,
+                    cashRefunded: result.cashRefunded,
+                    creditsReversed: result.creditsReversed,
+                    feeApplied: result.feeCharged,
+                    refundedTo: 'wallet',
+                },
+            })
+        } catch (error) {
+            console.error('Error in staff cancel:', error)
             return BaseService.sendFailedResponse({
                 error: 'Unable to cancel order',
             })

@@ -12,7 +12,6 @@ const {
   ROUTE_WALLET_CREDITS,
   ROUTE_WALLET_ADMIN_USER_CREDITS,
   ROUTE_WALLET_ADMIN_ADJUST_CREDIT,
-  ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS,
 } = require("../util/page-route");
 
 /**
@@ -782,54 +781,6 @@ router.get(ROUTE_WALLET_ADMIN_USER_CREDITS, [adminAuth], (req, res) => {
 router.post(ROUTE_WALLET_ADMIN_ADJUST_CREDIT, [adminAuth], (req, res) => {
   const walletController = new WalletController();
   return walletController.adminAdjustCredit(req, res);
-});
-
-/**
- * @swagger
- * /wallet/admin/reverse-order-credits:
- *   post:
- *     summary: Return all wallet credits an order consumed (admin)
- *     description: >
- *       Used when an order is cancelled or corrected — restores every
- *       non-reversed credit consumption recorded against the order back onto
- *       the original credits, keeping their original expiry dates (an already
- *       expired credit stays expired). Cash refunds are handled separately.
- *     tags:
- *       - Wallet
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [bookOrderId, reason]
- *             properties:
- *               bookOrderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *               reason: { type: string, example: "Order cancelled before pickup" }
- *     responses:
- *       200:
- *         description: Credits restored
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: object
- *                   properties:
- *                     restored: { type: number, example: 1500 }
- *                     creditsTouched: { type: integer, example: 2 }
- *       400:
- *         description: Validation error or order not found
- *       500:
- *         description: Server error
- */
-router.post(ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS, [adminAuth], (req, res) => {
-  const walletController = new WalletController();
-  return walletController.adminReverseOrderCredits(req, res);
 });
 
 module.exports = router;

@@ -532,52 +532,6 @@ async fetchUserTransactions(req) {
     }
   }
 
-  // Admin: return every credit an order consumed (order cancelled / correction).
-  async adminReverseOrderCredits(req) {
-    try {
-      const post = req.body;
-      const validateRule = {
-        bookOrderId: "string|required",
-        reason: "string|required",
-      };
-      const validateResult = validateData(post, validateRule, {
-        required: ":attribute is required",
-      });
-      if (!validateResult.success) {
-        return BaseService.sendFailedResponse({ error: validateResult.data });
-      }
-
-      const { bookOrderId, reason } = post;
-      const bookOrder = await BookOrderModel.findById(bookOrderId);
-      if (!bookOrder) {
-        return BaseService.sendFailedResponse({ error: "Order not found" });
-      }
-
-      const result = await WalletCreditService.reverseOrderCredits(bookOrderId, {
-        reason,
-        performedBy: getObjectId(req.user.id),
-      });
-
-      await createAuditLog({
-        userId: getObjectId(req.user.id),
-        action: `Reversed ₦${result.restored} wallet credit for order ${bookOrderId}: ${reason}`,
-        category: "wallet",
-      });
-
-      return BaseService.sendSuccessResponse({
-        message: {
-          restored: result.restored,
-          creditsTouched: result.creditsTouched,
-        },
-      });
-    } catch (error) {
-      console.error("Error reversing order credits:", error);
-      return BaseService.sendFailedResponse({
-        error: error.message || "Unable to reverse order credits",
-      });
-    }
-  }
-
   async uploadPaymentProof(req){
     try {
       const userId = req.user.id

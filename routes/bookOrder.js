@@ -3,6 +3,8 @@ const BookOrderController = require("../controllers/bookOrder.controller");
 const adminAuth = require("../middlewares/adminAuth");
 const auth = require("../middlewares/auth");
 const customerExperienceAuth = require("../middlewares/customerExperienceAuth");
+const multiAuth = require("../middlewares/multiAuth");
+const { ROLE } = require("../util/constants");
 const checkSubscription = require("../middlewares/checkSubscription");
 const {
   ROUTE_CREATE_BOOK_ORDER,
@@ -12,6 +14,7 @@ const {
   ROUTE_BOOK_ORDER_HISTORY,
   ROUTE_BOOK_ORDER,
   ROUTE_CANCEL_BOOK_ORDER_ID,
+  ROUTE_STAFF_CANCEL_BOOK_ORDER_ID,
   ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID,
   ROUTE_CANCELLATION_REQUESTS,
   ROUTE_APPROVE_CANCELLATION_REQUEST_ID,
@@ -689,6 +692,75 @@ router.post(ROUTE_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.cancelOrder(req, res);
 });
+
+/**
+ * @swagger
+ * /bookOrder/book-order/{id}/staff-cancel:
+ *   post:
+ *     summary: Cancel an order as staff (admin any stage / intake pre-processing)
+ *     description: >
+ *       Staff-initiated cancellation. An **admin** may cancel at ANY stage,
+ *       including orders already in processing. **Intake-and-tag** staff may
+ *       cancel only while the order has not yet entered processing (not a Red
+ *       stage) — otherwise it must go to an admin. Runs the same full unwind as
+ *       a customer cancel: reverses reward credits, refunds cash to the wallet
+ *       (minus any fee), releases the attached offer and frees the pickup.
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string, example: "Customer requested by phone / operational void" }
+ *               feeAmount: { type: number, example: 0, description: "Optional fee withheld from the cash refund (₦)" }
+ *     responses:
+ *       200:
+ *         description: Order cancelled and refunds applied
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                     status: { type: string, example: cancelled }
+ *                     cancelledBy: { type: string, example: admin }
+ *                     cashRefunded: { type: number, example: 5000 }
+ *                     creditsReversed: { type: number, example: 0 }
+ *                     feeApplied: { type: number, example: 0 }
+ *                     refundedTo: { type: string, example: wallet }
+ *       400:
+ *         description: Missing reason, order not found, already cancelled, or (intake) order already in processing
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       403:
+ *         description: Caller is neither admin nor intake-and-tag
+ *       500:
+ *         description: Server error
+ */
+router.post(
+  ROUTE_STAFF_CANCEL_BOOK_ORDER_ID,
+  [multiAuth(ROLE.ADMIN, ROLE.INTAKE_AND_TAG)],
+  (req, res) => {
+    const bookOrderController = new BookOrderController();
+    return bookOrderController.staffCancelOrder(req, res);
+  }
+);
 
 /**
  * @swagger
