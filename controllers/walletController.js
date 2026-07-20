@@ -67,14 +67,6 @@ class WalletController extends BaseController {
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);
     }
-    async adminReverseOrderCredits(req, res) {
-      const walletService = new WalletService();
-      const result = await walletService.adminReverseOrderCredits(req);
-
-      return result.success
-        ? BaseController.sendSuccessResponse(res, result.data)
-        : BaseController.sendFailedResponse(res, result.data);
-    }
     async uploadPaymentProof(req, res) {
       const walletService = new WalletService();
       const result = await walletService.uploadPaymentProof(req);

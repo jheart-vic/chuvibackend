@@ -214,6 +214,7 @@ exports.ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID = '/unassign-rider/:riderId/p
 exports.ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/unassign-rider/:riderId/delivery-order/:id'
 exports.ROUTE_GET_BOOK_ORDER_ID = '/get-book-order/:id'
 exports.ROUTE_CANCEL_BOOK_ORDER_ID = '/book-order/:id/cancel'
+exports.ROUTE_STAFF_CANCEL_BOOK_ORDER_ID = '/book-order/:id/staff-cancel'
 exports.ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID = '/book-order/:id/cancel-request'
 exports.ROUTE_CANCELLATION_REQUESTS = '/cancellation-requests'
 exports.ROUTE_APPROVE_CANCELLATION_REQUEST_ID = '/cancellation-requests/:id/approve'
@@ -230,7 +231,6 @@ exports.ROUTE_UPLOAD_PAYMENT_PROOF = "/upload-payment-proof"
 exports.ROUTE_WALLET_CREDITS = "/wallet-credits"
 exports.ROUTE_WALLET_ADMIN_USER_CREDITS = "/admin/credits"
 exports.ROUTE_WALLET_ADMIN_ADJUST_CREDIT = "/admin/adjust-credit"
-exports.ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS = "/admin/reverse-order-credits"
 
 // offer system
 exports.ROUTE_OFFERS = "/"

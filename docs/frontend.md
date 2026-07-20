@@ -51,12 +51,17 @@ Credit object (shape): { _id, type: "referral"|"recovery"|"promotional"|"laundry
   expiresAt, note }
 
 Admin only:
+- GET  /api/wallet/admin/credits?userId=<id>    → list a customer's active credits
+      (each with its creditId — needed for the "remove" adjustment below)
 - POST /api/wallet/admin/adjust-credit         → add/remove a reward CREDIT (NOT cash)
       body: { userId, amount, direction:"add"|"remove", reason, type?, creditId? }
       NOTE: this changes creditTotal / totalAvailable, NOT the cash `balance`
       — cash is never hand-edited (it only moves via Paystack top-up / payment).
-- POST /api/wallet/admin/reverse-order-credits → refund credits an order consumed
-      body: { bookOrderId, reason }
+
+NOTE: to reverse the credits an order consumed, CANCEL the order instead
+(POST /api/bookOrder/book-order/:id/cancel or the staff-cancel below). Cancelling
+reverses credits AND refunds cash AND releases the offer — the old
+/wallet/admin/reverse-order-credits endpoint has been removed.
 
 ────────────────────────────────────────────────────────────────────────
 ## 3. Communication layer — /api/communication  (mostly admin)
