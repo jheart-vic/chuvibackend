@@ -51,6 +51,14 @@ class WalletController extends BaseController {
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);
     }
+    async adminGetUserCredits(req, res) {
+      const walletService = new WalletService();
+      const result = await walletService.adminGetUserCredits(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
     async adminAdjustCredit(req, res) {
       const walletService = new WalletService();
       const result = await walletService.adminAdjustCredit(req);
