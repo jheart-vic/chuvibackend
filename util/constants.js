@@ -102,6 +102,7 @@ const ORDER_STATUS = {
     IRONING: 'ironing',
     QC: 'qc',
     SORT_AND_PRETREAT: 'sort-and-pretreat',
+    CANCELLED: 'cancelled',
 }
 const PAYMENT_ORDER_STATUS = {
     SUCCESS: 'success',
@@ -126,6 +127,7 @@ const NOTIFICATION_TYPE = {
     ORDER_IRONING: 'order-ironing',
     ORDER_READY: 'order-ready',
     ORDER_DELIVERED: 'order-delivered',
+    ORDER_CANCELLED: 'order-cancelled',
     PAYMENT_APPROVED: 'payment-approved',
     WALLET_TOP_UP: 'wallet-top-up',
     WALLET_UPDATE: 'wallet-update',
@@ -483,6 +485,13 @@ const OFFER_STATUS = {
     ARCHIVED: 'archived',
 }
 
+// Amber-window cancellation requests (customer submits → CX approves/rejects)
+const CANCELLATION_REQUEST_STATUS = {
+    PENDING: 'pending',
+    APPROVED: 'approved',
+    REJECTED: 'rejected',
+}
+
 // customer-offer linkage lifecycle
 const CUSTOMER_OFFER_STATUS = {
     ASSIGNED: 'assigned',
@@ -706,6 +715,7 @@ module.exports = {
     CRM_INTERNAL_ACTIONS,
     CRM_MESSAGE_STATUS,
     CRM_BROADCAST_LIST,
+    CANCELLATION_REQUEST_STATUS,
     CREDIT_TYPE,
     CREDIT_STATUS,
     CREDIT_SOURCE,

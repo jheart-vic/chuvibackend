@@ -22,4 +22,13 @@ const offerOnOrderDelivered = (order) => {
     )
 }
 
-module.exports = { offerOnTrigger, offerOnOrderDelivered }
+// Order cancelled → release any attached/redeemed offer linkage back to the
+// customer (client rule: a cancelled order must not consume the offer).
+const offerOnOrderCancelled = (order, reason = 'Order cancelled') => {
+    if (!order?._id) return
+    OfferService.releaseForOrder(order._id, { reason }).catch((err) =>
+        console.warn('Offer release-on-cancel hook failed (non-fatal):', err.message),
+    )
+}
+
+module.exports = { offerOnTrigger, offerOnOrderDelivered, offerOnOrderCancelled }

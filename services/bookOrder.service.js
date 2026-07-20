@@ -8,6 +8,7 @@ const {
     generateReferenceId,
     roundToNearestHundred,
     calculateDueDate,
+    getObjectId,
 } = require('../util/helper')
 const SubscriptionModel = require('../models/subscription.model')
 const { v4: uuidv4 } = require('uuid')
@@ -21,7 +22,12 @@ const {
     STATION_STATUS,
     PAYMENT_ORDER_STATUS,
     SERVICE_TIERS,
+    PICKUP_STATUS,
+    WALLET_TX_TYPE,
+    AUDIT_LOG_CATEGORIES,
+    CANCELLATION_REQUEST_STATUS,
 } = require('../util/constants')
+const CancellationRequestModel = require('../models/cancellationRequest.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
 const WalletModel = require('../models/wallet.model')
@@ -30,14 +36,515 @@ const WalletTransactionModel = require('../models/walletTransaction.model')
 const PaymentModel = require('../models/payment.model')
 const createAuditLog = require('../util/createAuditLog')
 const OrderItemModel = require('../models/orderItem.model')
-const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
-const { offerOnOrderDelivered } = require('../util/offerHooks')
+const {
+    crmOnOrderCreated,
+    crmOnOrderDelivered,
+    crmOnOrderCancelled,
+} = require('../util/crmHooks')
+const { offerOnOrderDelivered, offerOnOrderCancelled } = require('../util/offerHooks')
+const WalletCreditService = require('./walletCredit.service')
 const {
     referralOnOrderCreated,
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
 
 class BookOrderService extends BaseService {
+    // Decide which cancellation window an order is in (client policy 2026-07-20):
+    //   green  → customer self-cancels immediately (or inside the grace period)
+    //   amber  → items in transit / with us, not processed → needs a request (Phase 2)
+    //   red    → processing started → no cancellation, route to complaints
+    _cancelTier(order, graceMinutes) {
+        const status = order.stage?.status
+        if (status === ORDER_STATUS.CANCELLED) {
+            return { tier: 'none', allowed: false, reason: 'This order is already cancelled.' }
+        }
+
+        // Any stage where work has physically begun — cannot be undone here.
+        const RED = [
+            ORDER_STATUS.SORT_AND_PRETREAT,
+            ORDER_STATUS.WASHING,
+            ORDER_STATUS.DRYING,
+            ORDER_STATUS.IRONING,
+            ORDER_STATUS.QC,
+            ORDER_STATUS.READY,
+            ORDER_STATUS.OUT_FOR_DELIVERY,
+            ORDER_STATUS.DELIVERED,
+        ]
+        // With us / in transit but not yet processed.
+        const AMBER = [ORDER_STATUS.RECEIVED, ORDER_STATUS.QUEUE, ORDER_STATUS.HOLD]
+
+        const pickup = order.dispatchDetails?.pickup?.status
+        const pickupStarted = [
+            PICKUP_STATUS.PICKUP_IN_PROGRESS,
+            PICKUP_STATUS.PICKED_UP,
+        ].includes(pickup)
+
+        const createdMs = order.createdAt ? new Date(order.createdAt).getTime() : Date.now()
+        const withinGrace = Date.now() - createdMs <= graceMinutes * 60 * 1000
+
+        // Real work done always wins — the grace period cannot revive it.
+        if (RED.includes(status)) {
+            return {
+                tier: 'red',
+                allowed: false,
+                reason: 'Processing has already started, so this order can no longer be cancelled. Please contact support to raise a complaint.',
+            }
+        }
+
+        // Grace window: free cancel even if a pickup was auto-scheduled.
+        if (withinGrace) return { tier: 'green', allowed: true }
+
+        // Fresh order, rider not yet dispatched.
+        if (status === ORDER_STATUS.PENDING && !pickupStarted) {
+            return { tier: 'green', allowed: true }
+        }
+
+        if (pickupStarted || AMBER.includes(status)) {
+            return {
+                tier: 'amber',
+                allowed: false,
+                reason: 'Your items are already on the way to us or with us. Please contact support to request a cancellation.',
+            }
+        }
+
+        return {
+            tier: 'amber',
+            allowed: false,
+            reason: 'Please contact support to request a cancellation.',
+        }
+    }
+
+    // Shared unwind for BOTH Green self-cancel and Amber-request approval.
+    // Reverses reward credits, refunds any cash paid to the wallet (minus an
+    // optional Amber fee), releases the attached offer, frees a scheduled
+    // pickup, flips the order to cancelled, and notifies + audits (non-fatal).
+    // Assumes the caller has already authorised the cancellation.
+    async _performCancellation(order, { reason, performedBy, tier, feeApplied = 0 }) {
+        const cleanReason = (reason || '').trim()
+        const cancelReason = cleanReason
+            ? `Order cancelled: ${cleanReason}`
+            : 'Order cancelled'
+
+        // 1) Reverse any reward credits the order consumed.
+        const { restored: creditsReversed } =
+            await WalletCreditService.reverseOrderCredits(order._id, {
+                reason: cancelReason,
+                performedBy,
+            })
+
+        // 2) Refund cash actually paid (order total minus the credit portion),
+        //    less any staff fee, back to the wallet balance. Never card/bank.
+        let cashRefunded = 0
+        let feeCharged = 0
+        if (order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS) {
+            const cashPaid = Math.max(0, (order.amount || 0) - creditsReversed)
+            feeCharged = Math.min(Math.max(0, Math.round(feeApplied) || 0), cashPaid)
+            cashRefunded = Math.max(0, cashPaid - feeCharged)
+            if (cashRefunded > 0) {
+                const wallet = await WalletModel.findOneAndUpdate(
+                    { userId: order.userId },
+                    {
+                        $inc: { balance: cashRefunded },
+                        $setOnInsert: { currency: 'NGN' },
+                    },
+                    { new: true, upsert: true },
+                )
+                const refundRef = generateReferenceId()
+                await WalletTransactionModel.create({
+                    userId: order.userId,
+                    walletId: wallet._id,
+                    type: WALLET_TX_TYPE.CREDIT,
+                    amount: cashRefunded,
+                    reference: refundRef,
+                    status: 'success',
+                    description: `Refund for cancelled order ${order.oscNumber || order._id}`,
+                    relatedOrderId: order._id,
+                    balanceAfter: wallet.balance,
+                })
+                // Mirror it as a Payment (credit) so it shows in the customer's
+                // transaction history (fetch-user-transactions reads Payment).
+                await PaymentModel.create({
+                    userId: order.userId,
+                    amount: cashRefunded,
+                    reference: refundRef,
+                    status: 'success',
+                    type: 'refund',
+                    order: order._id,
+                    alertType: 'credit',
+                    paymentMethod: 'wallet',
+                    adminNote: `Refund for cancelled order ${order.oscNumber || order._id}`,
+                })
+            }
+        }
+
+        // 3) Free a scheduled/pending pickup so the rider is released.
+        if (
+            order.dispatchDetails?.pickup &&
+            [PICKUP_STATUS.PENDING, PICKUP_STATUS.SCHEDULED].includes(
+                order.dispatchDetails.pickup.status,
+            )
+        ) {
+            order.dispatchDetails.pickup.rider = undefined
+            order.dispatchDetails.pickup.status = PICKUP_STATUS.PENDING
+            order.dispatchDetails.pickup.updatedAt = new Date()
+        }
+
+        // 4) Flip the order to cancelled + record the audit trail on the doc.
+        const now = new Date()
+        order.stage = { status: ORDER_STATUS.CANCELLED, note: cancelReason, updatedAt: now }
+        order.stageHistory.push({
+            status: ORDER_STATUS.CANCELLED,
+            note: cancelReason,
+            updatedAt: now,
+        })
+        order.cancellation = {
+            cancelledAt: now,
+            reason: cleanReason,
+            cancelledBy: performedBy,
+            tier,
+            cashRefunded,
+            creditsReversed,
+            feeApplied: feeCharged,
+        }
+        await order.save()
+
+        // 5) Release the attached offer + CRM (fire-and-forget).
+        offerOnOrderCancelled(order, cancelReason)
+        crmOnOrderCancelled(order)
+
+        // 6) Notify + audit — non-fatal: the cancellation & refund are already
+        //    committed above, so a messaging/logging failure must not report
+        //    the whole operation as failed.
+        try {
+            const parts = []
+            if (cashRefunded > 0)
+                parts.push(` ₦${cashRefunded.toLocaleString('en-NG')} has been refunded to your wallet.`)
+            if (creditsReversed > 0)
+                parts.push(` ₦${creditsReversed.toLocaleString('en-NG')} in reward credit was returned.`)
+            if (feeCharged > 0)
+                parts.push(` A cancellation fee of ₦${feeCharged.toLocaleString('en-NG')} was applied.`)
+            await createNotification({
+                userId: order.userId,
+                title: 'Order Cancelled',
+                body: `Your order ${order.oscNumber || order._id} has been cancelled.${parts.join('')}`,
+                type: NOTIFICATION_TYPE.ORDER_CANCELLED,
+            })
+            await createAuditLog({
+                userId: performedBy,
+                action: `Cancelled order ${order.oscNumber || order._id} (${tier}); refunded ₦${cashRefunded} cash, ₦${creditsReversed} credit, fee ₦${feeCharged}`,
+                category: AUDIT_LOG_CATEGORIES.ORDER,
+            })
+        } catch (sideEffectErr) {
+            console.warn(
+                'Order-cancel side effects failed (non-fatal):',
+                sideEffectErr.message,
+            )
+        }
+
+        return { cashRefunded, creditsReversed, feeCharged }
+    }
+
+    // Customer-initiated cancellation (Green window). Runs the shared unwind
+    // with no fee. Amber/Red orders are refused here and go through requests.
+    async cancelOrder(req) {
+        try {
+            const userId = req.user.id
+            const orderId = req.params.id
+            const reason = (req.body?.reason || '').trim()
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order) {
+                return BaseService.sendFailedResponse({ error: 'Order not found' })
+            }
+            if (String(order.userId) !== String(userId)) {
+                return BaseService.sendFailedResponse({
+                    error: 'You can only cancel your own order',
+                })
+            }
+
+            const settings = await AdminSettingModel.findOne({})
+            const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
+
+            const decision = this._cancelTier(order, graceMinutes)
+            if (!decision.allowed) {
+                return BaseService.sendFailedResponse({ error: decision.reason })
+            }
+
+            const result = await this._performCancellation(order, {
+                reason,
+                performedBy: getObjectId(userId),
+                tier: decision.tier,
+                feeApplied: 0,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    orderId: order._id,
+                    status: order.stage.status,
+                    cashRefunded: result.cashRefunded,
+                    creditsReversed: result.creditsReversed,
+                    refundedTo: 'wallet',
+                },
+            })
+        } catch (error) {
+            console.error('Error cancelling order:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to cancel order',
+            })
+        }
+    }
+
+    // Customer submits a cancellation request for an Amber-window order (items
+    // in transit / with us, not yet processed). Green orders should self-cancel;
+    // Red orders cannot be cancelled.
+    async requestCancellation(req) {
+        try {
+            const userId = req.user.id
+            const orderId = req.params.id
+            const reason = (req.body?.reason || '').trim()
+            if (!reason) {
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required to request a cancellation',
+                })
+            }
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order) {
+                return BaseService.sendFailedResponse({ error: 'Order not found' })
+            }
+            if (String(order.userId) !== String(userId)) {
+                return BaseService.sendFailedResponse({
+                    error: 'You can only cancel your own order',
+                })
+            }
+
+            const settings = await AdminSettingModel.findOne({})
+            const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
+            const decision = this._cancelTier(order, graceMinutes)
+
+            if (decision.tier === 'green') {
+                return BaseService.sendFailedResponse({
+                    error: 'This order can be cancelled directly — no request needed.',
+                })
+            }
+            if (decision.tier !== 'amber') {
+                // red / already cancelled
+                return BaseService.sendFailedResponse({ error: decision.reason })
+            }
+
+            const existing = await CancellationRequestModel.findOne({
+                orderId: order._id,
+                status: CANCELLATION_REQUEST_STATUS.PENDING,
+            })
+            if (existing) {
+                return BaseService.sendFailedResponse({
+                    error: 'A cancellation request for this order is already awaiting review.',
+                })
+            }
+
+            const request = await CancellationRequestModel.create({
+                orderId: order._id,
+                userId: order.userId,
+                reason,
+                status: CANCELLATION_REQUEST_STATUS.PENDING,
+                tierAtRequest: decision.tier,
+            })
+
+            try {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Cancellation Requested',
+                    body: `We received your request to cancel order ${order.oscNumber || order._id}. Our team will review it shortly.`,
+                    type: NOTIFICATION_TYPE.ORDER_CANCELLED,
+                })
+            } catch (e) {
+                console.warn('request-cancellation notify failed (non-fatal):', e.message)
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    requestId: request._id,
+                    orderId: order._id,
+                    status: request.status,
+                },
+            })
+        } catch (error) {
+            // duplicate-key (race on the partial unique index) → already pending
+            if (error?.code === 11000) {
+                return BaseService.sendFailedResponse({
+                    error: 'A cancellation request for this order is already awaiting review.',
+                })
+            }
+            console.error('Error requesting cancellation:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to submit cancellation request',
+            })
+        }
+    }
+
+    // CX queue of cancellation requests (default: pending).
+    async getCancellationRequests(req) {
+        try {
+            const status = req.query?.status || CANCELLATION_REQUEST_STATUS.PENDING
+            const page = parseInt(req.query?.page) || 1
+            const limit = parseInt(req.query?.limit) || 20
+            const filter =
+                status === 'all' ? {} : { status }
+
+            const requests = await CancellationRequestModel.find(filter)
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate('orderId', 'oscNumber amount stage paymentStatus')
+                .populate('userId', 'firstName lastName email phone')
+                .lean()
+            const total = await CancellationRequestModel.countDocuments(filter)
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    data: requests,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        pages: Math.ceil(total / limit),
+                    },
+                },
+            })
+        } catch (error) {
+            console.error('Error listing cancellation requests:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to list cancellation requests',
+            })
+        }
+    }
+
+    // CX approves a request → runs the shared unwind, optionally withholding a
+    // fee from the cash refund. Re-checks the order hasn't since entered Red.
+    async approveCancellationRequest(req) {
+        try {
+            const staffId = req.user.id
+            const requestId = req.params.id
+            const feeAmount = Math.max(0, Math.round(req.body?.feeAmount) || 0)
+            const note = (req.body?.note || '').trim()
+
+            const request = await CancellationRequestModel.findById(requestId)
+            if (!request) {
+                return BaseService.sendFailedResponse({ error: 'Request not found' })
+            }
+            if (request.status !== CANCELLATION_REQUEST_STATUS.PENDING) {
+                return BaseService.sendFailedResponse({
+                    error: `Request already ${request.status}`,
+                })
+            }
+
+            const order = await BookOrderModel.findById(request.orderId)
+            if (!order) {
+                return BaseService.sendFailedResponse({ error: 'Order not found' })
+            }
+
+            // Guard: work may have started while the request sat in the queue.
+            const settings = await AdminSettingModel.findOne({})
+            const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
+            const decision = this._cancelTier(order, graceMinutes)
+            if (order.stage?.status === ORDER_STATUS.CANCELLED) {
+                return BaseService.sendFailedResponse({ error: 'Order is already cancelled' })
+            }
+            if (decision.tier === 'red') {
+                return BaseService.sendFailedResponse({
+                    error: 'Processing has already started on this order — it can no longer be cancelled.',
+                })
+            }
+
+            const result = await this._performCancellation(order, {
+                reason: request.reason,
+                performedBy: getObjectId(staffId),
+                tier: 'amber',
+                feeApplied: feeAmount,
+            })
+
+            request.status = CANCELLATION_REQUEST_STATUS.APPROVED
+            request.reviewedBy = getObjectId(staffId)
+            request.reviewedAt = new Date()
+            request.decisionNote = note
+            request.feeApplied = result.feeCharged
+            request.cashRefunded = result.cashRefunded
+            request.creditsReversed = result.creditsReversed
+            await request.save()
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    requestId: request._id,
+                    orderId: order._id,
+                    status: request.status,
+                    cashRefunded: result.cashRefunded,
+                    creditsReversed: result.creditsReversed,
+                    feeApplied: result.feeCharged,
+                    refundedTo: 'wallet',
+                },
+            })
+        } catch (error) {
+            console.error('Error approving cancellation request:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to approve cancellation request',
+            })
+        }
+    }
+
+    // CX rejects a request → order continues, customer notified.
+    async rejectCancellationRequest(req) {
+        try {
+            const staffId = req.user.id
+            const requestId = req.params.id
+            const note = (req.body?.note || '').trim()
+
+            const request = await CancellationRequestModel.findById(requestId)
+            if (!request) {
+                return BaseService.sendFailedResponse({ error: 'Request not found' })
+            }
+            if (request.status !== CANCELLATION_REQUEST_STATUS.PENDING) {
+                return BaseService.sendFailedResponse({
+                    error: `Request already ${request.status}`,
+                })
+            }
+
+            request.status = CANCELLATION_REQUEST_STATUS.REJECTED
+            request.reviewedBy = getObjectId(staffId)
+            request.reviewedAt = new Date()
+            request.decisionNote = note
+            await request.save()
+
+            try {
+                await createNotification({
+                    userId: request.userId,
+                    title: 'Cancellation Request Declined',
+                    body: `Your request to cancel the order could not be approved.${note ? ` Reason: ${note}` : ''} Please contact support if you have questions.`,
+                    type: NOTIFICATION_TYPE.ORDER_CANCELLED,
+                })
+                await createAuditLog({
+                    userId: getObjectId(staffId),
+                    action: `Rejected cancellation request ${request._id} for order ${request.orderId}${note ? `: ${note}` : ''}`,
+                    category: AUDIT_LOG_CATEGORIES.ORDER,
+                })
+            } catch (e) {
+                console.warn('reject-cancellation side effects failed (non-fatal):', e.message)
+            }
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    requestId: request._id,
+                    orderId: request.orderId,
+                    status: request.status,
+                },
+            })
+        } catch (error) {
+            console.error('Error rejecting cancellation request:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to reject cancellation request',
+            })
+        }
+    }
+
 async postBookOrder(req, res) {
         try {
             const post = req.body

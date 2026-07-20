@@ -254,6 +254,17 @@ const bookOrderSchema = new mongoose.Schema(
             enum: Object.values(PAYMENT_ORDER_STATUS),
             default: PAYMENT_ORDER_STATUS.PENDING,
         },
+        // Set when an order is cancelled (customer self-cancel or, later, staff
+        // approval of a cancellation request). cancelledBy is the actor.
+        cancellation: {
+            cancelledAt: { type: Date },
+            reason: { type: String },
+            cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            tier: { type: String }, // green | amber (which window it was cancelled in)
+            cashRefunded: { type: Number, default: 0 },
+            creditsReversed: { type: Number, default: 0 },
+            feeApplied: { type: Number, default: 0 }, // Amber only: fee withheld from cash refund
+        },
         isPickUp: { type: Boolean, default: false },
         isDelivery: { type: Boolean, default: false },
         reference: { type: String },

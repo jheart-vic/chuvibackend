@@ -3,6 +3,62 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-07-20 — Wallet admin credit lookup + Order cancellation (Green)
+
+### Done this session (uncommitted)
+
+- **Diagnosed `/wallet/admin/adjust-credit` "not updating" report.** Verified end-to-end
+  against live DB: backend is correct — grant creates an active credit and
+  `getWalletBalance`/`getWalletCredits` return the updated `creditTotal`/`totalAvailable`.
+  Root cause is frontend-side (likely showing cash `balance`, which admin credit
+  never touches, or not refetching). No backend change needed there.
+- **New `GET /wallet/admin/credits?userId=` [adminAuth]** — closes the gap where the
+  `remove` path needs a `creditId` an admin had no way to see. Returns cash + credit
+  totals + each active credit with its `creditId`. (wallet.service `adminGetUserCredits`,
+  controller, route+Swagger, page-route). Verified: valid/missing/unknown-user cases.
+- **Order cancellation — Phase 1 (Green) built + verified.** Client policy 2026-07-20
+  (see decisions memory): refund to CHUVI wallet only (never card/bank); Green =
+  self-cancel now; Amber (request→CX approval) = Phase 2; Red = blocked; 15-min grace.
+  - Added `ORDER_STATUS.CANCELLED`, `NOTIFICATION_TYPE.ORDER_CANCELLED`,
+    `AdminSetting.orderCancellationGraceMinutes` (default 15), `bookOrder.cancellation`
+    subdoc.
+  - `bookOrder.service`: `_cancelTier(order, graceMinutes)` (green/amber/red guard) +
+    `cancelOrder(req)` — reverses credits (`WalletCreditService.reverseOrderCredits`),
+    refunds cash to wallet (`amount - creditsReversed`, only if paymentStatus success),
+    releases offer (`offerOnOrderCancelled` → `OfferService.releaseForOrder`), frees a
+    scheduled pickup, notifies + audits (side effects non-fatal). CRM hook
+    `crmOnOrderCancelled` wired defensively (no CRM handler yet — no-ops).
+  - `POST /bookOrder/book-order/:id/cancel` [auth] + Swagger. Controller `cancelOrder`.
+  - Verified live: tier logic across 8 real orders (pending→green, processing→red,
+    hold→amber); full cancel of a throwaway paid order refunded ₦5000 to wallet, set
+    status cancelled, rejected non-owner; test data cleaned up.
+  - Cash refund posts BOTH a wallet `credit` WalletTransaction (balance + monthly
+    aggregation) AND a `Payment` record (`type:'refund'`, `alertType:'credit'`,
+    `paymentMethod:'wallet'`, shared reference) so it appears in `fetch-user-transactions`.
+    Added `refund` to `Payment.type` enum and `wallet` to `Payment.paymentMethod` enum.
+    Verified live: refund visible in transaction history; test data cleaned up.
+- **Order cancellation — Phase 2 (Amber) built + verified.** Customer requests →
+  Customer Experience approves/rejects; fee withheld from cash refund only.
+  - New `models/cancellationRequest.model.js` (pending/approved/rejected;
+    `CANCELLATION_REQUEST_STATUS` in constants; partial unique index → one pending
+    request per order, so resubmit-after-reject works). Added `cancellation.feeApplied`
+    to bookOrder.
+  - Refactored the Green unwind into shared `_performCancellation(order, {reason,
+    performedBy, tier, feeApplied})` — refund = `max(0, cashPaid - fee)`, fee capped at
+    cash paid, credits always fully restored. Green calls it with fee 0.
+  - New service methods: `requestCancellation` (customer, Amber-only guard),
+    `getCancellationRequests` (CX queue, populated), `approveCancellationRequest`
+    (re-checks not-Red, runs unwind with fee), `rejectCancellationRequest`.
+  - Routes on /bookOrder: `POST /book-order/:id/cancel-request` [auth];
+    `GET /cancellation-requests`, `POST /cancellation-requests/:id/approve`,
+    `POST /cancellation-requests/:id/reject` [customerExperienceAuth]. Controller +
+    page-route + Swagger.
+  - Verified live: amber detected, green-cancel refused on amber, reason required,
+    duplicate request blocked, CX queue lists it, approve w/ ₦500 fee refunded ₦4500
+    (fee withheld, visible in tx history), re-approve blocked; test data cleaned up.
+  - No migration needed: `orderCancellationGraceMinutes` reads via `?? 15` fallback for
+    existing AdminSetting docs.
+
 ## Session: 2026-07-19 (later still) — Phase 6 In-app Bot
 
 ### Done this session (uncommitted)
