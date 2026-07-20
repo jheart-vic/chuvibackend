@@ -351,7 +351,8 @@ async fetchUserTransactions(req) {
 
       return BaseService.sendSuccessResponse({
         message: {
-          balance: wallet.balance,
+          balance: wallet.balance, // cash
+          cashBalance: wallet.balance, // alias — same value, kept consistent with /wallet-credits
           creditTotal: credits.total,
           totalAvailable: wallet.balance + credits.total,
           creditsByType: credits.byType,
@@ -396,7 +397,8 @@ async fetchUserTransactions(req) {
 
       return BaseService.sendSuccessResponse({
         message: {
-          cashBalance: wallet.balance,
+          cashBalance: wallet.balance, // cash
+          balance: wallet.balance, // alias — same value, kept consistent with /wallet-balance
           creditTotal: credits.total,
           totalAvailable: wallet.balance + credits.total,
           creditsByType: credits.byType,
