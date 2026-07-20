@@ -27,19 +27,36 @@ the orientation layer on top of it.
 ────────────────────────────────────────────────────────────────────────
 ## 2. Wallet & Credit — /api/wallet
 
-The wallet has ONE cash balance plus separate reward "credit" sub-balances
-(referral / recovery / promotional / laundry) that are service value, never
-withdrawable as cash. Credits expire and are spent before cash at checkout.
+TWO SEPARATE LEDGERS live in the wallet:
+  1. CASH  — real money (topped up via Paystack). Field: `balance` (a.k.a.
+     `cashBalance`, same value). Only cash ops (top-up / pay) move it.
+  2. CREDIT — reward "credit" sub-balances (referral / recovery / promotional /
+     laundry). Service value, never withdrawable as cash, expire, and are spent
+     BEFORE cash at checkout. Summed as `creditTotal`.
+`totalAvailable` = balance + creditTotal.
 
-- GET  /api/wallet/wallet-balance          → cash balance
-- GET  /api/wallet/wallet-credits          → active reward credits (typed, w/ expiry)
-- POST /api/wallet/wallet-top-up           → start a Paystack top-up
-- POST /api/wallet/pay-with-wallet         → pay an order with credit+cash
+- GET  /api/wallet/wallet-balance          → COMPACT summary (for a header/badge)
+      { balance, cashBalance, creditTotal, totalAvailable, creditsByType, expiringSoon }
+- GET  /api/wallet/wallet-credits          → FULL wallet page (same summary PLUS lists)
+      { balance, cashBalance, creditTotal, totalAvailable, creditsByType, expiringSoon,
+        credits:[ ...every active credit... ], transactions:[...], pagination }
+      ⇒ Use /wallet-balance for a quick total; /wallet-credits for the wallet screen.
+      (Both expose the cash value under BOTH `balance` and `cashBalance`.)
+- POST /api/wallet/wallet-top-up           → start a Paystack top-up (moves CASH)
+- POST /api/wallet/pay-with-wallet         → pay an order (spends credit then cash)
 - GET  /api/wallet/fetch-user-transactions → wallet transaction history
 
 Credit object (shape): { _id, type: "referral"|"recovery"|"promotional"|"laundry",
   amount, remaining, status: "active"|"exhausted"|"expired"|"reversed",
   expiresAt, note }
+
+Admin only:
+- POST /api/wallet/admin/adjust-credit         → add/remove a reward CREDIT (NOT cash)
+      body: { userId, amount, direction:"add"|"remove", reason, type?, creditId? }
+      NOTE: this changes creditTotal / totalAvailable, NOT the cash `balance`
+      — cash is never hand-edited (it only moves via Paystack top-up / payment).
+- POST /api/wallet/admin/reverse-order-credits → refund credits an order consumed
+      body: { bookOrderId, reason }
 
 ────────────────────────────────────────────────────────────────────────
 ## 3. Communication layer — /api/communication  (mostly admin)
