@@ -56,6 +56,10 @@ const adminSettingSchema = new mongoose.Schema(
         standardDeliveryPeriod: { type: Number, default: 2 },
         deliveryFee: { type: Number, default: 500 },
         pickupFee: { type: Number, default: 500 },
+
+        // Minutes after order creation during which a customer may cancel freely
+        // (Green), even if a pickup was auto-scheduled. Client decision: 10–15.
+        orderCancellationGraceMinutes: { type: Number, default: 15 },
     },
     { timestamps: true },
 )

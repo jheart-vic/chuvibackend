@@ -14,7 +14,47 @@ class BookOrderController extends BaseController {
     async updateBookOrderPaymentStatus(req, res) {
       const bookOrderService = new BookOrderService();
       const result = await bookOrderService.updateBookOrderPaymentStatus(req);
-  
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+    async cancelOrder(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.cancelOrder(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+    async requestCancellation(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.requestCancellation(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+    async getCancellationRequests(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.getCancellationRequests(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+    async approveCancellationRequest(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.approveCancellationRequest(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+    async rejectCancellationRequest(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.rejectCancellationRequest(req);
+
       return result.success
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);

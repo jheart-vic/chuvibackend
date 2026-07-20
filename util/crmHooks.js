@@ -23,8 +23,19 @@ const crmOnOrderDelivered = (order) => {
     )
 }
 
+// Order cancelled → let the CRM react (e.g. reactivation/nurture). The handler
+// is optional for now (Phase 2), so this no-ops safely until CRM implements it.
+const crmOnOrderCancelled = (order) => {
+    if (!order) return
+    if (typeof CrmService.handleOrderCancelled !== 'function') return
+    CrmService.handleOrderCancelled(order).catch((err) =>
+        console.warn('CRM order-cancelled hook failed (non-fatal):', err.message),
+    )
+}
+
 module.exports = {
     crmOnUserRegistered,
     crmOnOrderCreated,
     crmOnOrderDelivered,
+    crmOnOrderCancelled,
 }

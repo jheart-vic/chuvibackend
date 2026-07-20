@@ -2,6 +2,7 @@ const router = require("express").Router();
 const BookOrderController = require("../controllers/bookOrder.controller");
 const adminAuth = require("../middlewares/adminAuth");
 const auth = require("../middlewares/auth");
+const customerExperienceAuth = require("../middlewares/customerExperienceAuth");
 const checkSubscription = require("../middlewares/checkSubscription");
 const {
   ROUTE_CREATE_BOOK_ORDER,
@@ -10,6 +11,11 @@ const {
   ROUTE_UPDATE_BOOK_ORDER_STAGE,
   ROUTE_BOOK_ORDER_HISTORY,
   ROUTE_BOOK_ORDER,
+  ROUTE_CANCEL_BOOK_ORDER_ID,
+  ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID,
+  ROUTE_CANCELLATION_REQUESTS,
+  ROUTE_APPROVE_CANCELLATION_REQUEST_ID,
+  ROUTE_REJECT_CANCELLATION_REQUEST_ID,
 } = require("../util/page-route");
 
 
@@ -617,6 +623,278 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
 router.get(ROUTE_BOOK_ORDER+"/:id", [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.getBookOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/book-order/{id}/cancel:
+ *   post:
+ *     summary: Cancel your own order (customer, Green window)
+ *     description: >
+ *       Cancels the authenticated customer's own order when it is still in the
+ *       Green window — either within the grace period after creation
+ *       (default 15 min, configurable) or while it is pending and no rider has
+ *       been dispatched. The order is flipped to `cancelled`, any reward credits
+ *       it consumed are reversed, any cash paid is refunded to the CHUVI wallet
+ *       balance (never to card/bank), the attached offer is released, and a
+ *       scheduled pickup is freed. Orders whose items are already in transit /
+ *       with us (Amber) or already being processed (Red) return 400 and must go
+ *       through support.
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: The order id to cancel
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string, example: "Booked by mistake" }
+ *     responses:
+ *       200:
+ *         description: Order cancelled and refunds applied
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                     status: { type: string, example: cancelled }
+ *                     cashRefunded: { type: number, example: 3000 }
+ *                     creditsReversed: { type: number, example: 2000 }
+ *                     refundedTo: { type: string, example: wallet }
+ *       400:
+ *         description: >
+ *           Not cancellable (Amber/Red window or already cancelled), not the
+ *           owner, or order not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.cancelOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/book-order/{id}/cancel-request:
+ *   post:
+ *     summary: Request cancellation of an Amber-window order (customer)
+ *     description: >
+ *       For orders already in the Amber window — items on the way to us or with
+ *       us, but not yet being processed — the customer cannot self-cancel and
+ *       instead submits a cancellation request for Customer Experience to review.
+ *       Green orders should use /cancel directly; Red (already being processed)
+ *       orders cannot be cancelled. Only one pending request per order.
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string, example: "Change of plans" }
+ *     responses:
+ *       200:
+ *         description: Cancellation request submitted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                     status: { type: string, example: pending }
+ *       400:
+ *         description: Missing reason, not the owner, Green (cancel directly), Red, or a request is already pending
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.requestCancellation(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/cancellation-requests:
+ *   get:
+ *     summary: List cancellation requests (Customer Experience)
+ *     description: Queue of customer cancellation requests. Defaults to pending.
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [pending, approved, rejected, all], default: pending }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *     responses:
+ *       200:
+ *         description: Paginated cancellation requests (order + customer populated)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/CancellationRequestPage' }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_CANCELLATION_REQUESTS, [customerExperienceAuth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.getCancellationRequests(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/cancellation-requests/{id}/approve:
+ *   post:
+ *     summary: Approve a cancellation request (Customer Experience)
+ *     description: >
+ *       Approves the request and runs the full unwind: reverses reward credits,
+ *       refunds cash to the customer's wallet (minus any fee), releases the
+ *       attached offer and frees the pickup. An optional fee is withheld from the
+ *       cash refund only (never from credits) and is capped at the cash actually
+ *       paid. Refused if the order has since entered processing (Red).
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               feeAmount: { type: number, example: 500, description: "Fee withheld from the cash refund (₦)" }
+ *               note: { type: string, example: "Rider already dispatched; part-fee applied" }
+ *     responses:
+ *       200:
+ *         description: Request approved and order cancelled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                     status: { type: string, example: approved }
+ *                     cashRefunded: { type: number, example: 4500 }
+ *                     creditsReversed: { type: number, example: 0 }
+ *                     feeApplied: { type: number, example: 500 }
+ *                     refundedTo: { type: string, example: wallet }
+ *       400:
+ *         description: Request not found, already resolved, or order now in processing (Red)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_APPROVE_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.approveCancellationRequest(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/cancellation-requests/{id}/reject:
+ *   post:
+ *     summary: Reject a cancellation request (Customer Experience)
+ *     description: Declines the request; the order continues normally and the customer is notified.
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               note: { type: string, example: "Items already being sorted" }
+ *     responses:
+ *       200:
+ *         description: Request rejected
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                     status: { type: string, example: rejected }
+ *       400:
+ *         description: Request not found or already resolved
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_REJECT_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.rejectCancellationRequest(req, res);
 });
 
 module.exports = router;

@@ -213,6 +213,11 @@ exports.ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/assign-rider/:riderId/de
 exports.ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID = '/unassign-rider/:riderId/pickup-order/:id'
 exports.ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID = '/unassign-rider/:riderId/delivery-order/:id'
 exports.ROUTE_GET_BOOK_ORDER_ID = '/get-book-order/:id'
+exports.ROUTE_CANCEL_BOOK_ORDER_ID = '/book-order/:id/cancel'
+exports.ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID = '/book-order/:id/cancel-request'
+exports.ROUTE_CANCELLATION_REQUESTS = '/cancellation-requests'
+exports.ROUTE_APPROVE_CANCELLATION_REQUEST_ID = '/cancellation-requests/:id/approve'
+exports.ROUTE_REJECT_CANCELLATION_REQUEST_ID = '/cancellation-requests/:id/reject'
 exports.ROUTE_GET_PENDING_ORDERS = '/get-pending-orders'
 
 //wallet

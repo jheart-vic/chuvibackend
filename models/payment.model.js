@@ -18,7 +18,7 @@ const PaymentSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["order", "subscription", "wallet-top-up"],
+      enum: ["order", "subscription", "wallet-top-up", "refund"],
       required: true,
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
@@ -26,7 +26,7 @@ const PaymentSchema = new mongoose.Schema(
     alertType: { type: String, enum: ["credit", "debit"] },
     paymentMethod: {
       type: String,
-      enum: ["paystack", "bank-transfer"],
+      enum: ["paystack", "bank-transfer", "wallet"],
       default: "paystack",
     },
     proofOfPayment: { type: String },

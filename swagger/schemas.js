@@ -368,6 +368,44 @@
  *           properties:
  *             error: { type: string, example: "Something went wrong" }
  *
+ *     # ── Order cancellation ───────────────────────────────────────────────
+ *     CancellationRequest:
+ *       type: object
+ *       description: A customer's request to cancel an Amber-window order; Customer Experience approves (runs the unwind, optional fee) or rejects it.
+ *       properties:
+ *         _id: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *         orderId: { type: string, description: The order (populated in the CX queue), example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *         userId: { type: string, description: The customer (populated in the CX queue), example: 64d3c9c0f1b2a8e9d0f12345 }
+ *         reason: { type: string, example: "Change of plans" }
+ *         status:
+ *           type: string
+ *           enum: [pending, approved, rejected]
+ *           example: pending
+ *         tierAtRequest: { type: string, description: Cancellation window when submitted, example: amber }
+ *         reviewedBy: { type: string, nullable: true, description: CX officer who decided, example: 64d3c9c0f1b2a8e9d0f19999 }
+ *         reviewedAt: { type: string, format: date-time, nullable: true }
+ *         decisionNote: { type: string, nullable: true, example: "Rider already dispatched; part-fee applied" }
+ *         feeApplied: { type: number, description: Fee withheld from the cash refund (approval only), example: 500 }
+ *         cashRefunded: { type: number, description: Cash refunded to wallet on approval, example: 4500 }
+ *         creditsReversed: { type: number, description: Reward credit restored on approval, example: 0 }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *
+ *     CancellationRequestPage:
+ *       type: object
+ *       description: Paginated list of cancellation requests (CX queue).
+ *       properties:
+ *         data:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/CancellationRequest' }
+ *         pagination:
+ *           type: object
+ *           properties:
+ *             total: { type: integer, example: 3 }
+ *             page: { type: integer, example: 1 }
+ *             limit: { type: integer, example: 20 }
+ *             pages: { type: integer, example: 1 }
+ *
  *     # ── Wallet & Credit ──────────────────────────────────────────────────
  *     WalletCredit:
  *       type: object
