@@ -10,6 +10,7 @@ const {
   ROUTE_GET_MONTHLY_TRANSACTIONS,
   ROUTE_UPLOAD_PAYMENT_PROOF,
   ROUTE_WALLET_CREDITS,
+  ROUTE_WALLET_ADMIN_USER_CREDITS,
   ROUTE_WALLET_ADMIN_ADJUST_CREDIT,
   ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS,
 } = require("../util/page-route");
@@ -704,6 +705,80 @@ router.get(ROUTE_WALLET_CREDITS, [auth], (req, res) => {
  *       500:
  *         description: Server error
  */
+/**
+ * @swagger
+ * /wallet/admin/credits:
+ *   get:
+ *     summary: View a customer's wallet credits (admin)
+ *     description: >
+ *       Lists a specific customer's active wallet credits so staff can see the
+ *       exact `creditId` to remove value from via /wallet/admin/adjust-credit
+ *       (the remove path requires a creditId). Also returns the customer's cash
+ *       balance and credit totals for context.
+ *     tags:
+ *       - Wallet
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *         description: The customer whose wallet credits to view
+ *         example: 64b9a7f6e3c3b4a1d2f1c9b0
+ *     responses:
+ *       200:
+ *         description: The customer's cash balance, credit totals and active credits
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                         name: { type: string, example: "Ada Obi" }
+ *                         email: { type: string, example: "ada@example.com" }
+ *                         phone: { type: string, example: "+2348030000000" }
+ *                     cashBalance: { type: number, example: 0 }
+ *                     creditTotal: { type: number, example: 6000 }
+ *                     totalAvailable: { type: number, example: 6000 }
+ *                     creditsByType:
+ *                       type: object
+ *                       example: { laundry: 6000, referral: 0, recovery: 0, promotional: 0 }
+ *                     expiringSoon: { type: number, example: 0 }
+ *                     credits:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           creditId: { type: string, example: 6a5dc264b1ec30da397355b5 }
+ *                           type: { type: string, example: laundry }
+ *                           amount: { type: number, example: 4000 }
+ *                           remaining: { type: number, example: 4000 }
+ *                           status: { type: string, example: active }
+ *                           sourceSystem: { type: string, example: admin }
+ *                           note: { type: string, example: "Goodwill credit" }
+ *                           expiresAt: { type: string, format: date-time }
+ *                           createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: Missing userId or user not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_WALLET_ADMIN_USER_CREDITS, [adminAuth], (req, res) => {
+  const walletController = new WalletController();
+  return walletController.adminGetUserCredits(req, res);
+});
+
 router.post(ROUTE_WALLET_ADMIN_ADJUST_CREDIT, [adminAuth], (req, res) => {
   const walletController = new WalletController();
   return walletController.adminAdjustCredit(req, res);

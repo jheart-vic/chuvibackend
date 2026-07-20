@@ -421,6 +421,64 @@ async fetchUserTransactions(req) {
     }
   }
 
+  // Admin: view a specific customer's wallet credits so staff can pick the
+  // exact creditId to remove from via /admin/adjust-credit. Mirrors the
+  // customer getWalletCredits shape but targets an arbitrary userId.
+  async adminGetUserCredits(req) {
+    try {
+      const userId = req.query?.userId || req.params?.userId;
+      if (!userId) {
+        return BaseService.sendFailedResponse({ error: "userId is required" });
+      }
+
+      const targetUser = await UserModel.findById(userId)
+        .select("firstName lastName email phone")
+        .lean();
+      if (!targetUser) {
+        return BaseService.sendFailedResponse({ error: "User not found" });
+      }
+
+      const wallet = await WalletModel.findOne({ userId }).lean();
+      const credits = await WalletCreditService.getCreditBalances(userId);
+
+      // Surface an explicit `creditId` on each credit — this is the value the
+      // admin passes back as `creditId` when removing value.
+      const creditList = (credits.credits || []).map((c) => ({
+        creditId: c._id,
+        type: c.type,
+        amount: c.amount,
+        remaining: c.remaining,
+        status: c.status,
+        sourceSystem: c.sourceSystem,
+        note: c.note,
+        expiresAt: c.expiresAt,
+        createdAt: c.createdAt,
+      }));
+
+      return BaseService.sendSuccessResponse({
+        message: {
+          user: {
+            id: targetUser._id,
+            name: `${targetUser.firstName || ""} ${targetUser.lastName || ""}`.trim(),
+            email: targetUser.email,
+            phone: targetUser.phone,
+          },
+          cashBalance: wallet?.balance || 0,
+          creditTotal: credits.total,
+          totalAvailable: (wallet?.balance || 0) + credits.total,
+          creditsByType: credits.byType,
+          expiringSoon: credits.expiringSoon,
+          credits: creditList,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching user wallet credits (admin):", error);
+      return BaseService.sendFailedResponse({
+        error: "Unable to fetch user wallet credits",
+      });
+    }
+  }
+
   // Admin: grant or remove credit value with a mandatory reason.
   async adminAdjustCredit(req) {
     try {

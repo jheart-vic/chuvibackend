@@ -223,6 +223,7 @@ exports.ROUTE_WALLET_BALANCE = "/wallet-balance"
 exports.ROUTE_GET_MONTHLY_TRANSACTIONS = "/get-monthly-transactions"
 exports.ROUTE_UPLOAD_PAYMENT_PROOF = "/upload-payment-proof"
 exports.ROUTE_WALLET_CREDITS = "/wallet-credits"
+exports.ROUTE_WALLET_ADMIN_USER_CREDITS = "/admin/credits"
 exports.ROUTE_WALLET_ADMIN_ADJUST_CREDIT = "/admin/adjust-credit"
 exports.ROUTE_WALLET_ADMIN_REVERSE_ORDER_CREDITS = "/admin/reverse-order-credits"
 
