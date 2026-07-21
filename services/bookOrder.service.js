@@ -1220,7 +1220,22 @@ async postBookOrder(req, res) {
             // 2️⃣ Optional filters
             const filter = {}
             if (req.query.status) {
-                filter['stage.status'] = req.query.status // filter by order stage status
+                // Explicit exact stage filter (backward compatible) — wins if given.
+                filter['stage.status'] = req.query.status
+            } else if (req.query.view && req.query.view !== 'all') {
+                // Semantic bucket for the customer app:
+                //   active    → every real order except cancelled (delivered stays)
+                //   completed → delivered
+                //   cancelled → cancelled only
+                //   all       → no stage filter (default)
+                const view = req.query.view
+                if (view === 'active') {
+                    filter['stage.status'] = { $ne: ORDER_STATUS.CANCELLED }
+                } else if (view === 'completed') {
+                    filter['stage.status'] = ORDER_STATUS.DELIVERED
+                } else if (view === 'cancelled') {
+                    filter['stage.status'] = ORDER_STATUS.CANCELLED
+                }
             }
             if (req.query.paymentStatus) {
                 filter.paymentStatus = req.query.paymentStatus
