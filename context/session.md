@@ -72,6 +72,14 @@ session". When a session ends/clears, fold anything durable into summary.md.
     checks `req.user.userType` (not `.role`). Verified live: no-reason refused, intake
     blocked on washing, admin voids mid-wash (₦5000 refunded), intake allowed on received,
     double-cancel refused; swagger drops old path + adds staff-cancel.
+- **Order history `view` filter (2026-07-21):** cancelled orders are NEVER deleted.
+  `getBookOrderHistory` now takes `?view=active|completed|cancelled|all` (default all):
+  `active` = `stage.status $ne cancelled` (every real order incl. delivered — the
+  customer "my orders / track" screen; delivered intentionally kept visible),
+  `completed` = delivered, `cancelled` = cancelled only. Existing `?status=` exact match
+  still works and takes precedence over `view`. Single-order track (`/:id`) unchanged —
+  still opens a cancelled order. Swagger updated. Verified live across all buckets +
+  precedence.
 
 ## Session: 2026-07-19 (later still) — Phase 6 In-app Bot
 

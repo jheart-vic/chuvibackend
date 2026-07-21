@@ -370,11 +370,22 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *           default: 10
  *         description: Number of orders per page
  *       - in: query
+ *         name: view
+ *         schema:
+ *           type: string
+ *           enum: [all, active, completed, cancelled]
+ *           default: all
+ *         description: >
+ *           Semantic bucket. `active` = every order except cancelled (delivered
+ *           still shows) — use this for the "my orders / track" screen;
+ *           `completed` = delivered; `cancelled` = cancelled only; `all` = every
+ *           order (default). Ignored when an explicit `status` is provided.
+ *       - in: query
  *         name: status
  *         schema:
  *           type: string
- *           enum: [picked-up, delivered, out-for-delivery, in-process, ready, washing, ironing]
- *         description: Filter by order stage status
+ *           enum: [pending, hold, queue, received, picked-up, sort-and-pretreat, washing, drying, ironing, qc, ready, out-for-delivery, delivered, cancelled]
+ *         description: Filter by an exact order stage status (takes precedence over `view`)
  *       - in: query
  *         name: paymentStatus
  *         schema:
