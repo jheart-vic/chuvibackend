@@ -379,7 +379,8 @@
  *         reason: { type: string, example: "Change of plans" }
  *         status:
  *           type: string
- *           enum: [pending, approved, rejected]
+ *           enum: [pending, approved, rejected, superseded]
+ *           description: "'superseded' = the order was cancelled through another path, so the request is moot"
  *           example: pending
  *         tierAtRequest: { type: string, description: Cancellation window when submitted, example: amber }
  *         reviewedBy: { type: string, nullable: true, description: CX officer who decided, example: 64d3c9c0f1b2a8e9d0f19999 }
