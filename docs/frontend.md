@@ -75,7 +75,8 @@ notifications (see /api/notifications) that carry deep links.
   Notification carries { title, body, type, page, recordId, isRead } — use
   `page` + `recordId` to deep-link (e.g. page:"wallet", page:"offers",
   page:"complaint", page:"referral").
-- Admin only: GET/POST/PUT /api/communication/templates ,
+- Admin only: GET /api/communication/templates , POST /api/communication/templates ,
+  PUT /api/communication/templates/{id} (id in path) ,
   GET /api/communication/logs , POST /api/communication/retry-failed.
 
 ────────────────────────────────────────────────────────────────────────

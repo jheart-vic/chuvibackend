@@ -397,12 +397,15 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *         schema:
  *           type: string
  *           enum: [all, user]
- *         description: Scope of the orders to retrieve (all for admin, user for individual user)
+ *         description: >
+ *           ADMIN ONLY. `all` returns every user's orders; otherwise admins see
+ *           their own. Ignored for non-admins — a customer is always restricted to
+ *           their own orders regardless of this value.
  *       - in: query
  *         name: userId
  *         schema:
  *           type: string
- *         description: Filter by user ID
+ *         description: ADMIN ONLY — return a specific customer's orders. Ignored for non-admins.
  *     responses:
  *       200:
  *         description: Paginated list of book orders

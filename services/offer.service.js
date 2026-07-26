@@ -278,6 +278,18 @@ class OfferService {
         }
     }
 
+    // Admin: every offer linkage for a customer (all statuses by default), so
+    // staff can find the linkage id to cancel. Includes history (redeemed /
+    // cancelled / expired), newest first.
+    async listCustomerLinkages(userId, { status } = {}) {
+        const q = { userId }
+        if (status && status !== 'all') q.status = status
+        return CustomerOfferModel.find(q)
+            .sort({ createdAt: -1 })
+            .populate('offerId')
+            .lean()
+    }
+
     async markViewed(userId, customerOfferId) {
         const linkage = await CustomerOfferModel.findOne({
             _id: customerOfferId,
@@ -525,6 +537,29 @@ class OfferService {
         linkage.attachedAt = now
         await linkage.save()
         return linkage
+    }
+
+    // Attach a promotional offer to a created order. Promos have no standing
+    // per-customer linkage, so we create an ATTACHED CustomerOffer record here —
+    // then redeem/release treat it exactly like a personal one.
+    async attachPromoToOrder(userId, promoOfferId, orderId) {
+        const promo = await OfferModel.findById(promoOfferId)
+        if (!promo || promo.type !== OFFER_TYPE.PROMOTIONAL) {
+            throw new Error('Promotion not found')
+        }
+        const existing = await CustomerOfferModel.findOne({
+            orderId,
+            offerId: promoOfferId,
+        })
+        if (existing) return existing
+        return CustomerOfferModel.create({
+            userId,
+            offerId: promoOfferId,
+            status: CUSTOMER_OFFER_STATUS.ATTACHED,
+            orderId,
+            attachedAt: new Date(),
+            expiresAt: promo.expiryDate || undefined,
+        })
     }
 
     // Order delivered → linkage consumed for good; credit benefits granted.

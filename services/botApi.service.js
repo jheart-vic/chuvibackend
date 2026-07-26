@@ -114,6 +114,42 @@ class BotApiService extends BaseService {
         }
     }
 
+    // staff: load a support conversation's full message history by id, so CX can
+    // read what the customer said before replying. Marks the staff side read.
+    async staffGetConversation(req) {
+        try {
+            const convo = await ConversationModel.findById(req.params.conversationId)
+                .populate('userId', 'fullName phoneNumber')
+            if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) {
+                return BaseService.sendFailedResponse({ error: 'Support conversation not found' })
+            }
+            const { page, limit } = req.query
+            const messages = await ConversationService.listMessages({
+                conversationId: convo._id,
+                page,
+                limit,
+            })
+            await ConversationService.markRead({ conversationId: convo._id, side: 'staff' })
+            return BaseService.sendSuccessResponse({
+                message: {
+                    conversation: {
+                        _id: convo._id,
+                        mode: convo.mode,
+                        open: convo.open,
+                        customer: convo.userId?.fullName || 'Customer',
+                        phoneNumber: convo.userId?.phoneNumber || null,
+                        unreadForStaff: 0,
+                        lastMessageAt: convo.lastMessageAt,
+                    },
+                    ...messages,
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to load conversation' })
+        }
+    }
+
     // staff posts a reply into a support conversation
     async staffReply(req) {
         try {
