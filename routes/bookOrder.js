@@ -97,6 +97,20 @@ const {
  *               extraNote:
  *                 type: string
  *                 example: "wash carefully"
+ *               customerOfferId:
+ *                 type: string
+ *                 description: >
+ *                   Optional. A personal offer linkage id to apply. The discount is
+ *                   re-validated server-side and subtracted from the charged amount
+ *                   (pay-per-item & pay-from-wallet only); the linkage is attached to
+ *                   the order. Invalid/ineligible offers are ignored (full price).
+ *                 example: 64c0aa11e3c3b4a1d2f1ca10
+ *               promoOfferId:
+ *                 type: string
+ *                 description: >
+ *                   Optional. A promotional offer id to apply (subject to the same
+ *                   server-side validation and stacking rules as personal offers).
+ *                 example: 64c0aa11e3c3b4a1d2f1cb20
  *               items:
  *                 type: array
  *                 items:
@@ -846,7 +860,7 @@ router.post(ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
  *     parameters:
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [pending, approved, rejected, all], default: pending }
+ *         schema: { type: string, enum: [pending, approved, rejected, superseded, all], default: pending }
  *       - in: query
  *         name: page
  *         schema: { type: integer, default: 1 }
