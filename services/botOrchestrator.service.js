@@ -60,15 +60,27 @@ class BotOrchestratorService {
         }
 
         const pendingIntent = convo.botState?.intent || null
+        const pendingStep = convo.botState?.step || null
         const { intent, confidence, slots } = await BotIntentService.classify(text, {
             pendingIntent,
         })
 
-        // continue an in-flight workflow when the reply is a short continuation
-        const effectiveIntent =
-            pendingIntent && (confidence < 0.6 || intent === BOT_INTENT.UNKNOWN)
-                ? pendingIntent
-                : intent
+        // Resolve the intent to act on.
+        //  1) Escalation ALWAYS wins — a request for a human / to file a complaint
+        //     must never be swallowed by a lingering flow.
+        //  2) Otherwise only continue a pending flow when it is genuinely mid-step
+        //     (awaiting a specific reply) — not merely because an intent label
+        //     lingers. This stops the always-0.4 keyword fallback from trapping
+        //     the customer in a previous flow (e.g. repeating the balance).
+        const escalationIntents = [BOT_INTENT.TALK_TO_HUMAN, BOT_INTENT.FILE_COMPLAINT]
+        let effectiveIntent = intent
+        if (!escalationIntents.includes(intent)) {
+            const continuesFlow =
+                pendingIntent &&
+                pendingStep &&
+                (confidence < 0.6 || intent === BOT_INTENT.UNKNOWN)
+            if (continuesFlow) effectiveIntent = pendingIntent
+        }
 
         const result = await this.runWorkflow({
             convo,

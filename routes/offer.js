@@ -8,6 +8,7 @@ const {
     ROUTE_OFFER_PERFORMANCE,
     ROUTE_OFFER_ASSIGN,
     ROUTE_OFFER_CANCEL_LINKAGE,
+    ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS,
     ROUTE_OFFER_MY_OFFERS,
     ROUTE_OFFER_VIEW,
     ROUTE_OFFER_VALIDATE,
@@ -249,6 +250,50 @@ router.post(ROUTE_OFFER_ASSIGN, [adminAuth], controller.assignOffer)
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_OFFER_CANCEL_LINKAGE, [adminAuth], controller.cancelLinkage)
+
+/**
+ * @swagger
+ * /offers/admin/customer-offers:
+ *   get:
+ *     summary: List a customer's offer linkages (admin)
+ *     description: >
+ *       Returns every offer linkage for a customer (all statuses by default,
+ *       newest first) so staff can find the linkage id to cancel via
+ *       /offers/customer-offers/{id}/cancel. Filter with ?status.
+ *     tags: [Offers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *         description: The customer whose linkages to list
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [assigned, viewed, attached, redeemed, expired, cancelled, all]
+ *         description: Optional status filter (default all)
+ *     responses:
+ *       200:
+ *         description: The customer's offer linkages (offer populated)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/CustomerOffer' }
+ *       400:
+ *         description: Missing userId
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCustomerOffers)
 
 /**
  * @swagger

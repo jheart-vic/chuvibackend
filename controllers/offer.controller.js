@@ -16,6 +16,7 @@ class OfferController extends BaseController {
     getOfferPerformance = handle('getOfferPerformance')
     assignOffer = handle('assignOffer')
     cancelLinkage = handle('cancelLinkage')
+    adminCustomerOffers = handle('adminCustomerOffers')
     myOffers = handle('myOffers')
     viewOffer = handle('viewOffer')
     validateOffer = handle('validateOffer')

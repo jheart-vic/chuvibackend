@@ -44,6 +44,7 @@ const {
 } = require('../util/crmHooks')
 const { offerOnOrderDelivered, offerOnOrderCancelled } = require('../util/offerHooks')
 const WalletCreditService = require('./walletCredit.service')
+const OfferService = require('./offer.service')
 const {
     referralOnOrderCreated,
     referralOnOrderDelivered,
@@ -120,7 +121,7 @@ class BookOrderService extends BaseService {
     // optional Amber fee), releases the attached offer, frees a scheduled
     // pickup, flips the order to cancelled, and notifies + audits (non-fatal).
     // Assumes the caller has already authorised the cancellation.
-    async _performCancellation(order, { reason, performedBy, tier, feeApplied = 0 }) {
+    async _performCancellation(order, { reason, performedBy, tier, feeApplied = 0, skipRequestId = null }) {
         const cleanReason = (reason || '').trim()
         const cancelReason = cleanReason
             ? `Order cancelled: ${cleanReason}`
@@ -208,6 +209,26 @@ class BookOrderService extends BaseService {
             feeApplied: feeCharged,
         }
         await order.save()
+
+        // 4b) Auto-close any OTHER pending cancellation request for this order —
+        //     the order is now cancelled, so a queued request is moot. The Amber
+        //     approve flow passes skipRequestId for the request it resolves itself.
+        try {
+            const staleFilter = {
+                orderId: order._id,
+                status: CANCELLATION_REQUEST_STATUS.PENDING,
+            }
+            if (skipRequestId) staleFilter._id = { $ne: skipRequestId }
+            await CancellationRequestModel.updateMany(staleFilter, {
+                $set: {
+                    status: CANCELLATION_REQUEST_STATUS.SUPERSEDED,
+                    reviewedAt: new Date(),
+                    decisionNote: 'Order was cancelled through another path.',
+                },
+            })
+        } catch (e) {
+            console.warn('Auto-close of pending cancellation requests failed (non-fatal):', e.message)
+        }
 
         // 5) Release the attached offer + CRM (fire-and-forget).
         offerOnOrderCancelled(order, cancelReason)
@@ -526,6 +547,7 @@ class BookOrderService extends BaseService {
                 performedBy: getObjectId(staffId),
                 tier: 'amber',
                 feeApplied: feeAmount,
+                skipRequestId: request._id, // this request is resolved as 'approved' below
             })
 
             request.status = CANCELLATION_REQUEST_STATUS.APPROVED
@@ -607,6 +629,51 @@ class BookOrderService extends BaseService {
             return BaseService.sendFailedResponse({
                 error: 'Unable to reject cancellation request',
             })
+        }
+    }
+
+// Server-side offer pricing. Re-validates the selected offer id(s) against the
+    // live rules (never trusts a client-sent price/discount), applies the discount
+    // to the item subtotal and waives pickup/delivery fees the offer covers.
+    // Returns the authoritative charge total plus the validated breakdown.
+    async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting }) {
+        if (!post.customerOfferId && !post.promoOfferId) {
+            return { finalTotal: itemsSubtotal + extraDeliveryCost, breakdown: null }
+        }
+        const deliveryFee = post.isDelivery ? adminOrderSetting.deliveryFee || 0 : 0
+        const pickupFee = post.isPickUp ? adminOrderSetting.pickupFee || 0 : 0
+
+        const breakdown = await OfferService.validateAndPrice(userId, {
+            ...post,
+            amount: itemsSubtotal, // discount is capped at the item subtotal
+            deliveryAmount: deliveryFee,
+            pickupAmount: pickupFee,
+        })
+
+        let finalTotal = itemsSubtotal + extraDeliveryCost - (breakdown.totalDiscount || 0)
+        if (breakdown.freeDelivery) finalTotal -= deliveryFee
+        if (breakdown.freePickup) finalTotal -= pickupFee
+        finalTotal = Math.max(Math.round(finalTotal), 0)
+        return { finalTotal, breakdown }
+    }
+
+    // After the order is saved, attach the validated offer linkage(s) so they
+    // redeem on delivery / release on cancel. Non-fatal — the order already exists.
+    async _attachOffersToOrder(userId, breakdown, orderId) {
+        if (!breakdown) return
+        if (breakdown.personal?.customerOfferId) {
+            try {
+                await OfferService.attachToOrder(userId, breakdown.personal.customerOfferId, orderId)
+            } catch (e) {
+                console.warn('Attach personal offer failed (non-fatal):', e.message)
+            }
+        }
+        if (breakdown.promotion?.offerId) {
+            try {
+                await OfferService.attachPromoToOrder(userId, breakdown.promotion.offerId, orderId)
+            } catch (e) {
+                console.warn('Attach promo offer failed (non-fatal):', e.message)
+            }
         }
     }
 
@@ -856,7 +923,17 @@ async postBookOrder(req, res) {
                     extraDeliveryCost += adminOrderSetting.deliveryFee || 0
                 }
 
-                totalPrice += extraDeliveryCost
+                // Apply any selected offer(s) server-side (authoritative price).
+                const itemsSubtotal = totalPrice
+                const { finalTotal, breakdown: offerBreakdown } =
+                    await this._priceWithOffers({
+                        userId,
+                        post,
+                        itemsSubtotal,
+                        extraDeliveryCost,
+                        adminOrderSetting,
+                    })
+                totalPrice = finalTotal
 
                 const stage = {
                     status: ORDER_STATUS.PENDING,
@@ -880,6 +957,7 @@ async postBookOrder(req, res) {
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
+                await this._attachOffersToOrder(userId, offerBreakdown, newOrder._id)
 
                 await createNotification({
                     userId: userId,
@@ -941,7 +1019,17 @@ async postBookOrder(req, res) {
                     extraDeliveryCost += adminOrderSetting.deliveryFee || 0
                 }
 
-                totalPrice += extraDeliveryCost
+                // Apply any selected offer(s) server-side BEFORE charging the wallet.
+                const itemsSubtotal = totalPrice
+                const { finalTotal, breakdown: offerBreakdown } =
+                    await this._priceWithOffers({
+                        userId,
+                        post,
+                        itemsSubtotal,
+                        extraDeliveryCost,
+                        adminOrderSetting,
+                    })
+                totalPrice = finalTotal
 
                 if (totalPrice > wallet.balance) {
                     return BaseService.sendFailedResponse({
@@ -987,6 +1075,7 @@ async postBookOrder(req, res) {
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
+                await this._attachOffersToOrder(userId, offerBreakdown, newOrder._id)
 
                 const reference = generateReferenceId()
                 await PaymentModel.create({
@@ -1215,7 +1304,7 @@ async postBookOrder(req, res) {
             const limit = parseInt(req.query.limit) || 10 // default 10 per page
             const skip = (page - 1) * limit
             const userId = req.user.id
-            const scope = req.query.scope || 'all' // default to user scope "user | all"
+            const isAdmin = req.user.userType === ROLE.ADMIN
 
             // 2️⃣ Optional filters
             const filter = {}
@@ -1240,7 +1329,16 @@ async postBookOrder(req, res) {
             if (req.query.paymentStatus) {
                 filter.paymentStatus = req.query.paymentStatus
             }
-            if (scope === 'user') {
+
+            // 🔒 Scope guard: never trust the client. A non-admin can ONLY ever
+            // see their own orders. Only an admin may look across users — either
+            // a specific ?userId or (with scope=all) everyone.
+            if (!isAdmin) {
+                filter.userId = userId
+            } else if (req.query.userId) {
+                filter.userId = req.query.userId
+            } else if (req.query.scope !== 'all') {
+                // admin default is their own unless they explicitly ask for all
                 filter.userId = userId
             }
 

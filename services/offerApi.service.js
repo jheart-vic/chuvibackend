@@ -243,6 +243,26 @@ class OfferApiService extends BaseService {
         }
     }
 
+    // Admin: list a specific customer's offer linkages (with ids) so staff can
+    // pick the linkage to cancel. ?status filters; default returns all.
+    async adminCustomerOffers(req) {
+        try {
+            const userId = req.query?.userId
+            if (!userId) {
+                return BaseService.sendFailedResponse({ error: 'userId is required' })
+            }
+            const linkages = await OfferService.listCustomerLinkages(userId, {
+                status: req.query?.status,
+            })
+            return BaseService.sendSuccessResponse({ message: linkages })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to load customer offers',
+            })
+        }
+    }
+
     // ─── Customer Offer Page (user) ──────────────────────────────────────────
 
     async myOffers(req) {

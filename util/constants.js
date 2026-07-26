@@ -490,6 +490,7 @@ const CANCELLATION_REQUEST_STATUS = {
     PENDING: 'pending',
     APPROVED: 'approved',
     REJECTED: 'rejected',
+    SUPERSEDED: 'superseded', // order was cancelled via another path, so the request is moot
 }
 
 // customer-offer linkage lifecycle
