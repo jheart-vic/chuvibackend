@@ -23,6 +23,21 @@ const LIVE_LINKAGE_STATUSES = [
     CUSTOMER_OFFER_STATUS.ATTACHED,
 ]
 
+// A linkage that can still be freshly applied to an order. ATTACHED/REDEEMED are
+// deliberately excluded — those are already committed to an order, so re-applying
+// them (or a one-use offer again) would be a double-use.
+const APPLICABLE_LINKAGE_STATUSES = [
+    CUSTOMER_OFFER_STATUS.ASSIGNED,
+    CUSTOMER_OFFER_STATUS.VIEWED,
+]
+
+// A linkage that has been committed to an order (used up for one-use purposes),
+// whether or not the order has been delivered/redeemed yet.
+const COMMITTED_LINKAGE_STATUSES = [
+    CUSTOMER_OFFER_STATUS.ATTACHED,
+    CUSTOMER_OFFER_STATUS.REDEEMED,
+]
+
 // The "smart offer linker". Staff create offers once in the Offer Builder;
 // this engine finds the matching ACTIVE offer when an event fires, checks
 // eligibility, links it (customerOffer), prices benefits at booking, redeems
@@ -100,7 +115,16 @@ class OfferService {
         if (r.minOrderValue != null && (draft.amount || 0) < r.minOrderValue) {
             return { ok: false, reason: `Minimum order value ₦${r.minOrderValue}` }
         }
-        if (r.minItems != null && (draft.itemCount || 0) < r.minItems) {
+        // Item count: honour an explicit draft.itemCount, otherwise derive it
+        // from the items array (sum of quantities) — callers (booking + the
+        // /offers/validate quote) send `items`, not `itemCount`.
+        const itemCount =
+            draft.itemCount != null
+                ? draft.itemCount
+                : Array.isArray(draft.items)
+                  ? draft.items.reduce((n, i) => n + (Number(i.quantity) || 0), 0)
+                  : 0
+        if (r.minItems != null && itemCount < r.minItems) {
             return { ok: false, reason: `Minimum ${r.minItems} items` }
         }
         if (
@@ -254,15 +278,25 @@ class OfferService {
                 continue
             }
             if (!this.checkProfileRules(promo, stats).ok) continue
+
+            // One-use promos the customer has already committed to (attached or
+            // redeemed) stay in the list but flagged disabled with a reason, so
+            // the frontend can show a greyed-out entry instead of it vanishing.
+            let used = false
             if (promo.rules?.oneUsePerCustomer) {
-                const used = await CustomerOfferModel.findOne({
+                const u = await CustomerOfferModel.findOne({
                     offerId: promo._id,
                     userId,
-                    status: CUSTOMER_OFFER_STATUS.REDEEMED,
+                    status: { $in: COMMITTED_LINKAGE_STATUSES },
                 })
-                if (used) continue
+                used = !!u
             }
-            promotions.push(promo)
+            promotions.push({
+                ...promo,
+                used,
+                disabled: used,
+                disabledReason: used ? 'You have already used this promotion' : null,
+            })
         }
 
         // Always Available: active baseline policies
@@ -285,6 +319,19 @@ class OfferService {
         const q = { userId }
         if (status && status !== 'all') q.status = status
         return CustomerOfferModel.find(q)
+            .sort({ createdAt: -1 })
+            .populate('offerId')
+            .lean()
+    }
+
+    // Customer: their own offer/promotion usage history — linkages already
+    // committed to an order (attached or redeemed), newest first. This is what
+    // the frontend shows as "promotions you've used".
+    async getCustomerUsage(userId) {
+        return CustomerOfferModel.find({
+            userId,
+            status: { $in: COMMITTED_LINKAGE_STATUSES },
+        })
             .sort({ createdAt: -1 })
             .populate('offerId')
             .lean()
@@ -424,7 +471,9 @@ class OfferService {
             const offer = linkage?.offerId
             let reason = null
             if (!linkage || !offer) reason = 'Offer not found'
-            else if (!LIVE_LINKAGE_STATUSES.includes(linkage.status))
+            else if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status))
+                reason = 'Offer already applied to an order'
+            else if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status))
                 reason = 'Offer already used or no longer available'
             else if (linkage.expiresAt && linkage.expiresAt < now)
                 reason = 'Offer has expired'
@@ -470,10 +519,13 @@ class OfferService {
                 if (!p.ok) reason = p.reason
                 else if (!bk.ok) reason = bk.reason
                 else if (promo.rules?.oneUsePerCustomer) {
+                    // "Used" = already committed to any order (attached or
+                    // redeemed), so a second booking can't stack it before the
+                    // first order is delivered.
                     const used = await CustomerOfferModel.findOne({
                         offerId: promo._id,
                         userId,
-                        status: CUSTOMER_OFFER_STATUS.REDEEMED,
+                        status: { $in: COMMITTED_LINKAGE_STATUSES },
                     })
                     if (used) reason = 'Promotion already used'
                 }
@@ -514,7 +566,10 @@ class OfferService {
             userId,
         }).populate('offerId')
         if (!linkage || !linkage.offerId) throw new Error('Offer not found')
-        if (!LIVE_LINKAGE_STATUSES.includes(linkage.status)) {
+        if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status)) {
+            throw new Error('Offer already applied to an order')
+        }
+        if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status)) {
             throw new Error('Offer already used or no longer available')
         }
         if (linkage.expiresAt && linkage.expiresAt < now) {

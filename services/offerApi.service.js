@@ -275,6 +275,19 @@ class OfferApiService extends BaseService {
         }
     }
 
+    // Customer: their promotion/offer usage history (committed linkages).
+    async myUsage(req) {
+        try {
+            const usage = await OfferService.getCustomerUsage(req.user.id)
+            return BaseService.sendSuccessResponse({ message: usage })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to load usage history',
+            })
+        }
+    }
+
     async viewOffer(req) {
         try {
             const linkage = await OfferService.markViewed(req.user.id, req.params.id)

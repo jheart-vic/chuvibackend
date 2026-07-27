@@ -45,6 +45,7 @@ const {
 const { offerOnOrderDelivered, offerOnOrderCancelled } = require('../util/offerHooks')
 const WalletCreditService = require('./walletCredit.service')
 const OfferService = require('./offer.service')
+const WalletService = require('./wallet.service')
 const {
     referralOnOrderCreated,
     referralOnOrderDelivered,
@@ -760,6 +761,7 @@ async postBookOrder(req, res) {
 
             const oscNumber = generateOscNumber()
             let newOrder = null
+            let offerBreakdown = null // set by the offer-eligible billing branches
 
             if (post.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
                 const subscription = await SubscriptionModel.findOne({
@@ -925,7 +927,7 @@ async postBookOrder(req, res) {
 
                 // Apply any selected offer(s) server-side (authoritative price).
                 const itemsSubtotal = totalPrice
-                const { finalTotal, breakdown: offerBreakdown } =
+                const { finalTotal, breakdown } =
                     await this._priceWithOffers({
                         userId,
                         post,
@@ -933,6 +935,7 @@ async postBookOrder(req, res) {
                         extraDeliveryCost,
                         adminOrderSetting,
                     })
+                offerBreakdown = breakdown
                 totalPrice = finalTotal
 
                 const stage = {
@@ -1021,7 +1024,7 @@ async postBookOrder(req, res) {
 
                 // Apply any selected offer(s) server-side BEFORE charging the wallet.
                 const itemsSubtotal = totalPrice
-                const { finalTotal, breakdown: offerBreakdown } =
+                const { finalTotal, breakdown } =
                     await this._priceWithOffers({
                         userId,
                         post,
@@ -1029,27 +1032,21 @@ async postBookOrder(req, res) {
                         extraDeliveryCost,
                         adminOrderSetting,
                     })
+                offerBreakdown = breakdown
                 totalPrice = finalTotal
 
-                if (totalPrice > wallet.balance) {
+                // Credit is opt-in: only spend reward credits when the customer
+                // toggles it on; otherwise pay entirely from cash.
+                const useCredit =
+                    post.useCredit === true || post.useCredit === 'true'
+                const usableCredit = useCredit
+                    ? (await WalletCreditService.getCreditBalances(userId)).total
+                    : 0
+                if (totalPrice > wallet.balance + usableCredit) {
                     return BaseService.sendFailedResponse({
                         error: 'Insufficient balance in your wallet. Please try funding your account to continue',
                     })
                 }
-
-                wallet.balance -= totalPrice
-                await wallet.save()
-
-                const referencee = uuidv4()
-                await WalletTransactionModel.create({
-                    userId,
-                    walletId: wallet._id,
-                    type: 'debit',
-                    amount: totalPrice,
-                    reference: referencee,
-                    status: 'success',
-                    description: 'Order Payment',
-                })
 
                 const stage = {
                     status: ORDER_STATUS.PENDING,
@@ -1075,18 +1072,38 @@ async postBookOrder(req, res) {
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
+
+                // Charge the wallet (credits first if opted in, then cash),
+                // keyed to the order so a cancellation can reverse it precisely.
+                const charge = await WalletService.chargeWalletForOrder({
+                    userId,
+                    orderId: newOrder._id,
+                    amount: totalPrice,
+                    description: 'Order Payment',
+                    useCredit,
+                })
+                if (!charge.success) {
+                    // roll back the order we just created — payment did not happen
+                    await BookOrderModel.deleteOne({ _id: newOrder._id })
+                    newOrder = null
+                    return BaseService.sendFailedResponse({ error: charge.error })
+                }
+
                 await this._attachOffersToOrder(userId, offerBreakdown, newOrder._id)
 
-                const reference = generateReferenceId()
-                await PaymentModel.create({
-                    userId: userId,
-                    amount: totalPrice,
-                    reference: reference,
-                    status: 'success',
-                    order: newOrder._id,
-                    type: 'order',
-                    alertType: 'debit',
-                })
+                // Record the cash portion as a Payment (credit portion is already
+                // logged as credit WalletTransactions by the charge helper).
+                if (charge.cashPaid > 0) {
+                    await PaymentModel.create({
+                        userId: userId,
+                        amount: charge.cashPaid,
+                        reference: generateReferenceId(),
+                        status: 'success',
+                        order: newOrder._id,
+                        type: 'order',
+                        alertType: 'debit',
+                    })
+                }
 
                 await createNotification({
                     userId: userId,
@@ -1140,9 +1157,26 @@ async postBookOrder(req, res) {
                 category: 'order',
                 orderId: newOrder._id,
             })
+            // Offer outcome so the client can show the applied discount OR the
+            // reason an offer was not applied (instead of a silent full charge).
+            let offer = null
+            if (offerBreakdown) {
+                offer = {
+                    applied:
+                        (offerBreakdown.totalDiscount || 0) > 0 ||
+                        offerBreakdown.freeDelivery ||
+                        offerBreakdown.freePickup,
+                    totalDiscount: offerBreakdown.totalDiscount || 0,
+                    freeDelivery: !!offerBreakdown.freeDelivery,
+                    freePickup: !!offerBreakdown.freePickup,
+                    rejected: offerBreakdown.rejected || [],
+                }
+            }
+
             return BaseService.sendSuccessResponse({
                 message: finalMessage,
                 order: newOrder,
+                offer,
             })
         } catch (error) {
             console.log(error)

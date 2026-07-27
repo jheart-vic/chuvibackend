@@ -87,10 +87,77 @@ class WalletService extends BaseService {
       return BaseService.sendFailedResponse({ error });
     }
   }
+  // Shared wallet charge for an existing order. Reward credits are spent first
+  // (oldest expiry) ONLY when useCredit is true (customer opted in); the cash
+  // remainder is debited atomically. On an insufficient-cash failure any applied
+  // credits are rolled back. Used by both payWithWallet and booking (pay-from-wallet).
+  static async chargeWalletForOrder({ userId, orderId, amount, description = "Order Payment", useCredit = false }) {
+    await WalletModel.findOneAndUpdate(
+      { userId },
+      { $setOnInsert: { balance: 0 } },
+      { upsert: true }
+    );
+
+    let creditResult = { applied: 0, breakdown: [] };
+    if (useCredit) {
+      creditResult = await WalletCreditService.applyCreditsToAmount(
+        userId,
+        orderId,
+        amount,
+        description
+      );
+    }
+    const cashNeeded = amount - creditResult.applied;
+
+    let wallet = null;
+    if (cashNeeded > 0) {
+      wallet = await WalletModel.findOneAndUpdate(
+        { userId, balance: { $gte: cashNeeded } },
+        { $inc: { balance: -cashNeeded } },
+        { new: true }
+      );
+      if (!wallet) {
+        if (useCredit) {
+          await WalletCreditService.rollbackApplications(
+            creditResult.breakdown,
+            orderId,
+            "Payment failed — insufficient cash balance"
+          );
+        }
+        return { success: false, error: "Oops! Insufficient wallet balance." };
+      }
+    } else {
+      wallet = await WalletModel.findOne({ userId });
+    }
+
+    if (cashNeeded > 0) {
+      await WalletTransactionModel.create({
+        userId,
+        walletId: wallet._id,
+        type: "debit",
+        amount: cashNeeded,
+        reference: uuidv4(),
+        status: "success",
+        description,
+        relatedOrderId: orderId,
+        balanceAfter: wallet.balance,
+      });
+    }
+
+    return {
+      success: true,
+      creditApplied: creditResult.applied,
+      cashPaid: cashNeeded,
+      balanceAfter: wallet.balance,
+    };
+  }
+
   async payWithWallet(req) {
     try {
       const { bookOrderId, description = "Order Payment" } = req.body;
       const userId = req.user.id;
+      // Opt-in: only spend reward credits when the customer toggles it on.
+      const useCredit = req.body.useCredit === true || req.body.useCredit === "true";
 
       const validateRule = {
         bookOrderId: "string|required",
@@ -117,75 +184,23 @@ class WalletService extends BaseService {
         });
       }
 
-      // Ensure wallet exists
-      await WalletModel.findOneAndUpdate(
-        { userId },
-        { $setOnInsert: { balance: 0 } },
-        { upsert: true }
-      );
-
-      // 1️⃣ Spend reward credits first (oldest expiry first) — service value
-      // credits (laundry/referral/recovery/promo) always apply before cash.
-      const creditResult = await WalletCreditService.applyCreditsToAmount(
+      const charge = await WalletService.chargeWalletForOrder({
         userId,
-        bookOrder._id,
-        bookOrder.amount,
-        description
-      );
-      const cashNeeded = bookOrder.amount - creditResult.applied;
-
-      // 2️⃣ ATOMIC cash debit for the remainder (only succeeds if balance >= cashNeeded)
-      let wallet = null;
-      if (cashNeeded > 0) {
-        wallet = await WalletModel.findOneAndUpdate(
-          {
-            userId,
-            balance: { $gte: cashNeeded },
-          },
-          {
-            $inc: { balance: -cashNeeded },
-          },
-          { new: true }
-        );
-
-        if (!wallet) {
-          // put the credits back — the payment did not happen
-          await WalletCreditService.rollbackApplications(
-            creditResult.breakdown,
-            bookOrder._id,
-            "Payment failed — insufficient cash balance"
-          );
-          return BaseService.sendFailedResponse({
-            error: "Oops! Insufficient wallet balance.",
-          });
-        }
-      } else {
-        wallet = await WalletModel.findOne({ userId });
+        orderId: bookOrder._id,
+        amount: bookOrder.amount,
+        description,
+        useCredit,
+      });
+      if (!charge.success) {
+        return BaseService.sendFailedResponse({ error: charge.error });
       }
 
-      // Update order status
       bookOrder.paymentStatus = "success";
       await bookOrder.save();
 
-      const reference = uuidv4();
-
-      if (cashNeeded > 0) {
-        await WalletTransactionModel.create({
-          userId,
-          walletId: wallet._id,
-          type: "debit",
-          amount: cashNeeded,
-          reference,
-          status: "success",
-          description,
-          relatedOrderId: bookOrder._id,
-          balanceAfter: wallet.balance,
-        });
-      }
-
       const creditNote =
-        creditResult.applied > 0
-          ? ` (₦${creditResult.applied.toLocaleString("en-NG")} covered by wallet credit)`
+        charge.creditApplied > 0
+          ? ` (₦${charge.creditApplied.toLocaleString("en-NG")} covered by wallet credit)`
           : "";
       await createNotification({
         userId,
@@ -196,8 +211,8 @@ class WalletService extends BaseService {
 
       return BaseService.sendSuccessResponse({
         message: "Payment made successfully from wallet.",
-        creditApplied: creditResult.applied,
-        cashPaid: cashNeeded,
+        creditApplied: charge.creditApplied,
+        cashPaid: charge.cashPaid,
       });
     } catch (error) {
       console.error(error);

@@ -111,6 +111,14 @@ const {
  *                   Optional. A promotional offer id to apply (subject to the same
  *                   server-side validation and stacking rules as personal offers).
  *                 example: 64c0aa11e3c3b4a1d2f1cb20
+ *               useCredit:
+ *                 type: boolean
+ *                 default: false
+ *                 description: >
+ *                   Only for billingType `pay-from-wallet`. When true, reward wallet
+ *                   credit is spent first (oldest-expiry) and the remainder from cash;
+ *                   when false/absent, the wallet is charged entirely from cash.
+ *                 example: false
  *               items:
  *                 type: array
  *                 items:
@@ -226,6 +234,25 @@ const {
  *                       type: string
  *                       format: date-time
  *                       example: "2026-01-13T13:00:00.123Z"
+ *                 offer:
+ *                   type: object
+ *                   nullable: true
+ *                   description: >
+ *                     Present when a customerOfferId/promoOfferId was supplied.
+ *                     `applied` is false when the offer was rejected — see `rejected`
+ *                     for the reason(s); the order is then charged full price.
+ *                   properties:
+ *                     applied: { type: boolean, example: true }
+ *                     totalDiscount: { type: number, example: 200 }
+ *                     freeDelivery: { type: boolean, example: false }
+ *                     freePickup: { type: boolean, example: false }
+ *                     rejected:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           which: { type: string, example: personal }
+ *                           reason: { type: string, example: "Minimum 2 items" }
  *       400:
  *         description: Validation error or bad request
  *         content:
