@@ -728,24 +728,65 @@ class OfferService {
     // ─── reporting ───────────────────────────────────────────────────────────
 
     async getPerformance(offerId) {
-        const counts = await CustomerOfferModel.aggregate([
+        const match = {
+            offerId:
+                typeof offerId === 'string'
+                    ? new mongoose.Types.ObjectId(offerId)
+                    : offerId,
+        }
+        // One pass: the current-status snapshot AND a cumulative funnel (how many
+        // linkages ever reached each stage, from the persisted timestamps).
+        const [agg] = await CustomerOfferModel.aggregate([
+            { $match: match },
             {
-                $match: {
-                    offerId:
-                        typeof offerId === 'string'
-                            ? new mongoose.Types.ObjectId(offerId)
-                            : offerId,
+                $facet: {
+                    byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
+                    reached: [
+                        {
+                            $group: {
+                                _id: null,
+                                // $ifNull collapses both "missing" and null to null,
+                                // so we only count linkages with a real timestamp.
+                                viewed: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$viewedAt', null] }, null] }, 1, 0] } },
+                                attached: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$attachedAt', null] }, null] }, 1, 0] } },
+                                redeemed: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$redeemedAt', null] }, null] }, 1, 0] } },
+                            },
+                        },
+                    ],
                 },
             },
-            { $group: { _id: '$status', count: { $sum: 1 } } },
         ])
+        const counts = agg?.byStatus || []
         const byStatus = {}
         for (const s of Object.values(CUSTOMER_OFFER_STATUS)) byStatus[s] = 0
         for (const c of counts) byStatus[c._id] = c.count
         const assignedTotal = Object.values(byStatus).reduce((a, b) => a + b, 0)
+
+        // Cumulative funnel — non-decreasing (viewedAt is never cleared; attached/
+        // redeemed reflect currently-reached since those timestamps clear on cancel).
+        const r = agg?.reached?.[0] || {}
+        const reached = {
+            viewed: r.viewed || 0,
+            attached: r.attached || 0,
+            redeemed: r.redeemed || 0,
+        }
+
+        // Usage number for admins: the offer's usedCount, which is incremented at
+        // booking (attach) and decremented on release — the same counter the
+        // global cap uses. redemptionRate stays a separate "completed" metric.
+        const offer = await OfferModel.findById(offerId)
+            .select('usedCount usageLimit')
+            .lean()
+        const usedCount = offer?.usedCount || 0
+        const usageLimit = offer?.usageLimit ?? null
+
         return {
             byStatus,
+            reached, // cumulative funnel — reached.viewed only ever goes up
             assignedTotal,
+            usedCount,
+            usageLimit,
+            remaining: usageLimit != null ? Math.max(0, usageLimit - usedCount) : null,
             redemptionRate: assignedTotal
                 ? Math.round((byStatus.redeemed / assignedTotal) * 100)
                 : 0,

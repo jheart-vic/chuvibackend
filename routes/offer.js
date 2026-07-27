@@ -488,8 +488,18 @@ router.post(ROUTE_OFFERS, [adminAuth], controller.createOffer)
  *                             redeemed: { type: integer, example: 4 }
  *                             expired: { type: integer, example: 2 }
  *                             cancelled: { type: integer, example: 1 }
+ *                         reached:
+ *                           type: object
+ *                           description: "Cumulative funnel — how many linkages EVER reached each stage (unlike byStatus, which is the current snapshot). reached.viewed only ever increases; attached/redeemed reflect currently-reached (their timestamps clear on cancel)."
+ *                           properties:
+ *                             viewed: { type: integer, example: 20 }
+ *                             attached: { type: integer, example: 9 }
+ *                             redeemed: { type: integer, example: 4 }
  *                         assignedTotal: { type: integer, example: 32 }
- *                         redemptionRate: { type: integer, example: 13, description: Percentage of linkages redeemed }
+ *                         usedCount: { type: integer, example: 9, description: "Usage count — incremented at booking (attach), decremented on release; also drives the global cap" }
+ *                         usageLimit: { type: integer, nullable: true, example: 100, description: "Global usage cap (null = unlimited)" }
+ *                         remaining: { type: integer, nullable: true, example: 91, description: "usageLimit − usedCount (null = unlimited)" }
+ *                         redemptionRate: { type: integer, example: 13, description: "Percentage of linkages redeemed (completed on delivery)" }
  *       400:
  *         description: Offer not found
  *         content:
