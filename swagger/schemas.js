@@ -581,8 +581,19 @@
  *           items: { $ref: '#/components/schemas/CustomerOffer' }
  *         promotions:
  *           type: array
- *           description: Promotional campaigns the customer currently qualifies for
- *           items: { $ref: '#/components/schemas/Offer' }
+ *           description: >
+ *             Promotional campaigns the customer currently qualifies for. A
+ *             one-use promo the customer has already used stays in the list but
+ *             flagged (`used`/`disabled` = true with a `disabledReason`) so the
+ *             frontend can render it greyed-out instead of removing it.
+ *           items:
+ *             allOf:
+ *               - $ref: '#/components/schemas/Offer'
+ *               - type: object
+ *                 properties:
+ *                   used: { type: boolean, example: false }
+ *                   disabled: { type: boolean, example: false }
+ *                   disabledReason: { type: string, nullable: true, example: "You have already used this promotion" }
  *         baseline:
  *           type: array
  *           description: Permanent baseline benefits

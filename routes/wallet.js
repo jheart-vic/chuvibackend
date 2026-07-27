@@ -101,7 +101,11 @@ router.post(ROUTE_WALLET_TOP_UP, [auth], (req, res) => {
  * @swagger
  * /wallet/pay-with-wallet:
  *   post:
- *     summary: Make a payment using wallet balance
+ *     summary: Make a payment using wallet balance (cash, plus reward credit if opted in)
+ *     description: >
+ *       Pays for an order from the wallet. Reward credits are only spent when
+ *       `useCredit` is true (opt-in) — oldest-expiry first — with the remainder
+ *       taken from cash. Without `useCredit`, the full amount comes from cash.
  *     tags:
  *       - Wallet
  *     requestBody:
@@ -116,6 +120,11 @@ router.post(ROUTE_WALLET_TOP_UP, [auth], (req, res) => {
  *               bookOrderId:
  *                 type: string
  *                 example: 64b9a7f6e3c3b4a1d2f1c9b0
+ *               useCredit:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Opt in to spend reward wallet credit before cash.
+ *                 example: true
  *     responses:
  *       200:
  *         description: Payment made successfully from wallet

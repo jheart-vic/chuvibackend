@@ -10,6 +10,7 @@ const {
     ROUTE_OFFER_CANCEL_LINKAGE,
     ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS,
     ROUTE_OFFER_MY_OFFERS,
+    ROUTE_OFFER_MY_USAGE,
     ROUTE_OFFER_VIEW,
     ROUTE_OFFER_VALIDATE,
     ROUTE_OFFER_ATTACH,
@@ -46,6 +47,35 @@ const controller = new OfferController()
  *         description: Server error
  */
 router.get(ROUTE_OFFER_MY_OFFERS, [auth], controller.myOffers)
+
+/**
+ * @swagger
+ * /offers/my-usage:
+ *   get:
+ *     summary: Customer's offer/promotion usage history
+ *     description: >
+ *       The customer's own offer linkages already committed to an order
+ *       (attached or redeemed), newest first — i.e. the promotions/offers they
+ *       have used. Each entry includes the linked offer, status, and the order.
+ *     tags: [Offers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Usage history (committed linkages)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/CustomerOffer' }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_OFFER_MY_USAGE, [auth], controller.myUsage)
 
 /**
  * @swagger
