@@ -479,7 +479,7 @@ class OfferService {
                 reason = 'Offer has expired'
             else if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
                 reason = 'Offer is no longer active'
-            else if (!this.hasGlobalCapacity(offer)) reason = 'Offer fully redeemed'
+            else if (!this.hasGlobalCapacity(offer)) reason = 'Offer usage limit reached'
             else {
                 const p = this.checkProfileRules(offer, stats)
                 const bk = this.checkBookingRules(offer, draft)
@@ -510,7 +510,7 @@ class OfferService {
             if (!promo || promo.type !== OFFER_TYPE.PROMOTIONAL) reason = 'Promotion not found'
             else if (promo.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(promo, now))
                 reason = 'Promotion is no longer active'
-            else if (!this.hasGlobalCapacity(promo)) reason = 'Promotion fully redeemed'
+            else if (!this.hasGlobalCapacity(promo)) reason = 'Promotion usage limit reached'
             else if (breakdown.personal && !promo.stackableWithPersonal)
                 reason = 'This promotion cannot be combined with a personal reward'
             else {
@@ -591,6 +591,13 @@ class OfferService {
         linkage.orderId = orderId
         linkage.attachedAt = now
         await linkage.save()
+        // Count the offer as used the moment it is committed to an order (not on
+        // delivery) so the global usage cap can't be over-subscribed by in-flight
+        // bookings. releaseForOrder() gives the slot back on cancel.
+        await OfferModel.updateOne(
+            { _id: linkage.offerId._id || linkage.offerId },
+            { $inc: { usedCount: 1 } },
+        )
         return linkage
     }
 
@@ -607,7 +614,7 @@ class OfferService {
             offerId: promoOfferId,
         })
         if (existing) return existing
-        return CustomerOfferModel.create({
+        const linkage = await CustomerOfferModel.create({
             userId,
             offerId: promoOfferId,
             status: CUSTOMER_OFFER_STATUS.ATTACHED,
@@ -615,6 +622,9 @@ class OfferService {
             attachedAt: new Date(),
             expiresAt: promo.expiryDate || undefined,
         })
+        // Count on commit (see attachToOrder); released on cancel.
+        await OfferModel.updateOne({ _id: promoOfferId }, { $inc: { usedCount: 1 } })
+        return linkage
     }
 
     // Order delivered → linkage consumed for good; credit benefits granted.
@@ -632,7 +642,8 @@ class OfferService {
 
             const offer = linkage.offerId
             if (!offer) continue
-            await OfferModel.updateOne({ _id: offer._id }, { $inc: { usedCount: 1 } })
+            // NOTE: usedCount was already incremented at attach (commit) time, so
+            // we do NOT increment again here on redemption.
 
             // grant promised extra laundry credit now that the order completed
             for (const b of offer.benefits || []) {
@@ -669,7 +680,6 @@ class OfferService {
             },
         })
         for (const linkage of linkages) {
-            const wasRedeemed = linkage.status === CUSTOMER_OFFER_STATUS.REDEEMED
             linkage.status =
                 linkage.expiresAt && linkage.expiresAt < new Date()
                     ? CUSTOMER_OFFER_STATUS.EXPIRED
@@ -679,12 +689,12 @@ class OfferService {
             linkage.redeemedAt = undefined
             linkage.note = [linkage.note, reason].filter(Boolean).join(' | ')
             await linkage.save()
-            if (wasRedeemed) {
-                await OfferModel.updateOne(
-                    { _id: linkage.offerId },
-                    { $inc: { usedCount: -1 } },
-                )
-            }
+            // usedCount is incremented at attach for BOTH attached and redeemed
+            // linkages, so releasing either one frees the slot back.
+            await OfferModel.updateOne(
+                { _id: linkage.offerId },
+                { $inc: { usedCount: -1 } },
+            )
         }
         return linkages.length
     }
