@@ -55,11 +55,27 @@ class BotApiService extends BaseService {
         }
     }
 
-    // customer: my support conversation + message history (marks read)
+    // customer: a support conversation + message history (marks read).
+    // Pass ?conversationId to open a specific thread (e.g. the handed-off human
+    // one); ownership-checked. Omit it to get/create the live bot thread.
     async getConversation(req) {
         try {
-            const convo = await ConversationService.getOrCreateSupport(req.user.id)
-            const { page, limit } = req.query
+            let convo
+            const { conversationId, page, limit } = req.query
+            if (conversationId) {
+                convo = await ConversationModel.findOne({
+                    _id: conversationId,
+                    userId: req.user.id,
+                    type: CONVERSATION_TYPE.SUPPORT,
+                })
+                if (!convo) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Support conversation not found',
+                    })
+                }
+            } else {
+                convo = await ConversationService.getOrCreateSupport(req.user.id)
+            }
             const messages = await ConversationService.listMessages({
                 conversationId: convo._id,
                 page,
@@ -84,11 +100,35 @@ class BotApiService extends BaseService {
         }
     }
 
-    // customer: explicitly ask for a human
+    // customer: list my open support threads (bot + human) for the thread picker
+    async listConversations(req) {
+        try {
+            const convos = await ConversationService.listOpenSupport(req.user.id)
+            return BaseService.sendSuccessResponse({
+                message: convos.map((c) => ({
+                    _id: c._id,
+                    mode: c.mode,
+                    open: c.open,
+                    unreadForCustomer: c.unreadForCustomer || 0,
+                    lastMessageAt: c.lastMessageAt || null,
+                })),
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to load conversations' })
+        }
+    }
+
+    // customer: explicitly ask for a human. Reuse an existing open human thread
+    // if one is already in the queue, so repeated taps don't spawn empty tickets;
+    // otherwise hand off the customer's current bot thread.
     async requestHandoff(req) {
         try {
-            const convo = await ConversationService.getOrCreateSupport(req.user.id)
-            if (convo.mode !== 'human') await BotOrchestratorService.handoff(convo, req.user.id)
+            let convo = await ConversationService.findOpenHumanSupport(req.user.id)
+            if (!convo) {
+                convo = await ConversationService.getOrCreateSupport(req.user.id)
+                await BotOrchestratorService.handoff(convo, req.user.id)
+            }
             return BaseService.sendSuccessResponse({
                 message: { conversationId: convo._id, mode: 'human' },
             })
