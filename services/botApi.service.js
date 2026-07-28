@@ -1,10 +1,18 @@
 const BaseService = require('./base.service')
-const validateData = require('../util/validate')
 const ConversationService = require('./conversation.service')
 const BotOrchestratorService = require('./botOrchestrator.service')
 const ConversationModel = require('../models/conversation.model')
 const { emitChatMessage } = require('../config/socket')
 const { CONVERSATION_TYPE, CHAT_SENDER } = require('../util/constants')
+
+// Attachments are photo URLs (upload via /api/utils/image-upload-single first).
+// Accept an array of strings, drop anything empty/non-string.
+function normalizeAttachments(input) {
+    if (!Array.isArray(input)) return []
+    return input
+        .filter((u) => typeof u === 'string' && u.trim())
+        .map((u) => u.trim())
+}
 
 // Request-facing surface of the in-app bot (Phase 6). Customer endpoints drive
 // the bot; staff endpoints (Customer Experience) service handed-off chats.
@@ -12,16 +20,20 @@ class BotApiService extends BaseService {
     // customer: send a message and get the bot's reply (or a handoff notice)
     async sendMessage(req) {
         try {
-            const v = validateData(
-                req.body,
-                { text: 'string|required' },
-                { required: ':attribute is required' },
-            )
-            if (!v.success) return BaseService.sendFailedResponse({ error: v.data })
+            // A message needs text or at least one attachment (photo URL).
+            const text =
+                typeof req.body.text === 'string' ? req.body.text.trim() : ''
+            const attachments = normalizeAttachments(req.body.attachments)
+            if (!text && !attachments.length) {
+                return BaseService.sendFailedResponse({
+                    error: 'A message needs text or an attachment',
+                })
+            }
 
             const result = await BotOrchestratorService.handleCustomerMessage({
                 userId: req.user.id,
-                text: req.body.text,
+                text,
+                attachments,
             })
             return BaseService.sendSuccessResponse({
                 message: {
@@ -153,12 +165,15 @@ class BotApiService extends BaseService {
     // staff posts a reply into a support conversation
     async staffReply(req) {
         try {
-            const v = validateData(
-                req.body,
-                { text: 'string|required' },
-                { required: ':attribute is required' },
-            )
-            if (!v.success) return BaseService.sendFailedResponse({ error: v.data })
+            // A reply needs text or at least one attachment (photo URL).
+            const text =
+                typeof req.body.text === 'string' ? req.body.text.trim() : ''
+            const attachments = normalizeAttachments(req.body.attachments)
+            if (!text && !attachments.length) {
+                return BaseService.sendFailedResponse({
+                    error: 'A reply needs text or an attachment',
+                })
+            }
 
             const convo = await ConversationModel.findById(req.params.conversationId)
             if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) {
@@ -168,12 +183,18 @@ class BotApiService extends BaseService {
                 conversationId: convo._id,
                 senderType: CHAT_SENDER.STAFF,
                 senderId: req.user.id,
-                text: req.body.text,
+                text,
+                attachments,
             })
             await ConversationService.markRead({ conversationId: convo._id, side: 'staff' })
             emitChatMessage(convo, message)
             return BaseService.sendSuccessResponse({
-                message: { _id: message._id, text: message.text, createdAt: message.createdAt },
+                message: {
+                    _id: message._id,
+                    text: message.text,
+                    attachments: message.attachments,
+                    createdAt: message.createdAt,
+                },
             })
         } catch (error) {
             console.error(error)

@@ -35,13 +35,19 @@ const {
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
+ *       description: Provide `text`, `attachments`, or both (at least one is required).
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [text]
  *             properties:
  *               text: { type: string, example: "Where are my clothes?" }
+ *               attachments:
+ *                 type: array
+ *                 description: >
+ *                   Photo URLs — upload each file via POST /api/utils/image-upload-single
+ *                   first, then send the returned imageUrl string(s) here.
+ *                 items: { type: string, example: "https://res.cloudinary.com/.../photo.jpg" }
  *     responses:
  *       200:
  *         description: The assistant's reply (or a handoff notice)
@@ -239,13 +245,19 @@ router.get(ROUTE_BOT_STAFF_CONVERSATION, [customerExperienceAuth], (req, res) =>
  *         schema: { type: string }
  *     requestBody:
  *       required: true
+ *       description: Provide `text`, `attachments`, or both (at least one is required).
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [text]
  *             properties:
  *               text: { type: string, example: "Hi! I've checked your order and it's out for delivery." }
+ *               attachments:
+ *                 type: array
+ *                 description: >
+ *                   Photo URLs — upload each file via POST /api/utils/image-upload-single
+ *                   first, then send the returned imageUrl string(s) here.
+ *                 items: { type: string, example: "https://res.cloudinary.com/.../photo.jpg" }
  *     responses:
  *       200:
  *         description: Reply posted
