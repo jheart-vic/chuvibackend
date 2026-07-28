@@ -960,12 +960,46 @@ async postBookOrder(req, res) {
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 await newOrder.save()
+
+                // Credit is opt-in: reward credits can offset a per-item order
+                // at booking (credits-first, oldest expiry). The remaining
+                // balance is still settled through the normal per-item payment
+                // flow (Paystack), so we lower the order's payable amount by the
+                // credit applied; a fully-covered order needs no further payment.
+                // Committing at booking matches how offers are counted.
+                const useCredit =
+                    post.useCredit === true || post.useCredit === 'true'
+                let creditApplied = 0
+                if (useCredit) {
+                    const creditResult =
+                        await WalletCreditService.applyCreditsToAmount(
+                            userId,
+                            newOrder._id,
+                            totalPrice,
+                            'Order Payment',
+                        )
+                    creditApplied = creditResult.applied
+                    if (creditApplied > 0) {
+                        newOrder.amount = Math.max(totalPrice - creditApplied, 0)
+                        if (newOrder.amount === 0) {
+                            newOrder.paymentStatus =
+                                PAYMENT_ORDER_STATUS.SUCCESS
+                            newOrder.paymentDate = new Date()
+                        }
+                        await newOrder.save()
+                    }
+                }
+
                 await this._attachOffersToOrder(userId, offerBreakdown, newOrder._id)
 
+                const creditNote =
+                    creditApplied > 0
+                        ? ` ₦${creditApplied.toLocaleString('en-NG')} was covered by your wallet credit.`
+                        : ''
                 await createNotification({
                     userId: userId,
                     title: 'Order Created Successfully',
-                    body: `Your laundry order has been received. We will pick it up shortly.`,
+                    body: `Your laundry order has been received. We will pick it up shortly.${creditNote}`,
                     subBody: `Order ID: ${oscNumber}.`,
                     type: NOTIFICATION_TYPE.ORDER_CREATED,
                 })

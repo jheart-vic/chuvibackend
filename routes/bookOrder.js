@@ -115,9 +115,12 @@ const {
  *                 type: boolean
  *                 default: false
  *                 description: >
- *                   Only for billingType `pay-from-wallet`. When true, reward wallet
- *                   credit is spent first (oldest-expiry) and the remainder from cash;
- *                   when false/absent, the wallet is charged entirely from cash.
+ *                   Applies to `pay-from-wallet` and `pay-per-item` (ignored for
+ *                   `pay-from-subscription`). When true, reward wallet credit is spent
+ *                   first (oldest-expiry). For `pay-from-wallet` the remainder is taken
+ *                   from wallet cash; for `pay-per-item` the remainder is what you then
+ *                   pay via Paystack (a fully-covered order needs no further payment).
+ *                   When false/absent, no credit is spent.
  *                 example: false
  *               items:
  *                 type: array
