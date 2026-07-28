@@ -3,6 +3,46 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-07-28 — Bot: parallel bot + human support threads
+
+### Done this session (uncommitted, branch usage-branch)
+
+- **Two-thread support model for the Phase 6 in-app bot.** Client wants a customer
+  to start/continue a bot chat WHILE a handed-off human chat stays open — the two
+  shown as separate tickets ("Assistant" = bot, "Support agent" = human). Old model
+  allowed only one open support conversation per customer, so bot and human collided.
+- `conversation.service.getOrCreateSupport` now scoped to `mode:'bot'` (the one
+  change that decouples the live bot thread from any open human thread). Added
+  `findOpenHumanSupport(userId)` and `listOpenSupport(userId)` (open bot+human,
+  newest first).
+- Handoff FLIPS the current bot thread to `mode:'human'` (it becomes the ticket, no
+  duplicate); the next `POST /bot/message` finds no open bot thread and mints a fresh
+  one alongside the human one. So the assistant is never unavailable; open bot and
+  open human threads each stay 0–1. Only staff-close ever closes a thread.
+- New/changed endpoints (all customer `auth` unless noted):
+  - `GET /bot/conversations` — list my open support threads
+    `[{_id,mode,open,unreadForCustomer,lastMessageAt}]` (does NOT mark read; closed
+    threads excluded). New `listConversations`.
+  - `GET /bot/conversation?conversationId=<id>` — optional param opens a SPECIFIC
+    owned thread (e.g. the human one); ownership-checked; marks that thread
+    customer-read. Omit → get/create the bot thread (unchanged default).
+  - `POST /bot/conversation/:conversationId/message` — NEW customer-reply route so
+    the customer can write into the human thread (bot stays silent, `handledBy:human`,
+    echoes the message + emits socket). If the target is still a bot thread it
+    delegates to the orchestrator (same as `/bot/message`). Rejects closed threads.
+  - `POST /bot/handoff` — now idempotent: reuses an existing open human thread
+    instead of spawning empty duplicate tickets.
+- Files: services/botApi.service.js (`listConversations`, `replyToConversation`,
+  `getConversation` param, idempotent `requestHandoff`), services/conversation.service.js,
+  controllers/bot.controller.js, util/page-route.js (ROUTE_BOT_CONVERSATIONS,
+  ROUTE_BOT_CUSTOMER_REPLY), routes/bot.js (+2 routes, Swagger for both + conversationId
+  param on `/bot/conversation`). Swagger reuses inline shapes / BotReply — no new
+  schema needed (Conversation already covers the fields).
+- NOT verified by a runtime script this session — only `node -c` syntax checks on all
+  changed files (clean). Recommend a boot + quick drive before committing.
+- Gap deferred: no customer-facing closed-thread history endpoint (list filters
+  `open:true`); if wanted, add `?includeClosed` or a history route.
+
 ## Session: 2026-07-20 — Wallet admin credit lookup + Order cancellation (Green/Amber/Staff)
 
 ### Done this session (uncommitted)
