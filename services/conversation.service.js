@@ -23,13 +23,17 @@ class ConversationService {
         return convo
     }
 
-    // The single open in-app bot conversation for a customer (Phase 6). Starts
-    // in bot mode; flips to human on handoff. Reused across sessions.
+    // The customer's live bot conversation (Phase 6). Scoped to mode:'bot' so it
+    // stays separate from any handed-off (human) thread the customer may also
+    // have open — that one lives in the staff queue as its own ticket. When the
+    // bot thread is handed off it flips to human, and the next customer message
+    // starts a fresh bot thread alongside it (two visible threads).
     async getOrCreateSupport(userId) {
         let convo = await ConversationModel.findOne({
             type: CONVERSATION_TYPE.SUPPORT,
             userId,
             open: true,
+            mode: 'bot',
         })
         if (!convo) {
             convo = await ConversationModel.create({
@@ -39,6 +43,29 @@ class ConversationService {
             })
         }
         return convo
+    }
+
+    // An existing open human (handed-off) support thread for the customer, if
+    // any. Lets handoff stay idempotent instead of spawning empty duplicates.
+    async findOpenHumanSupport(userId) {
+        return ConversationModel.findOne({
+            type: CONVERSATION_TYPE.SUPPORT,
+            userId,
+            open: true,
+            mode: 'human',
+        })
+    }
+
+    // All of the customer's open support threads (bot + human), newest first —
+    // powers the customer's "Assistant" / "Support agent" thread list.
+    async listOpenSupport(userId) {
+        return ConversationModel.find({
+            type: CONVERSATION_TYPE.SUPPORT,
+            userId,
+            open: true,
+        })
+            .sort({ lastMessageAt: -1 })
+            .lean()
     }
 
     // Post a message. senderType decides which unread counter increments.

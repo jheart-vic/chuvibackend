@@ -248,6 +248,7 @@ exports.ROUTE_OFFER_ATTACH = "/attach"
 // in-app bot (Phase 6)
 exports.ROUTE_BOT_MESSAGE = "/message"
 exports.ROUTE_BOT_CONVERSATION = "/conversation"
+exports.ROUTE_BOT_CONVERSATIONS = "/conversations"
 exports.ROUTE_BOT_HANDOFF = "/handoff"
 exports.ROUTE_BOT_QUEUE = "/queue"
 exports.ROUTE_BOT_STAFF_CONVERSATION = "/:conversationId/messages"

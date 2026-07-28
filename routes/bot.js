@@ -5,6 +5,7 @@ const customerExperienceAuth = require('../middlewares/customerExperienceAuth')
 const {
     ROUTE_BOT_MESSAGE,
     ROUTE_BOT_CONVERSATION,
+    ROUTE_BOT_CONVERSATIONS,
     ROUTE_BOT_HANDOFF,
     ROUTE_BOT_QUEUE,
     ROUTE_BOT_STAFF_CONVERSATION,
@@ -73,9 +74,19 @@ router.post(ROUTE_BOT_MESSAGE, [auth], (req, res) =>
  * /bot/conversation:
  *   get:
  *     summary: My support conversation + message history
+ *     description: >
+ *       Omit `conversationId` to get (or create) the live bot thread. Pass a
+ *       `conversationId` from GET /bot/conversations to open a specific thread —
+ *       e.g. the handed-off human one. Only the caller's own support threads are
+ *       accessible.
  *     tags: [Bot]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: query
+ *         name: conversationId
+ *         required: false
+ *         schema: { type: string }
+ *         description: A support thread id owned by the caller. Omit for the bot thread.
  *       - in: query
  *         name: page
  *         schema: { type: integer, example: 1 }
@@ -108,6 +119,44 @@ router.post(ROUTE_BOT_MESSAGE, [auth], (req, res) =>
  */
 router.get(ROUTE_BOT_CONVERSATION, [auth], (req, res) =>
     new BotController().getConversation(req, res),
+)
+
+/**
+ * @swagger
+ * /bot/conversations:
+ *   get:
+ *     summary: My open support threads (Assistant + Support agent)
+ *     description: >
+ *       Lists the customer's open support conversations so the app can show them
+ *       as separate threads/tickets. There is at most one bot thread
+ *       (mode `bot`, the self-service assistant) plus any handed-off threads
+ *       (mode `human`) a live agent is handling. Newest activity first. Load a
+ *       thread's messages via GET /bot/conversation (bot) or, for staff, the
+ *       staff message endpoint.
+ *     tags: [Bot]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: The customer's open support threads
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                       mode: { type: string, enum: [bot, human], example: human }
+ *                       open: { type: boolean, example: true }
+ *                       unreadForCustomer: { type: integer, example: 1 }
+ *                       lastMessageAt: { type: string, format: date-time, nullable: true }
+ */
+router.get(ROUTE_BOT_CONVERSATIONS, [auth], (req, res) =>
+    new BotController().listConversations(req, res),
 )
 
 /**
