@@ -119,6 +119,90 @@ class BotApiService extends BaseService {
         }
     }
 
+    // customer: post a message into a specific owned thread. Used for the
+    // handed-off (human) thread, where the bot stays silent and staff reply.
+    // If the target is still a bot thread, route through the orchestrator so the
+    // assistant answers as usual.
+    async replyToConversation(req) {
+        try {
+            const text =
+                typeof req.body.text === 'string' ? req.body.text.trim() : ''
+            const attachments = normalizeAttachments(req.body.attachments)
+            if (!text && !attachments.length) {
+                return BaseService.sendFailedResponse({
+                    error: 'A message needs text or an attachment',
+                })
+            }
+
+            const convo = await ConversationModel.findOne({
+                _id: req.params.conversationId,
+                userId: req.user.id,
+                type: CONVERSATION_TYPE.SUPPORT,
+            })
+            if (!convo) {
+                return BaseService.sendFailedResponse({
+                    error: 'Support conversation not found',
+                })
+            }
+            if (!convo.open) {
+                return BaseService.sendFailedResponse({
+                    error: 'This conversation is closed',
+                })
+            }
+
+            // Still a bot thread → let the assistant handle it (same as /message).
+            if (convo.mode !== 'human') {
+                const result = await BotOrchestratorService.handleCustomerMessage({
+                    userId: req.user.id,
+                    text,
+                    attachments,
+                })
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        conversationId: result.conversation._id,
+                        mode: result.conversation.mode,
+                        handledBy: result.handledBy,
+                        intent: result.intent || null,
+                        replies: (result.replies || []).map((m) => ({
+                            _id: m._id,
+                            senderType: m.senderType,
+                            text: m.text,
+                            createdAt: m.createdAt,
+                        })),
+                    },
+                })
+            }
+
+            // Human thread → just post and wait for staff; no bot reply.
+            const message = await ConversationService.postMessage({
+                conversationId: convo._id,
+                senderType: CHAT_SENDER.CUSTOMER,
+                senderId: req.user.id,
+                text,
+                attachments,
+            })
+            emitChatMessage(convo, message)
+            return BaseService.sendSuccessResponse({
+                message: {
+                    conversationId: convo._id,
+                    mode: convo.mode,
+                    handledBy: 'human',
+                    replies: [
+                        {
+                            _id: message._id,
+                            senderType: message.senderType,
+                            text: message.text,
+                            createdAt: message.createdAt,
+                        },
+                    ],
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to send your message' })
+        }
+    }
+
     // customer: explicitly ask for a human. Reuse an existing open human thread
     // if one is already in the queue, so repeated taps don't spawn empty tickets;
     // otherwise hand off the customer's current bot thread.

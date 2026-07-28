@@ -6,6 +6,7 @@ const {
     ROUTE_BOT_MESSAGE,
     ROUTE_BOT_CONVERSATION,
     ROUTE_BOT_CONVERSATIONS,
+    ROUTE_BOT_CUSTOMER_REPLY,
     ROUTE_BOT_HANDOFF,
     ROUTE_BOT_QUEUE,
     ROUTE_BOT_STAFF_CONVERSATION,
@@ -157,6 +158,61 @@ router.get(ROUTE_BOT_CONVERSATION, [auth], (req, res) =>
  */
 router.get(ROUTE_BOT_CONVERSATIONS, [auth], (req, res) =>
     new BotController().listConversations(req, res),
+)
+
+/**
+ * @swagger
+ * /bot/conversation/{conversationId}/message:
+ *   post:
+ *     summary: Send a message into a specific thread (customer)
+ *     description: >
+ *       Posts the customer's message into one of their own support threads by id.
+ *       Use this to reply into a handed-off (human) thread — the bot stays silent
+ *       and staff will respond (`handledBy: human`, empty replies beyond the echo).
+ *       If the target thread is still a bot thread, the message is routed to the
+ *       assistant exactly like POST /bot/message (`handledBy: bot`, replies filled).
+ *       Closed threads are rejected.
+ *     tags: [Bot]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema: { type: string }
+ *         description: A support thread id owned by the caller.
+ *     requestBody:
+ *       required: true
+ *       description: Provide `text`, `attachments`, or both (at least one is required).
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               text: { type: string, example: "Yes, tomorrow morning works." }
+ *               attachments:
+ *                 type: array
+ *                 description: >
+ *                   Photo URLs — upload each file via POST /api/utils/image-upload-single
+ *                   first, then send the returned imageUrl string(s) here.
+ *                 items: { type: string, example: "https://res.cloudinary.com/.../photo.jpg" }
+ *     responses:
+ *       200:
+ *         description: Message posted (human thread) or the assistant's reply (bot thread)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/BotReply' }
+ *       400:
+ *         description: Missing text / conversation not found / conversation closed
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_BOT_CUSTOMER_REPLY, [auth], (req, res) =>
+    new BotController().replyToConversation(req, res),
 )
 
 /**
