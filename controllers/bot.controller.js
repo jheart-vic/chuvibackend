@@ -16,6 +16,9 @@ class BotController extends BaseController {
     async listConversations(req, res) {
         return send(res, await new BotApiService().listConversations(req))
     }
+    async replyToConversation(req, res) {
+        return send(res, await new BotApiService().replyToConversation(req))
+    }
     async requestHandoff(req, res) {
         return send(res, await new BotApiService().requestHandoff(req))
     }
