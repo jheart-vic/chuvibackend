@@ -42,15 +42,18 @@ class BotOrchestratorService {
     }
 
     // Entry point: customer sends a message, we reply (or hand off).
-    async handleCustomerMessage({ userId, text }) {
+    async handleCustomerMessage({ userId, text, attachments = [] }) {
         const convo = await ConversationService.getOrCreateSupport(userId)
 
-        // record the customer's message (increments unreadForStaff for CX)
+        // record the customer's message (increments unreadForStaff for CX).
+        // Attachments (photo URLs) ride along; intent is still classified from
+        // text only, so a photo-only message degrades to the guided menu.
         const customerMsg = await ConversationService.postMessage({
             conversationId: convo._id,
             senderType: CHAT_SENDER.CUSTOMER,
             senderId: userId,
             text,
+            attachments,
         })
         emitChatMessage(convo, customerMsg)
 
