@@ -643,6 +643,7 @@ const CHAT_SENDER = {
 // actions have NO intent/tool — they can only ever reach a human (handoff).
 const BOT_INTENT = {
     GREETING: 'greeting',
+    ABOUT: 'about', // "who/what are you", "what can you do" — bot introduces itself
     ORDER_STATUS: 'order-status',
     WALLET_BALANCE: 'wallet-balance',
     VIEW_OFFERS: 'view-offers',
