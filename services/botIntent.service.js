@@ -90,6 +90,9 @@ class BotIntentService {
             'Classify the customer\'s latest message into EXACTLY ONE intent using the classify_intent tool. ' +
             'You never answer the customer, give advice, quote prices, or take any action — you only label the intent and extract obvious slots. ' +
             'If the customer wants a refund, compensation, money back, credit added/removed, a case resolved, or anything needing staff judgement, use "file-complaint" or "talk-to-human". ' +
+            'If the customer says their ORDER, DELIVERY, or laundered ITEMS are damaged, wrong, missing, or were not received, use "file-complaint" (a clear service problem to open a case for). ' +
+            'If the customer mentions losing a personal item (like their own bag), or raises a vague or out-of-scope problem you have no tool for, use "talk-to-human" — a neutral handoff; do NOT assume Chuvi is at fault or apologise. ' +
+            'A plain question about where an order is or its progress/status — with nothing reported wrong — is "order-status", NOT a complaint. ' +
             'If the customer asks who or what you are, your name, or what you can do, use "about". ' +
             'If unsure, use "unknown". ' +
             (pendingIntent
@@ -258,9 +261,14 @@ class BotIntentService {
         if (codeMatch) slots.code = codeMatch[0].toUpperCase()
 
         let intent = BOT_INTENT.UNKNOWN
-        if (has('refund', 'compensat', 'money back', 'human', 'agent', 'representative', 'speak to', 'talk to someone'))
+        if (has('refund', 'compensat', 'money back', 'human', 'agent', 'representative', 'speak to', 'talk to someone',
+            'lost', "can't find", 'cant find'))
+            // "lost"/"can't find" are ambiguous (may be a personal item, not Chuvi's
+            // fault) → neutral handoff, not an apology/complaint.
             intent = BOT_INTENT.TALK_TO_HUMAN
-        else if (has('complain', 'damaged', 'missing', 'not washed', 'stain', 'wrong item', 'bad'))
+        else if (has('complain', 'damaged', 'missing', 'not washed', 'stain', 'wrong item', 'bad',
+            "didn't get", 'didnt get', "didn't receive", 'didnt receive',
+            'never got', 'never received', 'never arrived', 'not delivered', 'stolen'))
             intent = BOT_INTENT.FILE_COMPLAINT
         else if (has('feedback', 'suggestion', 'review', 'rate'))
             intent = BOT_INTENT.SUBMIT_FEEDBACK
