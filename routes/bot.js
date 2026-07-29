@@ -267,6 +267,15 @@ router.post(ROUTE_BOT_HANDOFF, [auth], (req, res) =>
  *                       phoneNumber: { type: string, example: "+2348012345678" }
  *                       unreadForStaff: { type: integer, example: 2 }
  *                       lastMessageAt: { type: string, format: date-time }
+ *                       lastMessage:
+ *                         type: object
+ *                         nullable: true
+ *                         description: Preview of the most recent message (null if the thread has none). Text is truncated to ~140 chars.
+ *                         properties:
+ *                           senderType: { type: string, enum: [customer, staff, bot, system], example: customer }
+ *                           text: { type: string, example: "Hi, my order still hasn't arrived — can someone check?" }
+ *                           attachments: { type: array, items: { type: string }, example: [] }
+ *                           createdAt: { type: string, format: date-time }
  */
 router.get(ROUTE_BOT_QUEUE, [customerExperienceAuth], (req, res) =>
     new BotController().queue(req, res),
