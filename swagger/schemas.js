@@ -831,7 +831,7 @@
  *         conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
  *         mode: { type: string, enum: [bot, human], example: bot }
  *         handledBy: { type: string, enum: [bot, handoff, human], example: bot }
- *         intent: { type: string, nullable: true, enum: [greeting, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, unknown], example: order-status }
+ *         intent: { type: string, nullable: true, enum: [greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, unknown], example: order-status }
  *         replies:
  *           type: array
  *           description: One or more bot messages posted in reply (empty once handed to a human).

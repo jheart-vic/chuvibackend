@@ -90,6 +90,7 @@ class BotIntentService {
             'Classify the customer\'s latest message into EXACTLY ONE intent using the classify_intent tool. ' +
             'You never answer the customer, give advice, quote prices, or take any action — you only label the intent and extract obvious slots. ' +
             'If the customer wants a refund, compensation, money back, credit added/removed, a case resolved, or anything needing staff judgement, use "file-complaint" or "talk-to-human". ' +
+            'If the customer asks who or what you are, your name, or what you can do, use "about". ' +
             'If unsure, use "unknown". ' +
             (pendingIntent
                 ? `The assistant is currently in the middle of a "${pendingIntent}" flow, so a short reply likely continues it.`
@@ -173,10 +174,85 @@ class BotIntentService {
         return block?.input || null
     }
 
+    // ─── small-talk / out-of-scope copy (LLM writes, never acts) ──────────────
+    // The bot's ONLY text-generation use. It produces a short, friendly reply for
+    // greetings, chit-chat, and requests outside the bot's abilities — it never
+    // quotes prices, promises timelines, invents account/order details, discusses
+    // policy, or claims to have done anything. All real answers/actions stay in
+    // the deterministic orchestrator. Falls back to the supplied canned text when
+    // no provider is configured or the call fails (never hard-fails).
+    async smallTalkReply(text, { kind = 'outOfScope', fallback = '' } = {}) {
+        const client = this.client()
+        if (!client || !text || !text.trim()) return fallback
+        try {
+            const system = this.smallTalkPrompt(kind)
+            const out =
+                this.provider === 'anthropic'
+                    ? await this._generateAnthropic(client, system, text)
+                    : await this._generateOpenAI(client, system, text)
+            const clean = (out || '').trim()
+            return clean || fallback
+        } catch (err) {
+            console.warn('Bot small-talk LLM failed, using fallback:', err.message)
+            return fallback
+        }
+    }
+
+    smallTalkPrompt(kind) {
+        const capabilities =
+            'check order status, show wallet balance, view offers, share their referral code/level, ' +
+            'apply a referral code, update their phone number or pickup address, guide them through booking, ' +
+            'or connect them to a human'
+        let base =
+            "You are Chuvi Laundry's friendly in-app assistant. " +
+            'Reply in ONE short, warm sentence (two at most), like a helpful human — no bullet points or lists. ' +
+            `You can only help customers with: ${capabilities}. ` +
+            'You must NEVER quote prices, promise delivery times, invent order or account details, discuss policies, ' +
+            'or claim to have performed any action. ' +
+            'If they ask for something you cannot do, kindly say so and offer to connect them to a person. ' +
+            'Always nudge them toward something you can actually help with.'
+        base +=
+            kind === 'greeting'
+                ? ' The customer greeted you or made small talk — greet them back warmly and briefly mention what you can help with.'
+                : " The customer's message is outside what you can do — respond kindly and steer them back."
+        return base
+    }
+
+    async _generateOpenAI(client, system, text) {
+        const resp = await client.chat.completions.create({
+            model: this.model,
+            temperature: 0.6,
+            max_tokens: 120,
+            messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: text },
+            ],
+        })
+        return resp.choices?.[0]?.message?.content || ''
+    }
+
+    async _generateAnthropic(client, system, text) {
+        const resp = await client.messages.create({
+            model: this.model,
+            max_tokens: 120,
+            system,
+            messages: [{ role: 'user', content: text }],
+        })
+        const block = (resp.content || []).find((b) => b.type === 'text')
+        return block?.text || ''
+    }
+
     // Deterministic keyword matcher — the safety net when the LLM is unavailable.
+    // The LLM path owns the long tail of phrasings; this only needs to be
+    // "good enough" and to degrade gracefully (unmatched → unknown → capabilities).
     rulesFallback(text) {
         const t = String(text || '').toLowerCase()
         const has = (...words) => words.some((w) => t.includes(w))
+        // word-boundary match for short/ambiguous tokens so "hi" doesn't fire on
+        // "this"/"shipping" and "yo" doesn't fire on "your".
+        const hasWord = (...words) =>
+            new RegExp(`\\b(?:${words.join('|')})\\b`, 'i').test(t)
+        const wordCount = t.trim() ? t.trim().split(/\s+/).length : 0
         const slots = {}
         const codeMatch = t.match(/chuvi[a-z0-9]{4,}/i)
         if (codeMatch) slots.code = codeMatch[0].toUpperCase()
@@ -202,7 +278,17 @@ class BotIntentService {
             intent = BOT_INTENT.BOOKING_GUIDE
         else if (has('change my', 'update my', 'phone number', 'address'))
             intent = BOT_INTENT.UPDATE_DETAILS
-        else if (has('hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening'))
+        else if (has('who are you', 'what are you', 'who is this', 'what is this', 'what can you do', 'your name', 'about you', 'what do you do'))
+            intent = BOT_INTENT.ABOUT
+        else if (
+            hasWord('hi', 'hello', 'hey', 'yo', 'sup', 'hiya', 'howdy', 'greetings', 'gm', 'thanks', 'thank you') ||
+            has("what's up", 'whats up', 'watsup', 'wassup', 'wagwan', 'good morning', 'good afternoon', 'good evening', 'good day', 'how are you', 'how far')
+        )
+            intent = BOT_INTENT.GREETING
+        // Short leftover message that matched nothing else → almost certainly
+        // small talk (real requests are caught above). Broadens greeting coverage
+        // without enumerating every word.
+        else if (wordCount > 0 && wordCount <= 2)
             intent = BOT_INTENT.GREETING
 
         return { intent, confidence: 0.4, slots }

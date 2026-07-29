@@ -30,6 +30,7 @@ class BotOrchestratorService {
     get allowedIntents() {
         return [
             BOT_INTENT.GREETING,
+            BOT_INTENT.ABOUT,
             BOT_INTENT.ORDER_STATUS,
             BOT_INTENT.WALLET_BALANCE,
             BOT_INTENT.VIEW_OFFERS,
@@ -115,17 +116,29 @@ class BotOrchestratorService {
     }
 
     async runWorkflow({ convo, userId, text, intent, confidence, slots }) {
-        // low confidence and nothing in flight → show the menu
+        // low confidence and nothing in flight → out-of-scope: a friendly LLM
+        // redirect (falls back to the plain menu when the LLM is unavailable).
         if (
             (confidence < 0.35 && !convo.botState?.intent) ||
             intent === BOT_INTENT.UNKNOWN
         ) {
-            return { replies: [this.menu()] }
+            const reply = await BotIntentService.smallTalkReply(text, {
+                kind: 'outOfScope',
+                fallback: this.cantUnderstand(),
+            })
+            return { replies: [reply] }
         }
 
         switch (intent) {
-            case BOT_INTENT.GREETING:
-                return { replies: [`Hi! I'm the Chuvi assistant. ${this.menu()}`] }
+            case BOT_INTENT.GREETING: {
+                const reply = await BotIntentService.smallTalkReply(text, {
+                    kind: 'greeting',
+                    fallback: `Hi! I'm the Chuvi assistant. ${this.menu()}`,
+                })
+                return { replies: [reply] }
+            }
+            case BOT_INTENT.ABOUT:
+                return { replies: [this.aboutBot()] }
             case BOT_INTENT.ORDER_STATUS:
                 return { replies: [await this.orderStatus(userId, slots)] }
             case BOT_INTENT.WALLET_BALANCE:
@@ -296,11 +309,39 @@ class BotOrchestratorService {
         return "Thank you for the feedback — I've logged it for our team. Anything else I can help with?"
     }
 
+    // Single source of truth for the capabilities sentence, reused by the menu,
+    // the identity reply, and the fixed fallback.
+    capabilities() {
+        return (
+            'check your order status, see your wallet balance, view offers, ' +
+            'get your referral code/level, apply a referral code, or update your phone/pickup address'
+        )
+    }
+
     menu() {
         return (
-            'I can help you: check your order status, see your wallet balance, view offers, ' +
-            'get your referral code/level, apply a referral code, or update your phone/pickup address. ' +
-            'For anything else I\'ll connect you to a person. What would you like?'
+            `I can help you: ${this.capabilities()}. ` +
+            "For anything else I'll connect you to a person. What would you like?"
+        )
+    }
+
+    // "who/what are you" — deterministic identity reply (always works, even when
+    // the LLM is unavailable).
+    aboutBot() {
+        return (
+            "I'm the Chuvi Laundry assistant — a smart in-app helper. " +
+            `I can ${this.capabilities()}. ` +
+            "For anything I can't handle, I'll connect you to a real person. How can I help?"
+        )
+    }
+
+    // Fixed, LLM-free fallback for out-of-scope / when the assistant can't answer
+    // (e.g. the LLM is down). Never depends on the model.
+    cantUnderstand() {
+        return (
+            "Sorry — I can't quite answer or understand that. " +
+            `Here's what I can help you with: ${this.capabilities()}. ` +
+            "For anything else I'll connect you to a person. What would you like to do?"
         )
     }
 

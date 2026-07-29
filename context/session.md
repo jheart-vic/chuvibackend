@@ -42,6 +42,51 @@ session". When a session ends/clears, fold anything durable into summary.md.
   changed files (clean). Recommend a boot + quick drive before committing.
 - Gap deferred: no customer-facing closed-thread history endpoint (list filters
   `open:true`); if wanted, add `?includeClosed` or a history route.
+- **Queue last-message preview.** `GET /bot/queue` now returns `lastMessage:
+  {senderType,text(≤140+…),attachments,createdAt}` per chat (null if empty), so the
+  CX queue shows previews without client-side caching. One extra aggregation over
+  ChatMessage (newest msg per conversation via $group $first) — not N queries.
+  botApi.service (import ChatMessageModel + queue rewrite), routes/bot.js Swagger.
+- **Bot small-talk (client asked to make it smarter).** Symptom: greetings/chit-chat
+  ("hey", "what's up") dumped the robotic capabilities menu. Root: greeting + unknown
+  branches returned fixed canned text. RELAXED the "LLM classify-only" rule to a
+  bounded second job: `botIntent.smallTalkReply(text,{kind:'greeting'|'outOfScope',
+  fallback})` — LLM writes ONE short guardrailed reply (no prices/promises/data/policy/
+  actions; always steers back to capabilities), falls back to the canned menu when no
+  provider/errors. Added `smallTalkPrompt` + `_generateOpenAI`/`_generateAnthropic`
+  (plain-text gen, max_tokens 120). Orchestrator: greeting case + the low-conf/UNKNOWN
+  menu branch now call it (today's text as fallback). ALL data/action workflows stay
+  deterministic — LLM never generates data replies. CLAUDE.md bot section updated.
+  Verified live (OpenAI): natural greetings, "can you do my taxes"→graceful redirect,
+  no-provider→FALLBACK. Note: greeting/unknown now cost 2 LLM calls (classify + gen).
+- **Fixed non-LLM fallback + `about` intent.** (a) Out-of-scope now falls back to a
+  fixed `cantUnderstand()` ("Sorry — I can't quite answer or understand that…" +
+  capabilities) instead of the bare menu, so it degrades gracefully when the LLM is
+  down. (b) New `BOT_INTENT.ABOUT` ('about') for "who/what are you"/"what can you do" →
+  deterministic `aboutBot()` reply (never LLM; works offline). Classifier: enum value +
+  system-prompt hint + rulesFallback keywords (placed before greeting). Factored a
+  shared `capabilities()` sentence reused by menu/aboutBot/cantUnderstand.
+  Files: util/constants.js (ABOUT), botOrchestrator.service.js (allowedIntents, ABOUT
+  case, capabilities/aboutBot/cantUnderstand, menu rework, out-of-scope fallback swap),
+  botIntent.service.js (prompt hint + rules keywords), swagger/schemas.js (BotReply
+  intent enum + about), CLAUDE.md. Verified live: identity→about (LLM 1.0 AND rules 0.4
+  when LLM down), nonsense→unknown, out-of-scope w/ LLM down→fixed apology text.
+- **Rules-fallback greeting coverage (offline path only; LLM path untouched — it
+  already handles all phrasings).** In `rulesFallback`: (a) added `hasWord()`
+  word-boundary matcher so short tokens like "hi"/"yo" no longer false-fire inside
+  "this"/"shipping" (real bug); short greeting tokens moved to it and widened (yo, sup,
+  hiya, howdy, gm, greetings, thanks + phrase forms what's up/wassup/wagwan/how far/
+  how are you/good day). (b) Added a heuristic: a leftover message of ≤2 words that
+  matched nothing else → greeting (covers the long tail without enumerating). Verified:
+  long-tail greetings→greeting, "is this ready"→order-status (not greeting), genuine
+  3+word non-matches→unknown. Philosophy: LLM owns the long tail; rules just degrade
+  gracefully (unmatched → unknown → cantUnderstand).
+- **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
+  delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
+  `user:<id>`; the customer's own message is echoed to that room too. Frontend renders
+  both → duplicate. First msg showed once because the socket hadn't joined the room yet.
+  Fix is frontend dedup by message `_id` (or render from one source). Backend dual-emit
+  is intentional (other devices + staff live) — left as-is.
 
 ## Session: 2026-07-20 — Wallet admin credit lookup + Order cancellation (Green/Amber/Staff)
 
