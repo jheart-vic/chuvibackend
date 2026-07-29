@@ -81,19 +81,24 @@ session". When a session ends/clears, fold anything durable into summary.md.
   long-tail greetings→greeting, "is this ready"→order-status (not greeting), genuine
   3+word non-matches→unknown. Philosophy: LLM owns the long tail; rules just degrade
   gracefully (unmatched → unknown → cantUnderstand).
-- **Lost/missing/not-received → escalate to human (was falling to out-of-scope).**
-  Client: "I lost my bag" got the dismissive cantUnderstand; anything the bot can't do
-  should connect to a human. Verified "I lost my bag" classified as `unknown` even with
-  the LLM up. Fix: (a) classify systemPrompt now maps lost/can't-find/missing/didn't-
-  receive of an item/bag/order/delivery → `file-complaint`, reports of other unhandled
-  problems → `talk-to-human` (not `unknown`), and states a plain status question with
-  nothing wrong stays `order-status`. (b) rulesFallback complaint keywords widened:
-  lost, can't/cant find, didn't/didnt get, didn't/didnt receive, never got/received/
-  arrived, not delivered, stolen (checked before order-status, so "not delivered" still
-  escalates while "where is my order" stays order-status). Key rule kept: pure
-  "where/track/ready" → order-status (bot answers, NO handoff) — don't flood CX. file-
-  complaint already does handoff. Client chose NOT to show order status before the
-  complaint handoff (keep it simple). Verified 18/18 both LLM + rules paths.
+- **Lost/missing/not-received → escalate to human; fault-aware routing.** "I lost my
+  bag" was classifying as `unknown` (even LLM up) → dismissive cantUnderstand. Client
+  point: a "complaint" implies Chuvi did wrong, so a lost personal bag shouldn't file
+  one. Routing now distinguishes fault:
+  - **Clear service failure** (ORDER/DELIVERY/ITEMS damaged/wrong/missing/not received)
+    → `file-complaint` (apology + open case). Rules kw: complain, damaged, missing,
+    not washed, stain, wrong item, bad, didn't/didnt get, didn't/didnt receive, never
+    got/received/arrived, not delivered, stolen.
+  - **Vague/out-of-scope/personal** ("I lost my bag", "I have a problem") → `talk-to-
+    human` (NEUTRAL handoff, no apology/assumed fault). Rules kw added to talk-to-human:
+    lost, can't/cant find. Prompt tells the LLM not to assume fault or apologise.
+  - **Pure status** ("where/track/ready", nothing wrong) → `order-status` (bot answers,
+    NO handoff) — don't flood CX.
+  Both file-complaint & talk-to-human end in handoff (differ only in tone). Client chose
+  NOT to show order status before complaint handoff (keep simple). Verified: LLM 10/10,
+  rules 9/10 — only miss "I have a problem"→unknown offline (too generic; LLM gets it;
+  degrades to cantUnderstand which still offers a human). Left as-is per "LLM owns long
+  tail, rules good-enough".
 - **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
   delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
   `user:<id>`; the customer's own message is echoed to that room too. Frontend renders
