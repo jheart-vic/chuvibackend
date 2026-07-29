@@ -2,6 +2,7 @@ const BaseService = require('./base.service')
 const ConversationService = require('./conversation.service')
 const BotOrchestratorService = require('./botOrchestrator.service')
 const ConversationModel = require('../models/conversation.model')
+const ChatMessageModel = require('../models/chatMessage.model')
 const { emitChatMessage } = require('../config/socket')
 const { CONVERSATION_TYPE, CHAT_SENDER } = require('../util/constants')
 
@@ -224,7 +225,8 @@ class BotApiService extends BaseService {
 
     // ─── staff (Customer Experience) ─────────────────────────────────────────
 
-    // list handed-off support chats waiting on staff
+    // list handed-off support chats waiting on staff, each with a lightweight
+    // last-message preview so the queue survives a page refresh (no client cache).
     async queue(req) {
         try {
             const convos = await ConversationModel.find({
@@ -235,6 +237,36 @@ class BotApiService extends BaseService {
                 .sort({ lastMessageAt: -1 })
                 .populate('userId', 'fullName phoneNumber')
                 .lean()
+
+            // One query for the whole queue: newest message per conversation.
+            const ids = convos.map((c) => c._id)
+            const previewMap = {}
+            if (ids.length) {
+                const latest = await ChatMessageModel.aggregate([
+                    { $match: { conversationId: { $in: ids } } },
+                    { $sort: { createdAt: -1 } },
+                    {
+                        $group: {
+                            _id: '$conversationId',
+                            senderType: { $first: '$senderType' },
+                            text: { $first: '$text' },
+                            attachments: { $first: '$attachments' },
+                            createdAt: { $first: '$createdAt' },
+                        },
+                    },
+                ])
+                for (const m of latest) {
+                    const text = typeof m.text === 'string' ? m.text : ''
+                    previewMap[String(m._id)] = {
+                        senderType: m.senderType,
+                        // cap the preview so the queue stays lightweight
+                        text: text.length > 140 ? `${text.slice(0, 140)}…` : text,
+                        attachments: Array.isArray(m.attachments) ? m.attachments : [],
+                        createdAt: m.createdAt,
+                    }
+                }
+            }
+
             return BaseService.sendSuccessResponse({
                 message: convos.map((c) => ({
                     _id: c._id,
@@ -242,6 +274,7 @@ class BotApiService extends BaseService {
                     phoneNumber: c.userId?.phoneNumber || null,
                     unreadForStaff: c.unreadForStaff || 0,
                     lastMessageAt: c.lastMessageAt,
+                    lastMessage: previewMap[String(c._id)] || null,
                 })),
             })
         } catch (error) {
