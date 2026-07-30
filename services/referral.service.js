@@ -58,7 +58,11 @@ class ReferralService {
     }
 
     buildLink(code) {
-        const base = process.env.REFERRAL_BASE_URL || 'https://www.chuvilaundry.com/join'
+        // The signup page reads `?ref=` and forwards it as `referralCode` on
+        // register. Override per-environment with REFERRAL_BASE_URL — but never
+        // include a query string in it (the code is appended with `?ref=`).
+        const base =
+            process.env.REFERRAL_BASE_URL || 'https://www.chuvilaundry.com/auth/signup'
         return `${base}?ref=${code}`
     }
 
