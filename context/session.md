@@ -115,8 +115,10 @@ session". When a session ends/clears, fold anything durable into summary.md.
     rejected gains requirement+unlockMessage; usageLimit desc clarified (null/absent=
     unlimited, 0=none). Answered FE clarifications: my-offers filters PROFILE rules +
     window + capacity only (order-level needs a cart → validate); usageLimit 0 = zero
-    allowed not unlimited. Verified: helper unit tests all correct; swagger-jsdoc parses
-    with new fields. NOTE: not driven against live DB this session.
+    allowed not unlimited. Verified: helper unit tests + LIVE DB end-to-end drive 18/18
+    (throwaway ZZ_TEST offers+linkage, deleted in finally — 0 leftovers): my-offers
+    decoration on rewards+promotions, personal minItems + promo minOrderValue rejections
+    with requirement/unlockMessage, and eligible happy-path applies. swagger-jsdoc parses.
 - **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
   delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
   `user:<id>`; the customer's own message is echoed to that room too. Frontend renders
