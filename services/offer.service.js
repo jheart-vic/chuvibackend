@@ -16,6 +16,8 @@ const {
 
 const DAY = 24 * 60 * 60 * 1000
 
+const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
+
 // linkage statuses that still "hold" the offer for the customer
 const LIVE_LINKAGE_STATUSES = [
     CUSTOMER_OFFER_STATUS.ASSIGNED,
@@ -109,11 +111,23 @@ class OfferService {
         return { ok: true }
     }
 
-    // order-level eligibility (booking time only)
+    // order-level eligibility (booking time only). On failure it also returns a
+    // structured `requirement` (needed/current/shortfall) so the quote can build a
+    // "spend ₦X more" unlock message without the frontend recomputing anything.
     checkBookingRules(offer, draft) {
         const r = offer.rules || {}
         if (r.minOrderValue != null && (draft.amount || 0) < r.minOrderValue) {
-            return { ok: false, reason: `Minimum order value ₦${r.minOrderValue}` }
+            const current = draft.amount || 0
+            return {
+                ok: false,
+                reason: `Minimum order value ₦${r.minOrderValue}`,
+                requirement: {
+                    type: 'minOrderValue',
+                    needed: r.minOrderValue,
+                    current,
+                    shortfall: Math.max(0, r.minOrderValue - current),
+                },
+            }
         }
         // Item count: honour an explicit draft.itemCount, otherwise derive it
         // from the items array (sum of quantities) — callers (booking + the
@@ -125,16 +139,94 @@ class OfferService {
                   ? draft.items.reduce((n, i) => n + (Number(i.quantity) || 0), 0)
                   : 0
         if (r.minItems != null && itemCount < r.minItems) {
-            return { ok: false, reason: `Minimum ${r.minItems} items` }
+            return {
+                ok: false,
+                reason: `Minimum ${r.minItems} items`,
+                requirement: {
+                    type: 'minItems',
+                    needed: r.minItems,
+                    current: itemCount,
+                    shortfall: Math.max(0, r.minItems - itemCount),
+                },
+            }
         }
         if (
             r.serviceTypes?.length &&
             draft.serviceType &&
             !r.serviceTypes.includes(draft.serviceType)
         ) {
-            return { ok: false, reason: 'Service type not eligible' }
+            return {
+                ok: false,
+                reason: 'Service type not eligible',
+                requirement: {
+                    type: 'serviceType',
+                    needed: r.serviceTypes,
+                    current: draft.serviceType,
+                },
+            }
         }
         return { ok: true }
+    }
+
+    // ─── display-ready metadata (server-side, so the UI stays dumb) ────────────
+
+    // Whole days until `date`, rounded up; 0 if past, null if no date.
+    daysUntil(date, from = Date.now()) {
+        if (!date) return null
+        const ms = new Date(date).getTime() - from
+        return ms <= 0 ? 0 : Math.ceil(ms / DAY)
+    }
+
+    // Global uses left before the offer hits its cap; null = unlimited.
+    remainingUses(offer) {
+        return offer.usageLimit == null
+            ? null
+            : Math.max(0, offer.usageLimit - (offer.usedCount || 0))
+    }
+
+    // Human-readable rule summary for the customer (segmentation rules like
+    // stages/tags are intentionally omitted — they're internal).
+    buildDisplayRules(offer) {
+        const r = offer.rules || {}
+        const out = []
+        if (r.minOrderValue != null) out.push(`Minimum order ${naira(r.minOrderValue)}`)
+        if (r.minItems != null) out.push(`Minimum ${r.minItems} item${r.minItems === 1 ? '' : 's'}`)
+        if (r.serviceTypes?.length) out.push(`${r.serviceTypes.join(', ')} only`)
+        if (r.firstOrderOnly) out.push('First order only')
+        if (r.minOrders != null) out.push(`After ${r.minOrders} completed order${r.minOrders === 1 ? '' : 's'}`)
+        if (r.maxOrders != null) out.push(`Up to ${r.maxOrders} completed order${r.maxOrders === 1 ? '' : 's'}`)
+        if (r.daysSinceLastOrder != null) out.push(`If it's been ${r.daysSinceLastOrder}+ days since your last order`)
+        if (r.oneUsePerCustomer) out.push('One use per customer')
+        return out
+    }
+
+    // Display fields added to every offer entry on the customer offers page.
+    // `expiresAt` overrides the offer's own expiryDate (personal linkages expire
+    // on their own window).
+    decorateOffer(offer, { expiresAt } = {}) {
+        return {
+            displayRules: this.buildDisplayRules(offer),
+            expiresInDays: this.daysUntil(expiresAt || offer.expiryDate),
+            remainingUses: this.remainingUses(offer),
+        }
+    }
+
+    // Actionable "how to unlock" text for a booking-rule rejection; null when the
+    // rejection isn't something the customer can act on (profile rules, expiry…).
+    unlockMessage(requirement) {
+        if (!requirement) return null
+        switch (requirement.type) {
+            case 'minOrderValue':
+                return `Spend ${naira(requirement.shortfall)} more to use this offer.`
+            case 'minItems': {
+                const n = requirement.shortfall
+                return `Add ${n} more item${n === 1 ? '' : 's'} to use this offer.`
+            }
+            case 'serviceType':
+                return `Only available on ${requirement.needed.join(', ')} orders.`
+            default:
+                return null
+        }
     }
 
     // ─── trigger → linkage ───────────────────────────────────────────────────
@@ -296,6 +388,7 @@ class OfferService {
                 used,
                 disabled: used,
                 disabledReason: used ? 'You have already used this promotion' : null,
+                ...this.decorateOffer(promo),
             })
         }
 
@@ -306,9 +399,16 @@ class OfferService {
         }).lean()
 
         return {
-            rewards: rewards.filter((r) => r.offerId), // guard vs deleted offers
+            rewards: rewards
+                .filter((r) => r.offerId) // guard vs deleted offers
+                .map((r) => ({
+                    ...r,
+                    ...this.decorateOffer(r.offerId, { expiresAt: r.expiresAt }),
+                })),
             promotions,
-            baseline: baseline.filter((b) => this.isWithinWindow(b, now)),
+            baseline: baseline
+                .filter((b) => this.isWithinWindow(b, now))
+                .map((b) => ({ ...b, ...this.decorateOffer(b) })),
         }
     }
 
@@ -470,6 +570,7 @@ class OfferService {
             }).populate('offerId')
             const offer = linkage?.offerId
             let reason = null
+            let requirement = null
             if (!linkage || !offer) reason = 'Offer not found'
             else if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status))
                 reason = 'Offer already applied to an order'
@@ -482,12 +583,22 @@ class OfferService {
             else if (!this.hasGlobalCapacity(offer)) reason = 'Offer usage limit reached'
             else {
                 const p = this.checkProfileRules(offer, stats)
-                const bk = this.checkBookingRules(offer, draft)
                 if (!p.ok) reason = p.reason
-                else if (!bk.ok) reason = bk.reason
+                else {
+                    const bk = this.checkBookingRules(offer, draft)
+                    if (!bk.ok) {
+                        reason = bk.reason
+                        requirement = bk.requirement || null
+                    }
+                }
             }
             if (reason) {
-                breakdown.rejected.push({ which: 'personal', reason })
+                breakdown.rejected.push({
+                    which: 'personal',
+                    reason,
+                    requirement,
+                    unlockMessage: this.unlockMessage(requirement),
+                })
             } else {
                 const value = this.computeBenefits(offer, draft)
                 breakdown.personal = {
@@ -507,6 +618,7 @@ class OfferService {
         if (draft.promoOfferId) {
             const promo = await OfferModel.findById(draft.promoOfferId)
             let reason = null
+            let requirement = null
             if (!promo || promo.type !== OFFER_TYPE.PROMOTIONAL) reason = 'Promotion not found'
             else if (promo.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(promo, now))
                 reason = 'Promotion is no longer active'
@@ -515,23 +627,32 @@ class OfferService {
                 reason = 'This promotion cannot be combined with a personal reward'
             else {
                 const p = this.checkProfileRules(promo, stats)
-                const bk = this.checkBookingRules(promo, draft)
                 if (!p.ok) reason = p.reason
-                else if (!bk.ok) reason = bk.reason
-                else if (promo.rules?.oneUsePerCustomer) {
-                    // "Used" = already committed to any order (attached or
-                    // redeemed), so a second booking can't stack it before the
-                    // first order is delivered.
-                    const used = await CustomerOfferModel.findOne({
-                        offerId: promo._id,
-                        userId,
-                        status: { $in: COMMITTED_LINKAGE_STATUSES },
-                    })
-                    if (used) reason = 'Promotion already used'
+                else {
+                    const bk = this.checkBookingRules(promo, draft)
+                    if (!bk.ok) {
+                        reason = bk.reason
+                        requirement = bk.requirement || null
+                    } else if (promo.rules?.oneUsePerCustomer) {
+                        // "Used" = already committed to any order (attached or
+                        // redeemed), so a second booking can't stack it before the
+                        // first order is delivered.
+                        const used = await CustomerOfferModel.findOne({
+                            offerId: promo._id,
+                            userId,
+                            status: { $in: COMMITTED_LINKAGE_STATUSES },
+                        })
+                        if (used) reason = 'Promotion already used'
+                    }
                 }
             }
             if (reason) {
-                breakdown.rejected.push({ which: 'promotion', reason })
+                breakdown.rejected.push({
+                    which: 'promotion',
+                    reason,
+                    requirement,
+                    unlockMessage: this.unlockMessage(requirement),
+                })
             } else {
                 const value = this.computeBenefits(promo, draft)
                 breakdown.promotion = { offerId: promo._id, name: promo.name, ...value }
