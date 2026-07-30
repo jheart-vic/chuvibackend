@@ -99,6 +99,24 @@ session". When a session ends/clears, fold anything durable into summary.md.
   rules 9/10 — only miss "I have a problem"→unknown offline (too generic; LLM gets it;
   degrades to cantUnderstand which still offers a human). Left as-is per "LLM owns long
   tail, rules good-enough".
+- **Offer display metadata for frontend (additive, non-breaking).** FE offer-flow
+  review asked for display-ready fields so UI logic stays server-side. Added to
+  offer.service.js:
+  - my-offers (`getCustomerOffers`) — every entry (rewards/promotions/baseline) now
+    carries `displayRules[]` (human-readable rule summary via `buildDisplayRules`),
+    `expiresInDays` (rounded-up; rewards from linkage.expiresAt, promos/baseline from
+    offer.expiryDate; `daysUntil`), `remainingUses` (GLOBAL cap left, null=unlimited).
+  - `/offers/validate` (`validateAndPrice`) — each `rejected` entry now also has
+    `requirement{type,needed,current,shortfall}` and `unlockMessage` ("Spend ₦600 more
+    to use this offer.") for order-level rules (minOrderValue/minItems/serviceType);
+    null for non-actionable rejections. `checkBookingRules` now returns `requirement`.
+  - New helpers: naira, daysUntil, remainingUses, buildDisplayRules, decorateOffer,
+    unlockMessage. Swagger: Offer + CustomerOffer gain the 3 display fields; OfferQuote
+    rejected gains requirement+unlockMessage; usageLimit desc clarified (null/absent=
+    unlimited, 0=none). Answered FE clarifications: my-offers filters PROFILE rules +
+    window + capacity only (order-level needs a cart → validate); usageLimit 0 = zero
+    allowed not unlimited. Verified: helper unit tests all correct; swagger-jsdoc parses
+    with new fields. NOTE: not driven against live DB this session.
 - **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
   delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
   `user:<id>`; the customer's own message is echoed to that room too. Frontend renders

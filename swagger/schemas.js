@@ -536,7 +536,7 @@
  *         startDate: { type: string, format: date-time, nullable: true }
  *         expiryDate: { type: string, format: date-time, nullable: true }
  *         customerWindowDays: { type: integer, example: 14 }
- *         usageLimit: { type: integer, nullable: true, description: Global redemption cap; null = unlimited }
+ *         usageLimit: { type: integer, nullable: true, description: "Global redemption cap across ALL customers. null/absent = unlimited; 0 = none allowed (never usable)." }
  *         usedCount: { type: integer, example: 42 }
  *         status:
  *           type: string
@@ -544,6 +544,9 @@
  *           example: active
  *         stackableWithPersonal: { type: boolean, example: false }
  *         creditExpiryDays: { type: integer, nullable: true }
+ *         displayRules: { type: array, items: { type: string }, description: "Display-ready rule summary (customer offers page only).", example: ["Minimum order ₦2,000", "Wash & Fold only", "One use per customer"] }
+ *         expiresInDays: { type: integer, nullable: true, description: "Whole days until expiry, rounded up; 0 if past, null if no expiry (customer offers page only).", example: 8 }
+ *         remainingUses: { type: integer, nullable: true, description: "GLOBAL uses left before the cap (scarcity, not per-customer); null = unlimited (customer offers page only).", example: 24 }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
@@ -569,6 +572,9 @@
  *         viewedAt: { type: string, format: date-time, nullable: true }
  *         attachedAt: { type: string, format: date-time, nullable: true }
  *         redeemedAt: { type: string, format: date-time, nullable: true }
+ *         displayRules: { type: array, items: { type: string }, description: "Display-ready rule summary (my-offers rewards only).", example: ["Minimum order ₦2,000", "One use per customer"] }
+ *         expiresInDays: { type: integer, nullable: true, description: "Whole days until this linkage expires, rounded up; 0 if past (my-offers rewards only).", example: 5 }
+ *         remainingUses: { type: integer, nullable: true, description: "GLOBAL uses left on the underlying offer; null = unlimited (my-offers rewards only)." }
  *         createdAt: { type: string, format: date-time }
  *
  *     OfferPage:
@@ -615,8 +621,18 @@
  *           items:
  *             type: object
  *             properties:
- *               which: { type: string, example: promotion }
- *               reason: { type: string, example: "This promotion cannot be combined with a personal reward" }
+ *               which: { type: string, example: personal }
+ *               reason: { type: string, example: "Minimum order value ₦2000" }
+ *               requirement:
+ *                 type: object
+ *                 nullable: true
+ *                 description: "Structured shortfall for order-level rules (minOrderValue/minItems/serviceType); null for rules the customer can't act on (expiry, profile, capacity, stacking)."
+ *                 properties:
+ *                   type: { type: string, enum: [minOrderValue, minItems, serviceType], example: minOrderValue }
+ *                   needed: { oneOf: [{ type: number }, { type: array, items: { type: string } }], example: 2000 }
+ *                   current: { oneOf: [{ type: number }, { type: string }], example: 1400 }
+ *                   shortfall: { type: number, nullable: true, description: "Only for numeric rules (minOrderValue/minItems).", example: 600 }
+ *               unlockMessage: { type: string, nullable: true, description: "Actionable hint; null when the rejection isn't customer-actionable.", example: "Spend ₦600 more to use this offer." }
  *         payable: { type: number, example: 6400 }
  *
  *     # ── Referral ─────────────────────────────────────────────────────────
