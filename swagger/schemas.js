@@ -696,7 +696,7 @@
  *       type: object
  *       properties:
  *         referralCode: { type: string, example: CHUVIA1B2C3 }
- *         referralLink: { type: string, example: "https://www.chuvilaundry.com/join?ref=CHUVIA1B2C3" }
+ *         referralLink: { type: string, example: "https://www.chuvilaundry.com/auth/signup?ref=CHUVIA1B2C3" }
  *         totalSuccessfulReferrals: { type: integer, example: 3 }
  *         pendingReferrals: { type: integer, example: 1 }
  *         totalRewardsEarned: { type: number, example: 1500 }
