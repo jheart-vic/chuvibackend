@@ -172,12 +172,28 @@ class ConversationService {
         return message
     }
 
-    async closeConversation(conversationId) {
+    // Staff closes a resolved support chat. Records who/when/why, posts a
+    // one-time "closed" notice to the customer, and is idempotent (closing an
+    // already-closed chat is a no-op). Returns { conversation, message,
+    // alreadyClosed } — message is the system notice to emit (null when none).
+    async closeConversation(conversationId, { closedBy = null, reason = null } = {}) {
         const convo = await ConversationModel.findById(conversationId)
-        if (!convo) return null
+        // Only support chats are closeable here (guard against wrong ids).
+        if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) return null
+        if (!convo.open) {
+            return { conversation: convo, message: null, alreadyClosed: true }
+        }
         convo.open = false
+        convo.closedAt = new Date()
+        if (closedBy) convo.closedBy = closedBy
+        if (reason) convo.closeReason = reason
         await convo.save()
-        return convo
+
+        const message = await this.postSystemMessage(
+            convo._id,
+            'This chat has been closed by our team. Send a new message anytime and the assistant will pick it up.',
+        )
+        return { conversation: convo, message, alreadyClosed: false }
     }
 }
 
