@@ -67,6 +67,12 @@ class BotIntentService {
             type: 'object',
             properties: {
                 intent: { type: 'string', enum: this.intents },
+                intents: {
+                    type: 'array',
+                    description:
+                        'ALL intents present in the message, most important first, when the customer asks for more than one thing (e.g. balance AND order status). Include `intent` as the first element. Omit or single-element when only one thing is asked.',
+                    items: { type: 'string', enum: this.intents },
+                },
                 confidence: { type: 'number', description: '0..1 confidence' },
                 slots: {
                     type: 'object',
@@ -94,6 +100,7 @@ class BotIntentService {
             'If the customer mentions losing a personal item (like their own bag), or raises a vague or out-of-scope problem you have no tool for, use "talk-to-human" — a neutral handoff; do NOT assume Chuvi is at fault or apologise. ' +
             'A plain question about where an order is or its progress/status — with nothing reported wrong — is "order-status", NOT a complaint. ' +
             'If the customer asks who or what you are, your name, or what you can do, use "about". ' +
+            'If the customer asks for MORE THAN ONE thing (e.g. "my balance and order status"), set `intent` to the primary one AND list every applicable intent in `intents` (most important first). ' +
             'If unsure, use "unknown". ' +
             (pendingIntent
                 ? `The assistant is currently in the middle of a "${pendingIntent}" flow, so a short reply likely continues it.`
@@ -101,11 +108,12 @@ class BotIntentService {
         )
     }
 
-    // → { intent, confidence, slots, source: 'llm' | 'rules' }
+    // → { intent, intents[], confidence, slots, source: 'llm' | 'rules' }
     async classify(text, { pendingIntent } = {}) {
         const client = this.client()
         if (!client || !text || !text.trim()) {
-            return { ...this.rulesFallback(text), source: 'rules' }
+            const r = this.rulesFallback(text)
+            return { ...r, intents: [r.intent], source: 'rules' }
         }
         try {
             const parsed =
@@ -114,17 +122,26 @@ class BotIntentService {
                     : await this._classifyOpenAI(client, text, pendingIntent)
 
             if (!parsed?.intent || !this.intents.includes(parsed.intent)) {
-                return { ...this.rulesFallback(text), source: 'rules' }
+                const r = this.rulesFallback(text)
+                return { ...r, intents: [r.intent], source: 'rules' }
             }
+            // De-dupe + validate the multi-intent list; always lead with `intent`.
+            const raw = Array.isArray(parsed.intents) ? parsed.intents : []
+            const intents = [
+                parsed.intent,
+                ...raw.filter((i) => this.intents.includes(i)),
+            ].filter((v, idx, arr) => arr.indexOf(v) === idx)
             return {
                 intent: parsed.intent,
+                intents,
                 confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.6,
                 slots: parsed.slots || {},
                 source: 'llm',
             }
         } catch (err) {
             console.warn('Bot intent LLM failed, using rules fallback:', err.message)
-            return { ...this.rulesFallback(text), source: 'rules' }
+            const r = this.rulesFallback(text)
+            return { ...r, intents: [r.intent], source: 'rules' }
         }
     }
 

@@ -32,6 +32,9 @@ const conversationSchema = new mongoose.Schema(
             slots: { type: mongoose.Schema.Types.Mixed, default: {} },
         },
         open: { type: Boolean, default: true },
+        // when a human staff member first engaged a handed-off support chat, used
+        // to post a one-time "you're now connected" notice to the customer.
+        agentJoinedAt: { type: Date },
         lastMessageAt: { type: Date },
         // unread counters per side, for badges
         unreadForCustomer: { type: Number, default: 0 },
