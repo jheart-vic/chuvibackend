@@ -157,7 +157,11 @@ session". When a session ends/clears, fold anything durable into summary.md.
      `closedBy: req.user.id` + optional `reason` from body.
   4. **Hardening** — `closeConversation(id, {closedBy, reason})` guards to open SUPPORT
      chats only and is idempotent (`alreadyClosed:true`, no dup message/event).
-  Response now `{closed, alreadyClosed, conversationId, closedAt}`. Files: conversation.model
+  Response now `{closed, alreadyClosed, conversationId, closedAt}`. Double-close race
+  now ATOMIC (findOneAndUpdate on `open:true`) — concurrent closes give exactly one
+  winner + one notice (verified with a Promise.all race test). `conversation:closed`
+  payload gained `source` ('staff' now; 'inactivity' reserved for a future auto-close)
+  so the frontend won't need a second pass. Files: conversation.model
   (3 fields), conversation.service (closeConversation rewrite), botApi.service (controller
   + import emitConversationClosed), config/socket (emitConversationClosed), routes/bot
   (Swagger: reason body + richer response + behavior notes), swagger/schemas (Conversation

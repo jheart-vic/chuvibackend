@@ -69,12 +69,16 @@ function emitChatMessage(conversation, message) {
 
 // Notify the conversation owner and staff that a support chat was closed, so a
 // live UI can flip back to the assistant / drop it from the queue in real time.
-function emitConversationClosed(conversation) {
+// `source` discriminates how it closed ('staff' now; 'inactivity' if an auto-close
+// ever lands) so the frontend can branch without a second pass. Never carries the
+// staff-only closeReason text.
+function emitConversationClosed(conversation, source = 'staff') {
     if (!io || !conversation) return
     try {
         const payload = {
             conversationId: String(conversation._id),
             closedAt: conversation.closedAt,
+            source,
         }
         io.to(`user:${conversation.userId}`).emit('conversation:closed', payload)
         io.to('staff:support').emit('conversation:closed', payload)
