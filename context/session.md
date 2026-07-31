@@ -124,7 +124,10 @@ session". When a session ends/clears, fold anything durable into summary.md.
   1. **Multi-intent**: classify now returns `intents[]` (schema + prompt); orchestrator
      batches READ_ONLY_INFO intents (order-status, wallet, offers, referral) — "my
      balance and order status" answers both. Escalation/mid-flow/actions never batched.
-     Refactored the single path into `_runSingle`.
+     Refactored the single path into `_runSingle`. Compound answers now render as
+     ONE cohesive bubble ("Here's what I found:" + 📦/💰/🎁/👥 sections joined) instead
+     of stapled bubbles — only the wrapper is templated, section data stays
+     deterministic (INTENT_ICON map). Verified live.
   2. **Delay-aware order status**: `orderStatusReply` (replaces `orderStatus`) — when
      the order is overdue OR the message mentions delay/late, it appends an empathetic
      line + "connect you to a person?" and sets `botState.step='offered-handoff'`; next
