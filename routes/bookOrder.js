@@ -102,14 +102,21 @@ const {
  *                 description: >
  *                   Optional. A personal offer linkage id to apply. The discount is
  *                   re-validated server-side and subtracted from the charged amount
- *                   (pay-per-item & pay-from-wallet only); the linkage is attached to
- *                   the order. Invalid/ineligible offers are ignored (full price).
+ *                   (pay-per-item & pay-from-wallet only), then this endpoint
+ *                   AUTOMATICALLY attaches the linkage to the created order
+ *                   (assigned/viewed → attached) so it redeems on delivery and releases
+ *                   on cancel. Do NOT call POST /offers/attach separately — it's only
+ *                   for attaching an offer to an order that was booked without one.
+ *                   Invalid/ineligible offers are ignored (full price) and the linkage
+ *                   stays unattached, so it remains usable on a future eligible order.
  *                 example: 64c0aa11e3c3b4a1d2f1ca10
  *               promoOfferId:
  *                 type: string
  *                 description: >
  *                   Optional. A promotional offer id to apply (subject to the same
- *                   server-side validation and stacking rules as personal offers).
+ *                   server-side validation and stacking rules as personal offers). Like
+ *                   customerOfferId, the promo is attached to the order automatically by
+ *                   this endpoint — no separate call needed.
  *                 example: 64c0aa11e3c3b4a1d2f1cb20
  *               useCredit:
  *                 type: boolean

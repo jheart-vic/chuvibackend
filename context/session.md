@@ -119,6 +119,30 @@ session". When a session ends/clears, fold anything durable into summary.md.
     (throwaway ZZ_TEST offers+linkage, deleted in finally — 0 leftovers): my-offers
     decoration on rewards+promotions, personal minItems + promo minOrderValue rejections
     with requirement/unlockMessage, and eligible happy-path applies. swagger-jsdoc parses.
+- **Bot UX fixes 1–3 (compound / delay-aware / handoff clarity).** All verified live
+  12/12 (throwaway user+order, cleaned up).
+  1. **Multi-intent**: classify now returns `intents[]` (schema + prompt); orchestrator
+     batches READ_ONLY_INFO intents (order-status, wallet, offers, referral) — "my
+     balance and order status" answers both. Escalation/mid-flow/actions never batched.
+     Refactored the single path into `_runSingle`.
+  2. **Delay-aware order status**: `orderStatusReply` (replaces `orderStatus`) — when
+     the order is overdue OR the message mentions delay/late, it appends an empathetic
+     line + "connect you to a person?" and sets `botState.step='offered-handoff'`; next
+     turn an affirmative (`isAffirmative`) hands off. Never invents a delay reason.
+     Suppressed in batch mode (allowHandoffOffer=!batch).
+  3a. **Handoff = one clean bubble**: TALK_TO_HUMAN now returns no bot reply;
+      FILE_COMPLAINT returns an empathetic apology only; the single expectation-setting
+      notice comes from `handoff()` ("You're now in our support queue — … reply right
+      here shortly."). Fixes the old duplicate "connecting you…" bubbles.
+  3b. **"Agent joined" signal**: new `conversation.agentJoinedAt` + `markAgentJoined()`;
+      first staff reply (botApi.staffReply) posts "You're now connected to our Customer
+      Experience team." once + emits socket. Answers "how do we know an agent connected"
+      (staff still reply manually — by design).
+  Files: botIntent.service (intents[] schema/prompt/parse), botOrchestrator (READ_ONLY_INFO,
+  handleCustomerMessage rewrite + _runSingle, orderStatusReply, isAffirmative, handoff text,
+  runWorkflow batch param), conversation.model (agentJoinedAt), conversation.service
+  (markAgentJoined), botApi.service (staffReply calls it). Backdrop: prod LLM key was the
+  cause of the earlier robotic repeats — now set + redeployed, LLM confirmed live.
 - **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
   delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
   `user:<id>`; the customer's own message is echoed to that room too. Frontend renders

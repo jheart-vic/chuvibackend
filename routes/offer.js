@@ -171,6 +171,10 @@ router.post(ROUTE_OFFER_VALIDATE, [auth], controller.validateOffer)
  *       Links the selected reward to a created order (one personal reward per
  *       order). The offer is only consumed (REDEEMED) when the order is
  *       delivered; a cancelled order releases it.
+ *       NOTE: the normal booking flow does NOT need this — POST
+ *       /bookOrder/create-book-order already auto-attaches a `customerOfferId`
+ *       (and `promoOfferId`). Use this endpoint only to attach a reward to an
+ *       order that was created WITHOUT one.
  *     tags: [Offers]
  *     security:
  *       - bearerAuth: []

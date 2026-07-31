@@ -157,6 +157,21 @@ class ConversationService {
         return convo
     }
 
+    // First time a staff member engages a handed-off chat, post a one-time
+    // "you're now connected" notice so the customer knows a human has joined.
+    // Returns the created system message (to emit), or null if already joined.
+    async markAgentJoined(conversationId) {
+        const convo = await ConversationModel.findById(conversationId)
+        if (!convo || convo.agentJoinedAt) return null
+        convo.agentJoinedAt = new Date()
+        await convo.save()
+        const message = await this.postSystemMessage(
+            conversationId,
+            "You're now connected to our Customer Experience team.",
+        )
+        return message
+    }
+
     async closeConversation(conversationId) {
         const convo = await ConversationModel.findById(conversationId)
         if (!convo) return null

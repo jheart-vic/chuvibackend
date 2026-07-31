@@ -18,6 +18,16 @@ const {
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
 
+// Read-only informational intents that are safe to batch in one message
+// (a compound request like "my balance and order status"). Actions and
+// multi-turn flows are never batched.
+const READ_ONLY_INFO = [
+    BOT_INTENT.ORDER_STATUS,
+    BOT_INTENT.WALLET_BALANCE,
+    BOT_INTENT.VIEW_OFFERS,
+    BOT_INTENT.REFERRAL_INFO,
+]
+
 // The deterministic brain of the in-app bot. The LLM only labels intent
 // (botIntent.service); everything here follows the EXISTING system rules and
 // can only perform the client-approved low-risk actions. High-risk requests
@@ -65,18 +75,43 @@ class BotOrchestratorService {
 
         const pendingIntent = convo.botState?.intent || null
         const pendingStep = convo.botState?.step || null
-        const { intent, confidence, slots } = await BotIntentService.classify(text, {
+        const { intent, intents, confidence, slots } = await BotIntentService.classify(text, {
             pendingIntent,
         })
-
-        // Resolve the intent to act on.
-        //  1) Escalation ALWAYS wins — a request for a human / to file a complaint
-        //     must never be swallowed by a lingering flow.
-        //  2) Otherwise only continue a pending flow when it is genuinely mid-step
-        //     (awaiting a specific reply) — not merely because an intent label
-        //     lingers. This stops the always-0.4 keyword fallback from trapping
-        //     the customer in a previous flow (e.g. repeating the balance).
         const escalationIntents = [BOT_INTENT.TALK_TO_HUMAN, BOT_INTENT.FILE_COMPLAINT]
+        const mergedSlots = { ...(convo.botState?.slots || {}), ...slots }
+
+        // A) A pending "…would you like a person?" offer (from a delayed-order
+        //    reply): a yes hands off; anything else drops the offer and the new
+        //    message is handled normally.
+        if (pendingStep === 'offered-handoff') {
+            if (this.isAffirmative(text)) {
+                return this._runSingle({
+                    convo, userId, text, intent: BOT_INTENT.TALK_TO_HUMAN, confidence, slots: mergedSlots,
+                })
+            }
+            return this._runSingle({ convo, userId, text, intent, confidence, slots: mergedSlots })
+        }
+
+        // B) Compound request → answer each read-only info intent in turn. Never
+        //    when mid-flow or when escalation is the primary intent.
+        const batch = [...new Set((intents || []).filter((i) => READ_ONLY_INFO.includes(i)))]
+        if (!pendingStep && !escalationIntents.includes(intent) && batch.length >= 2) {
+            const posted = []
+            for (const it of batch) {
+                const r = await this.runWorkflow({
+                    convo, userId, text, intent: it, confidence, slots: mergedSlots, batch: true,
+                })
+                for (const reply of r.replies || []) posted.push(await this.say(convo, reply))
+            }
+            convo.botState = { intent: null, step: null, slots: {} }
+            await convo.save()
+            return { conversation: convo, handledBy: 'bot', intent: batch.join('+'), replies: posted }
+        }
+
+        // C) Single intent. Escalation always wins; otherwise continue a genuinely
+        //    mid-step flow (guards the always-0.4 keyword fallback from trapping
+        //    the customer in a previous flow).
         let effectiveIntent = intent
         if (!escalationIntents.includes(intent)) {
             const continuesFlow =
@@ -85,37 +120,30 @@ class BotOrchestratorService {
                 (confidence < 0.6 || intent === BOT_INTENT.UNKNOWN)
             if (continuesFlow) effectiveIntent = pendingIntent
         }
+        return this._runSingle({ convo, userId, text, intent: effectiveIntent, confidence, slots: mergedSlots })
+    }
 
-        const result = await this.runWorkflow({
-            convo,
-            userId,
-            text,
-            intent: effectiveIntent,
-            confidence,
-            slots: { ...(convo.botState?.slots || {}), ...slots },
-        })
-
-        // persist / clear multi-turn state
+    // Run one intent's workflow, persist multi-turn state, post replies, hand off.
+    async _runSingle({ convo, userId, text, intent, confidence, slots }) {
+        const result = await this.runWorkflow({ convo, userId, text, intent, confidence, slots })
         convo.botState = result.state || { intent: null, step: null, slots: {} }
         await convo.save()
 
         const posted = []
         for (const reply of result.replies || []) {
-            const msg = await this.say(convo, reply)
-            posted.push(msg)
+            posted.push(await this.say(convo, reply))
         }
-
         if (result.handoff) await this.handoff(convo, userId)
 
         return {
             conversation: convo,
             handledBy: result.handoff ? 'handoff' : 'bot',
-            intent: effectiveIntent,
+            intent,
             replies: posted,
         }
     }
 
-    async runWorkflow({ convo, userId, text, intent, confidence, slots }) {
+    async runWorkflow({ convo, userId, text, intent, confidence, slots, batch = false }) {
         // low confidence and nothing in flight → out-of-scope: a friendly LLM
         // redirect (falls back to the plain menu when the LLM is unavailable).
         if (
@@ -140,7 +168,9 @@ class BotOrchestratorService {
             case BOT_INTENT.ABOUT:
                 return { replies: [this.aboutBot()] }
             case BOT_INTENT.ORDER_STATUS:
-                return { replies: [await this.orderStatus(userId, slots)] }
+                return await this.orderStatusReply(userId, slots, text, {
+                    allowHandoffOffer: !batch,
+                })
             case BOT_INTENT.WALLET_BALANCE:
                 return { replies: [await this.walletBalance(userId)] }
             case BOT_INTENT.VIEW_OFFERS:
@@ -156,32 +186,37 @@ class BotOrchestratorService {
             case BOT_INTENT.SUBMIT_FEEDBACK:
                 return { replies: [this.feedbackAck()] }
             case BOT_INTENT.FILE_COMPLAINT:
+                // Empathetic apology only — handoff() adds the single "you're in
+                // the queue" notice, so this isn't a duplicate "connecting you".
                 return {
-                    replies: [
-                        "I'm sorry about that. I'm connecting you to our Customer Experience team so they can open a complaint and make it right.",
-                    ],
+                    replies: ["I'm sorry about that — I'll get a Customer Experience officer to help you."],
                     handoff: true,
                 }
             case BOT_INTENT.TALK_TO_HUMAN:
             default:
-                return {
-                    replies: ['No problem — connecting you to a Customer Experience officer now.'],
-                    handoff: true,
-                }
+                // No bot reply — handoff() posts the single queue notice.
+                return { replies: [], handoff: true }
         }
     }
 
     // ─── low-risk workflows (existing systems only) ───────────────────────────
 
-    async orderStatus(userId, slots) {
+    // Returns { replies, state? }. When the order is overdue or the customer is
+    // asking about a delay, it appends an empathetic line + a handoff offer (a
+    // "yes" next turn hands off) — it NEVER invents a reason for the delay.
+    async orderStatusReply(userId, slots, text, { allowHandoffOffer = true } = {}) {
         const query = { userId }
         if (slots.orderNumber) query.oscNumber = String(slots.orderNumber).trim()
         const order = await BookOrderModel.findOne(query).sort({ createdAt: -1 }).lean()
         if (!order) {
-            return slots.orderNumber
-                ? `I couldn't find an order ${slots.orderNumber} on your account.`
-                : "I couldn't find any orders on your account yet. Ready to place one? " +
-                      this.bookingGuide()
+            return {
+                replies: [
+                    slots.orderNumber
+                        ? `I couldn't find an order ${slots.orderNumber} on your account.`
+                        : "I couldn't find any orders on your account yet. Ready to place one? " +
+                              this.bookingGuide(),
+                ],
+            }
         }
         const status = order.stage?.status || 'pending'
         const bits = [
@@ -192,7 +227,33 @@ class BotOrchestratorService {
                 ? `Estimated delivery: ${new Date(order.deliveryDate).toDateString()}`
                 : null,
         ].filter(Boolean)
-        return bits.join('\n')
+        let reply = bits.join('\n')
+
+        const done = ['delivered', 'cancelled'].includes(status)
+        const overdue =
+            !done &&
+            order.deliveryDate &&
+            new Date(order.deliveryDate) < new Date()
+        const asksAboutDelay =
+            /\b(delay|delayed|late|overdue|taking (too |so )?long|still (not|haven'?t|isn'?t)|why.*(not|isn'?t).*(ready|delivered|here|come|arriv))\b/i.test(
+                String(text || ''),
+            )
+        if (allowHandoffOffer && !done && (overdue || asksAboutDelay)) {
+            reply +=
+                "\n\nI'm sorry it's taking longer than expected. Would you like me to connect you to a Customer Experience officer?"
+            return {
+                replies: [reply],
+                state: { intent: BOT_INTENT.ORDER_STATUS, step: 'offered-handoff', slots: {} },
+            }
+        }
+        return { replies: [reply] }
+    }
+
+    // Loose yes-detector for the "connect you to a person?" offer.
+    isAffirmative(text) {
+        return /\b(yes|yeah|yep|yup|sure|ok|okay|okk|please|pls|connect|do it|go ahead|alright|yh|ya|talk|speak)\b/i.test(
+            String(text || ''),
+        )
     }
 
     async walletBalance(userId) {
@@ -353,7 +414,7 @@ class BotOrchestratorService {
         await convo.save()
         const sys = await ConversationService.postSystemMessage(
             convo._id,
-            'Connecting you to a Customer Experience officer…',
+            "You're now in our support queue — a Customer Experience officer will reply right here shortly.",
         )
         if (sys) emitChatMessage(convo, sys)
         // let the customer know (best-effort; never breaks the flow)

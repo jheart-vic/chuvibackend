@@ -336,6 +336,9 @@ class BotApiService extends BaseService {
             if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) {
                 return BaseService.sendFailedResponse({ error: 'Support conversation not found' })
             }
+            // First staff engagement → tell the customer a human has joined.
+            const joinNotice = await ConversationService.markAgentJoined(convo._id)
+            if (joinNotice) emitChatMessage(convo, joinNotice)
             const message = await ConversationService.postMessage({
                 conversationId: convo._id,
                 senderType: CHAT_SENDER.STAFF,
