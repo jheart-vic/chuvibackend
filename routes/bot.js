@@ -401,7 +401,8 @@ router.post(ROUTE_BOT_STAFF_REPLY, [customerExperienceAuth], (req, res) =>
  *       Marks the support chat closed (records closedAt/closedBy and an optional
  *       reason), posts a one-time "chat closed" system message to the customer,
  *       and emits it live plus a `conversation:closed` socket event (rooms
- *       `user:<id>` and `staff:support`). The chat then drops out of the staff
+ *       `user:<id>` and `staff:support`; payload `{ conversationId, closedAt,
+ *       source }` where source is `staff`). The chat then drops out of the staff
  *       queue and the customer's open-threads list; history is retained. The
  *       customer's next message starts a fresh assistant (bot) conversation.
  *       Idempotent — closing an already-closed chat is a no-op

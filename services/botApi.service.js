@@ -377,7 +377,7 @@ class BotApiService extends BaseService {
             // Notify the customer in real time (only on a fresh close).
             if (!result.alreadyClosed) {
                 if (result.message) emitChatMessage(result.conversation, result.message)
-                emitConversationClosed(result.conversation)
+                emitConversationClosed(result.conversation, 'staff')
             }
             return BaseService.sendSuccessResponse({
                 message: {

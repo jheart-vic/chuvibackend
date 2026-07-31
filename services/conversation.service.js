@@ -173,27 +173,33 @@ class ConversationService {
     }
 
     // Staff closes a resolved support chat. Records who/when/why, posts a
-    // one-time "closed" notice to the customer, and is idempotent (closing an
-    // already-closed chat is a no-op). Returns { conversation, message,
-    // alreadyClosed } — message is the system notice to emit (null when none).
+    // one-time "closed" notice, and is idempotent. Returns { conversation,
+    // message, alreadyClosed } — message is the system notice to emit (null when
+    // none). The flip is ATOMIC (findOneAndUpdate on open:true), so a double-close
+    // race gives exactly ONE winner (alreadyClosed:false + notice); every other
+    // concurrent/repeat call gets alreadyClosed:true and posts nothing.
     async closeConversation(conversationId, { closedBy = null, reason = null } = {}) {
-        const convo = await ConversationModel.findById(conversationId)
-        // Only support chats are closeable here (guard against wrong ids).
-        if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) return null
-        if (!convo.open) {
-            return { conversation: convo, message: null, alreadyClosed: true }
-        }
-        convo.open = false
-        convo.closedAt = new Date()
-        if (closedBy) convo.closedBy = closedBy
-        if (reason) convo.closeReason = reason
-        await convo.save()
+        const set = { open: false, closedAt: new Date() }
+        if (closedBy) set.closedBy = closedBy
+        if (reason) set.closeReason = reason
 
-        const message = await this.postSystemMessage(
-            convo._id,
-            'This chat has been closed by our team. Send a new message anytime and the assistant will pick it up.',
+        const convo = await ConversationModel.findOneAndUpdate(
+            { _id: conversationId, type: CONVERSATION_TYPE.SUPPORT, open: true },
+            { $set: set },
+            { new: true },
         )
-        return { conversation: convo, message, alreadyClosed: false }
+        if (convo) {
+            // this call won the close — post the single notice
+            const message = await this.postSystemMessage(
+                convo._id,
+                'This chat has been closed by our team. Send a new message anytime and the assistant will pick it up.',
+            )
+            return { conversation: convo, message, alreadyClosed: false }
+        }
+        // Didn't match: either not a support chat / unknown id, or already closed.
+        const existing = await ConversationModel.findById(conversationId)
+        if (!existing || existing.type !== CONVERSATION_TYPE.SUPPORT) return null
+        return { conversation: existing, message: null, alreadyClosed: true }
     }
 }
 
