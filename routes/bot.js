@@ -397,6 +397,15 @@ router.post(ROUTE_BOT_STAFF_REPLY, [customerExperienceAuth], (req, res) =>
  * /bot/{conversationId}/close:
  *   post:
  *     summary: Close a resolved support conversation (CX/admin)
+ *     description: >
+ *       Marks the support chat closed (records closedAt/closedBy and an optional
+ *       reason), posts a one-time "chat closed" system message to the customer,
+ *       and emits it live plus a `conversation:closed` socket event (rooms
+ *       `user:<id>` and `staff:support`). The chat then drops out of the staff
+ *       queue and the customer's open-threads list; history is retained. The
+ *       customer's next message starts a fresh assistant (bot) conversation.
+ *       Idempotent — closing an already-closed chat is a no-op
+ *       (`alreadyClosed: true`, no new message/event).
  *     tags: [Bot]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -404,6 +413,14 @@ router.post(ROUTE_BOT_STAFF_REPLY, [customerExperienceAuth], (req, res) =>
  *         name: conversationId
  *         required: true
  *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string, example: "Resolved — order located and re-delivered" }
  *     responses:
  *       200:
  *         description: Conversation closed
@@ -417,6 +434,14 @@ router.post(ROUTE_BOT_STAFF_REPLY, [customerExperienceAuth], (req, res) =>
  *                   type: object
  *                   properties:
  *                     closed: { type: boolean, example: true }
+ *                     alreadyClosed: { type: boolean, example: false }
+ *                     conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                     closedAt: { type: string, format: date-time }
+ *       400:
+ *         description: Support conversation not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_BOT_CLOSE, [customerExperienceAuth], (req, res) =>
     new BotController().closeConversation(req, res),

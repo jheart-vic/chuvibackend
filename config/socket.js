@@ -67,4 +67,20 @@ function emitChatMessage(conversation, message) {
     }
 }
 
-module.exports = { initSocket, getIO, emitChatMessage }
+// Notify the conversation owner and staff that a support chat was closed, so a
+// live UI can flip back to the assistant / drop it from the queue in real time.
+function emitConversationClosed(conversation) {
+    if (!io || !conversation) return
+    try {
+        const payload = {
+            conversationId: String(conversation._id),
+            closedAt: conversation.closedAt,
+        }
+        io.to(`user:${conversation.userId}`).emit('conversation:closed', payload)
+        io.to('staff:support').emit('conversation:closed', payload)
+    } catch (err) {
+        console.warn('Socket emit (close) failed (non-fatal):', err.message)
+    }
+}
+
+module.exports = { initSocket, getIO, emitChatMessage, emitConversationClosed }

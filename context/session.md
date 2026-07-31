@@ -124,7 +124,10 @@ session". When a session ends/clears, fold anything durable into summary.md.
   1. **Multi-intent**: classify now returns `intents[]` (schema + prompt); orchestrator
      batches READ_ONLY_INFO intents (order-status, wallet, offers, referral) — "my
      balance and order status" answers both. Escalation/mid-flow/actions never batched.
-     Refactored the single path into `_runSingle`.
+     Refactored the single path into `_runSingle`. Compound answers now render as
+     ONE cohesive bubble ("Here's what I found:" + 📦/💰/🎁/👥 sections joined) instead
+     of stapled bubbles — only the wrapper is templated, section data stays
+     deterministic (INTENT_ICON map). Verified live.
   2. **Delay-aware order status**: `orderStatusReply` (replaces `orderStatus`) — when
      the order is overdue OR the message mentions delay/late, it appends an empathetic
      line + "connect you to a person?" and sets `botState.step='offered-handoff'`; next
@@ -143,6 +146,23 @@ session". When a session ends/clears, fold anything durable into summary.md.
   runWorkflow batch param), conversation.model (agentJoinedAt), conversation.service
   (markAgentJoined), botApi.service (staffReply calls it). Backdrop: prod LLM key was the
   cause of the earlier robotic repeats — now set + redeployed, LLM confirmed live.
+- **Staff-close of support chat now proper (was a silent boolean flip).** Verified live
+  13/13. Four fixes in the close path:
+  1. **Customer close notice** — posts a one-time system message "This chat has been
+     closed by our team. Send a new message anytime and the assistant will pick it up."
+  2. **Real-time push** — emits that message (emitChatMessage) + a NEW
+     `conversation:closed` socket event (config/socket `emitConversationClosed`, rooms
+     user:<id> + staff:support) so live UIs flip back to the assistant / drop from queue.
+  3. **Audit** — new `conversation.closedAt/closedBy/closeReason`; controller passes
+     `closedBy: req.user.id` + optional `reason` from body.
+  4. **Hardening** — `closeConversation(id, {closedBy, reason})` guards to open SUPPORT
+     chats only and is idempotent (`alreadyClosed:true`, no dup message/event).
+  Response now `{closed, alreadyClosed, conversationId, closedAt}`. Files: conversation.model
+  (3 fields), conversation.service (closeConversation rewrite), botApi.service (controller
+  + import emitConversationClosed), config/socket (emitConversationClosed), routes/bot
+  (Swagger: reason body + richer response + behavior notes), swagger/schemas (Conversation
+  gains agentJoinedAt/closedAt/closedBy/closeReason), CLAUDE.md. Unchanged: staff-only
+  (customerExperienceAuth), history retained, next customer msg → fresh bot thread.
 - **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
   delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
   `user:<id>`; the customer's own message is echoed to that room too. Frontend renders

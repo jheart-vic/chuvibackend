@@ -28,6 +28,14 @@ const READ_ONLY_INFO = [
     BOT_INTENT.REFERRAL_INFO,
 ]
 
+// Section icons for a combined compound-request reply (scannability).
+const INTENT_ICON = {
+    [BOT_INTENT.ORDER_STATUS]: '📦',
+    [BOT_INTENT.WALLET_BALANCE]: '💰',
+    [BOT_INTENT.VIEW_OFFERS]: '🎁',
+    [BOT_INTENT.REFERRAL_INFO]: '👥',
+}
+
 // The deterministic brain of the in-app bot. The LLM only labels intent
 // (botIntent.service); everything here follows the EXISTING system rules and
 // can only perform the client-approved low-risk actions. High-risk requests
@@ -97,16 +105,24 @@ class BotOrchestratorService {
         //    when mid-flow or when escalation is the primary intent.
         const batch = [...new Set((intents || []).filter((i) => READ_ONLY_INFO.includes(i)))]
         if (!pendingStep && !escalationIntents.includes(intent) && batch.length >= 2) {
-            const posted = []
+            // Collect each answer, then send as ONE cohesive message (not stapled
+            // bubbles). Only the wrapper is templated — the data stays deterministic.
+            const sections = []
             for (const it of batch) {
                 const r = await this.runWorkflow({
                     convo, userId, text, intent: it, confidence, slots: mergedSlots, batch: true,
                 })
-                for (const reply of r.replies || []) posted.push(await this.say(convo, reply))
+                const body = (r.replies || []).filter(Boolean).join('\n')
+                if (body) sections.push(`${INTENT_ICON[it] ? INTENT_ICON[it] + ' ' : ''}${body}`)
             }
             convo.botState = { intent: null, step: null, slots: {} }
             await convo.save()
-            return { conversation: convo, handledBy: 'bot', intent: batch.join('+'), replies: posted }
+            const combined =
+                sections.length > 1
+                    ? `Here's what I found:\n\n${sections.join('\n\n')}`
+                    : sections[0] || this.cantUnderstand()
+            const msg = await this.say(convo, combined)
+            return { conversation: convo, handledBy: 'bot', intent: batch.join('+'), replies: [msg] }
         }
 
         // C) Single intent. Escalation always wins; otherwise continue a genuinely

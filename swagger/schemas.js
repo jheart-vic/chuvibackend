@@ -820,6 +820,10 @@
  *         orderId: { type: string, nullable: true }
  *         mode: { type: string, enum: [bot, human], example: human }
  *         open: { type: boolean, example: true }
+ *         agentJoinedAt: { type: string, format: date-time, nullable: true, description: When a staff member first engaged a handed-off chat }
+ *         closedAt: { type: string, format: date-time, nullable: true }
+ *         closedBy: { type: string, nullable: true, description: Staff user id who closed it }
+ *         closeReason: { type: string, nullable: true, example: "Resolved — order re-delivered" }
  *         lastMessageAt: { type: string, format: date-time, nullable: true }
  *         unreadForCustomer: { type: integer, example: 0 }
  *         unreadForStaff: { type: integer, example: 1 }

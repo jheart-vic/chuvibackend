@@ -3,7 +3,7 @@ const ConversationService = require('./conversation.service')
 const BotOrchestratorService = require('./botOrchestrator.service')
 const ConversationModel = require('../models/conversation.model')
 const ChatMessageModel = require('../models/chatMessage.model')
-const { emitChatMessage } = require('../config/socket')
+const { emitChatMessage, emitConversationClosed } = require('../config/socket')
 const { CONVERSATION_TYPE, CHAT_SENDER } = require('../util/constants')
 
 // Attachments are photo URLs (upload via /api/utils/image-upload-single first).
@@ -365,9 +365,28 @@ class BotApiService extends BaseService {
     // staff closes a resolved support conversation
     async closeConversation(req) {
         try {
-            const convo = await ConversationService.closeConversation(req.params.conversationId)
-            if (!convo) return BaseService.sendFailedResponse({ error: 'Conversation not found' })
-            return BaseService.sendSuccessResponse({ message: { closed: true } })
+            const reason =
+                typeof req.body?.reason === 'string' ? req.body.reason.trim() : null
+            const result = await ConversationService.closeConversation(
+                req.params.conversationId,
+                { closedBy: req.user.id, reason },
+            )
+            if (!result) {
+                return BaseService.sendFailedResponse({ error: 'Support conversation not found' })
+            }
+            // Notify the customer in real time (only on a fresh close).
+            if (!result.alreadyClosed) {
+                if (result.message) emitChatMessage(result.conversation, result.message)
+                emitConversationClosed(result.conversation)
+            }
+            return BaseService.sendSuccessResponse({
+                message: {
+                    closed: true,
+                    alreadyClosed: !!result.alreadyClosed,
+                    conversationId: result.conversation._id,
+                    closedAt: result.conversation.closedAt,
+                },
+            })
         } catch (error) {
             console.error(error)
             return BaseService.sendFailedResponse({ error: 'Failed to close conversation' })

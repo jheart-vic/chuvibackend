@@ -35,6 +35,10 @@ const conversationSchema = new mongoose.Schema(
         // when a human staff member first engaged a handed-off support chat, used
         // to post a one-time "you're now connected" notice to the customer.
         agentJoinedAt: { type: Date },
+        // close audit (support chats): who closed it, when, and why.
+        closedAt: { type: Date },
+        closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        closeReason: { type: String },
         lastMessageAt: { type: Date },
         // unread counters per side, for badges
         unreadForCustomer: { type: Number, default: 0 },
