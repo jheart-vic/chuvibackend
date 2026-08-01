@@ -1,6 +1,7 @@
 const ActivityModel = require('../models/activity.model')
 const AdminSettingModel = require('../models/adminSetting.model')
 const BookOrderModel = require('../models/bookOrder.model')
+const BookOrderService = require('./bookOrder.service')
 const NotificationModel = require('../models/notification.model')
 const PaymentModel = require('../models/payment.model')
 const UserModel = require('../models/user.model')
@@ -123,20 +124,31 @@ class IntakeUserService extends BaseService {
                 )
             }, 0)
 
-            let extraDeliveryCost = 0
+            // CLASSIC-tier subtotal (multiplier 1) for the receipt's tier-uplift line.
+            const itemsBase = post.items.reduce((sum, item) => {
+                const price = Number(item.price)
+                const quantity = Number(item.quantity)
+                return (
+                    sum +
+                    roundToNearestHundred(price * serviceTypeMultiplier) *
+                        quantity
+                )
+            }, 0)
+            const itemsSubtotal = totalPrice
 
+            let speedCharge = 0
             if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                extraDeliveryCost += adminOrderSetting.expressCharge
+                speedCharge = adminOrderSetting.expressCharge
             } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                extraDeliveryCost += adminOrderSetting.sameDayCharge
+                speedCharge = adminOrderSetting.sameDayCharge
             }
-
-            if (post.isPickUp) {
-                extraDeliveryCost += adminOrderSetting.pickupFee || 0
-            }
-            if (post.isDelivery) {
-                extraDeliveryCost += adminOrderSetting.deliveryFee || 0
-            }
+            const pickupFee = post.isPickUp
+                ? adminOrderSetting.pickupFee || 0
+                : 0
+            const deliveryFee = post.isDelivery
+                ? adminOrderSetting.deliveryFee || 0
+                : 0
+            const extraDeliveryCost = speedCharge + pickupFee + deliveryFee
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
@@ -178,6 +190,18 @@ class IntakeUserService extends BaseService {
                 deliveryDate,
             }
             const newOrder = new BookOrderModel(newOrderItem)
+            // Walk-in orders have no offer/credit — capture a plain receipt so the
+            // customer still sees the full breakdown (reuses BookOrderService).
+            newOrder.pricing = new BookOrderService()._buildPricing({
+                serviceTier: post.serviceTier,
+                itemsBase,
+                tierMultiplier: multiplier,
+                itemsSubtotal,
+                speedCharge,
+                pickupFee,
+                deliveryFee,
+                orderTotal: totalPrice,
+            })
             await newOrder.save()
 
             crmOnOrderCreated(newOrder)

@@ -209,34 +209,39 @@ const bookOrderSchema = new mongoose.Schema(
         // Frozen price receipt captured at booking: every line that raised
         // (tier, fees) or lowered (offer, waived fees, wallet credit) the price,
         // so the customer can see the full breakdown of what they paid / gained.
-        // reconstructed=true marks a best-effort shape built at read time for
-        // orders placed before this snapshot existed.
+        // No leaf defaults on purpose — the whole subdoc must stay ABSENT unless a
+        // booking path explicitly sets it, so the read-time fallback can detect
+        // legacy orders (defaults would auto-populate a misleading all-zero
+        // receipt). reconstructed=true marks a best-effort shape built at read time.
         pricing: {
-            itemsBase: { type: Number, default: 0 }, // item subtotal before the tier multiplier
-            serviceTier: { type: String },
-            tierMultiplier: { type: Number, default: 1 },
-            tierUplift: { type: Number, default: 0 }, // itemsSubtotal - itemsBase
-            itemsSubtotal: { type: Number, default: 0 }, // item subtotal after the tier multiplier
-            speedCharge: { type: Number, default: 0 }, // express / same-day surcharge
-            pickupFee: { type: Number, default: 0 },
-            deliveryFee: { type: Number, default: 0 },
-            feesTotal: { type: Number, default: 0 }, // == deliveryAmount
-            grossTotal: { type: Number, default: 0 }, // itemsSubtotal + feesTotal, before discounts
-            offerDiscount: { type: Number, default: 0 },
-            freePickupWaived: { type: Number, default: 0 },
-            freeDeliveryWaived: { type: Number, default: 0 },
-            appliedOffers: [
-                {
-                    offerId: { type: mongoose.Schema.Types.ObjectId },
-                    name: { type: String },
-                    type: { type: String }, // personal | promotion
-                },
-            ],
-            creditApplied: { type: Number, default: 0 }, // wallet reward credit used
-            orderTotal: { type: Number, default: 0 }, // == amount (billed after offers/credit)
-            youSaved: { type: Number, default: 0 }, // offerDiscount + waived fees + creditApplied
-            coveredBySubscription: { type: Boolean, default: false },
-            reconstructed: { type: Boolean, default: false },
+            type: {
+                itemsBase: Number, // item subtotal before the tier multiplier
+                serviceTier: String,
+                tierMultiplier: Number,
+                tierUplift: Number, // itemsSubtotal - itemsBase
+                itemsSubtotal: Number, // item subtotal after the tier multiplier
+                speedCharge: Number, // express / same-day surcharge
+                pickupFee: Number,
+                deliveryFee: Number,
+                feesTotal: Number, // == deliveryAmount
+                grossTotal: Number, // itemsSubtotal + feesTotal, before discounts
+                offerDiscount: Number,
+                freePickupWaived: Number,
+                freeDeliveryWaived: Number,
+                appliedOffers: [
+                    {
+                        offerId: mongoose.Schema.Types.ObjectId,
+                        name: String,
+                        type: String, // personal | promotion
+                    },
+                ],
+                creditApplied: Number, // wallet reward credit used
+                orderTotal: Number, // == amount (billed after offers/credit)
+                youSaved: Number, // offerDiscount + waived fees + creditApplied
+                coveredBySubscription: Boolean,
+                reconstructed: Boolean,
+            },
+            default: undefined, // do not auto-create the subdoc
         },
         billingType: {
             type: String,

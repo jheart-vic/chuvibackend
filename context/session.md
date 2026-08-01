@@ -39,9 +39,19 @@ session". When a session ends/clears, fold anything durable into summary.md.
   captured as `DEFAULT_PROFILE_IMAGE_URL` const (matches user.model default).
   Verified live: reset + persisted. NOTE: inline `node -e` DB scripts buffering-
   timeout on this machine; file-based scratchpad scripts work — use those.
-- Files: models/bookOrder.model.js, services/bookOrder.service.js, swagger/schemas.js,
-  routes/bookOrder.js, services/user.service.js, controllers/user.controller.js,
-  routes/users.js, util/page-route.js.
+- **Regression caught + fixed during review.** First cut gave the `pricing` subdoc
+  leaf `default`s → Mongoose auto-populated a zeroed `pricing:{...reconstructed:false}`
+  on EVERY new order, incl. the intake walk-in path (intake-user.service) that never
+  sets it, so the read-time fallback (`if(!pricing)`) never fired and walk-ins showed
+  a misleading all-zero receipt. Fix: (a) removed all leaf defaults + `default:undefined`
+  on the subdoc so it stays ABSENT unless a branch sets it (verified: unset → undefined
+  → fallback fires); (b) also gave the intake walk-in path a real receipt (reuses
+  `BookOrderService._buildPricing`; no offer/credit). No circular-dep (neither service
+  required the other before). Re-verified 18/18 + default-absent + cross-require smoke.
+- Files: models/bookOrder.model.js, services/bookOrder.service.js,
+  services/intake-user.service.js, swagger/schemas.js, routes/bookOrder.js,
+  services/user.service.js, controllers/user.controller.js, routes/users.js,
+  util/page-route.js.
 
 ## Session: 2026-07-28 — Bot: parallel bot + human support threads
 
