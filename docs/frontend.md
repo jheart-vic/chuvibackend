@@ -200,79 +200,124 @@ or pickup address, a GUIDED booking walkthrough) and HANDS OFF to a human
 complaints, record changes. The bot never books an order, moves money, or
 resolves a case; those only happen with a human.
 
-### 7a. Customer REST endpoints
-- POST /api/bot/message
-      body: { text: "where are my clothes?" }
-      returns:
-      {
-        "conversationId": "665f...900",
-        "mode": "bot",                     // "bot" or "human"
-        "handledBy": "bot",                // "bot" | "handoff" | "human"
-        "intent": "order-status",
-        "replies": [
-          { "_id": "...", "senderType": "bot",
-            "text": "Order OSC-1042: out for delivery\nEstimated delivery: Mon Jul 20 2026",
-            "createdAt": "..." }
-        ]
-      }
-      Notes:
-      • `handledBy: "handoff"` → the bot just connected them to a human; from
-        now the bot is silent and staff reply.
-      • `handledBy: "human"` with empty `replies` → already with a human;
-        the message was delivered to staff, no bot reply.
-      • Replies may contain multiple messages and use "\n" line breaks. Basic
-        markdown-ish emphasis (*word*) may appear — render plainly if unsure.
+### 7a. Two threads (important)
+A customer can have TWO open support threads at once, shown as separate tabs:
+  • "Assistant"     — the bot thread (mode "bot"), always self-service
+  • "Support agent" — a handed-off thread (mode "human"), a live agent replies
+When a chat is handed off it becomes the human thread; the customer's next
+message to the bot starts a FRESH bot thread alongside it. So the assistant is
+never unavailable. At most one open bot thread + one open human thread.
 
-- GET  /api/bot/conversation?page=1&limit=50
-      returns { conversation: {_id, mode, open, unreadForCustomer, lastMessageAt},
-                data: [ ChatMessage... ], pagination: {total,page,limit,pages} }
-      (also marks the thread read for the customer)
-      ChatMessage: { _id, conversationId, senderType:"customer"|"bot"|"staff"|"system",
+### 7b. Customer REST endpoints
+- GET  /api/bot/conversations
+      List my open support threads (drives the tabs + unread badges).
+      → [ { _id, mode:"bot"|"human", open, unreadForCustomer, lastMessageAt } ]
+      Does NOT mark read. Closed threads are not returned.
+
+- GET  /api/bot/conversation?conversationId=<id>&page=1&limit=50
+      Load a thread + messages (marks THAT thread read for the customer).
+      • omit conversationId → gets/creates the bot thread
+      • pass conversationId → opens a specific owned thread (e.g. the human one)
+      → { conversation: {_id, mode, open, unreadForCustomer, lastMessageAt},
+          data: [ ChatMessage... ], pagination: {total,page,limit,pages} }
+      ChatMessage: { _id, conversationId,
+                     senderType:"customer"|"bot"|"staff"|"system",
                      text, attachments:[], createdAt }
 
+- POST /api/bot/message                    (Assistant tab — bot thread only)
+      body: { text: "where are my clothes?", attachments?: ["<imageUrl>"] }
+      → { conversationId, mode:"bot"|"human",
+          handledBy:"bot"|"handoff"|"human",
+          intent:"order-status",           // see notes on compound intents
+          replies:[ { _id, senderType, text, createdAt } ] }
+      Notes:
+      • Always targets the BOT thread (never the human one).
+      • `handledBy:"handoff"` → the bot just connected them to a human; bot then
+        stays silent and staff reply.
+      • Compound requests ("my balance and order status") return ONE combined
+        reply and `intent` may be a joined string like "wallet-balance+order-status".
+        Render the whole `replies` array; don't hard-switch on exact `intent`.
+      • A delayed/overdue order reply may end with "…connect you to a Customer
+        Experience officer?" — a "yes" next turn hands off.
+      • Text uses "\n" line breaks and may include *emphasis* / emoji — render
+        plainly if unsure.
+
+- POST /api/bot/conversation/:conversationId/message   (reply into a specific thread)
+      Use for the "Support agent" (human) tab so the customer can reply to the agent.
+      body: { text, attachments?:[] }
+      • human thread → posts the message, bot stays silent (handledBy:"human")
+      • bot thread   → routed to the assistant (same as POST /bot/message)
+      • closed thread → 400 "This conversation is closed" (treat as closed → switch
+        to Assistant)
+
 - POST /api/bot/handoff        → force "talk to a human" (mode becomes "human")
-      returns { conversationId, mode:"human" }
+      Idempotent — reuses an existing open human thread instead of duplicating.
+      → { conversationId, mode:"human" }
 
-### 7b. Staff endpoints (role customer-experience / admin)
+### 7c. Staff endpoints (role customer-experience / admin)
 - GET  /api/bot/queue                     → handed-off chats waiting on staff
-      [ { _id, customer, phoneNumber, unreadForStaff, lastMessageAt } ]
-- POST /api/bot/:conversationId/reply     → staff sends a message  body:{ text }
-- POST /api/bot/:conversationId/close     → close a resolved chat
+      [ { _id, customer, phoneNumber, unreadForStaff, lastMessageAt,
+          lastMessage: { senderType, text, attachments, createdAt } | null } ]
+      lastMessage = preview of the newest message (survives refresh, no client cache).
+- GET  /api/bot/:conversationId/messages  → staff view of one chat + history
+- POST /api/bot/:conversationId/reply     → staff sends a message  body:{ text, attachments? }
+      The FIRST staff reply posts a one-time system message to the customer:
+      "You're now connected to our Customer Experience team."
+- POST /api/bot/:conversationId/close     → close a resolved chat  body:{ reason? }
+      → { closed:true, alreadyClosed:boolean, conversationId, closedAt }
+      Only CX/admin can close (never the bot or customer; no auto-close). Idempotent
+      (a second close → alreadyClosed:true, no dupes). Posts a "chat closed" system
+      message and emits `conversation:closed` (below). History is retained; the
+      customer's next message starts a fresh bot thread.
 
-### 7c. Real-time (WebSockets, socket.io)
-Connect socket.io to the SAME host. Authenticate on the handshake with the JWT:
+### 7d. Real-time (WebSockets, socket.io)
+Connect socket.io to the SAME host, authenticate on the handshake with the JWT:
 
       import { io } from "socket.io-client";
       const socket = io(HOST, { auth: { token: accessToken } });
       // (or rely on the accessToken cookie; Authorization header also accepted)
 
-      socket.on("connect", () => { /* connected */ });
-      socket.on("chat:message", (payload) => {
-        // payload = { conversationId, mode, message: <ChatMessage> }
-        // append payload.message to the open thread; update mode if changed
+Rooms are auto-joined on connect: every user joins `user:<theirId>`; staff
+(CX/admin) also join `staff:support`. No manual join. Events:
+
+      socket.on("chat:message", (p) => {
+        // p = { conversationId, mode, message: <ChatMessage> }
+        // append p.message to that thread; dedupe by message._id
       });
 
-- Customers automatically join their own room and receive `chat:message`
-  events for their support conversation (bot replies, staff replies, system
-  notices, and their own echoed messages).
-- Staff (CX/admin) also receive `chat:message` for every support conversation
-  (drive a live queue / inbox).
-- WebSockets are a push layer only — REST is the source of truth. If a socket
-  drops, refetch GET /api/bot/conversation. You can send messages over REST
-  (POST /api/bot/message) and just listen on the socket for pushes.
+      socket.on("conversation:closed", (p) => {
+        // p = { conversationId, closedAt, source }
+        // source: "staff" (today). Reserved: "inactivity" if auto-close ever ships.
+        // → show "chat closed", disable that thread's input, flip to Assistant tab;
+        //   staff: drop it from the queue.
+      });
 
-### 7d. Suggested chat UX
-1. On open: GET /api/bot/conversation to load history + current `mode`.
-2. Open the socket; listen for `chat:message`.
-3. Send via POST /api/bot/message; render the returned `replies` immediately
-   (they'll also arrive on the socket — dedupe by message `_id`).
-4. If `mode === "human"` (or handledBy became "handoff"), show a "You're with
-   our team" banner and hide the bot-typing affordance.
+- `chat:message` fires for bot replies, staff replies, system notices, and the
+  customer's own echoed messages. Customers get it for their threads; staff get
+  it for every support conversation.
+- `conversation:closed` fires to the owner (`user:<id>`) and `staff:support`.
+- WebSockets are a PUSH layer only — REST is the source of truth. If the socket
+  drops, refetch. The "chat closed" / "connected" / handoff notices are also
+  persisted as system messages, so they appear on the next GET even without the
+  socket. Prefer the persisted system message as the transcript source; use the
+  socket event as the live UI SIGNAL — that way you never double-render or drift.
 
-### 7e. Config note (backend)
-The LLM classifier uses `ANTHROPIC_API_KEY` on the server. If it's unset, the
-bot still works via a keyword fallback (slightly less flexible phrasing). No
-frontend impact either way — same request/response contract.
+### 7e. Suggested chat UX
+1. On open: GET /api/bot/conversations → render a tab per thread (bot→"Assistant",
+   human→"Support agent"; badge = unreadForCustomer).
+2. Open a tab: GET /api/bot/conversation[?conversationId=] → history (badge clears).
+3. Open the socket; listen for `chat:message` + `conversation:closed`.
+4. Send: Assistant tab → POST /api/bot/message; Support-agent tab → POST
+   /api/bot/conversation/<id>/message. Render returned messages immediately;
+   they also arrive on the socket — dedupe by `_id`.
+5. On `conversation:closed` for the open thread: banner + disable input, flip back
+   to Assistant. The customer's next message auto-starts a new bot thread.
+
+### 7f. Config note (backend)
+The LLM is provider-configurable server-side (`BOT_PROVIDER`; OpenAI preferred,
+Anthropic supported). If no key is set it falls back to a keyword matcher (slightly
+less flexible phrasing). No frontend impact either way — same request/response
+contract; only the naturalness of small-talk/greeting replies changes.
 
 ────────────────────────────────────────────────────────────────────────
 ## 8. Where to get exact schemas
