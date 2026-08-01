@@ -167,6 +167,17 @@ session". When a session ends/clears, fold anything durable into summary.md.
   (Swagger: reason body + richer response + behavior notes), swagger/schemas (Conversation
   gains agentJoinedAt/closedAt/closedBy/closeReason), CLAUDE.md. Unchanged: staff-only
   (customerExperienceAuth), history retained, next customer msg → fresh bot thread.
+- **Documentation pass — closed the three persisted-doc gaps.** (1) Rewrote
+  `docs/frontend.md` §7 (In-app Bot) to current reality: two-thread model (Assistant +
+  Support agent), all customer endpoints incl. `/bot/conversations` +
+  `/bot/conversation/:id/message` + conversationId param, staff queue `lastMessage`,
+  compound/combined replies, delay-aware offer, agent-joined + close notices, and a full
+  Real-time section documenting BOTH socket events (`chat:message` and the new
+  `conversation:closed {conversationId,closedAt,source}`), rooms, handshake — the socket
+  contract now lives in-repo, not just chat. Corrected 7f (provider is BOT_PROVIDER/
+  OpenAI-preferred, not Anthropic-only). (2) `BotReply` schema: `intent` is now a free
+  string (compound '+'-joined for multi-intent, values in description), `replies`
+  description notes combined/compound + dedupe-by-id. swagger-jsdoc parses clean.
 - **Diagnosed (frontend, NOT fixed here): "two messages flashed".** Each bot reply is
   delivered by BOTH the REST `replies` and the socket `emitChatMessage` push to
   `user:<id>`; the customer's own message is echoed to that room too. Frontend renders
