@@ -230,9 +230,12 @@ const bookOrderSchema = new mongoose.Schema(
                 freeDeliveryWaived: Number,
                 appliedOffers: [
                     {
-                        offerId: mongoose.Schema.Types.ObjectId,
-                        name: String,
-                        type: String, // personal | promotion
+                        // Explicit { type: ... } form: the field is literally named
+                        // `type`, which Mongoose treats as its reserved type keyword
+                        // in the shorthand form and mis-casts the array to [String].
+                        offerId: { type: mongoose.Schema.Types.ObjectId },
+                        name: { type: String },
+                        type: { type: String }, // personal | promotion
                     },
                 ],
                 creditApplied: Number, // wallet reward credit used
