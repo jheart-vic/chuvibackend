@@ -4,6 +4,7 @@ const auth = require("../middlewares/auth");
 const {
   ROUTE_GET_ACCOUNT,
   ROUTE_PROFILE_IMAGE_UPLOAD,
+  ROUTE_PROFILE_IMAGE_DELETE,
   ROUTE_COMPLETE_ONBOARDING,
   ROUTE_DAILY_NUGGET,
   ROUTE_LIKE_AND_UNLIKE_NUGGET,
@@ -324,6 +325,59 @@ router.put(ROUTE_UPDATE_USER, [auth], (req, res) => {
 router.post(ROUTE_PROFILE_IMAGE_UPLOAD, [auth], image_uploader.single("image"), (req, res) => {
   const userController = new UserController();
   return userController.uploadProfileImage(req, res);
+});
+
+/**
+ * @swagger
+ * /users/profile-image:
+ *   delete:
+ *     summary: Delete the user's profile image
+ *     description: >
+ *       Removes the uploaded profile photo from storage and resets the user's
+ *       image back to the default placeholder. Idempotent — a user already on
+ *       the default placeholder simply keeps it.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile image removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Profile image removed successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         imageUrl:
+ *                           type: string
+ *                           example: https://static.vecteezy.com/system/resources/previews/005/544/718/non_2x/profile-icon-design-free-vector.jpg
+ *                         publicId:
+ *                           type: string
+ *                           example: ""
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.delete(ROUTE_PROFILE_IMAGE_DELETE, [auth], (req, res) => {
+  const userController = new UserController();
+  return userController.deleteProfileImage(req, res);
 });
 
 /**

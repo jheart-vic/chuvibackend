@@ -14,6 +14,9 @@ const {
     getObjectId,
 } = require('../util/helper')
 const { deleteImage } = require('../util/imageUpload')
+// Default avatar the user model falls back to; deleting a photo resets to this.
+const DEFAULT_PROFILE_IMAGE_URL =
+    'https://static.vecteezy.com/system/resources/previews/005/544/718/non_2x/profile-icon-design-free-vector.jpg'
 const {
     EXPIRES_AT,
     ORDER_STATUS,
@@ -228,6 +231,44 @@ class UserService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: 'Profile image uploaded successfully',
+                data: updatedUser.image,
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later.',
+            })
+        }
+    }
+
+    async deleteProfileImage(req) {
+        try {
+            const user = await UserModel.findById(req.user.id)
+            if (!user) {
+                return BaseService.sendFailedResponse({
+                    error: 'User does not exist. Please register!',
+                })
+            }
+
+            // Remove the uploaded asset from storage if one exists. Idempotent:
+            // a user still on the default placeholder just gets it back.
+            if (user.image?.publicId) {
+                await deleteImage(user.image.publicId, 'image')
+            }
+
+            const updatedUser = await UserModel.findByIdAndUpdate(
+                req.user.id,
+                {
+                    $set: {
+                        'image.imageUrl': DEFAULT_PROFILE_IMAGE_URL,
+                        'image.publicId': '',
+                    },
+                },
+                { new: true },
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: 'Profile image removed successfully',
                 data: updatedUser.image,
             })
         } catch (error) {

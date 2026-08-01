@@ -368,6 +368,45 @@
  *           properties:
  *             error: { type: string, example: "Something went wrong" }
  *
+ *     # ── Order pricing receipt ────────────────────────────────────────────
+ *     OrderPricing:
+ *       type: object
+ *       description: >
+ *         Frozen price receipt captured on the order at booking — every line that
+ *         raised (tier uplift, delivery/pickup/speed fees) or lowered (offer
+ *         discount, waived fees, wallet credit) the price, so the customer sees the
+ *         full breakdown of what they paid for and what they gained. For orders
+ *         placed before this snapshot existed a best-effort version is built at read
+ *         time with `reconstructed:true` and unknown figures set to null.
+ *       properties:
+ *         itemsBase: { type: number, description: Item subtotal before the tier multiplier, example: 4000 }
+ *         serviceTier: { type: string, enum: [classic, premium, vip], example: premium }
+ *         tierMultiplier: { type: number, nullable: true, description: Multiplier applied for the chosen tier (null on reconstructed), example: 1.5 }
+ *         tierUplift: { type: number, nullable: true, description: itemsSubtotal - itemsBase, example: 2000 }
+ *         itemsSubtotal: { type: number, description: Item subtotal after the tier multiplier, example: 6000 }
+ *         speedCharge: { type: number, nullable: true, description: Express / same-day surcharge, example: 1000 }
+ *         pickupFee: { type: number, nullable: true, example: 500 }
+ *         deliveryFee: { type: number, nullable: true, example: 500 }
+ *         feesTotal: { type: number, description: speedCharge + pickupFee + deliveryFee (== order.deliveryAmount), example: 2000 }
+ *         grossTotal: { type: number, nullable: true, description: itemsSubtotal + feesTotal, before any discount, example: 8000 }
+ *         offerDiscount: { type: number, nullable: true, description: Discount from applied offer(s), example: 800 }
+ *         freePickupWaived: { type: number, nullable: true, description: Pickup fee waived by an offer, example: 0 }
+ *         freeDeliveryWaived: { type: number, nullable: true, description: Delivery fee waived by an offer, example: 500 }
+ *         appliedOffers:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               offerId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *               name: { type: string, example: "Weekend 10% off" }
+ *               type: { type: string, enum: [personal, promotion], example: personal }
+ *         creditApplied: { type: number, nullable: true, description: Wallet reward credit used, example: 1000 }
+ *         orderTotal: { type: number, description: Amount the order was billed after offers and credit (== order.amount), example: 5700 }
+ *         youSaved: { type: number, nullable: true, description: offerDiscount + waived fees + creditApplied, example: 2300 }
+ *         coveredBySubscription: { type: boolean, example: false }
+ *         reconstructed: { type: boolean, description: true = best-effort shape for an order booked before pricing capture, example: false }
+ *         note: { type: string, description: Present only on reconstructed receipts, example: "Approximate — this order predates itemized pricing capture." }
+ *
  *     # ── Order cancellation ───────────────────────────────────────────────
  *     CancellationRequest:
  *       type: object
