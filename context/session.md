@@ -3,6 +3,46 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-01 — Order price breakdown + delete profile photo
+
+### Done this session (uncommitted, branch bot-polising)
+
+- **Order pricing receipt (`order.pricing`).** Client wants the customer to see the
+  full breakdown of what raised/lowered an order's price. Added a frozen `pricing`
+  subdoc to bookOrder.model captured at booking: itemsBase, serviceTier,
+  tierMultiplier, tierUplift, itemsSubtotal, speedCharge/pickupFee/deliveryFee,
+  feesTotal (==deliveryAmount), grossTotal, offerDiscount, freePickup/DeliveryWaived,
+  appliedOffers[], creditApplied, orderTotal (==amount), youSaved,
+  coveredBySubscription, reconstructed.
+  - Two pure helpers on bookOrder.service: `_buildPricing({...})` (normalizes the
+    receipt from figures already local to a billing branch — no math change) and
+    `_buildPricingFallback(order)` (best-effort receipt for legacy orders, sets
+    unknown fields null + `reconstructed:true` + a `note`).
+  - Wired into all three branches of `postBookOrder`: subscription (itemsBase=
+    itemsSubtotal, no fees/offer/credit), pay-per-item (added an itemsBase reduce +
+    split speedCharge/pickupFee/deliveryFee out of extraDeliveryCost; capture after
+    credit), pay-from-wallet (same split; creditApplied from `charge.creditApplied`;
+    capture after charge). Each does one extra `newOrder.save()`.
+  - Read side: `getBookOrder` now `.lean()` + fills fallback when `pricing` missing;
+    `getBookOrderHistory` fills fallback per row. So every order always returns a
+    `pricing` block; old orders flagged `reconstructed:true`. **No DB backfill** (by
+    decision — fallback covers them on read).
+  - Swagger: new reusable `OrderPricing` schema in swagger/schemas.js; `$ref`'d from
+    the single-order + history route responses. swagger-jsdoc parses (35 schemas).
+  - Verified LIVE 18/18 (throwaway user+wallet, real pay-per-item premium booking:
+    ₦3500 base ×1.5 = ₦5250 + ₦1000 fees = ₦6250 == amount; invariant grossTotal −
+    reductions == orderTotal; legacy fallback path) — data cleaned up.
+- **DELETE /users/profile-image [auth].** Removes the Cloudinary asset (if any) and
+  resets `user.image` to the default placeholder; idempotent. New
+  `UserService.deleteProfileImage`, controller `deleteProfileImage`,
+  `ROUTE_PROFILE_IMAGE_DELETE='/profile-image'`, route + Swagger. Placeholder URL
+  captured as `DEFAULT_PROFILE_IMAGE_URL` const (matches user.model default).
+  Verified live: reset + persisted. NOTE: inline `node -e` DB scripts buffering-
+  timeout on this machine; file-based scratchpad scripts work — use those.
+- Files: models/bookOrder.model.js, services/bookOrder.service.js, swagger/schemas.js,
+  routes/bookOrder.js, services/user.service.js, controllers/user.controller.js,
+  routes/users.js, util/page-route.js.
+
 ## Session: 2026-07-28 — Bot: parallel bot + human support threads
 
 ### Done this session (uncommitted, branch usage-branch)

@@ -86,6 +86,16 @@ class UserController extends BaseController {
         return BaseController.sendSuccessResponse(res, upload.data)
     }
 
+    async deleteProfileImage(req, res) {
+        const userService = new UserService()
+        const result = await userService.deleteProfileImage(req)
+
+        if (!result.success) {
+            return BaseController.sendFailedResponse(res, result.data)
+        }
+        return BaseController.sendSuccessResponse(res, result.data)
+    }
+
     async deleteUser(req, res) {
         const userService = new UserService()
         const result = await userService.deleteUser(req)

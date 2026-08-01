@@ -658,6 +658,102 @@ class BookOrderService extends BaseService {
         return { finalTotal, breakdown }
     }
 
+    // Build the frozen price receipt from the components already computed in a
+    // billing branch. Pure/synchronous — every figure is passed in.
+    _buildPricing({
+        serviceTier,
+        itemsBase,
+        tierMultiplier = 1,
+        itemsSubtotal,
+        speedCharge = 0,
+        pickupFee = 0,
+        deliveryFee = 0,
+        breakdown = null,
+        creditApplied = 0,
+        orderTotal,
+        coveredBySubscription = false,
+    }) {
+        const feesTotal = speedCharge + pickupFee + deliveryFee
+        const grossTotal = itemsSubtotal + feesTotal
+        const offerDiscount = breakdown?.totalDiscount || 0
+        const freeDeliveryWaived = breakdown?.freeDelivery ? deliveryFee : 0
+        const freePickupWaived = breakdown?.freePickup ? pickupFee : 0
+        const appliedOffers = []
+        if (breakdown?.personal)
+            appliedOffers.push({
+                offerId: breakdown.personal.offerId,
+                name: breakdown.personal.name,
+                type: 'personal',
+            })
+        if (breakdown?.promotion)
+            appliedOffers.push({
+                offerId: breakdown.promotion.offerId,
+                name: breakdown.promotion.name,
+                type: 'promotion',
+            })
+        return {
+            itemsBase,
+            serviceTier,
+            tierMultiplier,
+            tierUplift: itemsSubtotal - itemsBase,
+            itemsSubtotal,
+            speedCharge,
+            pickupFee,
+            deliveryFee,
+            feesTotal,
+            grossTotal,
+            offerDiscount,
+            freePickupWaived,
+            freeDeliveryWaived,
+            appliedOffers,
+            creditApplied,
+            orderTotal,
+            youSaved:
+                offerDiscount +
+                freeDeliveryWaived +
+                freePickupWaived +
+                creditApplied,
+            coveredBySubscription,
+            reconstructed: false,
+        }
+    }
+
+    // Best-effort receipt for orders placed before `pricing` was captured.
+    // Only the figures the stored order can still prove are filled; the rest
+    // are null and `reconstructed:true` tells the client it's approximate.
+    _buildPricingFallback(order) {
+        const itemsBase = (order.items || []).reduce(
+            (sum, item) =>
+                sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
+            0,
+        )
+        const feesTotal = Number(order.deliveryAmount) || 0
+        const orderTotal = Number(order.amount) || 0
+        return {
+            itemsBase,
+            serviceTier: order.serviceTier,
+            tierMultiplier: null,
+            tierUplift: null,
+            itemsSubtotal: Math.max(orderTotal - feesTotal, 0),
+            speedCharge: null,
+            pickupFee: null,
+            deliveryFee: null,
+            feesTotal,
+            grossTotal: null,
+            offerDiscount: null,
+            freePickupWaived: null,
+            freeDeliveryWaived: null,
+            appliedOffers: [],
+            creditApplied: null,
+            orderTotal,
+            youSaved: null,
+            coveredBySubscription:
+                order.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION,
+            reconstructed: true,
+            note: 'Approximate — this order predates itemized pricing capture.',
+        }
+    }
+
     // After the order is saved, attach the validated offer linkage(s) so they
     // redeem on delivery / release on cancel. Non-fatal — the order already exists.
     async _attachOffersToOrder(userId, breakdown, orderId) {
@@ -866,6 +962,14 @@ async postBookOrder(req, res) {
                 }
 
                 newOrder = new BookOrderModel(newOrderItem)
+                newOrder.pricing = this._buildPricing({
+                    serviceTier: post.serviceTier,
+                    itemsBase: totalPrice,
+                    tierMultiplier: 1,
+                    itemsSubtotal: totalPrice,
+                    orderTotal: totalPrice,
+                    coveredBySubscription: true,
+                })
                 await newOrder.save()
 
                 await createNotification({
@@ -910,20 +1014,32 @@ async postBookOrder(req, res) {
                     )
                 }, 0)
 
-                let extraDeliveryCost = 0
+                // Same sum at the CLASSIC tier (multiplier 1) — lets the receipt
+                // show the tier uplift separately. multiplier factors out of each
+                // line, so itemsBase * multiplier === totalPrice exactly.
+                const itemsBase = post.items.reduce((sum, item) => {
+                    const price = Number(item.price)
+                    const quantity = Number(item.quantity)
+                    return (
+                        sum +
+                        roundToNearestHundred(price * serviceTypeMultiplier) *
+                            quantity
+                    )
+                }, 0)
 
+                let speedCharge = 0
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    extraDeliveryCost += adminOrderSetting.expressCharge
+                    speedCharge = adminOrderSetting.expressCharge
                 } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                    extraDeliveryCost += adminOrderSetting.sameDayCharge
+                    speedCharge = adminOrderSetting.sameDayCharge
                 }
-
-                if (post.isPickUp) {
-                    extraDeliveryCost += adminOrderSetting.pickupFee || 0
-                }
-                if (post.isDelivery) {
-                    extraDeliveryCost += adminOrderSetting.deliveryFee || 0
-                }
+                const pickupFee = post.isPickUp
+                    ? adminOrderSetting.pickupFee || 0
+                    : 0
+                const deliveryFee = post.isDelivery
+                    ? adminOrderSetting.deliveryFee || 0
+                    : 0
+                let extraDeliveryCost = speedCharge + pickupFee + deliveryFee
 
                 // Apply any selected offer(s) server-side (authoritative price).
                 const itemsSubtotal = totalPrice
@@ -986,9 +1102,22 @@ async postBookOrder(req, res) {
                                 PAYMENT_ORDER_STATUS.SUCCESS
                             newOrder.paymentDate = new Date()
                         }
-                        await newOrder.save()
                     }
                 }
+
+                newOrder.pricing = this._buildPricing({
+                    serviceTier: post.serviceTier,
+                    itemsBase,
+                    tierMultiplier: multiplier,
+                    itemsSubtotal,
+                    speedCharge,
+                    pickupFee,
+                    deliveryFee,
+                    breakdown: offerBreakdown,
+                    creditApplied,
+                    orderTotal: newOrder.amount,
+                })
+                await newOrder.save()
 
                 await this._attachOffersToOrder(userId, offerBreakdown, newOrder._id)
 
@@ -1042,19 +1171,30 @@ async postBookOrder(req, res) {
                     )
                 }, 0)
 
-                let extraDeliveryCost = 0
-                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    extraDeliveryCost += adminOrderSetting.expressCharge
-                } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                    extraDeliveryCost += adminOrderSetting.sameDayCharge
-                }
+                // CLASSIC-tier subtotal for the receipt's tier-uplift line.
+                const itemsBase = post.items.reduce((sum, item) => {
+                    const price = Number(item.price)
+                    const quantity = Number(item.quantity)
+                    return (
+                        sum +
+                        roundToNearestHundred(price * serviceTypeMultiplier) *
+                            quantity
+                    )
+                }, 0)
 
-                if (post.isPickUp) {
-                    extraDeliveryCost += adminOrderSetting.pickupFee || 0
+                let speedCharge = 0
+                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+                    speedCharge = adminOrderSetting.expressCharge
+                } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    speedCharge = adminOrderSetting.sameDayCharge
                 }
-                if (post.isDelivery) {
-                    extraDeliveryCost += adminOrderSetting.deliveryFee || 0
-                }
+                const pickupFee = post.isPickUp
+                    ? adminOrderSetting.pickupFee || 0
+                    : 0
+                const deliveryFee = post.isDelivery
+                    ? adminOrderSetting.deliveryFee || 0
+                    : 0
+                let extraDeliveryCost = speedCharge + pickupFee + deliveryFee
 
                 // Apply any selected offer(s) server-side BEFORE charging the wallet.
                 const itemsSubtotal = totalPrice
@@ -1122,6 +1262,20 @@ async postBookOrder(req, res) {
                     newOrder = null
                     return BaseService.sendFailedResponse({ error: charge.error })
                 }
+
+                newOrder.pricing = this._buildPricing({
+                    serviceTier: post.serviceTier,
+                    itemsBase,
+                    tierMultiplier: multiplier,
+                    itemsSubtotal,
+                    speedCharge,
+                    pickupFee,
+                    deliveryFee,
+                    breakdown: offerBreakdown,
+                    creditApplied: charge.creditApplied || 0,
+                    orderTotal: newOrder.amount,
+                })
+                await newOrder.save()
 
                 await this._attachOffersToOrder(userId, offerBreakdown, newOrder._id)
 
@@ -1420,6 +1574,13 @@ async postBookOrder(req, res) {
             // 4️⃣ Count total for pagination meta
             const total = await BookOrderModel.countDocuments(filter)
 
+            // Ensure every row carries a `pricing` receipt (fallback for older orders).
+            for (const order of orders) {
+                if (!order.pricing) {
+                    order.pricing = this._buildPricingFallback(order)
+                }
+            }
+
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({
                 message: {
@@ -1444,12 +1605,18 @@ async postBookOrder(req, res) {
                     error: 'Please provide a valid book order id',
                 })
             }
-            const bookOrder = await BookOrderModel.findById(bookOrderId)
+            const bookOrder = await BookOrderModel.findById(bookOrderId).lean()
 
             if (!bookOrder) {
                 return BaseService.sendFailedResponse({
                     error: 'Book order not found',
                 })
+            }
+
+            // Older orders have no stored receipt — reconstruct a best-effort one
+            // so the client always gets a `pricing` block.
+            if (!bookOrder.pricing) {
+                bookOrder.pricing = this._buildPricingFallback(bookOrder)
             }
 
             // 5️⃣ Send response

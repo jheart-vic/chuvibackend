@@ -522,6 +522,8 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *                           amount:
  *                             type: number
  *                             example: 150
+ *                           pricing:
+ *                             $ref: '#/components/schemas/OrderPricing'
  *                           paymentMethod:
  *                             type: string
  *                             example: "paystack"
@@ -638,6 +640,8 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  *                     amount:
  *                       type: number
  *                       example: 150
+ *                     pricing:
+ *                       $ref: '#/components/schemas/OrderPricing'
  *                     paymentMethod:
  *                       type: string
  *                       example: "paystack"

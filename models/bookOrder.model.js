@@ -206,6 +206,38 @@ const bookOrderSchema = new mongoose.Schema(
         // noOfItems: { type: Number, required: true },
         amount: { type: Number, required: true },
         deliveryAmount: { type: Number, default: 0 },
+        // Frozen price receipt captured at booking: every line that raised
+        // (tier, fees) or lowered (offer, waived fees, wallet credit) the price,
+        // so the customer can see the full breakdown of what they paid / gained.
+        // reconstructed=true marks a best-effort shape built at read time for
+        // orders placed before this snapshot existed.
+        pricing: {
+            itemsBase: { type: Number, default: 0 }, // item subtotal before the tier multiplier
+            serviceTier: { type: String },
+            tierMultiplier: { type: Number, default: 1 },
+            tierUplift: { type: Number, default: 0 }, // itemsSubtotal - itemsBase
+            itemsSubtotal: { type: Number, default: 0 }, // item subtotal after the tier multiplier
+            speedCharge: { type: Number, default: 0 }, // express / same-day surcharge
+            pickupFee: { type: Number, default: 0 },
+            deliveryFee: { type: Number, default: 0 },
+            feesTotal: { type: Number, default: 0 }, // == deliveryAmount
+            grossTotal: { type: Number, default: 0 }, // itemsSubtotal + feesTotal, before discounts
+            offerDiscount: { type: Number, default: 0 },
+            freePickupWaived: { type: Number, default: 0 },
+            freeDeliveryWaived: { type: Number, default: 0 },
+            appliedOffers: [
+                {
+                    offerId: { type: mongoose.Schema.Types.ObjectId },
+                    name: { type: String },
+                    type: { type: String }, // personal | promotion
+                },
+            ],
+            creditApplied: { type: Number, default: 0 }, // wallet reward credit used
+            orderTotal: { type: Number, default: 0 }, // == amount (billed after offers/credit)
+            youSaved: { type: Number, default: 0 }, // offerDiscount + waived fees + creditApplied
+            coveredBySubscription: { type: Boolean, default: false },
+            reconstructed: { type: Boolean, default: false },
+        },
         billingType: {
             type: String,
             enum: Object.values(BILLING_TYPE),
