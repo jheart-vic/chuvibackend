@@ -21,6 +21,7 @@ class OfferController extends BaseController {
     myUsage = handle('myUsage')
     viewOffer = handle('viewOffer')
     validateOffer = handle('validateOffer')
+    bookingOptions = handle('bookingOptions')
     attachOffer = handle('attachOffer')
 }
 

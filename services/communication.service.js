@@ -3,6 +3,7 @@ const CommunicationLogModel = require('../models/communicationLog.model')
 const UserModel = require('../models/user.model')
 const createNotification = require('../util/createNotification')
 const sendSms = require('../util/sendSms')
+const { deepLink } = require('../util/deepLink')
 const {
     COMM_CHANNEL,
     COMM_STATUS,
@@ -125,7 +126,17 @@ class CommunicationService {
                         if (!user?.phoneNumber) {
                             throw new Error('User has no phone number')
                         }
-                        await sendSms(user.phoneNumber, renderedSms)
+                        // §3: SMS has no tap-through like the in-app feed, so append
+                        // a personalised deep link to the exact page/order. In-app
+                        // notifications already carry page+recordId for navigation.
+                        const link = deepLink(
+                            targetPage,
+                            recordId || (relatedRef ? String(relatedRef) : undefined),
+                        )
+                        const smsWithLink = link
+                            ? `${renderedSms}\n${link}`
+                            : renderedSms
+                        await sendSms(user.phoneNumber, smsWithLink)
                         // no delivery report wired yet — "sent" is as far as we know
                         log.status = COMM_STATUS.SENT
                         log.sentAt = new Date()

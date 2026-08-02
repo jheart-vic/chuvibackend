@@ -582,11 +582,13 @@ const COMPLAINT_STATUS = {
     RECOVERY_IN_PROGRESS: 'recovery-in-progress',
     READY: 'ready',
     RESOLVED: 'resolved', // recovery done, awaiting customer confirmation
-    CUSTOMER_CONFIRMED: 'customer-confirmed', // terminal (closed)
-    REOPENED: 'reopened', // customer rejected → back into review
+    CUSTOMER_CONFIRMED: 'customer-confirmed', // customer confirmed the resolution
+    CLOSED: 'closed', // finally closed (customer-confirmed, or CX-closed after 48h silence)
+    REOPENED: 'reopened', // reopened → back into review
 }
 
-// allowed forward transitions; REOPENED and escalation handled separately
+// allowed forward transitions; REOPENED, CLOSED and escalation handled separately
+// (closeCase / reopenCase / rejectResolution manage their own guarded transitions).
 const COMPLAINT_TRANSITIONS = {
     submitted: ['under-review'],
     'under-review': ['awaiting-item', 'recovery-in-progress', 'resolved'],
@@ -597,6 +599,7 @@ const COMPLAINT_TRANSITIONS = {
     resolved: ['customer-confirmed', 'reopened'],
     reopened: ['under-review'],
     'customer-confirmed': [],
+    closed: [],
 }
 
 const RECOVERY_ACTION = {
@@ -611,6 +614,13 @@ const RECOVERY_CREDIT_STATUS = {
     PENDING_APPROVAL: 'pending-approval',
     APPROVED: 'approved',
     REJECTED: 'rejected',
+}
+
+// §7: a compensation is either wallet credit (in-system) or cash (recorded for
+// manual bank transfer — no in-system payout).
+const RECOVERY_COMPENSATION_TYPE = {
+    WALLET_CREDIT: 'wallet-credit',
+    CASH: 'cash',
 }
 
 const ESCALATION_REASON = {
@@ -635,6 +645,21 @@ const CHAT_SENDER = {
     STAFF: 'staff',
     BOT: 'bot',
     SYSTEM: 'system', // automated status updates
+}
+
+// Who currently owns the human handling of a conversation. Bot-handled threads
+// have no owner; a human thread is owned by CX until an Admin takes it over.
+const CONVERSATION_OWNER = {
+    CX: 'cx',
+    ADMIN: 'admin',
+}
+
+// CX-set priority when escalating a conversation to Admin.
+const CONVERSATION_URGENCY = {
+    LOW: 'low',
+    NORMAL: 'normal',
+    HIGH: 'high',
+    URGENT: 'urgent',
 }
 
 // ─── In-app bot (Phase 6, "smart assistant") ────────────────────────────────
@@ -736,9 +761,12 @@ module.exports = {
     COMPLAINT_TRANSITIONS,
     RECOVERY_ACTION,
     RECOVERY_CREDIT_STATUS,
+    RECOVERY_COMPENSATION_TYPE,
     ESCALATION_REASON,
     CONVERSATION_TYPE,
     CHAT_SENDER,
+    CONVERSATION_OWNER,
+    CONVERSATION_URGENCY,
     REFERRAL_STATUS,
     REFERRAL_SOURCE,
     REFERRAL_REWARD_STATUS,

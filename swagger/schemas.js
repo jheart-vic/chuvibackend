@@ -329,6 +329,24 @@
  *             expressUserRatio: { type: number, example: 0.5 }
  *             prospectBroadcastDays: { type: number, example: 14 }
  *             churnBroadcastDays: { type: number, example: 30 }
+ *         leadSchedule:
+ *           type: array
+ *           description: "Admin-configurable lead-nurture sequence + delivery timing (§3). Enabled steps are staggered — each has a distinct delayMinutes so messages never all fire in the same minute."
+ *           items:
+ *             type: object
+ *             properties:
+ *               messageType: { type: string, enum: [lead-welcome, lead-qualify, lead-offer, lead-close, lead-reminder-1, lead-reminder-2, lead-mark-prospect], example: lead-reminder-1 }
+ *               enabled: { type: boolean, example: true }
+ *               delayMinutes: { type: number, description: Minutes after lead creation this step fires, example: 1440 }
+ *               cancelIfOrdered: { type: boolean, description: Drop this step if the lead books before it fires, example: true }
+ *           example:
+ *             - { messageType: lead-welcome, enabled: true, delayMinutes: 0, cancelIfOrdered: true }
+ *             - { messageType: lead-qualify, enabled: true, delayMinutes: 2, cancelIfOrdered: true }
+ *             - { messageType: lead-offer, enabled: true, delayMinutes: 5, cancelIfOrdered: true }
+ *             - { messageType: lead-close, enabled: true, delayMinutes: 10, cancelIfOrdered: true }
+ *             - { messageType: lead-reminder-1, enabled: true, delayMinutes: 1440, cancelIfOrdered: true }
+ *             - { messageType: lead-reminder-2, enabled: true, delayMinutes: 4320, cancelIfOrdered: true }
+ *             - { messageType: lead-mark-prospect, enabled: true, delayMinutes: 8640, cancelIfOrdered: true }
  *
  *     CrmError:
  *       type: object
@@ -551,19 +569,29 @@
  *           type: string
  *           enum: [personal, promotional, baseline]
  *           example: personal
+ *         triggers:
+ *           type: array
+ *           description: "§4 multi-trigger — the events that can MINT this personal offer. Any one of them assigns it (OR). Empty for promotional/baseline offers."
+ *           items:
+ *             type: string
+ *             enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *           example: [first-experience, referral-reward]
  *         trigger:
  *           type: string
  *           nullable: true
- *           enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual]
- *           example: second-order
+ *           description: "DEPRECATED single-trigger field, kept for back-compat; mirrors triggers[0]. New builders should send triggers[]."
+ *           enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *           example: first-experience
  *         benefits:
  *           type: array
  *           items: { $ref: '#/components/schemas/OfferBenefit' }
  *         rules:
  *           type: object
+ *           description: "Multi-criteria targeting (§4). stages / tags / customerGroups: OR within a category, AND across categories, an EMPTY category = no constraint. Evaluated at assignment AND re-checked at booking."
  *           properties:
- *             stages: { type: array, items: { type: string }, example: [first-order] }
- *             tags: { type: array, items: { type: string } }
+ *             stages: { type: array, items: { type: string }, example: [lead, first-order] }
+ *             tags: { type: array, items: { type: string }, example: [student, young-professional] }
+ *             customerGroups: { type: array, items: { type: string }, description: "Admin-managed CRM tag values treated as customer groups; matched against the customer's tags like `tags`.", example: [high-volume] }
  *             minOrders: { type: integer, nullable: true }
  *             maxOrders: { type: integer, nullable: true }
  *             daysSinceLastOrder: { type: integer, nullable: true }
@@ -673,6 +701,49 @@
  *                   shortfall: { type: number, nullable: true, description: "Only for numeric rules (minOrderValue/minItems).", example: 600 }
  *               unlockMessage: { type: string, nullable: true, description: "Actionable hint; null when the rejection isn't customer-actionable.", example: "Spend ₦600 more to use this offer." }
  *         payable: { type: number, example: 6400 }
+ *
+ *     OfferBookingOption:
+ *       type: object
+ *       description: One offer evaluated against the current draft cart for the booking screen.
+ *       properties:
+ *         customerOfferId: { type: string, nullable: true, description: Present for personal rewards (the linkage id); absent for promotions/baselines. }
+ *         offerId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *         name: { type: string, example: "Weekend 10% off" }
+ *         displayRules: { type: array, items: { type: string }, example: ["10% off your order", "Min order ₦2000"] }
+ *         expiresInDays: { type: integer, nullable: true, example: 5 }
+ *         remainingUses: { type: integer, nullable: true, description: "Global uses left (null = unlimited)", example: null }
+ *         stackableWithPersonal: { type: boolean, description: "Promotions only — whether it may combine with a personal offer.", example: false }
+ *         preselected: { type: boolean, description: "True if passed as customerOfferId/promoOfferId.", example: true }
+ *         applicable: { type: boolean, example: true }
+ *         reason: { type: string, nullable: true, description: "Why it can't apply to this cart (null when applicable).", example: "Minimum order value ₦2000" }
+ *         requirement:
+ *           type: object
+ *           nullable: true
+ *           description: "Structured shortfall for order-level rules; null when not customer-actionable."
+ *           properties:
+ *             type: { type: string, enum: [minOrderValue, minItems, serviceType], example: minOrderValue }
+ *             needed: { oneOf: [{ type: number }, { type: array, items: { type: string } }], example: 2000 }
+ *             current: { oneOf: [{ type: number }, { type: string }], example: 1400 }
+ *             shortfall: { type: number, nullable: true, example: 600 }
+ *         unlockMessage: { type: string, nullable: true, example: "Spend ₦600 more to use this offer." }
+ *         benefit:
+ *           type: object
+ *           nullable: true
+ *           description: "Projected benefit if applied (null when not applicable)."
+ *           properties:
+ *             discount: { type: number, example: 600 }
+ *             freePickup: { type: boolean, example: false }
+ *             freeDelivery: { type: boolean, example: true }
+ *             creditPromised: { type: number, example: 0 }
+ *
+ *     OfferBookingOptions:
+ *       type: object
+ *       description: Booking screen payload — the priced quote for the current selection plus every offer evaluated against the cart.
+ *       properties:
+ *         selected: { $ref: '#/components/schemas/OfferQuote' }
+ *         personal: { type: array, items: { $ref: '#/components/schemas/OfferBookingOption' } }
+ *         promotions: { type: array, items: { $ref: '#/components/schemas/OfferBookingOption' } }
+ *         baseline: { type: array, items: { $ref: '#/components/schemas/OfferBookingOption' } }
  *
  *     # ── Referral ─────────────────────────────────────────────────────────
  *     Referral:
@@ -799,6 +870,60 @@
  *         decidedAt: { type: string, format: date-time, nullable: true }
  *         walletCreditId: { type: string, nullable: true }
  *
+ *     RecoveryCompensation:
+ *       type: object
+ *       description: "§7: one compensation on a case — wallet credit (in-system) or cash (recorded for manual transfer). A case may have several."
+ *       properties:
+ *         _id: { type: string, example: 665f1c2ab9e77a0012d4e777 }
+ *         type: { type: string, enum: [wallet-credit, cash], example: wallet-credit }
+ *         amount: { type: number, example: 5000 }
+ *         reason: { type: string, example: "Colour ran onto two shirts" }
+ *         evidence: { type: array, items: { type: string }, example: ["https://cdn.chuvi.com/complaints/photo1.jpg"] }
+ *         status: { type: string, enum: [pending-approval, approved, rejected], example: approved }
+ *         requestedBy: { type: string, nullable: true }
+ *         approvedBy: { type: string, nullable: true }
+ *         decidedAt: { type: string, format: date-time, nullable: true }
+ *         rejectionReason: { type: string, nullable: true }
+ *         walletCreditId: { type: string, nullable: true, description: Set for approved wallet-credit compensation }
+ *         bankDetails:
+ *           type: object
+ *           nullable: true
+ *           description: Present for cash compensation (manual transfer target)
+ *           properties:
+ *             accountName: { type: string, example: "John Doe" }
+ *             accountNumber: { type: string, example: "0123456789" }
+ *             bankName: { type: string, example: "GTBank" }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *
+ *     BookOrderSummary:
+ *       type: object
+ *       description: "Compact order view used by the recovery dashboard — incl. §6 recovery-order fields."
+ *       properties:
+ *         _id: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *         oscNumber: { type: string, example: OSC-2026-00456 }
+ *         amount: { type: number, example: 0 }
+ *         stage:
+ *           type: object
+ *           properties:
+ *             status: { type: string, example: queue }
+ *             note: { type: string, example: "Recovery order created" }
+ *             updatedAt: { type: string, format: date-time }
+ *         stationStatus: { type: string, example: intake-and-tag-station }
+ *         isRecoveryOrder: { type: boolean, example: true }
+ *         recoveryActionType: { type: string, enum: [rewash, rework, repair, replace], example: rewash }
+ *         recoveryForComplaintId: { type: string, nullable: true }
+ *         recoveryForOrderId: { type: string, nullable: true }
+ *         items:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               type: { type: string, example: shirt }
+ *               price: { type: number, example: 0 }
+ *               quantity: { type: integer, example: 2 }
+ *         createdAt: { type: string, format: date-time }
+ *
  *     ComplaintCase:
  *       type: object
  *       description: A complaint owned by a Customer Experience officer, moving through the recovery state machine.
@@ -811,17 +936,25 @@
  *           oneOf:
  *             - { type: string }
  *             - { $ref: '#/components/schemas/ComplaintType' }
- *           description: Id, or the populated ComplaintType on case reads
+ *           description: Primary (first) type — kept for backward compatibility. Prefer complaintTypeIds.
+ *         complaintTypeIds:
+ *           type: array
+ *           description: "All complaint types cited (§5 multi-type). Ids, or populated ComplaintType objects on case reads."
+ *           items:
+ *             oneOf:
+ *               - { type: string }
+ *               - { $ref: '#/components/schemas/ComplaintType' }
  *         affectedItems: { type: array, items: { type: string }, example: ["Blue shirt", "White trousers"] }
  *         description: { type: string, example: "Stain still visible on two items after cleaning." }
  *         photos: { type: array, items: { type: string }, example: ["https://cdn.chuvi.com/complaints/abc.jpg"] }
  *         status:
  *           type: string
- *           enum: [submitted, under-review, awaiting-item, item-received, recovery-in-progress, ready, resolved, customer-confirmed, reopened]
+ *           enum: [submitted, under-review, awaiting-item, item-received, recovery-in-progress, ready, resolved, customer-confirmed, closed, reopened]
  *           example: under-review
  *         assignedTo: { type: string, nullable: true, description: CX officer who owns the case }
  *         recoveryActions: { type: array, items: { $ref: '#/components/schemas/RecoveryAction' } }
- *         recoveryCredit: { $ref: '#/components/schemas/RecoveryCredit', nullable: true }
+ *         compensations: { type: array, description: "§7 full compensation history (wallet credit + cash)", items: { $ref: '#/components/schemas/RecoveryCompensation' } }
+ *         recoveryCredit: { $ref: '#/components/schemas/RecoveryCredit', nullable: true, description: "Deprecated — single-credit field for pre-§7 cases only" }
  *         recoveryOfferTriggered: { type: boolean, example: false }
  *         conversationId: { type: string, nullable: true, example: 665f1c2ab9e77a0012d4e500 }
  *         firstReviewDueAt: { type: string, format: date-time, nullable: true, description: SLA — 24h }
@@ -829,6 +962,16 @@
  *         reviewedAt: { type: string, format: date-time, nullable: true }
  *         resolvedAt: { type: string, format: date-time, nullable: true }
  *         confirmedAt: { type: string, format: date-time, nullable: true }
+ *         confirmationDueAt: { type: string, format: date-time, nullable: true, description: "§5 — customer must confirm by this time (48h after resolved) or CX may close" }
+ *         confirmationReminderSentAt: { type: string, format: date-time, nullable: true }
+ *         closedAt: { type: string, format: date-time, nullable: true }
+ *         closedBy: { type: string, nullable: true, description: CX/admin who closed it (null when customer-confirmed) }
+ *         closeReason: { type: string, nullable: true }
+ *         confirmed: { type: boolean, description: "true = closed by customer confirmation; false = CX-closed after silence", example: true }
+ *         recoveryRating: { type: integer, minimum: 1, maximum: 5, nullable: true, description: "§5 post-recovery satisfaction", example: 5 }
+ *         recoveryRatingComment: { type: string, nullable: true }
+ *         reopenedAt: { type: string, format: date-time, nullable: true }
+ *         reopenCount: { type: integer, example: 0 }
  *         escalated: { type: boolean, example: false }
  *         escalationReason:
  *           type: string
@@ -860,6 +1003,18 @@
  *         mode: { type: string, enum: [bot, human], example: human }
  *         open: { type: boolean, example: true }
  *         agentJoinedAt: { type: string, format: date-time, nullable: true, description: When a staff member first engaged a handed-off chat }
+ *         assignedRole: { type: string, enum: [cx, admin], nullable: true, description: "Who owns the human handling — CX on first reply, admin if an admin takes over (§2)." }
+ *         assignedTo: { type: string, nullable: true, description: Staff/admin user id currently owning the conversation }
+ *         adminJoinedAt: { type: string, format: date-time, nullable: true, description: When an admin took ownership }
+ *         escalation:
+ *           type: object
+ *           description: CX → Admin escalation (§2). Customers can never trigger this.
+ *           properties:
+ *             escalated: { type: boolean, example: false }
+ *             escalatedBy: { type: string, nullable: true, description: CX user id who escalated }
+ *             reason: { type: string, nullable: true, example: "Refund above my approval limit" }
+ *             urgency: { type: string, enum: [low, normal, high, urgent], nullable: true, example: high }
+ *             escalatedAt: { type: string, format: date-time, nullable: true }
  *         closedAt: { type: string, format: date-time, nullable: true }
  *         closedBy: { type: string, nullable: true, description: Staff user id who closed it }
  *         closeReason: { type: string, nullable: true, example: "Resolved — order re-delivered" }

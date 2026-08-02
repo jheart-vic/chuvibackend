@@ -13,6 +13,7 @@ const {
     ROUTE_OFFER_MY_USAGE,
     ROUTE_OFFER_VIEW,
     ROUTE_OFFER_VALIDATE,
+    ROUTE_OFFER_BOOKING_OPTIONS,
     ROUTE_OFFER_ATTACH,
 } = require('../util/page-route')
 
@@ -161,6 +162,68 @@ router.post(ROUTE_OFFER_VIEW, [auth], controller.viewOffer)
  *         description: Server error
  */
 router.post(ROUTE_OFFER_VALIDATE, [auth], controller.validateOffer)
+
+/**
+ * @swagger
+ * /offers/booking-options:
+ *   post:
+ *     summary: All offers evaluated against a draft cart (booking screen)
+ *     description: >
+ *       Powers the booking screen after the customer taps "Use Offer / Book With
+ *       Offer". Returns `selected` — the authoritative priced quote for whatever
+ *       is currently selected (same shape as POST /offers/validate) — plus the
+ *       full list of the customer's `personal` rewards, active `promotions`, and
+ *       `baseline` policies, each evaluated against THIS cart and flagged
+ *       `applicable` with a `reason` + `unlockMessage` when it cannot be applied
+ *       (e.g. "Spend ₦600 more to use this offer."). The offer passed as
+ *       customerOfferId/promoOfferId is marked `preselected`. Promotions are
+ *       evaluated on their own merits and carry `stackableWithPersonal`; the
+ *       actual personal+promo combination is enforced by /offers/validate (and
+ *       reflected in `selected`) when the customer confirms.
+ *     tags: [Offers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount: { type: number, example: 6000, description: Items subtotal }
+ *               itemCount: { type: integer, example: 7 }
+ *               serviceType: { type: string, example: wash-and-iron }
+ *               deliveryAmount: { type: number, example: 1000 }
+ *               pickupAmount: { type: number, example: 500 }
+ *               items:
+ *                 type: array
+ *                 description: Needed for free-items benefits
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, example: shirt }
+ *                     price: { type: number, example: 800 }
+ *                     quantity: { type: integer, example: 3 }
+ *               customerOfferId: { type: string, description: Preselected personal offer linkage }
+ *               promoOfferId: { type: string, description: Preselected promotion }
+ *     responses:
+ *       200:
+ *         description: Selected quote + all offers evaluated against the cart
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/OfferBookingOptions' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_OFFER_BOOKING_OPTIONS, [auth], controller.bookingOptions)
 
 /**
  * @swagger
@@ -376,10 +439,13 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *     summary: Create an offer (admin Offer Builder)
  *     description: >
  *       Offers are created once here and linked to many customers by the
- *       system. Personal offers need a trigger (first-experience,
+ *       system. Personal offers need at least one trigger (first-experience,
  *       second-order, loyalty, referral-reward, recovery, reactivation, or
- *       manual for staff-assigned). New offers start as draft unless a status
- *       is given.
+ *       manual for staff-assigned). Use `triggers[]` to mint on ANY of several
+ *       events (OR); the legacy single `trigger` still works and mirrors
+ *       triggers[0]. New offers start as draft unless a status is given.
+ *       Targeting (rules.stages / rules.tags / rules.customerGroups) is
+ *       multi-select: OR within a category, AND across, empty = no constraint.
  *     tags: [Offers]
  *     security:
  *       - bearerAuth: []
@@ -395,10 +461,17 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *               headline: { type: string, example: "10% off your next wash" }
  *               description: { type: string }
  *               type: { type: string, enum: [personal, promotional, baseline] }
+ *               triggers:
+ *                 type: array
+ *                 description: "Personal offers — events that MINT this offer (OR). Preferred over `trigger`."
+ *                 items:
+ *                   type: string
+ *                   enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *                 example: [first-experience, referral-reward]
  *               trigger:
  *                 type: string
- *                 enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual]
- *                 description: Personal offers only
+ *                 enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *                 description: "DEPRECATED single-trigger alias (mirrors triggers[0]); personal offers only"
  *               benefits:
  *                 type: array
  *                 items:
@@ -418,8 +491,9 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *               rules:
  *                 type: object
  *                 properties:
- *                   stages: { type: array, items: { type: string } }
+ *                   stages: { type: array, items: { type: string }, description: "OR within category; AND across; empty = no constraint" }
  *                   tags: { type: array, items: { type: string } }
+ *                   customerGroups: { type: array, items: { type: string }, description: "Admin-managed CRM tags as customer groups; matched against the customer's tags" }
  *                   minOrders: { type: integer }
  *                   maxOrders: { type: integer }
  *                   daysSinceLastOrder: { type: integer }

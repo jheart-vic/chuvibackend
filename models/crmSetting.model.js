@@ -35,12 +35,47 @@ const DEFAULT_TEMPLATES = {
         'Hi {{firstName}}, Chuvi Laundry here with something special for old friends — come back anytime, your next pickup is on us to arrange.',
 }
 
+// §3: admin-configurable lead-message SEQUENCE + delivery timing. Each step is
+// one message in the lead-nurture workflow; delayMinutes is measured from lead
+// creation. Steps are staggered (distinct minutes) so messages never all fire in
+// the same minute. `lead-mark-prospect` is the terminal tagging action, not a
+// message. Admin edits this via PUT /crm/settings (admin only).
+const DEFAULT_LEAD_SCHEDULE = [
+    { messageType: CRM_MESSAGE_TYPE.LEAD_WELCOME, enabled: true, delayMinutes: 0, cancelIfOrdered: true },
+    { messageType: CRM_MESSAGE_TYPE.LEAD_QUALIFY, enabled: true, delayMinutes: 2, cancelIfOrdered: true },
+    { messageType: CRM_MESSAGE_TYPE.LEAD_OFFER, enabled: true, delayMinutes: 5, cancelIfOrdered: true },
+    { messageType: CRM_MESSAGE_TYPE.LEAD_CLOSE, enabled: true, delayMinutes: 10, cancelIfOrdered: true },
+    { messageType: CRM_MESSAGE_TYPE.LEAD_REMINDER_1, enabled: true, delayMinutes: 1440, cancelIfOrdered: true }, // +1 day
+    { messageType: CRM_MESSAGE_TYPE.LEAD_REMINDER_2, enabled: true, delayMinutes: 4320, cancelIfOrdered: true }, // +3 days
+    { messageType: CRM_MESSAGE_TYPE.LEAD_MARK_PROSPECT, enabled: true, delayMinutes: 8640, cancelIfOrdered: true }, // +6 days
+]
+
+const leadScheduleStepSchema = new mongoose.Schema(
+    {
+        messageType: {
+            type: String,
+            enum: Object.values(CRM_MESSAGE_TYPE),
+            required: true,
+        },
+        enabled: { type: Boolean, default: true },
+        // minutes after lead creation this step fires
+        delayMinutes: { type: Number, default: 0, min: 0 },
+        // drop this step if the lead books/converts before it fires
+        cancelIfOrdered: { type: Boolean, default: true },
+    },
+    { _id: false },
+)
+
 const crmSettingSchema = new mongoose.Schema(
     {
         templates: {
             type: Map,
             of: String,
             default: DEFAULT_TEMPLATES,
+        },
+        leadSchedule: {
+            type: [leadScheduleStepSchema],
+            default: DEFAULT_LEAD_SCHEDULE,
         },
         thresholds: {
             // days without an order before a customer goes Dormant
@@ -64,3 +99,4 @@ const CrmSettingModel = mongoose.model('CrmSetting', crmSettingSchema)
 
 module.exports = CrmSettingModel
 module.exports.DEFAULT_TEMPLATES = DEFAULT_TEMPLATES
+module.exports.DEFAULT_LEAD_SCHEDULE = DEFAULT_LEAD_SCHEDULE

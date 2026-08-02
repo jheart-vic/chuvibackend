@@ -53,11 +53,14 @@ class FeedbackService extends BaseService {
                 })
             }
 
-            // complaint needs the complaint form fields
+            // complaint needs the complaint form fields. §5: one OR many types.
             if (post.type === FEEDBACK_TYPE.COMPLAINT) {
-                if (!post.complaintTypeId || !post.description) {
+                const hasType =
+                    (Array.isArray(post.complaintTypeIds) && post.complaintTypeIds.length) ||
+                    post.complaintTypeId
+                if (!hasType || !post.description) {
                     return BaseService.sendFailedResponse({
-                        error: 'A complaint needs complaintTypeId and description',
+                        error: 'A complaint needs at least one complaintTypeId (or complaintTypeIds[]) and a description',
                     })
                 }
             }
@@ -78,6 +81,7 @@ class FeedbackService extends BaseService {
                     orderId: order._id,
                     feedbackId: feedback._id,
                     complaintTypeId: post.complaintTypeId,
+                    complaintTypeIds: post.complaintTypeIds,
                     affectedItems: post.affectedItems || [],
                     description: post.description,
                     photos: post.photos || [],

@@ -248,19 +248,25 @@ class CrmService {
 
     // ─── Lead workflow ───────────────────────────────────────────────────────
 
-    // Welcome/Qualify/Offer/Close immediately → Reminder 1 after 24h →
-    // Reminder 2 after 3 days → tagged Prospect 3 days later if still no order.
+    // §3: sequence + delivery times are admin-configurable in CrmSetting
+    // (`leadSchedule`), staggered so no two enabled steps land in the same
+    // minute. dueAt = lead-creation time + the step's delayMinutes. Falls back to
+    // the default ladder for settings docs created before this field existed.
     async startLeadWorkflow(profile) {
         const now = Date.now()
-        await this.scheduleMessages(profile._id, CRM_WORKFLOW.LEAD, [
-            { messageType: CRM_MESSAGE_TYPE.LEAD_WELCOME, dueAt: new Date(now), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.LEAD_QUALIFY, dueAt: new Date(now + 1000), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.LEAD_OFFER, dueAt: new Date(now + 2000), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.LEAD_CLOSE, dueAt: new Date(now + 3000), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.LEAD_REMINDER_1, dueAt: new Date(now + DAY), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.LEAD_REMINDER_2, dueAt: new Date(now + 3 * DAY), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.LEAD_MARK_PROSPECT, dueAt: new Date(now + 6 * DAY), cancelIfOrdered: true },
-        ])
+        const settings = await getCrmSettings()
+        const schedule =
+            settings.leadSchedule && settings.leadSchedule.length
+                ? settings.leadSchedule
+                : CrmSettingModel.DEFAULT_LEAD_SCHEDULE
+        const entries = schedule
+            .filter((s) => s.enabled)
+            .map((s) => ({
+                messageType: s.messageType,
+                dueAt: new Date(now + (s.delayMinutes || 0) * 60 * 1000),
+                cancelIfOrdered: s.cancelIfOrdered !== false,
+            }))
+        await this.scheduleMessages(profile._id, CRM_WORKFLOW.LEAD, entries)
         await this.refreshNextFollowUp(profile._id)
     }
 
@@ -320,13 +326,20 @@ class CrmService {
     // ─── Event handlers (called via util/crmHooks.js) ────────────────────────
 
     async handleUserRegistered(user) {
-        await this.createLead({
+        const { profile } = await this.createLead({
             userId: user._id,
             fullName: user.fullName,
             phoneNumber: user.phoneNumber,
             email: user.email,
             channel: ORDER_CHANNEL.WEBSITE,
         })
+        // §3: registration means they now have an account — the lead-nurture
+        // sequence (which pushes them to register) no longer applies, so stop the
+        // remaining lead messages. Stage stays `lead` until they actually book.
+        if (profile) {
+            await this.cancelPendingMessages(profile._id, [CRM_WORKFLOW.LEAD])
+            await this.refreshNextFollowUp(profile._id)
+        }
     }
 
     // Order placed: the lead has converted out of the sales sequence.
@@ -346,6 +359,13 @@ class CrmService {
             CRM_TAG_GROUPS.LEAD_STATUS,
             null,
         )
+        // §3: booking converts the lead out of the sales sequence — advance the
+        // stage. (Later stages are recomputed from order count on delivery.)
+        if (profile.stage === CRM_STAGE.LEAD) {
+            this.setStage(profile, CRM_STAGE.FIRST_ORDER, {
+                note: 'Lead booked their first order',
+            })
+        }
         if (profile.broadcastLists?.prospect?.active) {
             profile.broadcastLists.prospect.active = false
         }
@@ -1051,7 +1071,7 @@ class CrmService {
 
     async updateSettings(req) {
         try {
-            const { templates, thresholds } = req.body
+            const { templates, thresholds, leadSchedule } = req.body
             const settings = await getCrmSettings()
 
             if (templates && typeof templates === 'object') {
@@ -1084,6 +1104,50 @@ class CrmService {
                     }
                     settings.thresholds[key] = value
                 }
+            }
+
+            // §3: admin sets the lead-message sequence + delivery times. Validate
+            // every step and enforce staggering (no two enabled steps in the same
+            // minute) so messages never all fire at once.
+            if (leadSchedule !== undefined) {
+                if (!Array.isArray(leadSchedule)) {
+                    return BaseService.sendFailedResponse({
+                        error: 'leadSchedule must be an array',
+                    })
+                }
+                const validTypes = Object.values(CRM_MESSAGE_TYPE)
+                const seenMinutes = new Set()
+                const normalized = []
+                for (const step of leadSchedule) {
+                    if (!step || !validTypes.includes(step.messageType)) {
+                        return BaseService.sendFailedResponse({
+                            error: `Invalid schedule step message type: ${step?.messageType}`,
+                        })
+                    }
+                    const delayMinutes = Number(step.delayMinutes)
+                    if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
+                        return BaseService.sendFailedResponse({
+                            error: `Invalid delayMinutes for ${step.messageType}`,
+                        })
+                    }
+                    const enabled = step.enabled !== false
+                    // stagger rule applies only to steps that will actually fire
+                    if (enabled) {
+                        if (seenMinutes.has(delayMinutes)) {
+                            return BaseService.sendFailedResponse({
+                                error: `Two lead messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
+                            })
+                        }
+                        seenMinutes.add(delayMinutes)
+                    }
+                    normalized.push({
+                        messageType: step.messageType,
+                        enabled,
+                        delayMinutes,
+                        cancelIfOrdered: step.cancelIfOrdered !== false,
+                    })
+                }
+                settings.leadSchedule = normalized
             }
 
             await settings.save()

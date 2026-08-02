@@ -49,7 +49,27 @@ not the bot repo) are part of the plan.
 | 4. Feedback & Recovery | ✅ committed | `5d80b2e All done for the feedback-recovery` |
 | 5. Referral (+ advocacy levels) | ✅ committed | `proper-swagger-prt` |
 | 6. In-app bot | ✅ built + verified (18-check script + boot), awaiting commit | `proper-swagger-prt` |
-| 7. WhatsApp reconnection | next up | — |
+| 7. WhatsApp reconnection | later (separate budget) | — |
+
+## Client "Fix & Improvement Brief" (2026-08-02) — ALL 8 sections DONE, uncommitted
+
+A separate 8-section correction brief was delivered and built on branch `bot-polising`.
+Full per-section detail + verification counts are in session.md (2026-08-02 entries).
+Status:
+- ✅ §1 Registration dup-email (email+Google) · ✅ §2 CX/Admin conversations (CRM→CX,
+  admin view-all/enter/own, CX escalate) · ✅ §3 Communication config (staggered lead
+  schedule in CrmSetting, register/book stop+stage, deep links) · ✅ §5 Complaints
+  (multi-type, 48h confirm→closed, 7-day reopen, rating, tag-removal) · ✅ §6 Recovery
+  orders into the pipeline (free order, auto status sync, dashboard) · ✅ §7 Compensation
+  & wallet (cash-comp path, cumulative>₦10k→admin, confirm step, eligible value) ·
+  ✅ §8 Referral/AI (verified, no change).
+- ✅ §4 multi-criteria offer targeting — offer.triggers[] (multi-trigger, OR; legacy trigger
+  kept in sync), rules.customerGroups[] (admin-managed CRM tags, matched like tags), all four
+  categories OR-within/AND-across/empty-skip through the shared checkProfileRules; legacy
+  trigger→triggers[] backfill in setup. Verified 19/19 + boot.
+- Also uncommitted: the appliedOffers CastError HOTFIX (production bug) — commit standalone.
+- Everything since the hotfix is UNCOMMITTED pending client review. Verification scripts
+  in scratchpad (not committed).
 
 ### In-app bot quick reference (Phase 6)
 

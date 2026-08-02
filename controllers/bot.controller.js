@@ -34,6 +34,15 @@ class BotController extends BaseController {
     async closeConversation(req, res) {
         return send(res, await new BotApiService().closeConversation(req))
     }
+    async escalateToAdmin(req, res) {
+        return send(res, await new BotApiService().escalateToAdmin(req))
+    }
+    async adminTakeOwnership(req, res) {
+        return send(res, await new BotApiService().adminTakeOwnership(req))
+    }
+    async adminListConversations(req, res) {
+        return send(res, await new BotApiService().adminListConversations(req))
+    }
 }
 
 module.exports = BotController

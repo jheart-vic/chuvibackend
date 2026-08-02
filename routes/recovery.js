@@ -16,6 +16,9 @@ const {
     ROUTE_RECOVERY_CASE_CREDIT_APPROVE,
     ROUTE_RECOVERY_CASE_CREDIT_REJECT,
     ROUTE_RECOVERY_CASE_ESCALATE,
+    ROUTE_RECOVERY_CASE_CLOSE,
+    ROUTE_RECOVERY_CASE_RECOVERY_ORDER,
+    ROUTE_RECOVERY_CASE_DASHBOARD,
     ROUTE_RECOVERY_CASE_MESSAGES,
 } = require('../util/page-route')
 
@@ -349,7 +352,11 @@ router.post(ROUTE_RECOVERY_CASE_ACTION_COMPLETE, [customerExperienceAuth], (req,
  * @swagger
  * /recovery/cases/{id}/credit/request:
  *   post:
- *     summary: Request recovery compensation credit (CX)
+ *     summary: Request a compensation — wallet credit or cash (CX)
+ *     description: >
+ *       §7: each call adds a separate compensation (amount, reason, evidence).
+ *       `type: cash` requires the customer's bank details and always needs
+ *       Admin/Founder approval. Appends to the case's `compensations[]`.
  *     tags: [Recovery (Staff)]
  *     security: [{ bearerAuth: [] }]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
@@ -361,11 +368,20 @@ router.post(ROUTE_RECOVERY_CASE_ACTION_COMPLETE, [customerExperienceAuth], (req,
  *             type: object
  *             required: [amount, reason]
  *             properties:
+ *               type: { type: string, enum: [wallet-credit, cash], default: wallet-credit }
  *               amount: { type: integer, example: 5000 }
- *               reason: { type: string, example: "Colour ran onto two shirts; supporting photos attached" }
+ *               reason: { type: string, example: "Colour ran onto two shirts" }
+ *               evidence: { type: array, items: { type: string }, description: Supporting evidence URLs, example: ["https://cdn.chuvi.com/complaints/photo1.jpg"] }
+ *               bankDetails:
+ *                 type: object
+ *                 description: Required when type=cash (manual transfer target).
+ *                 properties:
+ *                   accountName: { type: string, example: "John Doe" }
+ *                   accountNumber: { type: string, example: "0123456789" }
+ *                   bankName: { type: string, example: "GTBank" }
  *     responses:
  *       200:
- *         description: Credit requested (pending approval)
+ *         description: Compensation requested (pending approval)
  *         content:
  *           application/json:
  *             schema:
@@ -381,14 +397,31 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_REQUEST, [customerExperienceAuth], (req, 
  * @swagger
  * /recovery/cases/{id}/credit/approve:
  *   post:
- *     summary: Approve pending recovery credit (CX ≤ ₦10,000, else admin)
- *     description: "Amounts above the configured threshold (₦10,000) require an admin (Operations Manager/Founder). On approval the wallet recovery credit is granted and the Recovery Offer trigger fires."
+ *     summary: Approve a compensation (CX ≤ ₦10,000, else admin)
+ *     description: >
+ *       §7 gate: CX may approve wallet credit up to the threshold (₦10,000);
+ *       anything above, any CASH compensation, or an amount that takes the
+ *       CUMULATIVE approved total on the case above the threshold requires an
+ *       admin (Operations Manager/Founder). Requires `confirmed: true` (the
+ *       confirmation screen). Wallet-credit approvals grant the credit (visible
+ *       wallet transaction) and fire the Recovery Offer trigger; cash approvals
+ *       are recorded for manual transfer (no wallet movement).
  *     tags: [Recovery (Staff)]
  *     security: [{ bearerAuth: [] }]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [confirmed]
+ *             properties:
+ *               compensationId: { type: string, description: Which compensation to approve (defaults to the single pending one) }
+ *               confirmed: { type: boolean, description: Must be true — reflects the confirmation screen, example: true }
  *     responses:
  *       200:
- *         description: Approved and credited (the granted credit is referenced by recoveryCredit.walletCreditId)
+ *         description: Approved (credit granted, or cash recorded for transfer)
  *         content:
  *           application/json:
  *             schema:
@@ -409,10 +442,18 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_APPROVE, [customerExperienceAuth], (req, 
  * @swagger
  * /recovery/cases/{id}/credit/reject:
  *   post:
- *     summary: Reject pending recovery credit (CX)
+ *     summary: Reject a pending compensation (CX)
  *     tags: [Recovery (Staff)]
  *     security: [{ bearerAuth: [] }]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               compensationId: { type: string, description: Which compensation to reject (defaults to the single pending one) }
+ *               reason: { type: string, example: "Duplicate request" }
  *     responses:
  *       200:
  *         description: Rejected
@@ -456,6 +497,157 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_REJECT, [customerExperienceAuth], (req, r
 router.post(ROUTE_RECOVERY_CASE_ESCALATE, [customerExperienceAuth], (req, res) =>
     new FeedbackController().escalate(req, res),
 )
+
+/**
+ * @swagger
+ * /recovery/cases/{id}/close:
+ *   post:
+ *     summary: Close a resolved complaint the customer didn't confirm (CX)
+ *     description: >
+ *       §5: when a case has been `resolved` and the customer has not confirmed
+ *       within the confirmation window (48h default), Customer Experience may
+ *       close it. Sets status `closed` (confirmed=false), removes recovery tags,
+ *       and restores referral eligibility. Rejected while the window is still open.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, properties: { reason: { type: string, example: "No customer response after 48h" } } }
+ *     responses:
+ *       200:
+ *         description: Complaint closed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *       400:
+ *         description: Not resolved, or confirmation window still open
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_RECOVERY_CASE_CLOSE, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().closeCase(req, res),
+)
+
+/**
+ * @swagger
+ * /recovery/cases/{id}/recovery-order:
+ *   post:
+ *     summary: Create a free recovery order — rewash/rework/repair/replace (CX)
+ *     description: >
+ *       §6: CX creates a FREE recovery order linked to the complaint, the original
+ *       order and the affected items. It enters Intake & Tag (stage `queue`) and
+ *       then follows the normal pipeline (rider → processing → QC → delivery). CX
+ *       cannot change its operational stages; on delivery the complaint
+ *       auto-advances to `resolved` (awaiting customer confirmation). Recovery
+ *       orders are free (₦0) and excluded from CRM/offer/referral accounting.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [action]
+ *             properties:
+ *               action: { type: string, enum: [rewash, rework, repair, replace], example: rewash }
+ *               note: { type: string, example: "Re-wash the two shirts that still had stains" }
+ *               items:
+ *                 type: array
+ *                 description: Items to redo. Omit to use the complaint's affected items (or the original order's items).
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, example: shirt }
+ *                     quantity: { type: integer, example: 2 }
+ *     responses:
+ *       200:
+ *         description: Recovery order created and sent to Intake & Tag
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *                     order: { $ref: '#/components/schemas/BookOrderSummary' }
+ *       400:
+ *         description: Invalid action, or original order/items missing
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_RECOVERY_CASE_RECOVERY_ORDER, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().createRecoveryOrder(req, res),
+)
+
+/**
+ * @swagger
+ * /recovery/cases/{id}/dashboard:
+ *   get:
+ *     summary: Full complaint dashboard (CX/Admin)
+ *     description: >
+ *       §6: everything about one case in a single payload — evidence (photos +
+ *       affected items), the complaint chat, escalation, recovery orders with
+ *       their live stages, compensations/approvals, and computed SLA-breach flags.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     responses:
+ *       200:
+ *         description: The case dashboard bundle
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *                     evidence:
+ *                       type: object
+ *                       properties:
+ *                         photos: { type: array, items: { type: string } }
+ *                         affectedItems: { type: array, items: { type: string } }
+ *                     compensations: { type: array, items: { $ref: '#/components/schemas/RecoveryCompensation' } }
+ *                     recoveryActions: { type: array, items: { $ref: '#/components/schemas/RecoveryAction' } }
+ *                     recoveryOrders: { type: array, items: { $ref: '#/components/schemas/BookOrderSummary' } }
+ *                     escalation:
+ *                       type: object
+ *                       properties:
+ *                         escalated: { type: boolean, example: false }
+ *                         reason: { type: string, nullable: true }
+ *                         escalatedAt: { type: string, format: date-time, nullable: true }
+ *                     slaBreaches:
+ *                       type: object
+ *                       properties:
+ *                         reviewOverdue: { type: boolean, example: false }
+ *                         resolutionOverdue: { type: boolean, example: false }
+ *                         escalated: { type: boolean, example: false }
+ *                     messages: { type: array, items: { $ref: '#/components/schemas/ChatMessage' } }
+ *       400:
+ *         description: Complaint not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_RECOVERY_CASE_DASHBOARD, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().caseDashboard(req, res),
+)
+
 /**
  * @swagger
  * /recovery/cases/{id}/messages:

@@ -3,8 +3,19 @@ const ConversationService = require('./conversation.service')
 const BotOrchestratorService = require('./botOrchestrator.service')
 const ConversationModel = require('../models/conversation.model')
 const ChatMessageModel = require('../models/chatMessage.model')
-const { emitChatMessage, emitConversationClosed } = require('../config/socket')
-const { CONVERSATION_TYPE, CHAT_SENDER } = require('../util/constants')
+const {
+    emitChatMessage,
+    emitConversationClosed,
+    emitStaffConversationEvent,
+} = require('../config/socket')
+const {
+    CONVERSATION_TYPE,
+    CHAT_SENDER,
+    ROLE,
+    NOTIFICATION_TYPE,
+} = require('../util/constants')
+const UserModel = require('../models/user.model')
+const createNotification = require('../util/createNotification')
 
 // Attachments are photo URLs (upload via /api/utils/image-upload-single first).
 // Accept an array of strings, drop anything empty/non-string.
@@ -339,6 +350,10 @@ class BotApiService extends BaseService {
             // First staff engagement → tell the customer a human has joined.
             const joinNotice = await ConversationService.markAgentJoined(convo._id)
             if (joinNotice) emitChatMessage(convo, joinNotice)
+            // Claim ownership for CX on first reply (no-op if an Admin already owns it).
+            if (req.user.userType === ROLE.CUSTOMER_EXPERIENCE) {
+                await ConversationService.assignToCx(convo._id, req.user.id)
+            }
             const message = await ConversationService.postMessage({
                 conversationId: convo._id,
                 senderType: CHAT_SENDER.STAFF,
@@ -390,6 +405,119 @@ class BotApiService extends BaseService {
         } catch (error) {
             console.error(error)
             return BaseService.sendFailedResponse({ error: 'Failed to close conversation' })
+        }
+    }
+
+    // CX escalates a conversation to Admin with a reason + urgency (§2). Records
+    // it on the conversation, signals staff/admin UIs live, and notifies admins.
+    // Never posts a customer-facing message — escalation is internal.
+    async escalateToAdmin(req) {
+        try {
+            const reason =
+                typeof req.body?.reason === 'string' ? req.body.reason.trim() : ''
+            const urgency = req.body?.urgency
+            if (!reason) {
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required to escalate',
+                })
+            }
+            const convo = await ConversationService.escalateToAdmin(
+                req.params.conversationId,
+                { escalatedBy: req.user.id, reason, urgency },
+            )
+            if (!convo) {
+                return BaseService.sendFailedResponse({
+                    error: 'Open support conversation not found',
+                })
+            }
+            emitStaffConversationEvent('conversation:escalated', convo, {
+                reason: convo.escalation.reason,
+                urgency: convo.escalation.urgency,
+                escalatedBy: req.user.id,
+            })
+            // Notify admins (non-fatal).
+            try {
+                const admins = await UserModel.find({ userType: ROLE.ADMIN }).select('_id')
+                await Promise.all(
+                    admins.map((a) =>
+                        createNotification({
+                            userId: a._id,
+                            title: `Conversation escalated (${convo.escalation.urgency})`,
+                            body: convo.escalation.reason,
+                            type: NOTIFICATION_TYPE.SYSTEM,
+                        }),
+                    ),
+                )
+            } catch (e) {
+                console.warn('Escalation notify failed (non-fatal):', e.message)
+            }
+            return BaseService.sendSuccessResponse({
+                message: {
+                    escalated: true,
+                    conversationId: convo._id,
+                    urgency: convo.escalation.urgency,
+                    reason: convo.escalation.reason,
+                    escalatedAt: convo.escalation.escalatedAt,
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to escalate conversation' })
+        }
+    }
+
+    // Admin enters any conversation and takes ownership (§2) — no escalation
+    // required. Idempotent; posts the one-time "connected" notice if the thread
+    // hadn't been engaged by a human yet.
+    async adminTakeOwnership(req) {
+        try {
+            const result = await ConversationService.adminTakeOwnership(
+                req.params.conversationId,
+                { adminId: req.user.id },
+            )
+            if (!result) {
+                return BaseService.sendFailedResponse({
+                    error: 'Support conversation not found',
+                })
+            }
+            if (result.joinNotice) emitChatMessage(result.conversation, result.joinNotice)
+            if (!result.alreadyOwnedByAdmin) {
+                emitStaffConversationEvent('conversation:owner-changed', result.conversation, {
+                    assignedRole: result.conversation.assignedRole,
+                    assignedTo: req.user.id,
+                })
+            }
+            return BaseService.sendSuccessResponse({
+                message: {
+                    conversationId: result.conversation._id,
+                    assignedRole: result.conversation.assignedRole,
+                    assignedTo: result.conversation.assignedTo,
+                    adminJoinedAt: result.conversation.adminJoinedAt,
+                    alreadyOwnedByAdmin: !!result.alreadyOwnedByAdmin,
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to take ownership' })
+        }
+    }
+
+    // Admin: list every support conversation (all customers, open + closed) with
+    // optional filters (open, escalated, urgency, mode). Escalated float to top.
+    async adminListConversations(req) {
+        try {
+            const result = await ConversationService.listAllSupportForAdmin({
+                open: req.query.open,
+                escalated: req.query.escalated,
+                urgency: req.query.urgency,
+                mode: req.query.mode,
+                page: req.query.page,
+                limit: req.query.limit,
+            })
+            return BaseService.sendSuccessResponse({ message: result })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to load conversations' })
         }
     }
 }

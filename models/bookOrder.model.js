@@ -256,6 +256,17 @@ const bookOrderSchema = new mongoose.Schema(
             default: PAYMENT_METHOD.PAYSTACK,
         },
         oscNumber: { type: String, required: true, index: true, unique: true },
+        // §6: a free recovery order (rewash/rework/repair/replace) created by CX
+        // and linked back to the complaint + the original order. It flows through
+        // the normal pipeline; on delivery the complaint auto-advances. Recovery
+        // orders are excluded from CRM/offer/referral order accounting.
+        isRecoveryOrder: { type: Boolean, default: false },
+        recoveryForComplaintId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'ComplaintCase',
+        },
+        recoveryForOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
+        recoveryActionType: { type: String }, // rewash | rework | repair | replace
         items: [ItemSchema],
         extraNote: { type: String },
         stage: {

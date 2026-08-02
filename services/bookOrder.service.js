@@ -50,6 +50,7 @@ const {
     referralOnOrderCreated,
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
+const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 
 class BookOrderService extends BaseService {
     // Decide which cancellation window an order is in (client policy 2026-07-20):
@@ -1461,6 +1462,7 @@ async postBookOrder(req, res) {
                 crmOnOrderDelivered(bookOrder)
                 offerOnOrderDelivered(bookOrder)
                 referralOnOrderDelivered(bookOrder)
+                recoveryOnOrderDelivered(bookOrder)
             }
 
             let message = ''

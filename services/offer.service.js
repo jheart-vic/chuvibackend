@@ -58,10 +58,12 @@ class OfferService {
     }
 
     async getActiveOfferForTrigger(trigger) {
+        // An offer mints on this trigger if it's listed in the multi-trigger
+        // `triggers[]` array OR (back-compat) in the legacy single `trigger`.
         const offers = await OfferModel.find({
             type: OFFER_TYPE.PERSONAL,
-            trigger,
             status: OFFER_STATUS.ACTIVE,
+            $or: [{ triggers: trigger }, { trigger }],
         }).sort({ createdAt: -1 })
         return (
             offers.find((o) => this.isWithinWindow(o) && this.hasGlobalCapacity(o)) ||
@@ -89,6 +91,14 @@ class OfferService {
         }
         if (r.tags?.length && !r.tags.some((t) => stats.tags.includes(t))) {
             return { ok: false, reason: 'Customer tags not eligible' }
+        }
+        // customerGroups: another admin-managed set of CRM tags. OR-within
+        // (any one matches), AND-across (its own gate), empty = skipped.
+        if (
+            r.customerGroups?.length &&
+            !r.customerGroups.some((g) => stats.tags.includes(g))
+        ) {
+            return { ok: false, reason: 'Customer group not eligible' }
         }
         if (r.minOrders != null && stats.totalOrders < r.minOrders) {
             return { ok: false, reason: 'Not enough completed orders' }
@@ -412,6 +422,105 @@ class OfferService {
         }
     }
 
+    // Booking screen: every offer the customer has, evaluated against THIS draft
+    // cart. Returns the authoritative quote for whatever is currently selected
+    // (`selected`) plus the full list of personal rewards, promotions and
+    // baselines — each flagged applicable/​not with the same reason + unlockMessage
+    // as the quote (shared _offerRejection). Promotions are evaluated on their own
+    // merits (hasPersonal=false) and carry `stackableWithPersonal`; the actual
+    // personal+promo combination is enforced authoritatively by validateAndPrice
+    // when the customer confirms a selection.
+    async getBookingOptions(userId, draft = {}) {
+        const now = new Date()
+        const stats = await this.getCustomerStats(userId)
+
+        // The authoritative priced quote for the current selection (if any).
+        const selected = await this.validateAndPrice(userId, draft)
+
+        const evaluate = async (kind, offer, linkage) => {
+            const { reason, requirement } = await this._offerRejection({
+                kind,
+                offer,
+                linkage,
+                draft,
+                stats,
+                now,
+                userId,
+                hasPersonal: false,
+            })
+            const applicable = !reason
+            return {
+                applicable,
+                reason: reason || null,
+                requirement: requirement || null,
+                unlockMessage: this.unlockMessage(requirement),
+                benefit: applicable ? this.computeBenefits(offer, draft) : null,
+            }
+        }
+
+        // Personal rewards: the customer's live linkages.
+        const linkages = await CustomerOfferModel.find({
+            userId,
+            status: { $in: LIVE_LINKAGE_STATUSES },
+            expiresAt: { $gt: now },
+        })
+            .sort({ expiresAt: 1 })
+            .populate('offerId')
+            .lean()
+
+        const personal = []
+        for (const linkage of linkages) {
+            if (!linkage.offerId) continue // guard vs deleted offers
+            const offer = linkage.offerId
+            const evald = await evaluate('personal', offer, linkage)
+            personal.push({
+                customerOfferId: linkage._id,
+                offerId: offer._id,
+                name: offer.name,
+                ...this.decorateOffer(offer, { expiresAt: linkage.expiresAt }),
+                preselected:
+                    String(draft.customerOfferId || '') === String(linkage._id),
+                ...evald,
+            })
+        }
+
+        // Promotions: active promotional campaigns.
+        const promos = await OfferModel.find({
+            type: OFFER_TYPE.PROMOTIONAL,
+            status: OFFER_STATUS.ACTIVE,
+        }).lean()
+        const promotions = []
+        for (const promo of promos) {
+            const evald = await evaluate('promotion', promo)
+            promotions.push({
+                offerId: promo._id,
+                name: promo.name,
+                stackableWithPersonal: !!promo.stackableWithPersonal,
+                ...this.decorateOffer(promo),
+                preselected: String(draft.promoOfferId || '') === String(promo._id),
+                ...evald,
+            })
+        }
+
+        // Baselines: active always-on policies.
+        const baselines = await OfferModel.find({
+            type: OFFER_TYPE.BASELINE,
+            status: OFFER_STATUS.ACTIVE,
+        }).lean()
+        const baseline = []
+        for (const b of baselines) {
+            const evald = await evaluate('baseline', b)
+            baseline.push({
+                offerId: b._id,
+                name: b.name,
+                ...this.decorateOffer(b),
+                ...evald,
+            })
+        }
+
+        return { selected, personal, promotions, baseline }
+    }
+
     // Admin: every offer linkage for a customer (all statuses by default), so
     // staff can find the linkage id to cancel. Includes history (redeemed /
     // cancelled / expired), newest first.
@@ -531,6 +640,70 @@ class OfferService {
     // Full booking-time quote. Enforces the agreed stacking rules:
     // baseline always; max ONE personal offer; promo only alongside personal
     // when the promo is flagged stackableWithPersonal; one promo per order.
+    // Single source of truth for "can this offer apply to this cart?". Returns
+    // { reason, requirement } — reason=null means applicable. Used by both
+    // validateAndPrice (the authoritative quote) and getBookingOptions (the
+    // booking screen's list) so the two can never disagree.
+    //   kind: 'personal' | 'promotion' | 'baseline'
+    //   linkage: required for personal; ignored otherwise
+    //   hasPersonal: whether a personal offer is already applied (promo stacking)
+    async _offerRejection({ kind, offer, linkage, draft, stats, now, userId, hasPersonal }) {
+        now = now || new Date()
+
+        if (kind === 'personal') {
+            if (!linkage || !offer) return { reason: 'Offer not found', requirement: null }
+            if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status))
+                return { reason: 'Offer already applied to an order', requirement: null }
+            if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status))
+                return { reason: 'Offer already used or no longer available', requirement: null }
+            if (linkage.expiresAt && linkage.expiresAt < now)
+                return { reason: 'Offer has expired', requirement: null }
+            if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
+                return { reason: 'Offer is no longer active', requirement: null }
+            if (!this.hasGlobalCapacity(offer))
+                return { reason: 'Offer usage limit reached', requirement: null }
+            const p = this.checkProfileRules(offer, stats)
+            if (!p.ok) return { reason: p.reason, requirement: null }
+            const bk = this.checkBookingRules(offer, draft)
+            if (!bk.ok) return { reason: bk.reason, requirement: bk.requirement || null }
+            return { reason: null, requirement: null }
+        }
+
+        if (kind === 'promotion') {
+            if (!offer || offer.type !== OFFER_TYPE.PROMOTIONAL)
+                return { reason: 'Promotion not found', requirement: null }
+            if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
+                return { reason: 'Promotion is no longer active', requirement: null }
+            if (!this.hasGlobalCapacity(offer))
+                return { reason: 'Promotion usage limit reached', requirement: null }
+            if (hasPersonal && !offer.stackableWithPersonal)
+                return {
+                    reason: 'This promotion cannot be combined with a personal reward',
+                    requirement: null,
+                }
+            const p = this.checkProfileRules(offer, stats)
+            if (!p.ok) return { reason: p.reason, requirement: null }
+            const bk = this.checkBookingRules(offer, draft)
+            if (!bk.ok) return { reason: bk.reason, requirement: bk.requirement || null }
+            if (offer.rules?.oneUsePerCustomer) {
+                const used = await CustomerOfferModel.findOne({
+                    offerId: offer._id,
+                    userId,
+                    status: { $in: COMMITTED_LINKAGE_STATUSES },
+                })
+                if (used) return { reason: 'Promotion already used', requirement: null }
+            }
+            return { reason: null, requirement: null }
+        }
+
+        // baseline
+        if (!this.isWithinWindow(offer, now))
+            return { reason: 'Not currently available', requirement: null }
+        const bk = this.checkBookingRules(offer, draft)
+        if (!bk.ok) return { reason: bk.reason, requirement: bk.requirement || null }
+        return { reason: null, requirement: null }
+    }
+
     async validateAndPrice(userId, draft = {}) {
         const now = new Date()
         const breakdown = {
@@ -569,29 +742,15 @@ class OfferService {
                 userId,
             }).populate('offerId')
             const offer = linkage?.offerId
-            let reason = null
-            let requirement = null
-            if (!linkage || !offer) reason = 'Offer not found'
-            else if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status))
-                reason = 'Offer already applied to an order'
-            else if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status))
-                reason = 'Offer already used or no longer available'
-            else if (linkage.expiresAt && linkage.expiresAt < now)
-                reason = 'Offer has expired'
-            else if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
-                reason = 'Offer is no longer active'
-            else if (!this.hasGlobalCapacity(offer)) reason = 'Offer usage limit reached'
-            else {
-                const p = this.checkProfileRules(offer, stats)
-                if (!p.ok) reason = p.reason
-                else {
-                    const bk = this.checkBookingRules(offer, draft)
-                    if (!bk.ok) {
-                        reason = bk.reason
-                        requirement = bk.requirement || null
-                    }
-                }
-            }
+            const { reason, requirement } = await this._offerRejection({
+                kind: 'personal',
+                offer,
+                linkage,
+                draft,
+                stats,
+                now,
+                userId,
+            })
             if (reason) {
                 breakdown.rejected.push({
                     which: 'personal',
@@ -617,35 +776,15 @@ class OfferService {
         // 3. one promotional campaign, if stacking allows
         if (draft.promoOfferId) {
             const promo = await OfferModel.findById(draft.promoOfferId)
-            let reason = null
-            let requirement = null
-            if (!promo || promo.type !== OFFER_TYPE.PROMOTIONAL) reason = 'Promotion not found'
-            else if (promo.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(promo, now))
-                reason = 'Promotion is no longer active'
-            else if (!this.hasGlobalCapacity(promo)) reason = 'Promotion usage limit reached'
-            else if (breakdown.personal && !promo.stackableWithPersonal)
-                reason = 'This promotion cannot be combined with a personal reward'
-            else {
-                const p = this.checkProfileRules(promo, stats)
-                if (!p.ok) reason = p.reason
-                else {
-                    const bk = this.checkBookingRules(promo, draft)
-                    if (!bk.ok) {
-                        reason = bk.reason
-                        requirement = bk.requirement || null
-                    } else if (promo.rules?.oneUsePerCustomer) {
-                        // "Used" = already committed to any order (attached or
-                        // redeemed), so a second booking can't stack it before the
-                        // first order is delivered.
-                        const used = await CustomerOfferModel.findOne({
-                            offerId: promo._id,
-                            userId,
-                            status: { $in: COMMITTED_LINKAGE_STATUSES },
-                        })
-                        if (used) reason = 'Promotion already used'
-                    }
-                }
-            }
+            const { reason, requirement } = await this._offerRejection({
+                kind: 'promotion',
+                offer: promo,
+                draft,
+                stats,
+                now,
+                userId,
+                hasPersonal: !!breakdown.personal,
+            })
             if (reason) {
                 breakdown.rejected.push({
                     which: 'promotion',

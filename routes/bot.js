@@ -2,6 +2,7 @@ const router = require('express').Router()
 const BotController = require('../controllers/bot.controller')
 const auth = require('../middlewares/auth')
 const customerExperienceAuth = require('../middlewares/customerExperienceAuth')
+const adminAuth = require('../middlewares/adminAuth')
 const {
     ROUTE_BOT_MESSAGE,
     ROUTE_BOT_CONVERSATION,
@@ -12,6 +13,9 @@ const {
     ROUTE_BOT_STAFF_CONVERSATION,
     ROUTE_BOT_STAFF_REPLY,
     ROUTE_BOT_CLOSE,
+    ROUTE_BOT_ESCALATE,
+    ROUTE_BOT_ADMIN_JOIN,
+    ROUTE_BOT_ADMIN_CONVERSATIONS,
 } = require('../util/page-route')
 
 /**
@@ -446,6 +450,166 @@ router.post(ROUTE_BOT_STAFF_REPLY, [customerExperienceAuth], (req, res) =>
  */
 router.post(ROUTE_BOT_CLOSE, [customerExperienceAuth], (req, res) =>
     new BotController().closeConversation(req, res),
+)
+
+/**
+ * @swagger
+ * /bot/{conversationId}/escalate:
+ *   post:
+ *     summary: (CX) Escalate a conversation to Admin
+ *     description: >
+ *       Customer Experience flags a conversation for Admin with a reason and
+ *       urgency. Records it on the conversation, signals staff/admin UIs live
+ *       (socket `conversation:escalated`), and notifies admins. Does NOT post a
+ *       customer-facing message — escalation is internal. Customers can never
+ *       trigger this.
+ *     tags: [Bot]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string, example: "Customer requesting a refund above my approval limit" }
+ *               urgency: { type: string, enum: [low, normal, high, urgent], default: normal, example: high }
+ *     responses:
+ *       200:
+ *         description: Escalation recorded
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     escalated: { type: boolean, example: true }
+ *                     conversationId: { type: string }
+ *                     urgency: { type: string, example: high }
+ *                     reason: { type: string }
+ *                     escalatedAt: { type: string, format: date-time }
+ *       400:
+ *         description: Missing reason or conversation not found/closed
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_BOT_ESCALATE, [customerExperienceAuth], (req, res) =>
+    new BotController().escalateToAdmin(req, res),
+)
+
+/**
+ * @swagger
+ * /bot/{conversationId}/admin-join:
+ *   post:
+ *     summary: (Admin) Enter a conversation and take ownership
+ *     description: >
+ *       An Admin may enter ANY conversation without waiting for an escalation.
+ *       On entry the Admin becomes the owner (`assignedRole: admin`). Idempotent;
+ *       if the thread had not yet been engaged by a human it also posts the
+ *       one-time "you're now connected" notice to the customer.
+ *     tags: [Bot]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Admin now owns the conversation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     conversationId: { type: string }
+ *                     assignedRole: { type: string, example: admin }
+ *                     assignedTo: { type: string }
+ *                     adminJoinedAt: { type: string, format: date-time }
+ *                     alreadyOwnedByAdmin: { type: boolean, example: false }
+ *       400:
+ *         description: Conversation not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_BOT_ADMIN_JOIN, [adminAuth], (req, res) =>
+    new BotController().adminTakeOwnership(req, res),
+)
+
+/**
+ * @swagger
+ * /bot/admin/conversations:
+ *   get:
+ *     summary: (Admin) View every Customer Experience conversation
+ *     description: >
+ *       Admin oversight of all support conversations (every customer, open and
+ *       closed). Escalated conversations float to the top. Filterable.
+ *     tags: [Bot]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: open
+ *         schema: { type: string, enum: ['true', 'false'] }
+ *         description: Only open or only closed
+ *       - in: query
+ *         name: escalated
+ *         schema: { type: string, enum: ['true'] }
+ *         description: Only escalated conversations
+ *       - in: query
+ *         name: urgency
+ *         schema: { type: string, enum: [low, normal, high, urgent] }
+ *       - in: query
+ *         name: mode
+ *         schema: { type: string, enum: [bot, human] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *     responses:
+ *       200:
+ *         description: Paginated conversations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/Conversation' }
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total: { type: integer, example: 12 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 20 }
+ *                         pages: { type: integer, example: 1 }
+ */
+router.get(ROUTE_BOT_ADMIN_CONVERSATIONS, [adminAuth], (req, res) =>
+    new BotController().adminListConversations(req, res),
 )
 
 module.exports = router
