@@ -247,9 +247,48 @@ Client decisions: schedule config lives IN CrmSetting; register → stop nudges 
   admin, cash needs bankDetails + always admin + no wallet tx, reject, eligible=min). Boot :7996
   clean; /wallet/eligible 401 unauth.
 
-- NEXT: §6 recovery-orders-into-pipeline (IN PROGRESS, XL final phase), then §4 multi-criteria.
-  §3C deep-link FE paths best-guess (fix PAGE_ROUTES if needed). Everything since the appliedOffers
-  hotfix (quick-wins + §2 + §3 + §5 + §7) uncommitted per client.
+### §6 Recovery orders into pipeline — DONE (uncommitted), verified live 18/18 + boot
+- **Free recovery order (CX-created).** bookOrder.model: isRecoveryOrder, recoveryForComplaintId,
+  recoveryForOrderId, recoveryActionType. complaintCase.model: recoveryOrderIds[].
+  recovery.service.createRecoveryOrder(caseId,{action,note,items,createdBy}): action ∈
+  rewash/rework/repair/replace (compensate rejected — that's §7 money); creates a FREE bookOrder
+  (amount 0, all items priced 0), copies fullName/phone/serviceType/tier/speed/addresses from the
+  ORIGINAL order, stage QUEUE + station intake-and-tag, linked back to complaint+order; items =
+  explicit list → complaint.affectedItems → original order items. Pushes recoveryOrderIds +
+  recoveryAction; moves any PRE-recovery status (submitted/under-review/awaiting/item-received/
+  reopened) → recovery-in-progress (system action, bypasses the CX transition map). Notifies
+  Intake&Tag + admin. Route POST /recovery/cases/:id/recovery-order [customerExperienceAuth].
+- **CX can't change op stages** — structural: CX has no station role, so the normal pipeline
+  endpoints (intake/rider/wash/press/qc) reject them. No extra guard needed.
+- **Auto status sync on delivery.** New util/recoveryHooks.recoveryOnOrderDelivered wired at ALL
+  3 delivered sites (bookOrder.service:1461, rider.service:171, intake-user.service:2142).
+  recovery.service.onRecoveryOrderDelivered(order): only acts on recovery orders; advances the
+  linked complaint ready→resolved (system-driven, bypasses guard), sets resolvedAt +
+  confirmationDueAt (48h) + reminder reset, notifies customer to confirm+rate. Idempotent (no-op
+  if already resolved/confirmed/closed).
+- **Recovery orders EXCLUDED from CRM/offer/referral accounting.** Guards added:
+  crmHooks.crmOnOrderCreated/Delivered, offerHooks.offerOnOrderDelivered,
+  referralHooks.referralOnOrderCreated/Delivered all early-return when order.isRecoveryOrder.
+  (Verified CRM totalOrders unchanged.)
+- **Admin/CX complaint dashboard.** recovery.service.caseDashboard(caseId) → {complaint(populated
+  types+assignedTo), evidence{photos,affectedItems}, compensations, recoveryActions, recoveryOrders
+  (live stages), escalation, slaBreaches{reviewOverdue,resolutionOverdue,escalated}, messages(full
+  chat)}. Route GET /recovery/cases/:id/dashboard [customerExperienceAuth].
+- Swagger: BookOrderSummary schema; recovery-order + dashboard routes. Files: bookOrder.model,
+  complaintCase.model, recovery.service, recoveryApi.service, feedback.controller, util/recoveryHooks
+  (new), crmHooks, offerHooks, referralHooks, bookOrder.service, rider.service, intake-user.service,
+  routes/recovery.js, page-route.js, swagger/schemas.js.
+- Verified 18/18 (free order into intake, linkage, status→recovery-in-progress, CRM excluded,
+  delivery→resolved+48h, idempotent re-delivery, dashboard bundle). Boot :7995 clean (no circular
+  dep from the hook wiring); both new routes 401 unauth.
+
+## CLIENT BRIEF STATUS: 7 of 8 sections DONE. Only §4 MULTI-CRITERIA targeting remains.
+- Remaining: §4 multi-criteria offer targeting (triggers/stages/tags/customerGroups arrays, OR
+  within a category / AND across, empty=no-constraint; shared matchesTargeting used at assignment
+  AND booking; migrate single `trigger`→`triggers:[trigger]`). Decision already locked (see above).
+- §3C deep-link FE paths are best-guess — fix util/deepLink.js PAGE_ROUTES if FE differs.
+- EVERYTHING since the appliedOffers hotfix is UNCOMMITTED per client: quick-wins (§1/§4-bookingopts/
+  §8), §2, §3(all), §5, §7, §6. Verification scripts live in scratchpad (not committed).
 
 ## Session: 2026-08-01 — Order price breakdown + delete profile photo
 

@@ -17,6 +17,8 @@ const {
     ROUTE_RECOVERY_CASE_CREDIT_REJECT,
     ROUTE_RECOVERY_CASE_ESCALATE,
     ROUTE_RECOVERY_CASE_CLOSE,
+    ROUTE_RECOVERY_CASE_RECOVERY_ORDER,
+    ROUTE_RECOVERY_CASE_DASHBOARD,
     ROUTE_RECOVERY_CASE_MESSAGES,
 } = require('../util/page-route')
 
@@ -531,6 +533,119 @@ router.post(ROUTE_RECOVERY_CASE_ESCALATE, [customerExperienceAuth], (req, res) =
  */
 router.post(ROUTE_RECOVERY_CASE_CLOSE, [customerExperienceAuth], (req, res) =>
     new FeedbackController().closeCase(req, res),
+)
+
+/**
+ * @swagger
+ * /recovery/cases/{id}/recovery-order:
+ *   post:
+ *     summary: Create a free recovery order — rewash/rework/repair/replace (CX)
+ *     description: >
+ *       §6: CX creates a FREE recovery order linked to the complaint, the original
+ *       order and the affected items. It enters Intake & Tag (stage `queue`) and
+ *       then follows the normal pipeline (rider → processing → QC → delivery). CX
+ *       cannot change its operational stages; on delivery the complaint
+ *       auto-advances to `resolved` (awaiting customer confirmation). Recovery
+ *       orders are free (₦0) and excluded from CRM/offer/referral accounting.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [action]
+ *             properties:
+ *               action: { type: string, enum: [rewash, rework, repair, replace], example: rewash }
+ *               note: { type: string, example: "Re-wash the two shirts that still had stains" }
+ *               items:
+ *                 type: array
+ *                 description: Items to redo. Omit to use the complaint's affected items (or the original order's items).
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, example: shirt }
+ *                     quantity: { type: integer, example: 2 }
+ *     responses:
+ *       200:
+ *         description: Recovery order created and sent to Intake & Tag
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *                     order: { $ref: '#/components/schemas/BookOrderSummary' }
+ *       400:
+ *         description: Invalid action, or original order/items missing
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_RECOVERY_CASE_RECOVERY_ORDER, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().createRecoveryOrder(req, res),
+)
+
+/**
+ * @swagger
+ * /recovery/cases/{id}/dashboard:
+ *   get:
+ *     summary: Full complaint dashboard (CX/Admin)
+ *     description: >
+ *       §6: everything about one case in a single payload — evidence (photos +
+ *       affected items), the complaint chat, escalation, recovery orders with
+ *       their live stages, compensations/approvals, and computed SLA-breach flags.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     responses:
+ *       200:
+ *         description: The case dashboard bundle
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: object
+ *                   properties:
+ *                     complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *                     evidence:
+ *                       type: object
+ *                       properties:
+ *                         photos: { type: array, items: { type: string } }
+ *                         affectedItems: { type: array, items: { type: string } }
+ *                     compensations: { type: array, items: { $ref: '#/components/schemas/RecoveryCompensation' } }
+ *                     recoveryActions: { type: array, items: { $ref: '#/components/schemas/RecoveryAction' } }
+ *                     recoveryOrders: { type: array, items: { $ref: '#/components/schemas/BookOrderSummary' } }
+ *                     escalation:
+ *                       type: object
+ *                       properties:
+ *                         escalated: { type: boolean, example: false }
+ *                         reason: { type: string, nullable: true }
+ *                         escalatedAt: { type: string, format: date-time, nullable: true }
+ *                     slaBreaches:
+ *                       type: object
+ *                       properties:
+ *                         reviewOverdue: { type: boolean, example: false }
+ *                         resolutionOverdue: { type: boolean, example: false }
+ *                         escalated: { type: boolean, example: false }
+ *                     messages: { type: array, items: { $ref: '#/components/schemas/ChatMessage' } }
+ *       400:
+ *         description: Complaint not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_RECOVERY_CASE_DASHBOARD, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().caseDashboard(req, res),
 )
 
 /**

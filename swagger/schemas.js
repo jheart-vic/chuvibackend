@@ -886,6 +886,34 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     BookOrderSummary:
+ *       type: object
+ *       description: "Compact order view used by the recovery dashboard — incl. §6 recovery-order fields."
+ *       properties:
+ *         _id: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *         oscNumber: { type: string, example: OSC-2026-00456 }
+ *         amount: { type: number, example: 0 }
+ *         stage:
+ *           type: object
+ *           properties:
+ *             status: { type: string, example: queue }
+ *             note: { type: string, example: "Recovery order created" }
+ *             updatedAt: { type: string, format: date-time }
+ *         stationStatus: { type: string, example: intake-and-tag-station }
+ *         isRecoveryOrder: { type: boolean, example: true }
+ *         recoveryActionType: { type: string, enum: [rewash, rework, repair, replace], example: rewash }
+ *         recoveryForComplaintId: { type: string, nullable: true }
+ *         recoveryForOrderId: { type: string, nullable: true }
+ *         items:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               type: { type: string, example: shirt }
+ *               price: { type: number, example: 0 }
+ *               quantity: { type: integer, example: 2 }
+ *         createdAt: { type: string, format: date-time }
+ *
  *     ComplaintCase:
  *       type: object
  *       description: A complaint owned by a Customer Experience officer, moving through the recovery state machine.

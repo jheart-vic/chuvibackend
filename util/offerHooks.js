@@ -17,6 +17,7 @@ const offerOnTrigger = (trigger, payload) => {
 // Order delivered → attached offers become redeemed (and credit benefits pay out).
 const offerOnOrderDelivered = (order) => {
     if (!order) return
+    if (order.isRecoveryOrder) return // §6: recovery orders carry no offers
     OfferService.redeemForOrder(order).catch((err) =>
         console.warn('Offer redeem hook failed (non-fatal):', err.message),
     )

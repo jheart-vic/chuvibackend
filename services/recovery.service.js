@@ -2,6 +2,9 @@ const ComplaintCaseModel = require('../models/complaintCase.model')
 const ComplaintTypeModel = require('../models/complaintType.model')
 const FeedbackModel = require('../models/feedback.model')
 const UserModel = require('../models/user.model')
+const BookOrderModel = require('../models/bookOrder.model')
+const ChatMessageModel = require('../models/chatMessage.model')
+const { generateOscNumber } = require('../util/helper')
 const CrmService = require('./crm.service')
 const ConversationService = require('./conversation.service')
 const CommunicationService = require('./communication.service')
@@ -22,6 +25,11 @@ const {
     NOTIFICATION_TYPE,
     OFFER_TRIGGER,
     ROLE,
+    ORDER_STATUS,
+    STATION_STATUS,
+    ORDER_CHANNEL,
+    BILLING_TYPE,
+    PAYMENT_ORDER_STATUS,
 } = require('../util/constants')
 
 const HOUR = 60 * 60 * 1000
@@ -246,6 +254,224 @@ class RecoveryService {
         item.completedAt = new Date()
         await complaint.save()
         return complaint
+    }
+
+    // ─── §6 recovery orders (free, flow through the normal pipeline) ──────────
+
+    // CX creates a FREE recovery order (rewash/rework/repair/replace) linked to
+    // the complaint + original order + affected items. It enters Intake & Tag and
+    // then follows the normal pipeline; CX cannot change its operational stages
+    // (they have no station role). On delivery the complaint auto-advances.
+    async createRecoveryOrder(caseId, { action, note, items, createdBy } = {}) {
+        const physicalActions = [
+            RECOVERY_ACTION.REWASH,
+            RECOVERY_ACTION.REWORK,
+            RECOVERY_ACTION.REPAIR,
+            RECOVERY_ACTION.REPLACE,
+        ]
+        if (!physicalActions.includes(action)) {
+            throw new Error(
+                'A recovery order needs a physical action: rewash, rework, repair or replace',
+            )
+        }
+        const complaint = await ComplaintCaseModel.findById(caseId)
+        if (!complaint) throw new Error('Complaint not found')
+
+        const original = await BookOrderModel.findById(complaint.orderId)
+        if (!original) throw new Error('Original order not found')
+
+        // Items to redo: explicit list → affected items → original order items.
+        // Recovery orders are free, so every line is priced at 0.
+        let orderItems
+        if (Array.isArray(items) && items.length) {
+            orderItems = items.map((i) => ({
+                type: i.type || i,
+                price: 0,
+                quantity: Number(i.quantity) || 1,
+            }))
+        } else if (complaint.affectedItems && complaint.affectedItems.length) {
+            orderItems = complaint.affectedItems.map((label) => ({
+                type: label,
+                price: 0,
+                quantity: 1,
+            }))
+        } else {
+            orderItems = (original.items || []).map((i) => ({
+                type: i.type,
+                price: 0,
+                quantity: i.quantity || 1,
+            }))
+        }
+        if (!orderItems.length) {
+            throw new Error('No items to include in the recovery order')
+        }
+
+        const recoveryOrder = await BookOrderModel.create({
+            userId: complaint.userId,
+            fullName: original.fullName,
+            phoneNumber: original.phoneNumber,
+            pickupAddress: original.pickupAddress,
+            deliveryAddress: original.deliveryAddress,
+            serviceType: original.serviceType,
+            serviceTier: original.serviceTier,
+            deliverySpeed: original.deliverySpeed,
+            channel: ORDER_CHANNEL.OFFICE,
+            amount: 0,
+            deliveryAmount: 0,
+            billingType: BILLING_TYPE.PAY_PER_ITEM,
+            paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+            paymentDate: new Date(),
+            oscNumber: generateOscNumber(),
+            items: orderItems,
+            extraNote: `Recovery (${action}) for complaint ${complaint._id}${note ? ` — ${note}` : ''}`,
+            stage: { status: ORDER_STATUS.QUEUE, note: 'Recovery order created', updatedAt: new Date() },
+            stageHistory: [{ status: ORDER_STATUS.QUEUE, note: 'Recovery order created', updatedAt: new Date() }],
+            stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
+            isRecoveryOrder: true,
+            recoveryForComplaintId: complaint._id,
+            recoveryForOrderId: complaint.orderId,
+            recoveryActionType: action,
+        })
+
+        // record on the case + move it into recovery. Creating a recovery order
+        // is a system action, so it moves any PRE-recovery state straight to
+        // recovery-in-progress (bypasses the CX-only transition map). Terminal
+        // states (resolved/confirmed/closed) are left as-is.
+        complaint.recoveryOrderIds.push(recoveryOrder._id)
+        complaint.recoveryActions.push({ action, note, addedBy: createdBy })
+        const preRecovery = [
+            COMPLAINT_STATUS.SUBMITTED,
+            COMPLAINT_STATUS.UNDER_REVIEW,
+            COMPLAINT_STATUS.AWAITING_ITEM,
+            COMPLAINT_STATUS.ITEM_RECEIVED,
+            COMPLAINT_STATUS.REOPENED,
+        ]
+        if (preRecovery.includes(complaint.status)) {
+            this.recordStatus(
+                complaint,
+                COMPLAINT_STATUS.RECOVERY_IN_PROGRESS,
+                `Recovery order created (${action})`,
+                createdBy,
+            )
+        }
+        await complaint.save()
+
+        await ConversationService.postSystemMessage(
+            complaint.conversationId,
+            `We've started a ${this.humanize(action)} on your items. We'll keep you posted as it moves through our process.`,
+        )
+        // notify Intake & Tag (the recovery order enters their station first)
+        await this.notifyStaff([ROLE.INTAKE_AND_TAG, ROLE.ADMIN], {
+            title: 'Recovery order to intake',
+            body: `A free ${action} recovery order (${recoveryOrder.oscNumber}) was created for complaint ${complaint._id}.`,
+            page: 'complaint',
+            recordId: String(complaint._id),
+        })
+        return { complaint, order: recoveryOrder }
+    }
+
+    // Called (via recoveryHooks) when ANY order is delivered. Only acts on
+    // recovery orders: auto-advances the linked complaint to resolved (awaiting
+    // customer confirmation) — CX never touched a stage. Non-fatal.
+    async onRecoveryOrderDelivered(order) {
+        if (!order?.isRecoveryOrder || !order.recoveryForComplaintId) return null
+        const complaint = await ComplaintCaseModel.findById(order.recoveryForComplaintId)
+        if (!complaint) return null
+        // don't re-resolve a case already resolved/closed/confirmed
+        const done = [
+            COMPLAINT_STATUS.RESOLVED,
+            COMPLAINT_STATUS.CUSTOMER_CONFIRMED,
+            COMPLAINT_STATUS.CLOSED,
+        ]
+        if (done.includes(complaint.status)) return complaint
+
+        // recovery-in-progress → ready → resolved (system-driven; bypasses the
+        // CX transition guard since operations, not CX, moved it here)
+        if (complaint.status !== COMPLAINT_STATUS.READY) {
+            this.recordStatus(complaint, COMPLAINT_STATUS.READY, `Recovery order ${order.oscNumber} delivered`)
+        }
+        this.recordStatus(complaint, COMPLAINT_STATUS.RESOLVED, 'Recovery completed and delivered')
+        const settings = await this.getSettings()
+        const windowHours = settings.complaintConfirmWindowHours ?? 48
+        complaint.resolvedAt = new Date()
+        complaint.confirmationDueAt = new Date(Date.now() + windowHours * HOUR)
+        complaint.confirmationReminderSentAt = null
+        await complaint.save()
+
+        await ConversationService.postSystemMessage(
+            complaint.conversationId,
+            'Your items are on the way back / ready. Please confirm once everything is good — you can also leave a rating.',
+        )
+        await CommunicationService.send({
+            userId: complaint.userId,
+            templateKey: 'complaint-update',
+            data: { update: 'your recovery is complete — please confirm and rate' },
+            sourceSystem: COMM_SOURCE_SYSTEM.RECOVERY,
+            messageType: 'recovery-delivered',
+            relatedRef: complaint._id,
+            relatedModel: 'ComplaintCase',
+            page: 'complaint',
+            recordId: String(complaint._id),
+        })
+        return complaint
+    }
+
+    // §6 admin/CX dashboard: the full picture for one case — evidence, chats,
+    // escalation, recovery orders (with live stages), compensations/approvals and
+    // computed SLA-breach flags.
+    async caseDashboard(caseId) {
+        const complaint = await ComplaintCaseModel.findById(caseId)
+            .populate('complaintTypeIds')
+            .populate('complaintTypeId')
+            .populate('assignedTo', 'fullName userType')
+            .lean()
+        if (!complaint) throw new Error('Complaint not found')
+
+        const recoveryOrders = await BookOrderModel.find({
+            _id: { $in: complaint.recoveryOrderIds || [] },
+        })
+            .select('oscNumber stage stationStatus recoveryActionType items createdAt updatedAt')
+            .lean()
+
+        const messages = complaint.conversationId
+            ? await ChatMessageModel.find({ conversationId: complaint.conversationId })
+                  .sort({ createdAt: 1 })
+                  .lean()
+            : []
+
+        const now = new Date()
+        const isOpen = ![
+            COMPLAINT_STATUS.CLOSED,
+            COMPLAINT_STATUS.CUSTOMER_CONFIRMED,
+        ].includes(complaint.status)
+        const slaBreaches = {
+            reviewOverdue:
+                isOpen &&
+                !complaint.reviewedAt &&
+                complaint.firstReviewDueAt &&
+                new Date(complaint.firstReviewDueAt) < now,
+            resolutionOverdue:
+                isOpen &&
+                !complaint.resolvedAt &&
+                complaint.resolutionDueAt &&
+                new Date(complaint.resolutionDueAt) < now,
+            escalated: !!complaint.escalated,
+        }
+
+        return {
+            complaint,
+            evidence: { photos: complaint.photos || [], affectedItems: complaint.affectedItems || [] },
+            compensations: complaint.compensations || [],
+            recoveryActions: complaint.recoveryActions || [],
+            recoveryOrders,
+            escalation: {
+                escalated: !!complaint.escalated,
+                reason: complaint.escalationReason || null,
+                escalatedAt: complaint.escalatedAt || null,
+            },
+            slaBreaches,
+            messages,
+        }
     }
 
     // ─── recovery credit (compensation) with approval gate ───────────────────

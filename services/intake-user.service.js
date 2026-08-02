@@ -40,6 +40,7 @@ const {
     referralOnOrderCreated,
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
+const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 const BaseService = require('./base.service')
 
 class IntakeUserService extends BaseService {
@@ -2142,6 +2143,7 @@ class IntakeUserService extends BaseService {
             crmOnOrderDelivered(order)
             offerOnOrderDelivered(order)
             referralOnOrderDelivered(order)
+            recoveryOnOrderDelivered(order)
 
             await ActivityModel.create({
                 title: 'Order Collected In Person',

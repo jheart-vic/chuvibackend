@@ -20,6 +20,7 @@ const referralOnReferralCode = (referredUserId, code, source) => {
 
 // Referred customer placed their first order.
 const referralOnOrderCreated = (order) => {
+    if (order?.isRecoveryOrder) return // §6: recovery orders aren't real orders
     if (!order) return
     ReferralService.handleReferredOrderCreated(order).catch((err) =>
         console.warn('Referral order-created hook failed (non-fatal):', err.message),
@@ -28,6 +29,7 @@ const referralOnOrderCreated = (order) => {
 
 // Referred customer's order delivered → reward the referrer (if it's the first).
 const referralOnOrderDelivered = (order) => {
+    if (order?.isRecoveryOrder) return // §6: don't reward on recovery orders
     if (!order) return
     ReferralService.handleReferredOrderDelivered(order).catch((err) =>
         console.warn('Referral order-delivered hook failed (non-fatal):', err.message),

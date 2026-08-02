@@ -114,6 +114,11 @@ const complaintCaseSchema = new mongoose.Schema(
         // CX officer who owns this case
         assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         recoveryActions: [recoveryActionSchema],
+        // §6: free recovery orders spawned for this case (rewash/rework/repair/
+        // replace), flowing through the normal production pipeline.
+        recoveryOrderIds: [
+            { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
+        ],
         // §7: full compensation history (wallet credit + cash). recoveryCredit is
         // the deprecated single-credit field kept only for pre-§7 cases.
         compensations: [compensationSchema],

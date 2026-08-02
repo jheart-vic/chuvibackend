@@ -294,6 +294,8 @@ exports.ROUTE_RECOVERY_CASE_CREDIT_APPROVE = "/cases/:id/credit/approve"
 exports.ROUTE_RECOVERY_CASE_CREDIT_REJECT = "/cases/:id/credit/reject"
 exports.ROUTE_RECOVERY_CASE_ESCALATE = "/cases/:id/escalate"
 exports.ROUTE_RECOVERY_CASE_CLOSE = "/cases/:id/close"
+exports.ROUTE_RECOVERY_CASE_RECOVERY_ORDER = "/cases/:id/recovery-order"
+exports.ROUTE_RECOVERY_CASE_DASHBOARD = "/cases/:id/dashboard"
 exports.ROUTE_RECOVERY_CASE_MESSAGES = "/cases/:id/messages"
 
 // communication layer (admin)

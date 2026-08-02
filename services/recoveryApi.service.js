@@ -243,6 +243,39 @@ class RecoveryApiService extends BaseService {
         }
     }
 
+    // §6: CX creates a free recovery order (rewash/rework/repair/replace).
+    async createRecoveryOrder(req) {
+        try {
+            const result = await RecoveryService.createRecoveryOrder(req.params.id, {
+                action: req.body.action,
+                note: req.body.note,
+                items: req.body.items,
+                createdBy: getObjectId(req.user.id),
+            })
+            await createAuditLog({
+                userId: getObjectId(req.user.id),
+                category: AUDIT_LOG_CATEGORIES.RECOVERY,
+                action: `Created ${req.body.action} recovery order ${result.order.oscNumber} for complaint ${req.params.id}`,
+            })
+            return BaseService.sendSuccessResponse({ message: result })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to create recovery order' })
+        }
+    }
+
+    // §6: full complaint dashboard (evidence, chats, escalation, recovery orders,
+    // compensations/approvals, SLA breaches).
+    async caseDashboard(req) {
+        try {
+            const data = await RecoveryService.caseDashboard(req.params.id)
+            return BaseService.sendSuccessResponse({ message: data })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to load dashboard' })
+        }
+    }
+
     async escalate(req) {
         try {
             const reason = req.body.reason

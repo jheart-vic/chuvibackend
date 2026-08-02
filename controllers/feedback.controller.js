@@ -49,6 +49,12 @@ class FeedbackController extends BaseController {
     async closeCase(req, res) {
         return send(res, await new RecoveryApiService().closeCase(req))
     }
+    async createRecoveryOrder(req, res) {
+        return send(res, await new RecoveryApiService().createRecoveryOrder(req))
+    }
+    async caseDashboard(req, res) {
+        return send(res, await new RecoveryApiService().caseDashboard(req))
+    }
     async customerListMessages(req, res) {
         return send(res, await new RecoveryApiService().listMessages(req, { staff: false }))
     }

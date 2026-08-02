@@ -11,6 +11,8 @@ const crmOnUserRegistered = (user) => {
 
 const crmOnOrderCreated = (order) => {
     if (!order) return
+    // §6: free recovery orders are not real purchases — exclude from CRM accounting.
+    if (order.isRecoveryOrder) return
     CrmService.handleOrderCreated(order).catch((err) =>
         console.warn('CRM order-created hook failed (non-fatal):', err.message),
     )
@@ -18,6 +20,7 @@ const crmOnOrderCreated = (order) => {
 
 const crmOnOrderDelivered = (order) => {
     if (!order) return
+    if (order.isRecoveryOrder) return // §6: don't count recovery orders
     CrmService.handleOrderDelivered(order).catch((err) =>
         console.warn('CRM order-delivered hook failed (non-fatal):', err.message),
     )
