@@ -60,6 +60,17 @@ class OfferApiService extends BaseService {
         if (post.trigger && !Object.values(OFFER_TRIGGER).includes(post.trigger)) {
             return `trigger must be one of: ${Object.values(OFFER_TRIGGER).join(', ')}`
         }
+        if (post.triggers !== undefined) {
+            if (!Array.isArray(post.triggers)) {
+                return 'triggers must be an array'
+            }
+            const bad = post.triggers.find(
+                (t) => !Object.values(OFFER_TRIGGER).includes(t),
+            )
+            if (bad) {
+                return `triggers must each be one of: ${Object.values(OFFER_TRIGGER).join(', ')}`
+            }
+        }
         if (post.status && !Object.values(OFFER_STATUS).includes(post.status)) {
             return `status must be one of: ${Object.values(OFFER_STATUS).join(', ')}`
         }
@@ -76,11 +87,39 @@ class OfferApiService extends BaseService {
         if (
             isCreate &&
             post.type === OFFER_TYPE.PERSONAL &&
-            !post.trigger
+            !post.trigger &&
+            !(Array.isArray(post.triggers) && post.triggers.length)
         ) {
-            return 'Personal offers need a trigger (use "manual" for staff-assigned offers)'
+            return 'Personal offers need at least one trigger (use "manual" for staff-assigned offers)'
         }
         return null
+    }
+
+    // Reconcile the legacy single `trigger` and the multi `triggers[]` so both
+    // are always populated in step: triggers[] is authoritative, trigger mirrors
+    // triggers[0]. Accepts whichever the admin sent (or both). Returns
+    // { triggers, trigger } for a PERSONAL offer, or empties for a promo.
+    normaliseTriggers(post, existing = {}) {
+        if (post.type === OFFER_TYPE.PROMOTIONAL) {
+            return { triggers: [], trigger: undefined }
+        }
+        let triggers
+        if (Array.isArray(post.triggers)) {
+            triggers = post.triggers
+        } else if (post.trigger !== undefined) {
+            triggers = post.trigger ? [post.trigger] : []
+        } else {
+            // neither sent on this request — keep what the offer already has
+            triggers =
+                existing.triggers?.length
+                    ? existing.triggers
+                    : existing.trigger
+                      ? [existing.trigger]
+                      : undefined
+        }
+        if (triggers === undefined) return {} // nothing to change
+        const deduped = [...new Set(triggers)]
+        return { triggers: deduped, trigger: deduped[0] }
     }
 
     async createOffer(req) {
@@ -94,12 +133,14 @@ class OfferApiService extends BaseService {
                 })
             }
 
+            const { triggers, trigger } = this.normaliseTriggers(post)
             const offer = await OfferModel.create({
                 name: post.name,
                 headline: post.headline,
                 description: post.description,
                 type: post.type,
-                trigger: post.type === OFFER_TYPE.PERSONAL ? post.trigger : undefined,
+                triggers,
+                trigger,
                 benefits: post.benefits,
                 rules: post.rules || {},
                 startDate: post.startDate,
@@ -135,12 +176,24 @@ class OfferApiService extends BaseService {
             if (invalid) return BaseService.sendFailedResponse({ error: invalid })
 
             const editable = [
-                'name', 'headline', 'description', 'trigger', 'benefits', 'rules',
+                'name', 'headline', 'description', 'benefits', 'rules',
                 'startDate', 'expiryDate', 'customerWindowDays', 'usageLimit',
                 'status', 'stackableWithPersonal', 'creditExpiryDays',
             ]
             for (const field of editable) {
                 if (post[field] !== undefined) offer[field] = post[field]
+            }
+            // triggers handled together so the legacy `trigger` and `triggers[]`
+            // stay in sync (only when the admin sent one of them)
+            if (post.triggers !== undefined || post.trigger !== undefined) {
+                const norm = this.normaliseTriggers(
+                    { ...post, type: post.type || offer.type },
+                    offer,
+                )
+                if (norm.triggers !== undefined) {
+                    offer.triggers = norm.triggers
+                    offer.trigger = norm.trigger
+                }
             }
             offer.updatedBy = getObjectId(req.user.id)
             await offer.save()

@@ -58,10 +58,12 @@ class OfferService {
     }
 
     async getActiveOfferForTrigger(trigger) {
+        // An offer mints on this trigger if it's listed in the multi-trigger
+        // `triggers[]` array OR (back-compat) in the legacy single `trigger`.
         const offers = await OfferModel.find({
             type: OFFER_TYPE.PERSONAL,
-            trigger,
             status: OFFER_STATUS.ACTIVE,
+            $or: [{ triggers: trigger }, { trigger }],
         }).sort({ createdAt: -1 })
         return (
             offers.find((o) => this.isWithinWindow(o) && this.hasGlobalCapacity(o)) ||
@@ -89,6 +91,14 @@ class OfferService {
         }
         if (r.tags?.length && !r.tags.some((t) => stats.tags.includes(t))) {
             return { ok: false, reason: 'Customer tags not eligible' }
+        }
+        // customerGroups: another admin-managed set of CRM tags. OR-within
+        // (any one matches), AND-across (its own gate), empty = skipped.
+        if (
+            r.customerGroups?.length &&
+            !r.customerGroups.some((g) => stats.tags.includes(g))
+        ) {
+            return { ok: false, reason: 'Customer group not eligible' }
         }
         if (r.minOrders != null && stats.totalOrders < r.minOrders) {
             return { ok: false, reason: 'Not enough completed orders' }

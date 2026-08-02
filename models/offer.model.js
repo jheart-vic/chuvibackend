@@ -43,8 +43,12 @@ const offerSchema = new mongoose.Schema(
             enum: Object.values(OFFER_TYPE),
             required: true,
         },
-        // personal offers only: which event links this offer. At most one
-        // ACTIVE offer per trigger — handleTrigger picks the newest active.
+        // personal offers only: which events can MINT this offer. Multiple
+        // triggers = OR (any one of them assigns it). At most one ACTIVE offer
+        // per trigger — handleTrigger picks the newest active.
+        triggers: [{ type: String, enum: Object.values(OFFER_TRIGGER) }],
+        // DEPRECATED single-trigger field, kept for back-compat. New code reads
+        // `triggers[]`; this mirrors triggers[0] so old queries/records still work.
         trigger: {
             type: String,
             enum: Object.values(OFFER_TRIGGER),
@@ -54,9 +58,17 @@ const offerSchema = new mongoose.Schema(
             validate: [(v) => v.length > 0, 'At least one benefit is required'],
         },
         // eligibility rules — all set rules must pass
+        // Multi-criteria targeting: stages / tags / customerGroups are
+        // eligibility GATES. Within one category = OR (customer needs any one);
+        // across categories = AND (each non-empty category must pass); an EMPTY
+        // category = no constraint. Evaluated at assignment AND re-checked at
+        // booking (checkProfileRules — one shared function so they can't drift).
         rules: {
             stages: [{ type: String, enum: Object.values(CRM_STAGE) }],
             tags: [{ type: String }],
+            // admin-managed CRM tag values treated as "customer groups";
+            // matched against the customer's tags exactly like `tags`.
+            customerGroups: [{ type: String }],
             minOrders: { type: Number },
             maxOrders: { type: Number },
             daysSinceLastOrder: { type: Number },
@@ -90,6 +102,7 @@ const offerSchema = new mongoose.Schema(
 
 offerSchema.index({ type: 1, status: 1 })
 offerSchema.index({ trigger: 1, status: 1 })
+offerSchema.index({ triggers: 1, status: 1 })
 
 const OfferModel = mongoose.model('Offer', offerSchema)
 module.exports = OfferModel

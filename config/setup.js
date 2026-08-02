@@ -4,6 +4,7 @@ const CrmSettingModel = require("../models/crmSetting.model");
 const RewardSettingModel = require("../models/rewardSetting.model");
 const TemplateModel = require("../models/template.model");
 const ComplaintTypeModel = require("../models/complaintType.model");
+const OfferModel = require("../models/offer.model");
 
 
 const init = async () => {
@@ -173,6 +174,26 @@ const createDefaultComplaintTypes = async () => {
   }
 };
 
+// One-time §4 migration: backfill the multi-trigger `triggers[]` array from the
+// legacy single `trigger` for any offer that predates multi-criteria targeting.
+// Idempotent — only touches offers with a trigger and an empty/absent triggers[].
+const backfillOfferTriggers = async () => {
+  try {
+    const result = await OfferModel.updateMany(
+      {
+        trigger: { $exists: true, $nin: [null, ""] },
+        $or: [{ triggers: { $exists: false } }, { triggers: { $size: 0 } }],
+      },
+      [{ $set: { triggers: ["$trigger"] } }],
+    );
+    if (result.modifiedCount) {
+      console.log(`Backfilled triggers[] on ${result.modifiedCount} offer(s)`);
+    }
+  } catch (error) {
+    console.error("Offer triggers backfill failed:", error);
+  }
+};
+
 async function setupApp() {
   init();
   createAdminOrderDetails();
@@ -180,6 +201,7 @@ async function setupApp() {
   createRewardSettings();
   createDefaultTemplates();
   createDefaultComplaintTypes();
+  backfillOfferTriggers();
   console.log("App init successful");
 }
 

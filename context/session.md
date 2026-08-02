@@ -282,10 +282,29 @@ Client decisions: schedule config lives IN CrmSetting; register → stop nudges 
   delivery→resolved+48h, idempotent re-delivery, dashboard bundle). Boot :7995 clean (no circular
   dep from the hook wiring); both new routes 401 unauth.
 
-## CLIENT BRIEF STATUS: 7 of 8 sections DONE. Only §4 MULTI-CRITERIA targeting remains.
-- Remaining: §4 multi-criteria offer targeting (triggers/stages/tags/customerGroups arrays, OR
-  within a category / AND across, empty=no-constraint; shared matchesTargeting used at assignment
-  AND booking; migrate single `trigger`→`triggers:[trigger]`). Decision already locked (see above).
+### §4 Multi-criteria offer targeting — DONE (uncommitted), verified 19/19 + boot :7994
+- **Decision resolved:** "customer group" = admin-managed CRM tag list (option a), matched
+  against the customer's tags exactly like `tags` (OR-within, AND-across, empty=skip).
+- **Multi-trigger.** offer.model: new `triggers: [enum OFFER_TRIGGER]` (events that MINT the
+  offer, OR); legacy single `trigger` kept + mirrors triggers[0]. Index {triggers:1,status:1}.
+  `getActiveOfferForTrigger` now queries `$or:[{triggers:t},{trigger:t}]` (multi + back-compat).
+- **customerGroups gate.** offer.model rules.customerGroups[]; checkProfileRules gained a
+  customerGroups clause mirroring the tags pattern (some-overlap with stats.tags; empty=skip).
+  Because checkProfileRules is the ONE shared gate (assignment handleTrigger + getCustomerOffers
+  + getBookingOptions + _offerRejection), all paths get it — no new matching function needed.
+- **Normalisation.** offerApi.validateOfferPayload validates triggers[] (each ∈ OFFER_TRIGGER);
+  personal offer needs ≥1 trigger (trigger OR triggers). New `normaliseTriggers(post,existing)`
+  keeps trigger==triggers[0], dedupes, empties for promos; wired into createOffer + updateOffer.
+- **Backfill.** config/setup.backfillOfferTriggers — updateMany pipeline sets triggers:[$trigger]
+  for offers with a legacy trigger and empty/absent triggers[]; idempotent; called in setupApp.
+- **Swagger.** Offer schema (triggers[], rules.customerGroups + targeting semantics note);
+  create-offer route body (triggers[], trigger deprecated, customerGroups). swagger parses.
+- Files: models/offer.model.js, services/offer.service.js, services/offerApi.service.js,
+  config/setup.js, routes/offer.js, swagger/schemas.js. Verify: scratchpad/verify_s4.js.
+
+## CLIENT BRIEF STATUS: ALL 8 of 8 sections DONE (uncommitted). Brief complete.
+- Everything on this branch (correction-feature) since the appliedOffers hotfix is UNCOMMITTED
+  pending client review. Verification scripts live in scratchpad (not committed).
 - §3C deep-link FE paths are best-guess — fix util/deepLink.js PAGE_ROUTES if FE differs.
 - EVERYTHING since the appliedOffers hotfix is UNCOMMITTED per client: quick-wins (§1/§4-bookingopts/
   §8), §2, §3(all), §5, §7, §6. Verification scripts live in scratchpad (not committed).

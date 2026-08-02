@@ -439,10 +439,13 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *     summary: Create an offer (admin Offer Builder)
  *     description: >
  *       Offers are created once here and linked to many customers by the
- *       system. Personal offers need a trigger (first-experience,
+ *       system. Personal offers need at least one trigger (first-experience,
  *       second-order, loyalty, referral-reward, recovery, reactivation, or
- *       manual for staff-assigned). New offers start as draft unless a status
- *       is given.
+ *       manual for staff-assigned). Use `triggers[]` to mint on ANY of several
+ *       events (OR); the legacy single `trigger` still works and mirrors
+ *       triggers[0]. New offers start as draft unless a status is given.
+ *       Targeting (rules.stages / rules.tags / rules.customerGroups) is
+ *       multi-select: OR within a category, AND across, empty = no constraint.
  *     tags: [Offers]
  *     security:
  *       - bearerAuth: []
@@ -458,10 +461,17 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *               headline: { type: string, example: "10% off your next wash" }
  *               description: { type: string }
  *               type: { type: string, enum: [personal, promotional, baseline] }
+ *               triggers:
+ *                 type: array
+ *                 description: "Personal offers — events that MINT this offer (OR). Preferred over `trigger`."
+ *                 items:
+ *                   type: string
+ *                   enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *                 example: [first-experience, referral-reward]
  *               trigger:
  *                 type: string
- *                 enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual]
- *                 description: Personal offers only
+ *                 enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *                 description: "DEPRECATED single-trigger alias (mirrors triggers[0]); personal offers only"
  *               benefits:
  *                 type: array
  *                 items:
@@ -481,8 +491,9 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *               rules:
  *                 type: object
  *                 properties:
- *                   stages: { type: array, items: { type: string } }
+ *                   stages: { type: array, items: { type: string }, description: "OR within category; AND across; empty = no constraint" }
  *                   tags: { type: array, items: { type: string } }
+ *                   customerGroups: { type: array, items: { type: string }, description: "Admin-managed CRM tags as customer groups; matched against the customer's tags" }
  *                   minOrders: { type: integer }
  *                   maxOrders: { type: integer }
  *                   daysSinceLastOrder: { type: integer }

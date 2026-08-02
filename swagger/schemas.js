@@ -569,19 +569,29 @@
  *           type: string
  *           enum: [personal, promotional, baseline]
  *           example: personal
+ *         triggers:
+ *           type: array
+ *           description: "§4 multi-trigger — the events that can MINT this personal offer. Any one of them assigns it (OR). Empty for promotional/baseline offers."
+ *           items:
+ *             type: string
+ *             enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *           example: [first-experience, referral-reward]
  *         trigger:
  *           type: string
  *           nullable: true
- *           enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual]
- *           example: second-order
+ *           description: "DEPRECATED single-trigger field, kept for back-compat; mirrors triggers[0]. New builders should send triggers[]."
+ *           enum: [first-experience, second-order, loyalty, referral-reward, recovery, reactivation, manual, level-promoter, level-ambassador, level-champion]
+ *           example: first-experience
  *         benefits:
  *           type: array
  *           items: { $ref: '#/components/schemas/OfferBenefit' }
  *         rules:
  *           type: object
+ *           description: "Multi-criteria targeting (§4). stages / tags / customerGroups: OR within a category, AND across categories, an EMPTY category = no constraint. Evaluated at assignment AND re-checked at booking."
  *           properties:
- *             stages: { type: array, items: { type: string }, example: [first-order] }
- *             tags: { type: array, items: { type: string } }
+ *             stages: { type: array, items: { type: string }, example: [lead, first-order] }
+ *             tags: { type: array, items: { type: string }, example: [student, young-professional] }
+ *             customerGroups: { type: array, items: { type: string }, description: "Admin-managed CRM tag values treated as customer groups; matched against the customer's tags like `tags`.", example: [high-volume] }
  *             minOrders: { type: integer, nullable: true }
  *             maxOrders: { type: integer, nullable: true }
  *             daysSinceLastOrder: { type: integer, nullable: true }
