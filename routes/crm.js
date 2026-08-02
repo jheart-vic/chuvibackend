@@ -1,7 +1,9 @@
 const router = require('express').Router()
 const CrmController = require('../controllers/crm.controller')
 const adminAuth = require('../middlewares/adminAuth')
-const intakeUserAuth = require('../middlewares/intakeUserAuth')
+// §2: CRM lead management moved from Intake & Tag to Customer Experience.
+// customerExperienceAuth grants CX + admin (admin retains full access).
+const customerExperienceAuth = require('../middlewares/customerExperienceAuth')
 const {
     ROUTE_CRM_CUSTOMERS,
     ROUTE_CRM_CUSTOMER_CARD,
@@ -29,7 +31,7 @@ const botSecretAuth = (req, res, next) => {
     next()
 }
 
-// ── Staff tier (intake-and-tag + admin) ────────────────────────────────────
+// ── Staff tier (customer-experience + admin) ────────────────────────────────────
 
 /**
  * @swagger
@@ -39,7 +41,7 @@ const botSecretAuth = (req, res, next) => {
  *     description: |
  *       Paginated list of CRM profiles (leads and customers). Filterable by
  *       stage, tag and channel; searchable by name, phone or email.
- *       Accessible to intake-and-tag staff and admins.
+ *       Accessible to Customer Experience staff and admins.
  *     tags: [CRM]
  *     security:
  *       - bearerAuth: []
@@ -112,7 +114,7 @@ const botSecretAuth = (req, res, next) => {
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CrmError' }
  *       403:
- *         description: Role not allowed (intake-and-tag or admin only)
+ *         description: Role not allowed (customer-experience or admin only)
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CrmError' }
@@ -125,7 +127,7 @@ const botSecretAuth = (req, res, next) => {
  *               success: false
  *               data: { error: Failed to fetch CRM customers }
  */
-router.get(ROUTE_CRM_CUSTOMERS, [intakeUserAuth], (req, res) => {
+router.get(ROUTE_CRM_CUSTOMERS, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.getCustomers(req, res)
 })
@@ -235,7 +237,7 @@ router.get(ROUTE_CRM_CUSTOMERS, [intakeUserAuth], (req, res) => {
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CrmError' }
  */
-router.get(ROUTE_CRM_CUSTOMER_CARD, [intakeUserAuth], (req, res) => {
+router.get(ROUTE_CRM_CUSTOMER_CARD, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.getCustomerCard(req, res)
 })
@@ -303,7 +305,7 @@ router.get(ROUTE_CRM_CUSTOMER_CARD, [intakeUserAuth], (req, res) => {
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CrmError' }
  */
-router.post(ROUTE_CRM_ADD_TAG, [intakeUserAuth], (req, res) => {
+router.post(ROUTE_CRM_ADD_TAG, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.addManualTag(req, res)
 })
@@ -360,7 +362,7 @@ router.post(ROUTE_CRM_ADD_TAG, [intakeUserAuth], (req, res) => {
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CrmError' }
  */
-router.delete(ROUTE_CRM_REMOVE_TAG, [intakeUserAuth], (req, res) => {
+router.delete(ROUTE_CRM_REMOVE_TAG, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.removeManualTag(req, res)
 })
@@ -436,7 +438,7 @@ router.delete(ROUTE_CRM_REMOVE_TAG, [intakeUserAuth], (req, res) => {
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CrmError' }
  */
-router.patch(ROUTE_CRM_CORRECT_STAGE, [intakeUserAuth], (req, res) => {
+router.patch(ROUTE_CRM_CORRECT_STAGE, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.correctStage(req, res)
 })
@@ -498,7 +500,7 @@ router.patch(ROUTE_CRM_CORRECT_STAGE, [intakeUserAuth], (req, res) => {
  *               success: false
  *               data: { error: A CRM profile with this phone number already exists }
  */
-router.post(ROUTE_CRM_CREATE_WALKIN_LEAD, [intakeUserAuth], (req, res) => {
+router.post(ROUTE_CRM_CREATE_WALKIN_LEAD, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.createWalkInLead(req, res)
 })
@@ -577,7 +579,7 @@ router.post(ROUTE_CRM_CREATE_WALKIN_LEAD, [intakeUserAuth], (req, res) => {
  *               success: false
  *               data: { error: Pending follow-up not found }
  */
-router.patch(ROUTE_CRM_UPDATE_FOLLOWUP, [intakeUserAuth], (req, res) => {
+router.patch(ROUTE_CRM_UPDATE_FOLLOWUP, [customerExperienceAuth], (req, res) => {
     const controller = new CrmController()
     return controller.updateFollowUp(req, res)
 })
@@ -798,11 +800,25 @@ router.get(ROUTE_CRM_BROADCAST_LIST, [adminAuth], (req, res) => {
  *               thresholds:
  *                 type: object
  *                 additionalProperties: { type: number }
+ *               leadSchedule:
+ *                 type: array
+ *                 description: "Ordered lead-nurture steps. Enabled steps must each have a distinct delayMinutes (no two in the same minute)."
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     messageType: { type: string, example: lead-reminder-1 }
+ *                     enabled: { type: boolean, example: true }
+ *                     delayMinutes: { type: number, description: Minutes after lead creation, example: 1440 }
+ *                     cancelIfOrdered: { type: boolean, example: true }
  *           example:
  *             templates:
  *               lead-welcome: "Hi {{firstName}}! Welcome to Chuvi Laundry — fresh clothes, zero stress."
  *             thresholds:
  *               dormantDays: 45
+ *             leadSchedule:
+ *               - { messageType: lead-welcome, enabled: true, delayMinutes: 0, cancelIfOrdered: true }
+ *               - { messageType: lead-qualify, enabled: true, delayMinutes: 2, cancelIfOrdered: true }
+ *               - { messageType: lead-reminder-1, enabled: true, delayMinutes: 1440, cancelIfOrdered: true }
  *     responses:
  *       200:
  *         description: Updated settings

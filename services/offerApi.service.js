@@ -313,6 +313,22 @@ class OfferApiService extends BaseService {
         }
     }
 
+    // Customer: every offer evaluated against a draft cart, for the booking screen.
+    async bookingOptions(req) {
+        try {
+            const result = await OfferService.getBookingOptions(
+                req.user.id,
+                req.body || {},
+            )
+            return BaseService.sendSuccessResponse({ message: result })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to load booking offers',
+            })
+        }
+    }
+
     async attachOffer(req) {
         try {
             const post = req.body

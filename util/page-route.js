@@ -227,6 +227,7 @@ exports.ROUTE_WALLET_TOP_UP = "/wallet-top-up"
 exports.ROUTE_PAY_WITH_WALLET = "/pay-with-wallet"
 exports.ROUTE_FETCH_USER_TRANSACTIONS = "/fetch-user-transactions"
 exports.ROUTE_WALLET_BALANCE = "/wallet-balance"
+exports.ROUTE_WALLET_ELIGIBLE = "/eligible"
 exports.ROUTE_GET_MONTHLY_TRANSACTIONS = "/get-monthly-transactions"
 exports.ROUTE_UPLOAD_PAYMENT_PROOF = "/upload-payment-proof"
 exports.ROUTE_WALLET_CREDITS = "/wallet-credits"
@@ -244,6 +245,7 @@ exports.ROUTE_OFFER_MY_OFFERS = "/my-offers"
 exports.ROUTE_OFFER_MY_USAGE = "/my-usage"
 exports.ROUTE_OFFER_VIEW = "/my-offers/:id/view"
 exports.ROUTE_OFFER_VALIDATE = "/validate"
+exports.ROUTE_OFFER_BOOKING_OPTIONS = "/booking-options"
 exports.ROUTE_OFFER_ATTACH = "/attach"
 
 // in-app bot (Phase 6)
@@ -256,6 +258,9 @@ exports.ROUTE_BOT_QUEUE = "/queue"
 exports.ROUTE_BOT_STAFF_CONVERSATION = "/:conversationId/messages"
 exports.ROUTE_BOT_STAFF_REPLY = "/:conversationId/reply"
 exports.ROUTE_BOT_CLOSE = "/:conversationId/close"
+exports.ROUTE_BOT_ESCALATE = "/:conversationId/escalate"
+exports.ROUTE_BOT_ADMIN_JOIN = "/:conversationId/admin-join"
+exports.ROUTE_BOT_ADMIN_CONVERSATIONS = "/admin/conversations"
 
 // referral system
 exports.ROUTE_REFERRAL_ME = "/me"
@@ -271,6 +276,7 @@ exports.ROUTE_FEEDBACK_MY_COMPLAINTS = "/my-complaints"
 exports.ROUTE_FEEDBACK_COMPLAINT = "/complaints/:id"
 exports.ROUTE_FEEDBACK_COMPLAINT_CONFIRM = "/complaints/:id/confirm"
 exports.ROUTE_FEEDBACK_COMPLAINT_REJECT = "/complaints/:id/reject"
+exports.ROUTE_FEEDBACK_COMPLAINT_REOPEN = "/complaints/:id/reopen"
 exports.ROUTE_FEEDBACK_COMPLAINT_MESSAGES = "/complaints/:id/messages"
 
 // feedback & recovery — staff/admin
@@ -287,6 +293,7 @@ exports.ROUTE_RECOVERY_CASE_CREDIT_REQUEST = "/cases/:id/credit/request"
 exports.ROUTE_RECOVERY_CASE_CREDIT_APPROVE = "/cases/:id/credit/approve"
 exports.ROUTE_RECOVERY_CASE_CREDIT_REJECT = "/cases/:id/credit/reject"
 exports.ROUTE_RECOVERY_CASE_ESCALATE = "/cases/:id/escalate"
+exports.ROUTE_RECOVERY_CASE_CLOSE = "/cases/:id/close"
 exports.ROUTE_RECOVERY_CASE_MESSAGES = "/cases/:id/messages"
 
 // communication layer (admin)

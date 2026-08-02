@@ -43,6 +43,10 @@ const rewardSettingSchema = new mongoose.Schema(
         // complaint SLA (hours): first review + target resolution
         complaintReviewHours: { type: Number, default: 24 },
         complaintResolutionHours: { type: Number, default: 72 },
+        // §5: hours a customer has to confirm a resolved complaint before CX may
+        // close it; and days a customer may reopen a closed complaint.
+        complaintConfirmWindowHours: { type: Number, default: 48 },
+        complaintReopenDays: { type: Number, default: 7 },
         // referrer reward as % of the referred customer's first completed order
         referralRewardPercent: { type: Number, default: 5 },
         // optional per-referral reward ceiling in naira (null = no ceiling)

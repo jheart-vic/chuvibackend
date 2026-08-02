@@ -7,6 +7,7 @@ const {
   ROUTE_FETCH_USER_TRANSACTIONS,
   ROUTE_PAY_WITH_WALLET,
   ROUTE_WALLET_BALANCE,
+  ROUTE_WALLET_ELIGIBLE,
   ROUTE_GET_MONTHLY_TRANSACTIONS,
   ROUTE_UPLOAD_PAYMENT_PROOF,
   ROUTE_WALLET_CREDITS,
@@ -387,6 +388,60 @@ router.get(ROUTE_FETCH_USER_TRANSACTIONS, [auth], (req, res) => {
 router.get(ROUTE_WALLET_BALANCE, [auth], (req, res) => {
   const walletController = new WalletController();
   return walletController.getWalletBalance(req, res);
+});
+
+/**
+ * @swagger
+ * /wallet/eligible:
+ *   get:
+ *     summary: Wallet value eligible for a specific order (§7)
+ *     description: >
+ *       How much of the customer's wallet (cash + all credit types) can be
+ *       applied to an order of the given amount — `eligible = min(totalAvailable,
+ *       amount)`. Also returns the full per-type breakdown and the remaining cash
+ *       to pay, so booking can show "₦X of your wallet applies to this order".
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: amount
+ *         schema: { type: number, example: 6000 }
+ *         description: The order total. Omit/0 to just get the full wallet picture.
+ *     responses:
+ *       200:
+ *         description: Eligible wallet value + breakdown
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderAmount: { type: number, example: 6000 }
+ *                     cashBalance: { type: number, example: 2000 }
+ *                     creditTotal: { type: number, example: 5000 }
+ *                     creditsByType:
+ *                       type: object
+ *                       properties:
+ *                         laundry: { type: number, example: 2000 }
+ *                         referral: { type: number, example: 1000 }
+ *                         recovery: { type: number, example: 2000 }
+ *                         promotional: { type: number, example: 0 }
+ *                     totalAvailable: { type: number, example: 7000 }
+ *                     eligible: { type: number, example: 6000 }
+ *                     remainingToPay: { type: number, example: 0 }
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_WALLET_ELIGIBLE, [auth], (req, res) => {
+  const walletController = new WalletController();
+  return walletController.getEligibleForOrder(req, res);
 });
 
 /**

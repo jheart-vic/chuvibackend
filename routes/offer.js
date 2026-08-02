@@ -13,6 +13,7 @@ const {
     ROUTE_OFFER_MY_USAGE,
     ROUTE_OFFER_VIEW,
     ROUTE_OFFER_VALIDATE,
+    ROUTE_OFFER_BOOKING_OPTIONS,
     ROUTE_OFFER_ATTACH,
 } = require('../util/page-route')
 
@@ -161,6 +162,68 @@ router.post(ROUTE_OFFER_VIEW, [auth], controller.viewOffer)
  *         description: Server error
  */
 router.post(ROUTE_OFFER_VALIDATE, [auth], controller.validateOffer)
+
+/**
+ * @swagger
+ * /offers/booking-options:
+ *   post:
+ *     summary: All offers evaluated against a draft cart (booking screen)
+ *     description: >
+ *       Powers the booking screen after the customer taps "Use Offer / Book With
+ *       Offer". Returns `selected` — the authoritative priced quote for whatever
+ *       is currently selected (same shape as POST /offers/validate) — plus the
+ *       full list of the customer's `personal` rewards, active `promotions`, and
+ *       `baseline` policies, each evaluated against THIS cart and flagged
+ *       `applicable` with a `reason` + `unlockMessage` when it cannot be applied
+ *       (e.g. "Spend ₦600 more to use this offer."). The offer passed as
+ *       customerOfferId/promoOfferId is marked `preselected`. Promotions are
+ *       evaluated on their own merits and carry `stackableWithPersonal`; the
+ *       actual personal+promo combination is enforced by /offers/validate (and
+ *       reflected in `selected`) when the customer confirms.
+ *     tags: [Offers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount: { type: number, example: 6000, description: Items subtotal }
+ *               itemCount: { type: integer, example: 7 }
+ *               serviceType: { type: string, example: wash-and-iron }
+ *               deliveryAmount: { type: number, example: 1000 }
+ *               pickupAmount: { type: number, example: 500 }
+ *               items:
+ *                 type: array
+ *                 description: Needed for free-items benefits
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, example: shirt }
+ *                     price: { type: number, example: 800 }
+ *                     quantity: { type: integer, example: 3 }
+ *               customerOfferId: { type: string, description: Preselected personal offer linkage }
+ *               promoOfferId: { type: string, description: Preselected promotion }
+ *     responses:
+ *       200:
+ *         description: Selected quote + all offers evaluated against the cart
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/OfferBookingOptions' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_OFFER_BOOKING_OPTIONS, [auth], controller.bookingOptions)
 
 /**
  * @swagger

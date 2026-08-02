@@ -63,8 +63,13 @@ class AuthService extends BaseService {
                 // userType: post.userType,
             }).select('-password')
             if (userExists) {
+                // Clear, actionable message + machine-readable signal so the
+                // frontend can show a direct "Log In" button instead of a
+                // generic account-creation error.
                 return BaseService.sendFailedResponse({
-                    error: 'User exists. Please login',
+                    error: 'This email is already registered. Please log in.',
+                    code: 'EMAIL_ALREADY_REGISTERED',
+                    action: 'login',
                 })
             }
 
@@ -268,12 +273,21 @@ class AuthService extends BaseService {
             const userWithSub = await UserModel.findOne({ email })
 
             if (userWithSub) {
-                // if (userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL) {
-                //   return BaseService.sendFailedResponse({
-                //     error:
-                //       "This email was registered with password. Please login manually.",
-                //   });
-                // }
+                // Collision: the email already belongs to a password account that
+                // was never linked to Google. Don't silently link — tell them to
+                // log in (same clear message + FE signal as email/password signup).
+                // Genuine Google users (already have a googleId) fall through and
+                // log in normally.
+                const isPasswordAccount =
+                    userWithSub.servicePlatform === SERVICE_PLATFORM.LOCAL &&
+                    !userWithSub.googleId
+                if (isPasswordAccount) {
+                    return BaseService.sendFailedResponse({
+                        error: 'This email is already registered. Please log in.',
+                        code: 'EMAIL_ALREADY_REGISTERED',
+                        action: 'login',
+                    })
+                }
 
                 // Keep provider consistent
                 if (!userWithSub.servicePlatform) {

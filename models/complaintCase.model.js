@@ -3,6 +3,7 @@ const {
     COMPLAINT_STATUS,
     RECOVERY_ACTION,
     RECOVERY_CREDIT_STATUS,
+    RECOVERY_COMPENSATION_TYPE,
     ESCALATION_REASON,
 } = require('../util/constants')
 
@@ -18,6 +19,40 @@ const recoveryActionSchema = new mongoose.Schema(
         completed: { type: Boolean, default: false },
         completedAt: { type: Date },
         addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    },
+    { timestamps: true },
+)
+
+// §7: one compensation on a case — wallet credit OR cash (manual transfer).
+// A case may have SEVERAL (each a separate action with its own amount, reason,
+// evidence and approval). Cumulative approved value drives the approval gate.
+const compensationSchema = new mongoose.Schema(
+    {
+        type: {
+            type: String,
+            enum: Object.values(RECOVERY_COMPENSATION_TYPE),
+            default: RECOVERY_COMPENSATION_TYPE.WALLET_CREDIT,
+        },
+        amount: { type: Number, required: true, min: 1 },
+        reason: { type: String, required: true },
+        evidence: [{ type: String }], // URLs / references supporting the request
+        status: {
+            type: String,
+            enum: Object.values(RECOVERY_CREDIT_STATUS),
+            default: RECOVERY_CREDIT_STATUS.PENDING_APPROVAL,
+        },
+        requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        decidedAt: { type: Date },
+        rejectionReason: { type: String },
+        // wallet-credit only: the granted credit (creates a visible wallet tx)
+        walletCreditId: { type: mongoose.Schema.Types.ObjectId, ref: 'WalletCredit' },
+        // cash only: where the manual transfer goes (no in-system payout)
+        bankDetails: {
+            accountName: { type: String },
+            accountNumber: { type: String },
+            bankName: { type: String },
+        },
     },
     { timestamps: true },
 )
@@ -55,11 +90,17 @@ const complaintCaseSchema = new mongoose.Schema(
             index: true,
         },
         feedbackId: { type: mongoose.Schema.Types.ObjectId, ref: 'Feedback' },
+        // §5: a complaint can cite MULTIPLE types. complaintTypeId is kept as the
+        // primary (first) type for backward compatibility; complaintTypeIds is the
+        // full set — always read the array when present.
         complaintTypeId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'ComplaintType',
             required: true,
         },
+        complaintTypeIds: [
+            { type: mongoose.Schema.Types.ObjectId, ref: 'ComplaintType' },
+        ],
         // affected items, referencing item labels/ids on the order
         affectedItems: [{ type: String }],
         description: { type: String, required: true },
@@ -73,6 +114,9 @@ const complaintCaseSchema = new mongoose.Schema(
         // CX officer who owns this case
         assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         recoveryActions: [recoveryActionSchema],
+        // §7: full compensation history (wallet credit + cash). recoveryCredit is
+        // the deprecated single-credit field kept only for pre-§7 cases.
+        compensations: [compensationSchema],
         recoveryCredit: recoveryCreditSchema,
         recoveryOfferTriggered: { type: Boolean, default: false },
         conversationId: {
@@ -85,6 +129,23 @@ const complaintCaseSchema = new mongoose.Schema(
         reviewedAt: { type: Date },
         resolvedAt: { type: Date },
         confirmedAt: { type: Date },
+        // §5 confirmation window: customer has until confirmationDueAt to confirm
+        // a resolved case; after that CX may close it. Reminder fired once.
+        confirmationDueAt: { type: Date },
+        confirmationReminderSentAt: { type: Date },
+        // §5 final close: reached by customer confirmation or CX close after 48h
+        // silence. `confirmed` distinguishes the two.
+        closedAt: { type: Date },
+        closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        closeReason: { type: String },
+        confirmed: { type: Boolean, default: false },
+        // §5 post-recovery satisfaction (1–5★ + optional comment), captured on
+        // confirmation. Stored here (Feedback is unique-per-order, already taken).
+        recoveryRating: { type: Number, min: 1, max: 5 },
+        recoveryRatingComment: { type: String },
+        // §5 reopen: customer may reopen a closed case within the admin window.
+        reopenedAt: { type: Date },
+        reopenCount: { type: Number, default: 0 },
         // escalation
         escalated: { type: Boolean, default: false },
         escalationReason: {

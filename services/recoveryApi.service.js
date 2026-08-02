@@ -177,52 +177,69 @@ class RecoveryApiService extends BaseService {
         }
     }
 
+    // §7: request a compensation (wallet credit OR cash). Each call is a separate
+    // action with its own amount/reason/evidence.
     async requestCredit(req) {
         try {
-            const complaint = await RecoveryService.requestRecoveryCredit(req.params.id, {
+            const complaint = await RecoveryService.requestCompensation(req.params.id, {
+                type: req.body.type,
                 amount: req.body.amount,
                 reason: req.body.reason,
+                evidence: req.body.evidence,
+                bankDetails: req.body.bankDetails,
                 requestedBy: getObjectId(req.user.id),
             })
             await createAuditLog({
                 userId: getObjectId(req.user.id),
                 category: AUDIT_LOG_CATEGORIES.RECOVERY,
-                action: `Requested ₦${req.body.amount} recovery credit on complaint ${req.params.id}`,
+                action: `Requested ${req.body.type === 'cash' ? 'cash' : 'wallet-credit'} compensation of ₦${req.body.amount} on complaint ${req.params.id}`,
             })
             return BaseService.sendSuccessResponse({ message: complaint })
         } catch (error) {
             console.error(error)
-            return BaseService.sendFailedResponse({ error: error.message || 'Failed to request credit' })
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to request compensation' })
         }
     }
 
+    // §7: approve a compensation. Requires an explicit confirmation
+    // (confirmed:true — the frontend confirmation screen). Approver role is
+    // gated by amount + cumulative + cash rules in the service.
     async approveCredit(req) {
         try {
-            const complaint = await RecoveryService.approveRecoveryCredit(req.params.id, {
+            const complaint = await RecoveryService.approveCompensation(req.params.id, {
+                compensationId: req.body.compensationId,
                 approvedBy: getObjectId(req.user.id),
                 approverRole: req.user.userType,
+                confirmed: req.body.confirmed === true || req.body.confirmed === 'true',
             })
             await createAuditLog({
                 userId: getObjectId(req.user.id),
                 category: AUDIT_LOG_CATEGORIES.RECOVERY,
-                action: `Approved recovery credit on complaint ${req.params.id}`,
+                action: `Approved compensation ${req.body.compensationId || '(pending)'} on complaint ${req.params.id}`,
             })
             return BaseService.sendSuccessResponse({ message: complaint })
         } catch (error) {
             console.error(error)
-            return BaseService.sendFailedResponse({ error: error.message || 'Failed to approve credit' })
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to approve compensation' })
         }
     }
 
     async rejectCredit(req) {
         try {
-            const complaint = await RecoveryService.rejectRecoveryCredit(req.params.id, {
+            const complaint = await RecoveryService.rejectCompensation(req.params.id, {
+                compensationId: req.body.compensationId,
                 approvedBy: getObjectId(req.user.id),
+                reason: req.body.reason,
+            })
+            await createAuditLog({
+                userId: getObjectId(req.user.id),
+                category: AUDIT_LOG_CATEGORIES.RECOVERY,
+                action: `Rejected compensation ${req.body.compensationId || '(pending)'} on complaint ${req.params.id}`,
             })
             return BaseService.sendSuccessResponse({ message: complaint })
         } catch (error) {
             console.error(error)
-            return BaseService.sendFailedResponse({ error: error.message || 'Failed to reject credit' })
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to reject compensation' })
         }
     }
 
@@ -265,6 +282,7 @@ class RecoveryApiService extends BaseService {
                 userId: req.user.id,
             })
                 .populate('complaintTypeId')
+                .populate('complaintTypeIds')
                 .lean()
             if (!complaint) return BaseService.sendFailedResponse({ error: 'Complaint not found' })
             return BaseService.sendSuccessResponse({ message: complaint })
@@ -276,7 +294,11 @@ class RecoveryApiService extends BaseService {
 
     async confirmResolution(req) {
         try {
-            const complaint = await RecoveryService.confirmResolution(req.params.id, req.user.id)
+            const complaint = await RecoveryService.confirmResolution(
+                req.params.id,
+                req.user.id,
+                { rating: req.body.rating, comment: req.body.comment },
+            )
             return BaseService.sendSuccessResponse({ message: complaint })
         } catch (error) {
             console.error(error)
@@ -293,6 +315,33 @@ class RecoveryApiService extends BaseService {
         } catch (error) {
             console.error(error)
             return BaseService.sendFailedResponse({ error: error.message || 'Failed to reject' })
+        }
+    }
+
+    // §5: customer reopens their closed complaint (within the admin window).
+    async reopenComplaint(req) {
+        try {
+            const complaint = await RecoveryService.reopenCase(req.params.id, req.user.id, {
+                note: req.body.note,
+            })
+            return BaseService.sendSuccessResponse({ message: complaint })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to reopen' })
+        }
+    }
+
+    // §5: CX closes a resolved complaint the customer didn't confirm in time.
+    async closeCase(req) {
+        try {
+            const complaint = await RecoveryService.closeCase(req.params.id, {
+                closedBy: req.user.id,
+                reason: req.body.reason,
+            })
+            return BaseService.sendSuccessResponse({ message: complaint })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to close' })
         }
     }
 

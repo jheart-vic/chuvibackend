@@ -7,6 +7,8 @@ const sendSms = require('../util/sendSms')
 const sendEmail = require('../util/emailService')
 const CrmMessageLogModel = require('../models/crmMessageLog.model')
 const CrmSettingModel = require('../models/crmSetting.model')
+const { CRM_WORKFLOW } = require('../util/constants')
+const { registerLink } = require('../util/deepLink')
 
 const renderTemplate = (template, profile) => {
     const name = profile.fullName || 'there'
@@ -83,10 +85,17 @@ const sendViaEmail = async (profile, message) => {
 const sendCrmMessage = async (profile, { workflow, messageType }) => {
     const settings = await getCrmSettings()
     const template = settings.templates.get(messageType)
-    const content = renderTemplate(template, profile)
+    let content = renderTemplate(template, profile)
 
     if (!content) {
         return { success: false, channel: null, content: '' }
+    }
+
+    // §3: lead-nurture messages carry a personalised registration link (leads
+    // have no account yet, so this is how they sign up). Only for account-less
+    // leads — a profile that already has a userId is registered.
+    if (workflow === CRM_WORKFLOW.LEAD && !profile.userId) {
+        content = `${content}\nSign up: ${registerLink({ phone: profile.phoneNumber })}`
     }
 
     let channel = null

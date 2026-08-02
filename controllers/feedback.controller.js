@@ -43,6 +43,12 @@ class FeedbackController extends BaseController {
     async rejectResolution(req, res) {
         return send(res, await new RecoveryApiService().rejectResolution(req))
     }
+    async reopenComplaint(req, res) {
+        return send(res, await new RecoveryApiService().reopenComplaint(req))
+    }
+    async closeCase(req, res) {
+        return send(res, await new RecoveryApiService().closeCase(req))
+    }
     async customerListMessages(req, res) {
         return send(res, await new RecoveryApiService().listMessages(req, { staff: false }))
     }

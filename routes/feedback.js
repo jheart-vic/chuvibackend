@@ -9,6 +9,7 @@ const {
     ROUTE_FEEDBACK_COMPLAINT,
     ROUTE_FEEDBACK_COMPLAINT_CONFIRM,
     ROUTE_FEEDBACK_COMPLAINT_REJECT,
+    ROUTE_FEEDBACK_COMPLAINT_REOPEN,
     ROUTE_FEEDBACK_COMPLAINT_MESSAGES,
 } = require('../util/page-route')
 
@@ -160,11 +161,22 @@ router.get(ROUTE_FEEDBACK_COMPLAINT, [auth], (req, res) =>
  * @swagger
  * /feedback/complaints/{id}/confirm:
  *   post:
- *     summary: Confirm my complaint was resolved
- *     description: Only valid when the case is in `resolved`. Closes the case, removes recovery tags, and restores referral eligibility.
+ *     summary: Confirm my complaint was resolved (+ optional rating)
+ *     description: >
+ *       Only valid when the case is in `resolved`. Closes the case (status
+ *       `closed`), removes recovery tags, and restores referral eligibility.
+ *       Optionally include a 1–5★ post-recovery rating and a comment.
  *     tags: [Feedback & Recovery]
  *     security: [{ bearerAuth: [] }]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+ *               comment: { type: string, example: "Sorted quickly, thank you." }
  *     responses:
  *       200:
  *         description: Complaint confirmed and closed
@@ -215,6 +227,43 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_CONFIRM, [auth], (req, res) =>
  */
 router.post(ROUTE_FEEDBACK_COMPLAINT_REJECT, [auth], (req, res) =>
     new FeedbackController().rejectResolution(req, res),
+)
+
+/**
+ * @swagger
+ * /feedback/complaints/{id}/reopen:
+ *   post:
+ *     summary: Reopen my closed complaint
+ *     description: >
+ *       Reopen a `closed` (or `customer-confirmed`) complaint within the
+ *       admin-configurable window (default 7 days from closure). Puts the case
+ *       back into `under-review` and re-applies recovery tags. Fails if the
+ *       reopening window has passed.
+ *     tags: [Feedback & Recovery]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, properties: { note: { type: string } } }
+ *     responses:
+ *       200:
+ *         description: Complaint reopened
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *       400:
+ *         description: Not closed, not yours, or reopening window passed
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_FEEDBACK_COMPLAINT_REOPEN, [auth], (req, res) =>
+    new FeedbackController().reopenComplaint(req, res),
 )
 
 /**

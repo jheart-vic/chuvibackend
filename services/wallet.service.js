@@ -381,6 +381,42 @@ async fetchUserTransactions(req) {
       });
     }
   }
+  // §7: how much wallet value can be applied to a SPECIFIC order. All active
+  // wallet value (cash + every credit type) is usable on any order, so the
+  // eligible amount is simply min(totalAvailable, orderAmount). Returns the full
+  // breakdown too so booking can show "₦X of your wallet applies to this order".
+  async getEligibleForOrder(req) {
+    try {
+      const userId = req?.user?.id;
+      if (!userId) {
+        return BaseService.sendFailedResponse({ error: "Invalid user" });
+      }
+      const amount = Math.max(0, Math.round(Number(req?.query?.amount) || 0));
+      const wallet = await WalletModel.findOne({ userId }).lean();
+      const cashBalance = wallet?.balance || 0;
+      const credits = await WalletCreditService.getCreditBalances(userId);
+      const totalAvailable = cashBalance + credits.total;
+      const eligible = amount > 0 ? Math.min(totalAvailable, amount) : totalAvailable;
+
+      return BaseService.sendSuccessResponse({
+        message: {
+          orderAmount: amount,
+          cashBalance,
+          creditTotal: credits.total,
+          creditsByType: credits.byType,
+          totalAvailable,
+          eligible, // how much wallet value applies to this order
+          remainingToPay: amount > 0 ? Math.max(amount - eligible, 0) : 0,
+        },
+      });
+    } catch (error) {
+      console.error("Error computing eligible wallet value:", error);
+      return BaseService.sendFailedResponse({
+        error: "Unable to compute eligible wallet value",
+      });
+    }
+  }
+
   // Wallet page: cash + credit sub-balances + every active credit with its
   // source and expiry, plus credit-related transaction history.
   async getWalletCredits(req) {

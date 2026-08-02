@@ -47,6 +47,12 @@ const createCrmSettings = async () => {
   try {
     const crmSetting = await CrmSettingModel.findOne({});
     if (crmSetting) {
+      // §3 backfill: give pre-existing settings docs the default lead schedule
+      // so admins can see/edit the sequence + delivery times.
+      if (!crmSetting.leadSchedule || crmSetting.leadSchedule.length === 0) {
+        crmSetting.leadSchedule = CrmSettingModel.DEFAULT_LEAD_SCHEDULE;
+        await crmSetting.save();
+      }
       return;
     }
     await CrmSettingModel.create({});

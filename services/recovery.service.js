@@ -14,6 +14,7 @@ const {
     COMPLAINT_TRANSITIONS,
     RECOVERY_ACTION,
     RECOVERY_CREDIT_STATUS,
+    RECOVERY_COMPENSATION_TYPE,
     ESCALATION_REASON,
     CREDIT_TYPE,
     CREDIT_SOURCE,
@@ -71,16 +72,28 @@ class RecoveryService {
         orderId,
         feedbackId,
         complaintTypeId,
+        complaintTypeIds,
         affectedItems = [],
         description,
         photos = [],
     }) {
-        if (!complaintTypeId) throw new Error('complaintTypeId is required')
-        const complaintType = await ComplaintTypeModel.findOne({
-            _id: complaintTypeId,
+        // §5: accept one or many complaint types. Normalise to a de-duped array;
+        // the first is stored as the primary complaintTypeId (back-compat).
+        const rawTypes = (
+            Array.isArray(complaintTypeIds) && complaintTypeIds.length
+                ? complaintTypeIds
+                : [complaintTypeId]
+        ).filter(Boolean)
+        const typeIds = [...new Set(rawTypes.map(String))]
+        if (!typeIds.length) throw new Error('At least one complaint type is required')
+
+        const types = await ComplaintTypeModel.find({
+            _id: { $in: typeIds },
             active: true,
         })
-        if (!complaintType) throw new Error('Complaint type not found or inactive')
+        if (types.length !== typeIds.length) {
+            throw new Error('One or more complaint types were not found or are inactive')
+        }
         if (!description || !String(description).trim()) {
             throw new Error('A complaint description is required')
         }
@@ -92,7 +105,8 @@ class RecoveryService {
             userId,
             orderId,
             feedbackId,
-            complaintTypeId,
+            complaintTypeId: typeIds[0],
+            complaintTypeIds: typeIds,
             affectedItems,
             description,
             photos,
@@ -117,15 +131,16 @@ class RecoveryService {
         })
         complaint.conversationId = convo._id
         await complaint.save()
+        const typeNames = types.map((t) => t.name).join(', ')
         await ConversationService.postSystemMessage(
             convo._id,
-            `Complaint received: ${complaintType.name}. Our Customer Experience team will review it shortly.`,
+            `Complaint received: ${typeNames}. Our Customer Experience team will review it shortly.`,
         )
 
         // notify Customer Experience (owns all cases) + admins
         await this.notifyStaff([ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN], {
             title: 'New complaint submitted',
-            body: `A ${complaintType.name} complaint was opened and needs review.`,
+            body: `A ${typeNames} complaint was opened and needs review.`,
             page: 'complaint',
             recordId: String(complaint._id),
         })
@@ -151,7 +166,13 @@ class RecoveryService {
             complaint.reviewedAt = new Date()
         }
         if (to === COMPLAINT_STATUS.RESOLVED) {
+            const settings = await this.getSettings()
+            const windowHours = settings.complaintConfirmWindowHours ?? 48
             complaint.resolvedAt = new Date()
+            // §5: start the customer confirmation window (48h default). Reset the
+            // reminder flag so a re-resolve (after reopen) re-arms the reminder.
+            complaint.confirmationDueAt = new Date(Date.now() + windowHours * HOUR)
+            complaint.confirmationReminderSentAt = null
         }
         await complaint.save()
 
@@ -229,103 +250,164 @@ class RecoveryService {
 
     // ─── recovery credit (compensation) with approval gate ───────────────────
 
-    async requestRecoveryCredit(caseId, { amount, reason, requestedBy }) {
+    // Sum of already-APPROVED compensation on a case (drives the cumulative gate).
+    cumulativeApprovedComp(complaint) {
+        return (complaint.compensations || [])
+            .filter((c) => c.status === RECOVERY_CREDIT_STATUS.APPROVED)
+            .reduce((sum, c) => sum + (c.amount || 0), 0)
+    }
+
+    // §7: request a compensation (a separate action each time). type is
+    // wallet-credit (default) or cash; cash requires the customer's bank details.
+    async requestCompensation(caseId, { type, amount, reason, evidence, bankDetails, requestedBy }) {
         amount = Math.round(Number(amount))
         if (!amount || amount <= 0) throw new Error('Amount must be positive')
         if (!reason || !String(reason).trim()) {
-            throw new Error('Supporting reason/evidence is required')
+            throw new Error('A reason is required')
+        }
+        const compType = Object.values(RECOVERY_COMPENSATION_TYPE).includes(type)
+            ? type
+            : RECOVERY_COMPENSATION_TYPE.WALLET_CREDIT
+        if (compType === RECOVERY_COMPENSATION_TYPE.CASH) {
+            const b = bankDetails || {}
+            if (!b.accountName || !b.accountNumber || !b.bankName) {
+                throw new Error(
+                    'Cash compensation requires the customer’s account name, account number and bank',
+                )
+            }
         }
         const complaint = await ComplaintCaseModel.findById(caseId)
         if (!complaint) throw new Error('Complaint not found')
-        if (complaint.recoveryCredit && complaint.recoveryCredit.status === RECOVERY_CREDIT_STATUS.APPROVED) {
-            throw new Error('A recovery credit was already approved for this case')
-        }
 
-        complaint.recoveryCredit = {
+        complaint.compensations.push({
+            type: compType,
             amount,
             reason,
+            evidence: Array.isArray(evidence) ? evidence : evidence ? [evidence] : [],
             status: RECOVERY_CREDIT_STATUS.PENDING_APPROVAL,
             requestedBy,
-        }
+            bankDetails: compType === RECOVERY_COMPENSATION_TYPE.CASH ? bankDetails : undefined,
+        })
         await complaint.save()
         return complaint
     }
 
-    // approverRole must satisfy the amount gate: ≤ threshold → CX or admin;
-    // above → admin (Ops Manager / Founder) only.
-    async approveRecoveryCredit(caseId, { approvedBy, approverRole }) {
+    // §7 approval gate: CASH always needs Admin/Founder; a single amount over the
+    // threshold needs Admin; and once CUMULATIVE approved on the case would exceed
+    // the threshold, further approvals move to Admin. Otherwise CX may approve.
+    // A confirmation step (confirmed:true) is required before completing.
+    async approveCompensation(caseId, { compensationId, approvedBy, approverRole, confirmed }) {
+        if (confirmed !== true) {
+            throw new Error('Approval must be confirmed')
+        }
         const complaint = await ComplaintCaseModel.findById(caseId)
         if (!complaint) throw new Error('Complaint not found')
-        const rc = complaint.recoveryCredit
-        if (!rc || rc.status !== RECOVERY_CREDIT_STATUS.PENDING_APPROVAL) {
-            throw new Error('No recovery credit is pending approval on this case')
+
+        const comp = compensationId
+            ? complaint.compensations.id(compensationId)
+            : complaint.compensations.find(
+                  (c) => c.status === RECOVERY_CREDIT_STATUS.PENDING_APPROVAL,
+              )
+        if (!comp || comp.status !== RECOVERY_CREDIT_STATUS.PENDING_APPROVAL) {
+            throw new Error('No matching compensation is pending approval')
         }
 
         const settings = await this.getSettings()
-        if (rc.amount > settings.recoveryApprovalThreshold && approverRole !== ROLE.ADMIN) {
-            throw new Error(
-                `Amounts above ₦${settings.recoveryApprovalThreshold} require Operations Manager or Founder approval`,
-            )
+        const threshold = settings.recoveryApprovalThreshold
+        const cumulative = this.cumulativeApprovedComp(complaint)
+        const isCash = comp.type === RECOVERY_COMPENSATION_TYPE.CASH
+        const needsAdmin =
+            isCash ||
+            comp.amount > threshold ||
+            cumulative + comp.amount > threshold
+        if (needsAdmin && approverRole !== ROLE.ADMIN) {
+            const why = isCash
+                ? 'Cash compensation'
+                : comp.amount > threshold
+                  ? `Amounts above ₦${threshold.toLocaleString('en-NG')}`
+                  : `This would take total compensation on the case above ₦${threshold.toLocaleString('en-NG')}`
+            throw new Error(`${why} requires Operations Manager or Founder approval`)
         }
 
-        // grant the wallet recovery credit (90d default)
-        const { credit } = await WalletCreditService.grantCredit({
-            userId: complaint.userId,
-            type: CREDIT_TYPE.RECOVERY,
-            amount: rc.amount,
-            sourceSystem: CREDIT_SOURCE.RECOVERY,
-            sourceRef: `complaint-${complaint._id}`,
-            relatedComplaintId: complaint._id,
-            note: `Recovery compensation: ${rc.reason}`,
-            grantedBy: approvedBy,
-        })
+        const now = new Date()
+        if (isCash) {
+            // recorded/approved for MANUAL transfer — no in-system payout, no
+            // wallet transaction (the money leaves outside the wallet).
+            comp.status = RECOVERY_CREDIT_STATUS.APPROVED
+            comp.approvedBy = approvedBy
+            comp.decidedAt = now
+        } else {
+            // wallet credit — grantCredit creates the visible wallet transaction.
+            const { credit } = await WalletCreditService.grantCredit({
+                userId: complaint.userId,
+                type: CREDIT_TYPE.RECOVERY,
+                amount: comp.amount,
+                sourceSystem: CREDIT_SOURCE.RECOVERY,
+                sourceRef: `complaint-${complaint._id}-comp-${comp._id}`,
+                relatedComplaintId: complaint._id,
+                note: `Recovery compensation: ${comp.reason}`,
+                grantedBy: approvedBy,
+            })
+            comp.status = RECOVERY_CREDIT_STATUS.APPROVED
+            comp.approvedBy = approvedBy
+            comp.decidedAt = now
+            comp.walletCreditId = credit._id
+        }
 
-        rc.status = RECOVERY_CREDIT_STATUS.APPROVED
-        rc.approvedBy = approvedBy
-        rc.decidedAt = new Date()
-        rc.walletCreditId = credit._id
-
-        // approved compensation may also link the configured Recovery Offer
+        // approved compensation may also link the configured Recovery Offer (once)
         if (!complaint.recoveryOfferTriggered) {
             offerOnTrigger(OFFER_TRIGGER.RECOVERY, { userId: complaint.userId })
             complaint.recoveryOfferTriggered = true
         }
         await complaint.save()
 
+        const naira = `₦${comp.amount.toLocaleString('en-NG')}`
         await ConversationService.postSystemMessage(
             complaint.conversationId,
-            `Compensation of ₦${rc.amount.toLocaleString('en-NG')} has been approved and added to your wallet as recovery credit.`,
+            isCash
+                ? `Cash compensation of ${naira} has been approved and will be transferred to your account.`
+                : `Compensation of ${naira} has been approved and added to your wallet as recovery credit.`,
         )
         await CommunicationService.send({
             userId: complaint.userId,
             templateKey: 'complaint-update',
-            data: { update: `₦${rc.amount.toLocaleString('en-NG')} recovery credit added to your wallet` },
+            data: {
+                update: isCash
+                    ? `${naira} cash compensation approved — transfer to your account is being processed`
+                    : `${naira} recovery credit added to your wallet`,
+            },
             sourceSystem: COMM_SOURCE_SYSTEM.RECOVERY,
-            messageType: 'recovery-credit-approved',
+            messageType: isCash ? 'recovery-cash-approved' : 'recovery-credit-approved',
             relatedRef: complaint._id,
             relatedModel: 'ComplaintCase',
-            page: 'wallet',
+            page: isCash ? 'complaint' : 'wallet',
+            recordId: String(complaint._id),
         })
         return complaint
     }
 
-    async rejectRecoveryCredit(caseId, { approvedBy }) {
+    async rejectCompensation(caseId, { compensationId, approvedBy, reason }) {
         const complaint = await ComplaintCaseModel.findById(caseId)
         if (!complaint) throw new Error('Complaint not found')
-        const rc = complaint.recoveryCredit
-        if (!rc || rc.status !== RECOVERY_CREDIT_STATUS.PENDING_APPROVAL) {
-            throw new Error('No recovery credit is pending approval on this case')
+        const comp = compensationId
+            ? complaint.compensations.id(compensationId)
+            : complaint.compensations.find(
+                  (c) => c.status === RECOVERY_CREDIT_STATUS.PENDING_APPROVAL,
+              )
+        if (!comp || comp.status !== RECOVERY_CREDIT_STATUS.PENDING_APPROVAL) {
+            throw new Error('No matching compensation is pending approval')
         }
-        rc.status = RECOVERY_CREDIT_STATUS.REJECTED
-        rc.approvedBy = approvedBy
-        rc.decidedAt = new Date()
+        comp.status = RECOVERY_CREDIT_STATUS.REJECTED
+        comp.approvedBy = approvedBy
+        comp.decidedAt = new Date()
+        if (reason) comp.rejectionReason = reason
         await complaint.save()
         return complaint
     }
 
     // ─── customer confirmation ───────────────────────────────────────────────
 
-    async confirmResolution(caseId, userId) {
+    async confirmResolution(caseId, userId, { rating, comment } = {}) {
         const complaint = await ComplaintCaseModel.findById(caseId)
         if (!complaint) throw new Error('Complaint not found')
         if (String(complaint.userId) !== String(userId)) {
@@ -335,23 +417,130 @@ class RecoveryService {
             throw new Error('This complaint is not awaiting your confirmation')
         }
 
+        // §5: capture the post-recovery 1–5★ rating (+ optional comment).
+        if (rating !== undefined && rating !== null && rating !== '') {
+            const r = Number(rating)
+            if (!Number.isInteger(r) || r < 1 || r > 5) {
+                throw new Error('Rating must be a whole number from 1 to 5')
+            }
+            complaint.recoveryRating = r
+            if (comment) complaint.recoveryRatingComment = String(comment)
+        }
+
+        // §5: customer confirmation is the final close (confirmed = true).
         this.recordStatus(complaint, COMPLAINT_STATUS.CUSTOMER_CONFIRMED, 'Customer confirmed resolution', userId)
-        complaint.confirmedAt = new Date()
+        this.recordStatus(complaint, COMPLAINT_STATUS.CLOSED, 'Closed on customer confirmation', userId)
+        const now = new Date()
+        complaint.confirmedAt = now
+        complaint.confirmed = true
+        complaint.closedAt = now
         await complaint.save()
 
-        // CRM: remove recovery tags, restore referral eligibility
+        await this.afterClose(complaint, 'Thank you for confirming. This complaint is now closed. 🙏')
+        return complaint
+    }
+
+    // §5: CX closes a resolved complaint the customer never confirmed. Only
+    // allowed once the 48h confirmation window has elapsed.
+    async closeCase(caseId, { closedBy, reason } = {}) {
+        const complaint = await ComplaintCaseModel.findById(caseId)
+        if (!complaint) throw new Error('Complaint not found')
+        if (complaint.status !== COMPLAINT_STATUS.RESOLVED) {
+            throw new Error('Only a resolved complaint awaiting confirmation can be closed')
+        }
+        if (complaint.confirmationDueAt && complaint.confirmationDueAt > new Date()) {
+            throw new Error(
+                'The customer still has time to confirm — you can close this once the confirmation window has passed',
+            )
+        }
+
+        this.recordStatus(
+            complaint,
+            COMPLAINT_STATUS.CLOSED,
+            reason || 'Closed by Customer Experience (no customer response)',
+            closedBy,
+        )
+        complaint.confirmed = false
+        complaint.closedAt = new Date()
+        complaint.closedBy = closedBy
+        if (reason) complaint.closeReason = reason
+        await complaint.save()
+
+        await this.afterClose(
+            complaint,
+            'This complaint has been closed by our team. If you still need help, you can reopen it.',
+        )
+        return complaint
+    }
+
+    // Shared close side-effects (§5): drop recovery tags, restore referral
+    // eligibility, and post a closing note. Never throws into the caller.
+    async afterClose(complaint, note) {
         try {
             await CrmService.clearRecoveryTags(complaint.userId)
         } catch (err) {
             console.warn('Recovery tag clear failed (non-fatal):', err.message)
         }
-        // release any referral rewards deferred while this customer was paused
         referralOnEligibilityRestored(complaint.userId)
+        await ConversationService.postSystemMessage(complaint.conversationId, note)
+    }
+
+    // §5: customer reopens a closed complaint within the admin-configurable
+    // window (default 7 days). Puts it back into review and re-applies tags.
+    async reopenCase(caseId, userId, { note } = {}) {
+        const complaint = await ComplaintCaseModel.findById(caseId)
+        if (!complaint) throw new Error('Complaint not found')
+        if (String(complaint.userId) !== String(userId)) {
+            throw new Error('Not your complaint')
+        }
+        const terminal = [
+            COMPLAINT_STATUS.CLOSED,
+            COMPLAINT_STATUS.CUSTOMER_CONFIRMED,
+        ]
+        if (!terminal.includes(complaint.status)) {
+            throw new Error('Only a closed complaint can be reopened')
+        }
+        const settings = await this.getSettings()
+        const reopenDays = settings.complaintReopenDays ?? 7
+        const closedAt = complaint.closedAt || complaint.confirmedAt
+        if (
+            closedAt &&
+            Date.now() - new Date(closedAt).getTime() > reopenDays * 24 * HOUR
+        ) {
+            throw new Error(
+                `The reopening window (${reopenDays} days) for this complaint has passed`,
+            )
+        }
+
+        this.recordStatus(complaint, COMPLAINT_STATUS.REOPENED, note || 'Customer reopened the complaint', userId)
+        this.recordStatus(complaint, COMPLAINT_STATUS.UNDER_REVIEW, 'Reopened for review', userId)
+        complaint.reopenedAt = new Date()
+        complaint.reopenCount = (complaint.reopenCount || 0) + 1
+        // clear terminal markers so it flows through the pipeline again
+        complaint.resolvedAt = null
+        complaint.confirmedAt = null
+        complaint.confirmed = false
+        complaint.closedAt = null
+        complaint.confirmationDueAt = null
+        complaint.confirmationReminderSentAt = null
+        await complaint.save()
+
+        // re-pause referral + re-tag while the reopened case is worked
+        try {
+            await CrmService.applyRecoveryTags(complaint.userId)
+        } catch (err) {
+            console.warn('Recovery tag re-apply failed (non-fatal):', err.message)
+        }
         await ConversationService.postSystemMessage(
             complaint.conversationId,
-            'Thank you for confirming. This complaint is now closed. 🙏',
+            'Your complaint has been reopened. Our Customer Experience team will take another look.',
         )
-        await ConversationService.closeConversation(complaint.conversationId)
+        await this.notifyStaff([ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN], {
+            title: 'Complaint reopened',
+            body: `Complaint ${complaint._id} was reopened by the customer.`,
+            page: 'complaint',
+            recordId: String(complaint._id),
+        })
         return complaint
     }
 
@@ -425,12 +614,13 @@ class RecoveryService {
             escalated += 1
         }
 
-        // resolution overdue: not yet resolved/confirmed past resolutionDueAt
+        // resolution overdue: not yet resolved/confirmed/closed past resolutionDueAt
         const resolutionOverdue = await ComplaintCaseModel.find({
             status: {
                 $nin: [
                     COMPLAINT_STATUS.RESOLVED,
                     COMPLAINT_STATUS.CUSTOMER_CONFIRMED,
+                    COMPLAINT_STATUS.CLOSED,
                 ],
             },
             resolutionDueAt: { $lte: now },
@@ -441,6 +631,37 @@ class RecoveryService {
             await c.save()
             await this.notifyEscalation(c)
             escalated += 1
+        }
+
+        // §5: confirmation window elapsed — remind the customer one last time and
+        // let CX know they may now close the case. Fires once per resolved case.
+        const awaitingConfirm = await ComplaintCaseModel.find({
+            status: COMPLAINT_STATUS.RESOLVED,
+            confirmationDueAt: { $lte: now },
+            confirmationReminderSentAt: null,
+        })
+        for (const c of awaitingConfirm) {
+            c.confirmationReminderSentAt = now
+            await c.save()
+            // final nudge to the customer
+            await CommunicationService.send({
+                userId: c.userId,
+                templateKey: 'complaint-update',
+                data: { update: 'please confirm your resolved complaint or it will be closed' },
+                sourceSystem: COMM_SOURCE_SYSTEM.RECOVERY,
+                messageType: 'complaint-confirm-reminder',
+                relatedRef: c._id,
+                relatedModel: 'ComplaintCase',
+                page: 'complaint',
+                recordId: String(c._id),
+            })
+            // tell CX they may close it now
+            await this.notifyStaff([ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN], {
+                title: 'Complaint awaiting close',
+                body: `Complaint ${c._id} was not confirmed within the window — you may close it.`,
+                page: 'complaint',
+                recordId: String(c._id),
+            })
         }
 
         return escalated

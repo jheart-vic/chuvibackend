@@ -87,4 +87,25 @@ function emitConversationClosed(conversation, source = 'staff') {
     }
 }
 
-module.exports = { initSocket, getIO, emitChatMessage, emitConversationClosed }
+// Staff-only conversation events (§2): escalation to Admin, ownership change.
+// Emitted to the staff support room only (never to the customer) — these are
+// internal signals so CX/Admin UIs update live. Never throws.
+function emitStaffConversationEvent(event, conversation, extra = {}) {
+    if (!io || !conversation || !event) return
+    try {
+        io.to('staff:support').emit(event, {
+            conversationId: String(conversation._id),
+            ...extra,
+        })
+    } catch (err) {
+        console.warn('Socket emit (staff event) failed (non-fatal):', err.message)
+    }
+}
+
+module.exports = {
+    initSocket,
+    getIO,
+    emitChatMessage,
+    emitConversationClosed,
+    emitStaffConversationEvent,
+}

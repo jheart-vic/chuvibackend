@@ -1,5 +1,9 @@
 const mongoose = require('mongoose')
-const { CONVERSATION_TYPE } = require('../util/constants')
+const {
+    CONVERSATION_TYPE,
+    CONVERSATION_OWNER,
+    CONVERSATION_URGENCY,
+} = require('../util/constants')
 
 // An in-app conversation thread. Complaint conversations stay linked to their
 // case/order and are kept separate from general customer communication
@@ -35,6 +39,27 @@ const conversationSchema = new mongoose.Schema(
         // when a human staff member first engaged a handed-off support chat, used
         // to post a one-time "you're now connected" notice to the customer.
         agentJoinedAt: { type: Date },
+        // Ownership of the human handling (§2). CX owns a handed-off thread on
+        // first reply; an Admin can take over any conversation at any time and
+        // becomes the owner. null = still bot-handled / not yet engaged.
+        assignedRole: {
+            type: String,
+            enum: [...Object.values(CONVERSATION_OWNER), null],
+            default: null,
+        },
+        assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        adminJoinedAt: { type: Date },
+        // CX → Admin escalation (§2). Customers can never trigger this.
+        escalation: {
+            escalated: { type: Boolean, default: false },
+            escalatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            reason: { type: String },
+            urgency: {
+                type: String,
+                enum: Object.values(CONVERSATION_URGENCY),
+            },
+            escalatedAt: { type: Date },
+        },
         // close audit (support chats): who closed it, when, and why.
         closedAt: { type: Date },
         closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

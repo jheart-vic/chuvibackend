@@ -1,6 +1,11 @@
 const ConversationModel = require('../models/conversation.model')
 const ChatMessageModel = require('../models/chatMessage.model')
-const { CONVERSATION_TYPE, CHAT_SENDER } = require('../util/constants')
+const {
+    CONVERSATION_TYPE,
+    CHAT_SENDER,
+    CONVERSATION_OWNER,
+    CONVERSATION_URGENCY,
+} = require('../util/constants')
 
 // In-app conversation engine. Phase 4 uses it for order-based complaint
 // conversations (kept separate from general communication). Transport is REST
@@ -170,6 +175,95 @@ class ConversationService {
             "You're now connected to our Customer Experience team.",
         )
         return message
+    }
+
+    // First CX engagement claims ownership (unless an Admin already owns it).
+    // Called alongside markAgentJoined on the first staff reply. No-op if the
+    // thread already has an owner.
+    async assignToCx(conversationId, cxId) {
+        const convo = await ConversationModel.findById(conversationId)
+        if (!convo || convo.assignedRole) return convo || null
+        convo.assignedRole = CONVERSATION_OWNER.CX
+        convo.assignedTo = cxId
+        await convo.save()
+        return convo
+    }
+
+    // CX → Admin escalation (§2). Records reason + urgency; never posts a
+    // customer-facing message (this is an internal signal). Guards to an open
+    // support conversation. Returns the updated conversation (null if invalid).
+    async escalateToAdmin(conversationId, { escalatedBy, reason, urgency } = {}) {
+        const convo = await ConversationModel.findById(conversationId)
+        if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT || !convo.open) {
+            return null
+        }
+        const validUrgency = Object.values(CONVERSATION_URGENCY).includes(urgency)
+            ? urgency
+            : CONVERSATION_URGENCY.NORMAL
+        convo.escalation = {
+            escalated: true,
+            escalatedBy,
+            reason: reason || null,
+            urgency: validUrgency,
+            escalatedAt: new Date(),
+        }
+        await convo.save()
+        return convo
+    }
+
+    // Admin enters any conversation and takes ownership (§2). Idempotent on the
+    // admin-owned state. If the thread hadn't been engaged by a human yet, this
+    // also posts the one-time "connected" notice (returned to emit). Returns
+    // { conversation, joinNotice, alreadyOwnedByAdmin }.
+    async adminTakeOwnership(conversationId, { adminId } = {}) {
+        const convo = await ConversationModel.findById(conversationId)
+        if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) return null
+        const alreadyOwnedByAdmin =
+            convo.assignedRole === CONVERSATION_OWNER.ADMIN &&
+            String(convo.assignedTo || '') === String(adminId || '')
+
+        let joinNotice = null
+        if (!convo.agentJoinedAt) {
+            joinNotice = await this.markAgentJoined(convo._id)
+        }
+        convo.assignedRole = CONVERSATION_OWNER.ADMIN
+        convo.assignedTo = adminId
+        if (!convo.adminJoinedAt) convo.adminJoinedAt = new Date()
+        await convo.save()
+        return { conversation: convo, joinNotice, alreadyOwnedByAdmin }
+    }
+
+    // Admin: every support conversation (open + closed, all customers), with
+    // optional filters. Powers the admin "view every CX conversation" screen.
+    async listAllSupportForAdmin({
+        open,
+        escalated,
+        urgency,
+        mode,
+        page = 1,
+        limit = 20,
+    } = {}) {
+        page = parseInt(page) || 1
+        limit = parseInt(limit) || 20
+        const filter = { type: CONVERSATION_TYPE.SUPPORT }
+        if (open === 'true' || open === true) filter.open = true
+        else if (open === 'false' || open === false) filter.open = false
+        if (escalated === 'true' || escalated === true) filter['escalation.escalated'] = true
+        if (urgency) filter['escalation.urgency'] = urgency
+        if (mode) filter.mode = mode
+
+        const data = await ConversationModel.find(filter)
+            .sort({ 'escalation.escalated': -1, lastMessageAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .populate('userId', 'fullName phoneNumber')
+            .populate('assignedTo', 'fullName userType')
+            .lean()
+        const total = await ConversationModel.countDocuments(filter)
+        return {
+            data,
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+        }
     }
 
     // Staff closes a resolved support chat. Records who/when/why, posts a

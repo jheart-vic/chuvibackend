@@ -3,6 +3,254 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-02 — Client "Fix & Improvement Brief" (8 sections)
+
+Client delivered a final correction brief. Building in phases; **quick wins first**
+(client's choice). Hotfix (appliedOffers CastError, see below) done but NOT committed
+yet (client: wait). Full brief + locked decisions recorded here so a context-clear
+can't lose them.
+
+### The brief (paraphrased) + status vs current code
+1. **Registration** — dup email → "This email is already registered. Please log in."
+   + machine-readable signal for a FE Log In button. Apply to email/password AND
+   Google paths. [QUICK WIN]
+2. **CX & Admin conversations** — CX owns CRM leads/follow-up/conversations; MOVE CRM
+   lead-mgmt off Intake&Tag (`intakeUserAuth`) → CX (`customerExperienceAuth`). Admin
+   views every CX conversation. CX escalates to Admin w/ reason + urgency. Admin can
+   enter any conversation without escalation and TAKES OWNERSHIP on entry. Customers
+   cannot request Admin escalation. [M–L]
+3. **Communication config** — Admin configures lead templates/sequence/delivery times;
+   messages STAGGERED (not same minute); only Admin edits schedule; lead register/book
+   → stop remaining lead msgs + advance CRM stage; lead SMS = personalised registration
+   link; Offer/Wallet/Complaint/Feedback SMS = personalised deep links → after login
+   redirect to exact page/order; every msg has trigger/customer/related-record/time/
+   status. (Comm layer + page/recordId deep-link fields already exist.) [L]
+4. **Offer** — "Got It"→"Use Offer"/"Book With Offer" opens booking w/ offer preselected
+   + shows all other eligible offers + clear reason when not applicable [QUICK-WIN slice].
+   Admin multi-select triggers/stages/tags/customer-groups: OR within a category, AND
+   across; baseline benefits all apply, ONE personal offer; personal+promo no-stack
+   unless `stackableWithPersonal`; redeemed offer not reusable until a new qualifying
+   event. [multi-criteria = L, later]
+5. **Complaint/Recovery** — multiple complaint types per case; evidence/items/photos/
+   chat stay attached; customer confirm before final close (48h reminder → CX may close
+   if silent); reopen within admin-configurable window (DEFAULT 7d); post-recovery 1–5★
+   + optional comment; auto-remove Complaint + Recovery-Required tags after closure. [L]
+6. **Recovery ops** — Rewash/Rework/Repair/Replacement create a FREE recovery order
+   linked to complaint/order/affected-items; CX creates but CANNOT change op stages;
+   recovery order enters Intake&Tag → rider → processing → QC → delivery normally;
+   op actions auto-update recovery + complaint status; CX monitors + communicates only;
+   Admin full complaint dashboard (evidence/chats/escalations/recovery orders/approvals/
+   SLA breaches). LARGEST new piece — recovery today grants credits/actions, not orders.
+   [XL, build last]
+7. **Compensation/Wallet** — CX wallet credit ≤₦10k w/ evidence; cash comp ALWAYS
+   Founder/Admin + customer account details; >₦10k or cumulative >₦10k on a case →
+   Admin; each additional comp a separate action (amount/reason/evidence); confirmation
+   step before completion; wallet shows Total Available + separate Cash/Laundry/Referral/
+   Recovery/Promotional; booking shows wallet value eligible for that order; every comp
+   → visible wallet tx (credit comp) + audit. [M–L]
+8. **Referral & AI** — referral successful ONLY on referred customer's first order
+   Delivered/Completed; cancelled/reversed don't qualify; reward immediate; AI→CX handover
+   stays but customer needn't remain in the same visible AI thread. Mostly BUILT (Phase 5
+   + two-thread bot) — VERIFY. [QUICK WIN / verify]
+
+### Locked client decisions (this brief)
+- §1 covers email/password AND Google register paths.
+- §7 cash compensation is RECORDED/APPROVED FOR MANUAL TRANSFER (no in-system payout):
+  store customer bank details on the compensation action record; cash comp makes an
+  audit + payout record but NO wallet tx (wallet tx requirement is for wallet-CREDIT comp).
+- §4 multi-criteria (my recommendation, approved): all four categories become arrays;
+  OR within a category, AND across, EMPTY category = no constraint (skipped). triggers[]
+  = events that mint the offer; stages[]/tags[]/customerGroups[] = eligibility gates
+  evaluated at assignment AND re-checked at booking/redeem (drives the "why it can't
+  apply" reason). One shared matchesTargeting() used both places. Migrate single
+  `trigger` → `triggers:[trigger]`, keep reading the old field.
+
+### Recommended build order
+1. Hotfix commit (appliedOffers) — pending client go.
+2. Quick wins: §1 (email+Google), §8 verify, §4 booking-with-offer + eligible list.
+3. §2 conversations. 4. §3 comms. 5. §5 complaints. 6. §7 compensation/wallet.
+7. §6 recovery-orders-into-pipeline (last). §4 multi-criteria can slot after §2.
+
+### Quick-wins progress (this session, uncommitted) — ALL 3 DONE
+- **§1 Registration** — dup email now returns "This email is already registered. Please
+  log in." + `code:'EMAIL_ALREADY_REGISTERED'`, `action:'login'` so FE shows a Log In
+  button. Applied to the email/password register AND `googleSignup` — Google only for the
+  password-collision case (email is a LOCAL account with no googleId → don't silently
+  link, tell them to log in); genuine Google users still log in. File: auth.service.js.
+- **§8 Referral/AI** — VERIFIED, no code change. Reward fires only via
+  referralOnOrderDelivered→handleReferredOrderDelivered (immediate); order-created only
+  marks FIRST_ORDER; cancelled orders never reach delivered so never reward, and a later
+  delivered order still rewards. AI→CX context = CX opens full convo history + two-thread
+  model. GAP (flagged, optional): no clawback if an already-rewarded delivered order is
+  later reversed/cancelled (no referralOnOrderCancelled hook).
+- **§4 Offer booking-options** — new `POST /offers/booking-options` [auth]: returns
+  `selected` (authoritative validateAndPrice quote for the current selection) + `personal`
+  /`promotions`/`baseline` lists, each evaluated against the draft cart with applicable/
+  reason/requirement/unlockMessage/benefit + `preselected` (+ promos carry
+  stackableWithPersonal). Extracted shared `_offerRejection({kind,offer,linkage,draft,
+  stats,now,userId,hasPersonal})` and refactored BOTH validateAndPrice branches to use it
+  (single source of truth; booking list & quote can't drift). Promotions in the list are
+  evaluated hasPersonal=false (own merits); real personal+promo combo enforced by validate.
+  Files: offer.service.js (helper + getBookingOptions + refactor), offerApi.service.js
+  (bookingOptions), offer.controller.js, routes/offer.js (+Swagger), page-route.js
+  (ROUTE_OFFER_BOOKING_OPTIONS), swagger/schemas.js (OfferBookingOption + OfferBookingOptions).
+  VERIFIED live 15/15 (synthetic user + personal/promo/baseline offers): validate refactor
+  behavior-preserving incl. stacking-precedence AND min-order requirement/unlockMessage;
+  booking-options lists + flags correct. swagger parses.
+- Label swap "Got It"→"Use Offer/Book With Offer" + opening booking preselected = FE
+  (backend already accepts customerOfferId/promoOfferId at booking).
+### §2 CX & Admin conversations — DONE (uncommitted), verified live 18/18 + boot
+- **CRM lead mgmt moved Intake&Tag → CX.** routes/crm.js: all 7 staff endpoints swapped
+  `intakeUserAuth` → `customerExperienceAuth` (grants CX + admin, so admin retains access;
+  intake loses it). Doc strings updated too.
+- **conversation.model** new fields: `assignedRole` ('cx'|'admin'|null), `assignedTo`,
+  `adminJoinedAt`, `escalation{escalated,escalatedBy,reason,urgency,escalatedAt}`.
+  constants: CONVERSATION_OWNER + CONVERSATION_URGENCY (low/normal/high/urgent).
+- **conversation.service** new methods: `assignToCx` (first CX reply claims ownership,
+  no-op if owned), `escalateToAdmin` (INTERNAL — sets escalation, NO customer message;
+  guards open support convo; bad urgency→normal), `adminTakeOwnership` (admin owns any
+  convo, sets adminJoinedAt, posts one-time join notice if not yet engaged, idempotent),
+  `listAllSupportForAdmin` (all support convos, filters open/escalated/urgency/mode,
+  escalated float to top, paginated).
+- **botApi.service**: staffReply now calls assignToCx for CX. New `escalateToAdmin`
+  (emits `conversation:escalated` to staff:support + notifies admins via SYSTEM
+  notification, non-fatal), `adminTakeOwnership` (emits `conversation:owner-changed`),
+  `adminListConversations`.
+- **config/socket**: new `emitStaffConversationEvent(event, convo, extra)` — staff-room
+  only (escalation/ownership are internal, never pushed to the customer).
+- Routes (routes/bot.js): `POST /bot/:id/escalate` [customerExperienceAuth],
+  `POST /bot/:id/admin-join` [adminAuth], `GET /bot/admin/conversations` [adminAuth].
+  page-route consts + Swagger + Conversation schema updated. Customers have NO
+  admin-escalation path (only /handoff → CX queue), satisfying "customers cannot request
+  Admin escalation".
+- Verified: escalation posts no customer message/unread bump; CX→admin ownership transfer;
+  idempotent admin-join; admin escalated-filter list; closed-convo escalate guarded (null).
+  Boot on :7998 clean; both new routes 401 without auth.
+
+### §3 Communication config — 3A/3B/3D DONE (uncommitted, verified 12/12); 3C BLOCKED
+Client decisions: schedule config lives IN CrmSetting; register → stop nudges + STAY
+'lead' (no stage change); deep-link URLs → client will supply exact FE routes.
+- **3A configurable staggered lead schedule (in CrmSetting).** crmSetting.model: new
+  `leadSchedule` array [{messageType,enabled,delayMinutes,cancelIfOrdered}] +
+  DEFAULT_LEAD_SCHEDULE (welcome 0, qualify 2m, offer 5m, close 10m, reminder-1 1440m/1d,
+  reminder-2 4320m/3d, mark-prospect 8640m/6d — STAGGERED, fixes old now/+1s/+2s/+3s
+  same-minute burst). `startLeadWorkflow` now reads settings.leadSchedule (falls back to
+  DEFAULT if empty) → dueAt = now + delayMinutes. `updateSettings` accepts + validates
+  leadSchedule (known type, delay≥0, and NO two ENABLED steps in the same minute → rejects
+  with a stagger error). Backfill in config/setup.createCrmSettings for existing docs.
+  Swagger: CrmSettings schema + PUT /crm/settings body updated. (Admin-only via existing
+  adminAuth on /crm/settings.)
+- **3B register/book stop + stage.** handleUserRegistered: after createLead, cancels
+  pending LEAD messages (account now exists) — stage STAYS lead (client decision).
+  handleOrderCreated: already cancelled LEAD msgs; now ALSO advances stage LEAD→first-order
+  on booking. (Account-less leads via walk-in/bot endpoints keep nurture — they don't go
+  through handleUserRegistered.)
+- **3D record completeness** — VERIFIED existing models already carry trigger
+  (workflow+messageType / sourceSystem), customer (profileId/userId), related record
+  (relatedRef/relatedModel on CommunicationLog), delivery time (dueAt/createdAt), status.
+  No change.
+- Verified live 12/12 (default staggered schedule, same-minute rejected, custom accepted,
+  startLeadWorkflow honors enabled+delays, register cancels+stays lead, booking cancels+
+  advances to first-order). Files: crmSetting.model.js, crm.service.js, config/setup.js,
+  routes/crm.js, swagger/schemas.js.
+- **3C deep links — DONE (uncommitted), verified 13/13.** Client URLs: frontend
+  https://www.chuvilaundry.com, API https://api.chuvilaundry.com. Client REJECTED editing
+  .env — so use env-with-hardcoded-fallback (same as REFERRAL_BASE_URL). New
+  `util/deepLink.js`: `clientUrl()` (CLIENT_URL || fallback), `deepLink(page, recordId)`
+  with a CENTRALIZED PAGE_ROUTES map (wallet→/wallet, offers→/offers, referral→/referral,
+  complaint→/complaints/:id, order→/orders/:id, feedback→/feedback/:id; unknown page →
+  literal path) — edit routes in ONE place if FE differs. `registerLink({phone})` reuses
+  REFERRAL_BASE_URL (/auth/signup) + prefills phone. Login-gated pages rely on the FE auth
+  guard to login-then-return (satisfies "after login redirect to exact page").
+  - communication.service: SMS branch appends `deepLink(targetPage, recordId||relatedRef)`
+    to the SMS body (in-app already carries page+recordId). So Offer/Wallet/Complaint/
+    Feedback/Referral SMS get deep links.
+  - crmMessenger.sendCrmMessage: LEAD-workflow messages for ACCOUNT-LESS profiles
+    (no userId) append "Sign up: <registerLink+phone>". Registered profiles get none.
+  - Page keys confirmed from code: wallet, offers, referral, complaint (grep). Verified
+    live 13/13 with stubbed sendSms/email (require.cache stub) — deep links + registration
+    link appended correctly, registered lead gets none. Files: util/deepLink.js,
+    communication.service.js, crmMessenger.service.js.
+  - NOTE: FE route paths are my best-guess conventions; if FE differs, fix PAGE_ROUTES in
+    util/deepLink.js only. CLIENT_URL/API_URL env not added (client rejected .env edit) —
+    add later to override the fallback.
+
+### §5 Complaints — DONE (uncommitted), verified live 19/19 + boot
+- **Multi-type:** complaintCase.complaintTypeIds[] (array) + complaintTypeId kept as
+  primary (first) for back-compat. openCase accepts complaintTypeIds OR complaintTypeId,
+  validates all active, stores de-duped array. feedback.submitFeedback + getMyComplaint
+  (populates both) updated.
+- **Confirm→closed + rating.** New COMPLAINT_STATUS.CLOSED (terminal). transitionStatus→
+  RESOLVED sets confirmationDueAt = now + complaintConfirmWindowHours (48, RewardSetting)
+  + resets reminder flag. confirmResolution(caseId,userId,{rating,comment}): validates
+  1–5★, stores recoveryRating/recoveryRatingComment on the CASE (Feedback is unique-per-
+  order, taken), → CUSTOMER_CONFIRMED then CLOSED, confirmed=true, closedAt; clears tags
+  + referralOnEligibilityRestored (via shared afterClose()).
+- **CX close after 48h.** New closeCase(caseId,{closedBy,reason}) — only from RESOLVED and
+  only once confirmationDueAt passed (else rejected); → CLOSED, confirmed=false, closedBy/
+  closeReason; afterClose clears tags. Route POST /recovery/cases/:id/close
+  [customerExperienceAuth].
+- **Reopen within window.** reopenCase(caseId,userId) from CLOSED/CUSTOMER_CONFIRMED,
+  guarded by complaintReopenDays (7, RewardSetting) from closedAt; → REOPENED→UNDER_REVIEW,
+  reopenCount++, clears terminal markers, re-applies recovery tags. Route POST
+  /feedback/complaints/:id/reopen [auth].
+- **SLA reminder.** checkSla: RESOLVED past confirmationDueAt w/o reminder → one-time
+  customer nudge (complaint-update template) + notifyStaff CX/admin "you may close";
+  sets confirmationReminderSentAt. CLOSED added to resolution-overdue $nin. NOT auto-closed
+  (client: "CX MAY close").
+- **Tags auto-removed on closure** (afterClose→clearRecoveryTags) — evidence/photos/items/
+  conversation all persist (never detached).
+- Config: RewardSetting.complaintConfirmWindowHours(48) + complaintReopenDays(7), read via
+  ?? fallback (no migration). Swagger: ComplaintCase schema (complaintTypeIds, closed/
+  confirm/rating/reopen fields, +closed status), confirm route (rating/comment body),
+  new reopen + close routes. Files: constants, complaintCase.model, rewardSetting.model,
+  recovery.service, recoveryApi.service, feedback.service, feedback.controller,
+  routes/feedback.js, routes/recovery.js, page-route.js, swagger/schemas.js.
+- Verified 19/19 (multi-type + invalid-type reject, 48h due, confirm+rating→closed, bad
+  rating reject, reopen within window, CX close blocked-then-allowed, past-window reopen
+  reject, SLA reminder once). Boot :7997 clean; reopen+close routes 401 unauth.
+
+### §7 Compensation & Wallet — DONE (uncommitted), verified live 15/15 + boot
+- **Per-type wallet balances (#7) ALREADY existed:** getWalletBalance returns cashBalance +
+  creditsByType {laundry,referral,recovery,promotional} + creditTotal + totalAvailable. No
+  change needed beyond documenting.
+- **Compensation redesign (the real work).** complaintCase: new `compensations: [compSchema]`
+  array (type wallet-credit|cash, amount, reason, evidence[], status, requestedBy/approvedBy/
+  decidedAt/rejectionReason, walletCreditId, bankDetails{accountName,accountNumber,bankName}).
+  `recoveryCredit` kept ONLY as deprecated pre-§7 field. constants: RECOVERY_COMPENSATION_TYPE
+  {WALLET_CREDIT,CASH}.
+  - recovery.service: replaced requestRecoveryCredit/approveRecoveryCredit/rejectRecoveryCredit
+    with requestCompensation / approveCompensation / rejectCompensation + cumulativeApprovedComp
+    helper. Each request = a SEPARATE action (amount/reason/evidence). Cash requires bankDetails.
+  - **Approval gate (#1-4):** CASH → always admin; single amount > threshold (₦10k
+    RewardSetting.recoveryApprovalThreshold) → admin; CUMULATIVE approved + this amount > threshold
+    → admin; else CX. **Confirmation step (#6):** approveCompensation requires confirmed:true.
+  - **#9 visible tx + audit:** wallet-credit approval → WalletCreditService.grantCredit (recovery,
+    90d) which already writes a visible WalletTransaction + notification; sourceRef
+    complaint-<id>-comp-<compId> (dedupe). CASH approval → NO wallet tx (external manual transfer),
+    recorded on the compensation + audit log. Every request/approve/reject writes createAuditLog
+    (RECOVERY). Recovery Offer trigger fires once on first approval. Customer notified (credit vs
+    cash wording).
+  - recoveryApi.service request/approve/rejectCredit wrappers pass type/evidence/bankDetails/
+    compensationId/confirmed. Routes UNCHANGED paths (/recovery/cases/:id/credit/{request,approve,
+    reject}) — Swagger bodies updated (type, bankDetails, compensationId, confirmed).
+- **Booking-eligible wallet value (#8):** new GET /wallet/eligible?amount= [auth] →
+  {orderAmount, cashBalance, creditTotal, creditsByType, totalAvailable, eligible=min(total,amount),
+  remainingToPay}. All wallet value applies to any order (no type restriction in
+  applyCreditsToAmount), so eligible is a simple min. wallet.service.getEligibleForOrder +
+  walletController + ROUTE_WALLET_ELIGIBLE + Swagger.
+- Swagger: RecoveryCompensation schema + ComplaintCase.compensations[]; credit route bodies;
+  /wallet/eligible. Files: constants, complaintCase.model, recovery.service, recoveryApi.service,
+  wallet.service, walletController, routes/wallet.js, routes/recovery.js, page-route.js,
+  swagger/schemas.js.
+- Verified 15/15 (confirm-required, CX ≤10k credit + visible tx, cumulative>10k blocks CX/allows
+  admin, cash needs bankDetails + always admin + no wallet tx, reject, eligible=min). Boot :7996
+  clean; /wallet/eligible 401 unauth.
+
+- NEXT: §6 recovery-orders-into-pipeline (IN PROGRESS, XL final phase), then §4 multi-criteria.
+  §3C deep-link FE paths best-guess (fix PAGE_ROUTES if needed). Everything since the appliedOffers
+  hotfix (quick-wins + §2 + §3 + §5 + §7) uncommitted per client.
+
 ## Session: 2026-08-01 — Order price breakdown + delete profile photo
 
 ### Done this session (uncommitted, branch bot-polising)
