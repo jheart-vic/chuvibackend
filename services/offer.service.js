@@ -410,7 +410,11 @@ class OfferService {
 
         return {
             rewards: rewards
-                .filter((r) => r.offerId) // guard vs deleted offers
+                // guard vs deleted offers; and keep this bucket to PERSONAL offers
+                // only. A promotional offer that was manually assigned or attached at
+                // booking also has a live linkage, but it belongs in `promotions`
+                // (by type) — without this filter it would appear in BOTH lists.
+                .filter((r) => r.offerId && r.offerId.type === OFFER_TYPE.PERSONAL)
                 .map((r) => ({
                     ...r,
                     ...this.decorateOffer(r.offerId, { expiresAt: r.expiresAt }),
