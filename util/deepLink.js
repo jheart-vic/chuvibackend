@@ -15,13 +15,18 @@ const CLIENT_URL = (process.env.CLIENT_URL || 'https://www.chuvilaundry.com').re
 // notification `page` key → frontend route builder. Keys are the exact values
 // already passed as `page:` by the offer/wallet/recovery/referral systems
 // (wallet, offers, referral, complaint) plus order/feedback for completeness.
+// Paths match the real SPA routes (confirmed with the frontend 2026-08-03):
+// note the plural /user/referrals and that order detail is /user/order-history.
 const PAGE_ROUTES = {
-    wallet: () => '/wallet',
-    offers: () => '/offers',
-    referral: () => '/referral',
-    complaint: (id) => (id ? `/complaints/${id}` : '/complaints'),
-    order: (id) => (id ? `/orders/${id}` : '/orders'),
-    feedback: (id) => (id ? `/feedback/${id}` : '/feedback'),
+    wallet: () => '/user/wallet',
+    offers: () => '/user/offers',
+    referral: () => '/user/referrals',
+    complaint: (id) => (id ? `/user/complaints/${id}` : '/user/complaints'),
+    order: (id) => (id ? `/user/order-history/${id}` : '/user/order-history'),
+    // Feedback has NO standalone route — it lives inside the order detail page,
+    // keyed by ORDER id. So a `feedback` deep link must be given the orderId and
+    // resolves to the order page. (Not currently emitted by any sender.)
+    feedback: (id) => (id ? `/user/order-history/${id}` : '/user/order-history'),
 }
 
 const clientUrl = () => CLIENT_URL

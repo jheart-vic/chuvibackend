@@ -152,3 +152,117 @@ Each cron only runs if `require()`d in `server.js`.
 - Cross-system calls are fire-and-forget hooks — a downstream failure must never
   break the caller.
 - Every manual correction (stock, snapshot, discrepancy) records a reason.
+
+---
+
+## Reconciliation vs the client's authoritative doc (2026-08-03)
+
+Matched the client's full "Simple Explanation" doc against this scope. **All six
+status machines, the 9 question types, the ~12 models, immutable snapshots, Rider-
+separate, Floor-Lead-temporary, and manual-correction-reason all MATCH.** The client
+doc adds specificity + a few integration rules this scope had missed. Estimate holds
+(~80 endpoints / ₦800k) — the deltas are refinements inside existing modules, not new
+domains.
+
+> Terminology note: the client's "What the Bot Does" uses **"the bot" = THIS system's
+> server/cron engine**, NOT the Phase-6 customer chat assistant. Keep them distinct.
+
+### GAPS to add (were missing / under-specified here)
+
+- **G1 — Auto-expense on purchase [Phase 1].** Client RULE: "Every approved purchase
+  must create an expense automatically." When a Supply Request closes/received, fire a
+  hook that creates an **APPROVED** Expense (category SUPPLIES, linked to the station,
+  amount = purchase total). Couples Supplies↔Expenses inside Phase 1 (both already there).
+- **G2 — Seed 12 default expense categories [Phase 1].** SUPPLIES, FUEL, RIDER COST,
+  DISPATCHER COST, PAYROLL, RENT, UTILITIES, REPAIRS & MAINTENANCE, DATA & COMMUNICATION,
+  MARKETING, PETTY CASH, OTHER EXPENSE — seed in `config/setup.js`; keep category CRUD for
+  extras. Expense also carries a **Business Area** field (station vs general).
+- **G3 — Logistics as its own sub-report [Phase 4].** Not just one report line: Jobs,
+  Logistics Revenue, Fuel, Rider, Dispatcher, Other Logistics Cost, Total Logistics Cost,
+  **Logistics Contribution**. V1 stays simple — NO route/km tracking.
+- **G4 — Revenue split [Phase 4].** LAUNDRY / LOGISTICS / OTHER INCOME / TOTAL, READ from
+  Orders/Payments only (never re-entered — no duplicate revenue).
+- **G5 — The 16 success KPIs [Phase 4/5].** Define + compute for the Operations Report and
+  Admin Dashboard: Daily-Form Completion %, Floor Compliance %, Expense Documentation %,
+  Supply Shortage %, Expected-vs-Physical Supply Diff %, Contribution Margin %, Net P/L,
+  Operating Cash Flow, Logistics Contribution, Rework %, Complaint %, Delivery Success %,
+  Biweekly Learning Completion %, Improvement Actions Completed %, System Changes Verified %,
+  **Repeated Problem Rate %** (derived from Learning History — flags recurring issues).
+- **G6 — Report period filters [Phase 4].** TODAY / THIS WEEK / THIS MONTH / CUSTOM RANGE on
+  every report.
+- **G7 — Biweekly snapshot period [Phase 4/5].** Snapshots must support **biweekly (+ prev-
+  biweekly)** comparison, not only weekly/monthly, to feed the Learning Record.
+- **G8 — Supply-usage consumption ledger [Phase 3].** Each auto-deduction is RECORDED against
+  the station (a usage-log entry, not just a decremented balance) — feeds "Expected Supply
+  Usage" in the Ops report and the stock-check expected-vs-physical comparison.
+- **G9 — Floor-Lead alert bundle [Phase 2].** Floor Lead is the explicit recipient of: form
+  verification, operational alerts, low-supply alerts, **staff-availability alerts**,
+  **unresolved-issue alerts**, **closing checks**. NOTE sequencing: low-supply alerts exist in
+  Phase 1 but Floor Lead isn't built until Phase 2 → in Phase 1 alert Admin only; add the
+  "current Floor Lead" recipient when Phase 2 lands.
+- **G10 — Daily-form triggers [Phase 2].** The form's **Low-Supply Check** field can RAISE a
+  Supply Request (Phase 1 also allows a direct raise); **Tomorrow Availability** feeds the
+  staff-availability alerts. Daily-form fields per client: Staff/Station/Date/Time-In/Opening
+  Checklist/Station Protocol/Mid-Shift/Low-Supply Check/Issues/Closing Checklist/Tomorrow
+  Availability/Submission Time/Verification (all dynamic via the Form Builder).
+
+### DECISIONS the client doc resolves (previously open here)
+
+- **Admin-direct expenses auto-approve** ("may be approved immediately") — resolves the
+  Phase-1 auto-approve question. Staff-submitted expenses still require Admin approval.
+- **Opening balances are Admin-entered**; the system updates balances from recorded
+  transactions "where possible." Balance-sheet opening state seeded/edited by Admin.
+
+### FLAGS — confirm with client before the affected phase (terms not in current codebase)
+
+- **Q1 [blocks Phase 4 Ops report] — "Holds" / "OT Traveller" / "Hold Process".** Ops report
+  wants Holds Raised/Resolved; Learning references OT Traveller + Hold Process. The current
+  backend has complaints/recovery, NOT a "hold" concept. Confirm: is a Hold a new thing (order
+  paused) or does it map to recovery/complaint? "OT Traveller" = the order travel/routing ticket?
+- **Q2 [Phase 2] — Station↔role mapping.** Client's S1 = "Intake, Tagging AND Customer
+  Experience", but the codebase separates `intake-and-tag` from `customerExperience`. Confirm
+  whether the S1 form spans both or CX stays its own lane.
+- **Q3 [Phase 4] — "Logistics Jobs" source.** From order pickup/delivery runs, or a separate
+  dispatch record? Needed to count jobs + attribute logistics revenue.
+- **Q4 [Phase 1/4] — "Dispatcher" vs "Rider".** Doc costs both Dispatcher and Rider; current
+  system has Rider only. Is Dispatcher a distinct role/cost line or just a category label?
+
+### CLIENT ANSWERS (2026-08-03) — Q1–Q4 resolved (+2 new modules)
+
+- **A1 (Holds) — ALREADY BUILT, NOT a new module (CONFIRMED by client + code 2026-08-03).**
+  Hold create + resolve already exist at EVERY production station: intake, sort-and-pretreat,
+  wash-and-dry, press-iron, QC each have hold + `/hold/:id/release` routes (page-route.js), plus
+  admin `send-to-hold`/`resolve-hold`/`hold-orders` + `hold-reasons`. Data lives on
+  `bookOrder.holdDetails { reason, note, assignTo, heldAt, heldByOperatorId, heldByStation }` +
+  `ORDER_STATUS.HOLD` + ORDER_ON_HOLD/RELEASED notifications. ⇒ **The Smart Book only READS this**
+  for Ops-report Holds-Raised/Resolved — NO new Hold model, NO new endpoints. Folds into Phase 4
+  reporting. **"OT" = Order Traveler** = the order moving station→station (existing pipeline stage
+  transitions) — also already built; report reads stage history.
+- **A2 (Station S1) — keep CX SEPARATE.** S1 = **Intake & Tagging only**; Customer Experience
+  stays its own lane (its current setup). So the S1 daily form + station reporting cover
+  intake/tagging; CX is not folded into S1.
+- **A3 (Dispatcher) — COST CATEGORY ONLY for now.** Rider (physically does pickups/deliveries/
+  errands) and Dispatcher (receives jobs, assigns riders, plans routes, monitors, handles
+  problems) are conceptually distinct roles, BUT CHUVI has **no dedicated Dispatcher account** —
+  Founder/Admin/assigned staff does it temporarily. ⇒ **Do NOT add a Dispatcher role now.** Keep
+  **Dispatcher Cost as a separate optional category, ₦0 when unpaid.** The Logistics Job
+  structure must NOT depend on a Dispatcher role — a real Dispatcher role can be activated later
+  without changing it.
+- **A4 (Logistics Jobs) — NEW STANDALONE MODULE.** "Logistics Jobs" = **separate PAID logistics/
+  delivery/errand requests**, NOT the normal pickup/delivery of a laundry order. Laundry
+  pickup/delivery stays a **dispatch task linked to the laundry order**. A Logistics Job gets its
+  **own record**: `{ price, payment, rider, pickup/dropoff locations, status, costs }`. Both may
+  share the same dispatch system, but **Laundry revenue and Logistics revenue MUST report
+  separately** (feeds G4 revenue split + G3 Logistics report). ⇒ New **LogisticsJob model +
+  ~8–10 endpoints** (create, assign rider, status transitions, record cost, record payment,
+  list, get, cancel). Own status machine (e.g. requested → assigned → in-progress → completed |
+  cancelled). Provisional home: its own slice built BEFORE Reporting so the data exists.
+
+### SCOPE / ESTIMATE IMPACT (revised — Holds already built)
+
+Only ONE genuinely new module on top of the original ~80-endpoint scope:
+- ~~Holds~~ — ALREADY BUILT (A1); Smart Book only reads it. NO added build.
+- Logistics Jobs (A4): +1 model, ~8–10 endpoints (includes payment handling → heavier).
+
+Revised rough total: **~13 models, ~88–90 endpoints.** In the doc's own weighting that's roughly
+**+₦60k–₦80k** for Logistics Jobs only. Final naira is the client's call. Does not block Phase 1.
