@@ -330,12 +330,12 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_MESSAGES, [auth], (req, res) =>
 
 /**
  * @swagger
- * /feedback/order/{orderId}:
+ * /feedback/order/{bookOrderId}:
  *   get:
  *     summary: Get my feedback for a specific order
  *     tags: [Feedback & Recovery]
  *     security: [{ bearerAuth: [] }]
- *     parameters: [{ in: path, name: orderId, required: true, schema: { type: string } }]
+ *     parameters: [{ in: path, name: bookOrderId, required: true, schema: { type: string }, description: The BookOrder id }]
  *     responses:
  *       200:
  *         description: Feedback record or null

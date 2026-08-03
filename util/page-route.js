@@ -270,7 +270,7 @@ exports.ROUTE_REFERRAL_RESET = "/reset-code"
 
 // feedback & recovery — customer
 exports.ROUTE_FEEDBACK_SUBMIT = "/"
-exports.ROUTE_FEEDBACK_FOR_ORDER = "/order/:orderId"
+exports.ROUTE_FEEDBACK_FOR_ORDER = "/order/:bookOrderId"
 exports.ROUTE_FEEDBACK_COMPLAINT_TYPES = "/complaint-types"
 exports.ROUTE_FEEDBACK_MY_COMPLAINTS = "/my-complaints"
 exports.ROUTE_FEEDBACK_COMPLAINT = "/complaints/:id"
@@ -361,3 +361,7 @@ exports.ROUTE_CRM_METRICS              = '/metrics'
 exports.ROUTE_CRM_BROADCAST_LIST       = '/broadcasts/:list'
 exports.ROUTE_CRM_SETTINGS             = '/settings'
 exports.ROUTE_CRM_INTERNAL_LEAD        = '/internal/lead'
+
+// Reward settings (singleton admin config: complaint SLA/reopen window, recovery
+// approval threshold, credit expiry, referral economy). Mounted at /reward-settings.
+exports.ROUTE_REWARD_SETTINGS          = '/'
