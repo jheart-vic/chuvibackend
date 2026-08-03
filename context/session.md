@@ -174,6 +174,14 @@ Client decisions: schedule config lives IN CrmSetting; register → stop nudges 
   - NOTE: FE route paths are my best-guess conventions; if FE differs, fix PAGE_ROUTES in
     util/deepLink.js only. CLIENT_URL/API_URL env not added (client rejected .env edit) —
     add later to override the fallback.
+  - **CORRECTED 2026-08-03** (frontend supplied real SPA routes): PAGE_ROUTES now → /user/wallet,
+    /user/offers, /user/referrals (PLURAL), /user/complaints/:id, /user/order-history/:orderId.
+    Feedback has NO standalone route (lives in order detail keyed by ORDER id) → feedback maps to
+    /user/order-history/:orderId; `feedback` page is not emitted by any sender anyway. Emitted
+    page keys in practice: offers, wallet, referral, complaint. Backend sends FULL absolute URLs
+    (CLIENT_URL + path) — FE does NOT remap. Registration-link phone param = `?phone=` (registerLink
+    reuses REFERRAL_BASE_URL as base; confirm the signup route there matches FE). mark-prospect =
+    CRM_INTERNAL_ACTION (crm.service:496 → markProspect), no template/SMS — schedule-only row.
 
 ### §5 Complaints — DONE (uncommitted), verified live 19/19 + boot
 - **Multi-type:** complaintCase.complaintTypeIds[] (array) + complaintTypeId kept as
@@ -285,6 +293,12 @@ Client decisions: schedule config lives IN CrmSetting; register → stop nudges 
 ### §4 Multi-criteria offer targeting — DONE (uncommitted), verified 19/19 + boot :7994
 - **Decision resolved:** "customer group" = admin-managed CRM tag list (option a), matched
   against the customer's tags exactly like `tags` (OR-within, AND-across, empty=skip).
+- **Client CONFIRMED Option A explicitly (2026-08-03):** customerGroups = a SECOND selection
+  bucket drawing from the EXISTING CRM tags; semantics = (tags OR-within) AND (customerGroups
+  OR-within). NO separate Segments feature, NO new tag values (student/young-professional/vip
+  were only illustrative — not to be added). Backend already implements this exactly; remaining
+  work is purely the FRONTEND picker (a 2nd multi-select bound to the same 18-tag CRM taxonomy,
+  labeled as the AND bucket). "Curated groups" may be added later if the need arises.
 - **Multi-trigger.** offer.model: new `triggers: [enum OFFER_TRIGGER]` (events that MINT the
   offer, OR); legacy single `trigger` kept + mirrors triggers[0]. Index {triggers:1,status:1}.
   `getActiveOfferForTrigger` now queries `$or:[{triggers:t},{trigger:t}]` (multi + back-compat).
