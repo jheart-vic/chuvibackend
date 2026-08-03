@@ -514,7 +514,17 @@ class BotApiService extends BaseService {
                 page: req.query.page,
                 limit: req.query.limit,
             })
-            return BaseService.sendSuccessResponse({ message: result })
+            // Surface flat customer name + phone per row (same shape as /queue) so the
+            // admin "All Conversations" list can identify each chat without an extra
+            // lookup. userId stays populated for back-compat.
+            const data = result.data.map((c) => ({
+                ...c,
+                customer: c.userId?.fullName || 'Customer',
+                phoneNumber: c.userId?.phoneNumber || null,
+            }))
+            return BaseService.sendSuccessResponse({
+                message: { ...result, data },
+            })
         } catch (error) {
             console.error(error)
             return BaseService.sendFailedResponse({ error: 'Failed to load conversations' })

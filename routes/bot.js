@@ -599,7 +599,19 @@ router.post(ROUTE_BOT_ADMIN_JOIN, [adminAuth], (req, res) =>
  *                   properties:
  *                     data:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/Conversation' }
+ *                       items:
+ *                         allOf:
+ *                           - $ref: '#/components/schemas/Conversation'
+ *                           - type: object
+ *                             properties:
+ *                               customer:
+ *                                 type: string
+ *                                 description: Customer full name (flat, same as /queue). Falls back to "Customer".
+ *                                 example: Ada Obi
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 nullable: true
+ *                                 example: "+2348012345678"
  *                     pagination:
  *                       type: object
  *                       properties:
