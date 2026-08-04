@@ -761,13 +761,7 @@ router.get(ROUTE_QC_HISTORY, [qcAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     order:
- *                       type: object
- *                       properties:
- *                         oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                         fullName:      { type: string, example: "Jude Victor" }
- *                         serviceType:   { type: string, example: "wash-and-iron" }
- *                         trackingStatus: { type: string, enum: [in_progress, completed] }
+ *                     order: { $ref: '#/components/schemas/TimelineOrder' }
  *                     pipeline:
  *                       type: array
  *                       items:

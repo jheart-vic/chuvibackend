@@ -959,14 +959,7 @@ router.get(
  *                 message:
  *                   type: object
  *                   properties:
- *                     order:
- *                       type: object
- *                       properties:
- *                         oscNumber: { type: string, example: "ORD-2024-001" }
- *                         fullName: { type: string, example: "Jude Victor" }
- *                         serviceType: { type: string, example: "wash-and-iron" }
- *                         serviceTier: { type: string, example: "standard" }
- *                         trackingStatus: { type: string, enum: [in_progress, completed], example: "in_progress" }
+ *                     order: { $ref: '#/components/schemas/TimelineOrder' }
  *                     pipeline:
  *                       type: array
  *                       items:

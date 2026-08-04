@@ -1643,25 +1643,7 @@ router.patch(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     order:
- *                       type: object
- *                       properties:
- *                         oscNumber:      { type: string, example: "OSC-20260428-321782" }
- *                         fullName:       { type: string, example: "Jude Victor" }
- *                         phoneNumber:    { type: string, example: "08012345678" }
- *                         pickupAddress:  { type: string, example: "12 Lagos Street, Yaba" }
- *                         deliveryAddress:  { type: string, example: "12 Lagos Street, Yaba" }
- *                         serviceType:    { type: string, example: "wash-and-iron" }
- *                         serviceTier:    { type: string, example: "standard" }
- *                         amount:         { type: number, example: 4500 }
- *                         channel:        { type: string, example: "website" }
- *                         trackingStatus: { type: string, enum: [in_progress, completed], example: "in_progress" }
- *                         stage:
- *                           type: object
- *                           properties:
- *                             status: { type: string, example: "washing" }
- *                         stationStatus:  { type: string, example: "wash-and-dry-station" }
- *                         createdAt:      { type: string, format: date-time }
+ *                     order: { $ref: '#/components/schemas/TimelineOrder' }
  *                     pipeline:
  *                       type: array
  *                       items:
