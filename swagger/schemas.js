@@ -893,6 +893,10 @@
  *             accountName: { type: string, example: "John Doe" }
  *             accountNumber: { type: string, example: "0123456789" }
  *             bankName: { type: string, example: "GTBank" }
+ *         paidOut: { type: boolean, example: false, description: "Cash only: whether the manual bank transfer has been made. approved ≠ paid." }
+ *         paidOutAt: { type: string, format: date-time, nullable: true }
+ *         paidOutBy: { type: string, nullable: true, description: Admin who recorded the transfer }
+ *         paidOutReference: { type: string, nullable: true, example: "GTB txn 9930112" }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *

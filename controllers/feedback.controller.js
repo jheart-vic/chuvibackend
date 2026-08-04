@@ -90,6 +90,9 @@ class FeedbackController extends BaseController {
     async rejectCredit(req, res) {
         return send(res, await new RecoveryApiService().rejectCredit(req))
     }
+    async markCompensationPaid(req, res) {
+        return send(res, await new RecoveryApiService().markCompensationPaid(req))
+    }
     async escalate(req, res) {
         return send(res, await new RecoveryApiService().escalate(req))
     }

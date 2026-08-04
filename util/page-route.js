@@ -292,6 +292,7 @@ exports.ROUTE_RECOVERY_CASE_ACTION_COMPLETE = "/cases/:id/actions/:index/complet
 exports.ROUTE_RECOVERY_CASE_CREDIT_REQUEST = "/cases/:id/credit/request"
 exports.ROUTE_RECOVERY_CASE_CREDIT_APPROVE = "/cases/:id/credit/approve"
 exports.ROUTE_RECOVERY_CASE_CREDIT_REJECT = "/cases/:id/credit/reject"
+exports.ROUTE_RECOVERY_CASE_CREDIT_MARK_PAID = "/cases/:id/credit/mark-paid"
 exports.ROUTE_RECOVERY_CASE_ESCALATE = "/cases/:id/escalate"
 exports.ROUTE_RECOVERY_CASE_CLOSE = "/cases/:id/close"
 exports.ROUTE_RECOVERY_CASE_RECOVERY_ORDER = "/cases/:id/recovery-order"
