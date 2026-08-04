@@ -15,6 +15,7 @@ const {
     ROUTE_RECOVERY_CASE_CREDIT_REQUEST,
     ROUTE_RECOVERY_CASE_CREDIT_APPROVE,
     ROUTE_RECOVERY_CASE_CREDIT_REJECT,
+    ROUTE_RECOVERY_CASE_CREDIT_MARK_PAID,
     ROUTE_RECOVERY_CASE_ESCALATE,
     ROUTE_RECOVERY_CASE_CLOSE,
     ROUTE_RECOVERY_CASE_RECOVERY_ORDER,
@@ -468,6 +469,49 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_APPROVE, [customerExperienceAuth], (req, 
 router.post(ROUTE_RECOVERY_CASE_CREDIT_REJECT, [customerExperienceAuth], (req, res) =>
     new FeedbackController().rejectCredit(req, res),
 )
+
+/**
+ * @swagger
+ * /recovery/cases/{id}/credit/mark-paid:
+ *   post:
+ *     summary: Mark an approved CASH compensation as manually transferred (Admin)
+ *     description: >
+ *       §7: cash compensation has no in-system payout, so "approved" ≠ "paid".
+ *       Once the external bank transfer is done, Admin records it here — setting
+ *       `paidOut: true` plus `paidOutAt`, `paidOutBy` and an optional transfer
+ *       `reference`. Only valid on an APPROVED cash compensation; idempotent
+ *       (a second call no-ops). Wallet-credit compensation is already applied and
+ *       cannot be marked paid.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               compensationId: { type: string, description: Which compensation to settle (defaults to the single approved, unpaid cash one) }
+ *               reference: { type: string, example: "GTB txn 9930112 · 2026-08-04" }
+ *     responses:
+ *       200:
+ *         description: Cash compensation marked paid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *       400:
+ *         description: Not found, not cash, or not approved
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_RECOVERY_CASE_CREDIT_MARK_PAID, [adminAuth], (req, res) =>
+    new FeedbackController().markCompensationPaid(req, res),
+)
 /**
  * @swagger
  * /recovery/cases/{id}/escalate:
@@ -623,6 +667,18 @@ router.post(ROUTE_RECOVERY_CASE_RECOVERY_ORDER, [customerExperienceAuth], (req, 
  *                         photos: { type: array, items: { type: string } }
  *                         affectedItems: { type: array, items: { type: string } }
  *                     compensations: { type: array, items: { $ref: '#/components/schemas/RecoveryCompensation' } }
+ *                     compensationSummary:
+ *                       type: object
+ *                       description: "§7: server-computed compensation totals so the FE doesn't re-sum or re-implement the approval gate."
+ *                       properties:
+ *                         cumulativeApproved: { type: number, example: 8000, description: Sum of APPROVED compensations (all types) on the case }
+ *                         byType:
+ *                           type: object
+ *                           description: Approved totals split by compensation type (keys omitted when zero).
+ *                           properties:
+ *                             wallet-credit: { type: number, example: 3000 }
+ *                             cash: { type: number, example: 5000 }
+ *                         approvalThreshold: { type: number, example: 10000, description: "Amount above which (single or cumulative) approval needs Admin; cash always needs Admin." }
  *                     recoveryActions: { type: array, items: { $ref: '#/components/schemas/RecoveryAction' } }
  *                     recoveryOrders: { type: array, items: { $ref: '#/components/schemas/BookOrderSummary' } }
  *                     escalation:

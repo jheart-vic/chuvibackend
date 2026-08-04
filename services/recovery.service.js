@@ -458,10 +458,28 @@ class RecoveryService {
             escalated: !!complaint.escalated,
         }
 
+        // §7: cumulative approved compensation on the case (drives the ₦threshold
+        // gate) + a per-type split, exposed so the frontend doesn't re-sum the
+        // array or re-implement the approval math.
+        const cumulativeApproved = this.cumulativeApprovedComp(complaint)
+        const byType = (complaint.compensations || [])
+            .filter((c) => c.status === RECOVERY_CREDIT_STATUS.APPROVED)
+            .reduce((acc, c) => {
+                acc[c.type] = (acc[c.type] || 0) + (c.amount || 0)
+                return acc
+            }, {})
+        const settings = await this.getSettings()
+        const approvalThreshold = settings.recoveryApprovalThreshold ?? 10000
+
         return {
             complaint,
             evidence: { photos: complaint.photos || [], affectedItems: complaint.affectedItems || [] },
             compensations: complaint.compensations || [],
+            compensationSummary: {
+                cumulativeApproved,
+                byType,
+                approvalThreshold,
+            },
             recoveryActions: complaint.recoveryActions || [],
             recoveryOrders,
             escalation: {
@@ -481,6 +499,42 @@ class RecoveryService {
         return (complaint.compensations || [])
             .filter((c) => c.status === RECOVERY_CREDIT_STATUS.APPROVED)
             .reduce((sum, c) => sum + (c.amount || 0), 0)
+    }
+
+    // §7: mark an APPROVED CASH compensation as manually transferred/paid. Cash
+    // has no in-system payout, so "approved" ≠ "paid" — this records that the
+    // external bank transfer actually happened (who / when / reference). Only
+    // valid on an approved cash compensation; idempotent (a second call no-ops).
+    // With no compensationId, targets the single approved-but-unpaid cash comp.
+    async markCompensationPaid(caseId, { compensationId, paidBy, reference }) {
+        const complaint = await ComplaintCaseModel.findById(caseId)
+        if (!complaint) throw new Error('Complaint not found')
+
+        const comp = compensationId
+            ? complaint.compensations.id(compensationId)
+            : complaint.compensations.find(
+                  (c) =>
+                      c.type === RECOVERY_COMPENSATION_TYPE.CASH &&
+                      c.status === RECOVERY_CREDIT_STATUS.APPROVED &&
+                      !c.paidOut,
+              )
+        if (!comp) throw new Error('Compensation not found')
+        if (comp.type !== RECOVERY_COMPENSATION_TYPE.CASH) {
+            throw new Error(
+                'Only cash compensation is settled manually — wallet credits are already applied',
+            )
+        }
+        if (comp.status !== RECOVERY_CREDIT_STATUS.APPROVED) {
+            throw new Error('Only an approved cash compensation can be marked paid')
+        }
+        if (comp.paidOut) return complaint // idempotent
+
+        comp.paidOut = true
+        comp.paidOutAt = new Date()
+        comp.paidOutBy = paidBy
+        if (reference) comp.paidOutReference = reference
+        await complaint.save()
+        return complaint
     }
 
     // §7: request a compensation (a separate action each time). type is

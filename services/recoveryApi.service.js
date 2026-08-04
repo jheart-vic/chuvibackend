@@ -243,6 +243,26 @@ class RecoveryApiService extends BaseService {
         }
     }
 
+    // §7: record that an approved CASH compensation was manually transferred (paid).
+    async markCompensationPaid(req) {
+        try {
+            const complaint = await RecoveryService.markCompensationPaid(req.params.id, {
+                compensationId: req.body.compensationId,
+                paidBy: getObjectId(req.user.id),
+                reference: req.body.reference,
+            })
+            await createAuditLog({
+                userId: getObjectId(req.user.id),
+                category: AUDIT_LOG_CATEGORIES.RECOVERY,
+                action: `Marked cash compensation ${req.body.compensationId || '(pending)'} paid on complaint ${req.params.id}`,
+            })
+            return BaseService.sendSuccessResponse({ message: complaint })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: error.message || 'Failed to mark compensation paid' })
+        }
+    }
+
     // §6: CX creates a free recovery order (rewash/rework/repair/replace).
     async createRecoveryOrder(req) {
         try {

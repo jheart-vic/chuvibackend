@@ -53,6 +53,12 @@ const compensationSchema = new mongoose.Schema(
             accountNumber: { type: String },
             bankName: { type: String },
         },
+        // cash only: manual-transfer settlement. Cash has no in-system payout, so
+        // "approved" ≠ "paid" — these record that the external transfer happened.
+        paidOut: { type: Boolean, default: false },
+        paidOutAt: { type: Date },
+        paidOutBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        paidOutReference: { type: String }, // bank transfer ref / note
     },
     { timestamps: true },
 )
