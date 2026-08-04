@@ -843,74 +843,7 @@ router.get(ROUTE_RIDER_HISTORY, [riderAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     order:
- *                       type: object
- *                       properties:
- *                         _id:
- *                           type: string
- *                           example: "64d3c9c0f1b2a8e9d0f12345"
- *                         oscNumber:
- *                           type: string
- *                           example: "OSC-20260428-321782"
- *                         fullName:
- *                           type: string
- *                           example: "Jude Victor"
- *                         phoneNumber:
- *                           type: string
- *                           example: "08012345678"
- *                         pickupAddress:
- *                           type: string
- *                           example: "12 Lagos Street, Yaba"
- *                         serviceType:
- *                           type: string
- *                           example: "wash-and-iron"
- *                         serviceTier:
- *                           type: string
- *                           example: "standard"
- *                         amount:
- *                           type: number
- *                           example: 4500
- *                         stage:
- *                           type: object
- *                           properties:
- *                             status:
- *                               type: string
- *                               example: "delivered"
- *                         trackingStatus:
- *                           type: string
- *                           enum: [in_progress, completed, failed]
- *                           example: "completed"
- *                         dispatchDetails:
- *                           type: object
- *                           properties:
- *                             pickup:
- *                               type: object
- *                               properties:
- *                                 status:
- *                                   type: string
- *                                   example: "picked-up"
- *                                 isVerified:
- *                                   type: boolean
- *                                   example: true
- *                                 updatedAt:
- *                                   type: string
- *                                   format: date-time
- *                             delivery:
- *                               type: object
- *                               properties:
- *                                 status:
- *                                   type: string
- *                                   enum: [ready, out-for-delivery, delivered, failed]
- *                                   example: "delivered"
- *                                 note:
- *                                   type: string
- *                                   nullable: true
- *                                 updatedAt:
- *                                   type: string
- *                                   format: date-time
- *                         createdAt:
- *                           type: string
- *                           format: date-time
+ *                     order: { $ref: '#/components/schemas/TimelineOrder' }
  *                     pipeline:
  *                       type: array
  *                       items:

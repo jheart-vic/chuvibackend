@@ -1,4 +1,5 @@
 const BookOrderModel = require('../models/bookOrder.model')
+const { buildTimelineOrderView } = require('../util/orderTimeline')
 const UserModel = require('../models/user.model')
 const ActivityModel = require('../models/activity.model')
 const {
@@ -1015,19 +1016,10 @@ class PressAndIronService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: {
+                    // station-specific extension: press timings on top of the shared view
                     order: {
-                        _id: order._id,
-                        oscNumber: order.oscNumber,
-                        fullName: order.fullName,
-                        serviceType: order.serviceType,
-                        serviceTier: order.serviceTier,
-                        amount: order.amount,
-                        stage: order.stage,
-                        stationStatus: order.stationStatus,
-                        trackingStatus,
-                        qcDetails: order.qcDetails,
-                        dispatchDetails: order.dispatchDetails,
-                        createdAt: order.createdAt,
+                        ...buildTimelineOrderView(order, trackingStatus),
+                        pressDetails: order.pressDetails,
                     },
                     pipeline,
                     itemTimeline,

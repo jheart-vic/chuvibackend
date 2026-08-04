@@ -355,6 +355,20 @@ class OfferService {
 
     // ─── customer offer page ─────────────────────────────────────────────────
 
+    // Client rule: a one-use promo (rules.oneUsePerCustomer) this customer has
+    // already committed to (attached or redeemed) is HIDDEN from THAT customer.
+    // Other customers who haven't used it still see it; repeatable promos are
+    // always visible. Scoped by userId, so it's per-customer.
+    async _customerUsedOneUsePromo(promo, userId) {
+        if (!promo?.rules?.oneUsePerCustomer) return false
+        const used = await CustomerOfferModel.findOne({
+            offerId: promo._id,
+            userId,
+            status: { $in: COMMITTED_LINKAGE_STATUSES },
+        })
+        return !!used
+    }
+
     async getCustomerOffers(userId) {
         const now = new Date()
 
@@ -381,23 +395,11 @@ class OfferService {
             }
             if (!this.checkProfileRules(promo, stats).ok) continue
 
-            // One-use promos the customer has already committed to (attached or
-            // redeemed) stay in the list but flagged disabled with a reason, so
-            // the frontend can show a greyed-out entry instead of it vanishing.
-            let used = false
-            if (promo.rules?.oneUsePerCustomer) {
-                const u = await CustomerOfferModel.findOne({
-                    offerId: promo._id,
-                    userId,
-                    status: { $in: COMMITTED_LINKAGE_STATUSES },
-                })
-                used = !!u
-            }
+            // Client rule: a one-use promo this customer has already used is HIDDEN
+            // for them (other customers who haven't used it still see it).
+            if (await this._customerUsedOneUsePromo(promo, userId)) continue
             promotions.push({
                 ...promo,
-                used,
-                disabled: used,
-                disabledReason: used ? 'You have already used this promotion' : null,
                 ...this.decorateOffer(promo),
             })
         }
@@ -495,6 +497,9 @@ class OfferService {
         }).lean()
         const promotions = []
         for (const promo of promos) {
+            // Client rule: hide a one-use promo this customer has already used
+            // (consistent with the offers list); other customers still see it.
+            if (await this._customerUsedOneUsePromo(promo, userId)) continue
             const evald = await evaluate('promotion', promo)
             promotions.push({
                 offerId: promo._id,

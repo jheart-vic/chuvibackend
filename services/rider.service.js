@@ -1,4 +1,5 @@
 const BookOrderModel = require('../models/bookOrder.model')
+const { buildTimelineOrderView } = require('../util/orderTimeline')
 const UserModel = require('../models/user.model')
 const NotificationModel = require('../models/notification.model')
 const {
@@ -1009,20 +1010,7 @@ class RiderService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: {
-                    order: {
-                        _id: order._id,
-                        oscNumber: order.oscNumber,
-                        fullName: order.fullName,
-                        serviceType: order.serviceType,
-                        serviceTier: order.serviceTier,
-                        amount: order.amount,
-                        stage: order.stage,
-                        stationStatus: order.stationStatus,
-                        trackingStatus,
-                        qcDetails: order.qcDetails,
-                        dispatchDetails: order.dispatchDetails,
-                        createdAt: order.createdAt,
-                    },
+                    order: buildTimelineOrderView(order, trackingStatus),
                     pipeline,
                     itemTimeline,
                 },

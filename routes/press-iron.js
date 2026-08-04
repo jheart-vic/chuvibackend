@@ -573,18 +573,18 @@ router.get(ROUTE_PRESS_IRON_HISTORY, [pressAndIronAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     order:
- *                       type: object
- *                       properties:
- *                         oscNumber:      { type: string, example: "ORD-2024-001" }
- *                         fullName:       { type: string, example: "Jude Victor" }
- *                         serviceType:    { type: string, example: "wash-and-iron" }
- *                         serviceTier:    { type: string, example: "standard" }
- *                         trackingStatus: { type: string, enum: [in_progress, completed] }
- *                         pressDetails:
- *                           type: object
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/TimelineOrder'
+ *                         - type: object
  *                           properties:
- *                             startedAt:   { type: string, format: date-time }
- *                             completedAt: { type: string, format: date-time }
+ *                             pressDetails:
+ *                               type: object
+ *                               nullable: true
+ *                               description: Press timings (this station only).
+ *                               properties:
+ *                                 startedAt: { type: string, format: date-time, nullable: true }
+ *                                 completedAt: { type: string, format: date-time, nullable: true }
+ *                                 operatorId: { type: string, nullable: true }
  *                     pipeline:
  *                       type: array
  *                       items:

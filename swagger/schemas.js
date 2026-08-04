@@ -656,17 +656,10 @@
  *           type: array
  *           description: >
  *             Promotional campaigns the customer currently qualifies for. A
- *             one-use promo the customer has already used stays in the list but
- *             flagged (`used`/`disabled` = true with a `disabledReason`) so the
- *             frontend can render it greyed-out instead of removing it.
- *           items:
- *             allOf:
- *               - $ref: '#/components/schemas/Offer'
- *               - type: object
- *                 properties:
- *                   used: { type: boolean, example: false }
- *                   disabled: { type: boolean, example: false }
- *                   disabledReason: { type: string, nullable: true, example: "You have already used this promotion" }
+ *             one-use promo the customer has ALREADY USED is OMITTED for that
+ *             customer (hidden, not greyed-out); other customers who haven't used
+ *             it still see it. Repeatable promos always appear.
+ *           items: { $ref: '#/components/schemas/Offer' }
  *         baseline:
  *           type: array
  *           description: Permanent baseline benefits
@@ -899,6 +892,49 @@
  *         paidOutReference: { type: string, nullable: true, example: "GTB txn 9930112" }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
+ *
+ *     TimelineOrderItem:
+ *       type: object
+ *       description: "One line item with its per-station statuses. The raw order item subdoc is returned, so additional fields may be present."
+ *       properties:
+ *         _id: { type: string, example: 665f1c2ab9e77a0012d4e123 }
+ *         type: { type: string, example: Shirt }
+ *         price: { type: number, example: 500 }
+ *         quantity: { type: integer, example: 2 }
+ *         tagStatus: { type: string, enum: [pending, complete], example: complete }
+ *         colorGroup: { type: string, nullable: true, enum: [white, colored], example: white }
+ *         fabricType: { type: string, nullable: true, example: light }
+ *         sortStatus: { type: string, enum: [pending, complete, not_required], example: complete }
+ *         pretreatStatus: { type: string, enum: [pending, complete, not_required], example: pending }
+ *         washStatus: { type: string, enum: [pending, complete], example: pending }
+ *         ironStatus: { type: string, enum: [pending, complete], example: pending }
+ *         pressStatus: { type: string, enum: [pending, complete], example: pending }
+ *         qcStatus: { type: string, enum: [pending, passed, failed], example: pending }
+ *         itemNote: { type: string, example: "small stain on collar" }
+ *
+ *     TimelineOrder:
+ *       type: object
+ *       description: "Order header returned by ALL 6 station timeline endpoints (intake, sort & pretreat, wash & dry, press, qc, rider). Single shared shape (buildTimelineOrderView) — includes the full items[] plus addresses and note."
+ *       properties:
+ *         _id: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *         oscNumber: { type: string, example: "OSC-20260428-321782" }
+ *         fullName: { type: string, example: "Jude Victor" }
+ *         serviceType: { type: string, example: wash-and-iron }
+ *         serviceTier: { type: string, example: standard }
+ *         amount: { type: number, example: 4500 }
+ *         stage:
+ *           type: object
+ *           properties:
+ *             status: { type: string, example: washing }
+ *         stationStatus: { type: string, example: wash-and-dry }
+ *         trackingStatus: { type: string, enum: [in_progress, completed, delivery_failed, pickup_failed], example: in_progress }
+ *         qcDetails: { type: object, nullable: true }
+ *         dispatchDetails: { type: object, nullable: true }
+ *         items: { type: array, items: { $ref: '#/components/schemas/TimelineOrderItem' } }
+ *         pickupAddress: { type: string, nullable: true, example: "12 Lagos Street, Yaba" }
+ *         deliveryAddress: { type: string, nullable: true, example: "5 Ademola St, VI" }
+ *         extraNote: { type: string, nullable: true, example: "Handle with care" }
+ *         createdAt: { type: string, format: date-time }
  *
  *     BookOrderSummary:
  *       type: object
