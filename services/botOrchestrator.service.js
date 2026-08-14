@@ -3,6 +3,7 @@ const BotIntentService = require('./botIntent.service')
 const BotContextService = require('./botContext.service')
 const ReferralService = require('./referral.service')
 const OfferService = require('./offer.service')
+const BookOrderService = require('./bookOrder.service')
 const WalletModel = require('../models/wallet.model')
 const WalletCreditModel = require('../models/walletCredit.model')
 const BookOrderModel = require('../models/bookOrder.model')
@@ -256,7 +257,9 @@ class BotOrchestratorService {
             case BOT_INTENT.UPDATE_DETAILS:
                 return await this.updateDetails(userId, text, slots, convo.botState?.step)
             case BOT_INTENT.BOOKING_GUIDE:
-                return { replies: [this.bookingGuide()] }
+                return await this.bookingFlow({
+                    convo, userId, text, slots, step: convo.botState?.step,
+                })
             case BOT_INTENT.PRICING:
                 return { replies: [await this.pricingReply(text, slots)] }
             case BOT_INTENT.TURNAROUND:
@@ -638,6 +641,288 @@ class BotOrchestratorService {
             'I never release rewards myself — the system does that automatically once they qualify.',
         )
         return lines.join('\n')
+    }
+
+    // ─── Phase C: guided booking that actually places the order ───────────────
+    //
+    // Multi-turn slot-fill → estimate → explicit confirm → place through the
+    // EXACT existing booking path (BookOrderService.createOrder → postBookOrder),
+    // so pricing/validation/credit/notifications are identical to the app. The
+    // bot NEVER places an order without a "yes" at the confirm step. Uses Phase A
+    // memory so "the usual" prefills from the last order.
+    async bookingFlow({ convo, userId, text, slots, step }) {
+        const setting = await AdminSettingModel.findOne({}).lean()
+        const catalog = await OrderItemModel.find({}).lean()
+        const memory = BotContextService.loadMemory(convo)
+        const ref = BotContextService.detectReferent(text)
+
+        // Accumulated booking data persisted under distinct b* keys (so the
+        // per-turn classifier slots never overwrite them with blanks).
+        let bItems = slots.bItems || null
+        let bServiceType = slots.bServiceType || null
+        let bAddress = slots.bPickupAddress || null
+        let bDate = slots.bDatePhrase || null
+        let bTime = slots.bTime || null
+        let bPhone = slots.bPhone || null
+        let unmatched = []
+
+        // ── ingest anything this turn provided ──────────────────────────────
+        const rawItems =
+            slots.items && slots.items.length
+                ? slots.items
+                : this._parseItemsFromText(text, catalog)
+        if (rawItems && rawItems.length) {
+            const resolved = this._resolveBookingItems(rawItems, catalog)
+            if (resolved.priced.length) bItems = resolved.priced
+            unmatched = resolved.unmatched
+        }
+        if (!bServiceType) bServiceType = this._matchServiceType(text, setting)
+        if (!bAddress) {
+            bAddress =
+                slots.address ||
+                (step === 'collect-address'
+                    ? this.cleanDetailValue('pickupAddress', text)
+                    : null)
+        }
+        if (!bDate) bDate = slots.pickupDate || (step === 'collect-datetime' ? String(text || '').trim() : null)
+        if (!bTime) bTime = slots.pickupTime || null
+        if (!bPhone && step === 'collect-phone') {
+            const m = String(text || '').match(/(\+?\d[\d\s-]{6,}\d)/)
+            if (m) bPhone = m[1].replace(/\s+/g, '')
+        }
+
+        // "the usual" / "same as last time" → prefill from the remembered order
+        if ((ref.theUsual || ref.sameAsLast) && memory.lastOrder) {
+            if ((!bItems || !bItems.length) && memory.lastOrder.items?.length) {
+                const r = this._resolveBookingItems(memory.lastOrder.items, catalog)
+                if (r.priced.length) bItems = r.priced
+            }
+            if (!bServiceType) bServiceType = memory.lastOrder.serviceType || null
+            if (!bAddress) bAddress = memory.lastOrder.pickupAddress || null
+        }
+
+        const persist = (nextStep) => ({
+            intent: BOT_INTENT.BOOKING_GUIDE,
+            step: nextStep,
+            slots: {
+                bItems,
+                bServiceType,
+                bPickupAddress: bAddress,
+                bDatePhrase: bDate,
+                bTime,
+                bPhone,
+            },
+        })
+
+        // ── confirm step: yes places it, no cancels, anything else re-checks ──
+        if (step === 'confirm') {
+            if (this.isNegative(text)) {
+                return {
+                    replies: ["No problem — I've cancelled that. Tell me what you'd like to change or add."],
+                }
+            }
+            if (this.isAffirmative(text)) {
+                return await this._placeBooking({
+                    userId, bItems, bServiceType, bAddress, bDate, bTime, bPhone,
+                })
+            }
+            // otherwise treat it as a correction and fall through to re-summarise
+        }
+
+        // ── ask for the first missing piece ─────────────────────────────────
+        if (!bItems || !bItems.length) {
+            const lead = step ? '' : `${this.bookingGuide()}\n\n`
+            const note = unmatched.length
+                ? `I can't price "${unmatched.join(', ')}" here. `
+                : ''
+            return {
+                replies: [
+                    `${lead}${note}What would you like cleaned? Tell me the items and how many — e.g. "6 shirts, 3 trousers".`,
+                ],
+                state: persist('collect-items'),
+            }
+        }
+        if (!bServiceType) {
+            const opts = (setting?.serviceTypes || []).map((s) => s.name).join(', ') || 'wash-and-iron, washing-only, ironing-only, dry-clean'
+            return {
+                replies: [`Great. Which service would you like — ${opts}?`],
+                state: persist('collect-service'),
+            }
+        }
+        if (!bAddress) {
+            return {
+                replies: ['Where should we pick it up? Please send the pickup address.'],
+                state: persist('collect-address'),
+            }
+        }
+        if (!bDate || !bTime) {
+            return {
+                replies: ['When should we come? Give me a day and rough time — e.g. "tomorrow morning".'],
+                state: persist('collect-datetime'),
+            }
+        }
+        const defaults = await BotContextService.savedDefaults(userId)
+        if (!bPhone && !defaults.phoneNumber) {
+            return {
+                replies: ['Lastly, what phone number should the rider call?'],
+                state: persist('collect-phone'),
+            }
+        }
+
+        // ── everything gathered → show summary + estimate, ask to confirm ────
+        const estimate = this._bookingEstimate(bItems, bServiceType, setting)
+        const itemsLine = bItems
+            .map((i) => `${i.quantity} ${i.type}${i.quantity > 1 ? 's' : ''}`)
+            .join(', ')
+        const summary = [
+            "Here's your booking:",
+            `• Items: ${itemsLine}`,
+            `• Service: ${bServiceType} (classic tier)`,
+            `• Pickup: ${bAddress}${bDate ? `, ${bDate}` : ''}${bTime ? ` ${bTime}` : ''}`,
+            `• Delivery: standard`,
+            `Estimated total: about ${naira(estimate)} — you'll see the exact amount once it's placed, and you can pay in the app or from your wallet.`,
+            'Shall I place it? (yes/no)',
+        ].join('\n')
+        return { replies: [summary], state: persist('confirm') }
+    }
+
+    // Build the payload and place the order through the shared booking path.
+    async _placeBooking({ userId, bItems, bServiceType, bAddress, bDate, bTime, bPhone }) {
+        const defaults = await BotContextService.savedDefaults(userId)
+        const phone = bPhone || defaults.phoneNumber
+        const payload = {
+            fullName: defaults.fullName || 'Customer',
+            phoneNumber: phone,
+            serviceType: bServiceType,
+            serviceTier: 'classic',
+            billingType: 'pay-per-item',
+            deliverySpeed: 'standard',
+            isDelivery: true,
+            isPickUp: true,
+            items: (bItems || []).map((i) => ({
+                type: i.type,
+                price: Math.round(i.price) || 0,
+                quantity: Math.max(1, Math.round(i.quantity) || 1),
+            })),
+            pickupAddress: bAddress,
+        }
+        if (bTime) payload.pickupTime = bTime
+        const day = this._resolvePickupDate(bDate)
+        if (day) payload.pickupDate = day
+
+        let result
+        try {
+            result = await new BookOrderService().createOrder({ userId, payload })
+        } catch (e) {
+            result = { success: false, data: { error: e.message } }
+        }
+        if (result?.success) {
+            const order = result.data?.order
+            return {
+                replies: [
+                    `Done! Your order ${order?.oscNumber || ''} is placed ✅. Total ${naira(order?.amount)}. We'll arrange your pickup shortly — you can pay in the app, or say "use my wallet" and I'll apply your balance.`,
+                ],
+            }
+        }
+        const err = result?.data?.error
+        const msg = typeof err === 'string' ? err : 'something went wrong on our side'
+        return {
+            replies: [
+                `I couldn't place the order — ${msg}. Would you like me to connect you to a person?`,
+            ],
+            state: { intent: BOT_INTENT.BOOKING_GUIDE, step: 'offered-handoff', slots: {} },
+        }
+    }
+
+    // Resolve "6 shirts, 3 trousers" → catalog-priced items. Returns matched
+    // (priced) items and any names we don't carry.
+    _resolveBookingItems(rawItems, catalog) {
+        const priced = []
+        const unmatched = []
+        for (const it of rawItems || []) {
+            const type = String(it.type || '').toLowerCase().trim()
+            const qty = Math.max(1, Math.round(Number(it.quantity) || 1))
+            if (!type) continue
+            const m =
+                catalog.find((c) => (c.name || '').toLowerCase() === type) ||
+                catalog.find(
+                    (c) =>
+                        type.includes((c.name || '').toLowerCase()) ||
+                        (c.name || '').toLowerCase().includes(type),
+                )
+            if (m) priced.push({ type: m.name, price: m.price, quantity: qty })
+            else unmatched.push(it.type)
+        }
+        return { priced, unmatched }
+    }
+
+    // Offline fallback item parser ("6 shirts and 3 trousers") for when the LLM
+    // isn't available to structure slots.items.
+    _parseItemsFromText(text, catalog) {
+        const out = []
+        const re = /(\d+)\s+([a-zA-Z]+)/g
+        let m
+        while ((m = re.exec(String(text || '')))) {
+            out.push({ type: m[2].toLowerCase(), quantity: parseInt(m[1], 10) })
+        }
+        return out
+    }
+
+    // Map the customer's words to one of the configured service-type names.
+    _matchServiceType(text, setting) {
+        const t = String(text || '').toLowerCase()
+        const names = (setting?.serviceTypes || []).map((s) => s.name)
+        const want = (n) => (names.includes(n) ? n : null)
+        if (/\bdry\s*clean/.test(t)) return want('dry-clean')
+        if (/\bwash\b.*\biron\b|\bwash and iron\b|\bwash & iron\b/.test(t)) return want('wash-and-iron')
+        if (/\biron(ing)?\s*only\b|\bjust iron\b|\bonly iron/.test(t)) return want('ironing-only')
+        if (/\bwash(ing)?\s*only\b|\bjust wash\b|\bonly wash/.test(t)) return want('washing-only')
+        if (/\biron/.test(t)) return want('ironing-only')
+        if (/\bwash/.test(t)) return want('wash-and-iron')
+        return null
+    }
+
+    // Estimate for the confirm prompt — same per-piece math as pricing/booking
+    // (classic tier) plus pickup/delivery fees. Clearly labelled an estimate;
+    // the authoritative total comes from the placed order's receipt.
+    _bookingEstimate(priced, serviceType, setting) {
+        const svc =
+            (setting?.serviceTypes || []).find((s) => s.name === serviceType) ||
+            (setting?.serviceTypes || [])[0]
+        const per = svc ? svc.pricePerPiece || 0 : 0
+        let sum = 0
+        for (const i of priced) sum += roundToNearestHundred((i.price || 0) * per) * i.quantity
+        sum += (setting?.pickupFee || 0) + (setting?.deliveryFee || 0)
+        return sum
+    }
+
+    // Resolve a simple day phrase to a real Date (today / tomorrow / weekday);
+    // returns null for anything we can't safely parse (the order still stores
+    // the phrase-free fields and staff coordinate exact timing).
+    _resolvePickupDate(phrase) {
+        const p = String(phrase || '').toLowerCase()
+        if (!p) return null
+        const atNoon = (d) => {
+            d.setHours(12, 0, 0, 0)
+            return d
+        }
+        const now = new Date()
+        if (/\btoday\b/.test(p)) return atNoon(new Date(now))
+        if (/\btomorrow\b/.test(p)) {
+            const d = new Date(now)
+            d.setDate(d.getDate() + 1)
+            return atNoon(d)
+        }
+        const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+        for (let i = 0; i < 7; i++) {
+            if (new RegExp(`\\b${days[i]}\\b`).test(p)) {
+                const d = new Date(now)
+                const diff = ((i - d.getDay() + 7) % 7) || 7
+                d.setDate(d.getDate() + diff)
+                return atNoon(d)
+            }
+        }
+        return null
     }
 
     async applyReferralCode(userId, text, slots) {

@@ -68,10 +68,37 @@ Branch: smart-book-feature (bot work is off-topic to that branch; uncommitted).
   - Verified: pricing (item ₦1,400 trouser + general list), turnaround, service-info, policy
     (pay/cancel/unknown→null), reward-status, payment-pending, order-status ready + rider
     lines, swagger parses, full chain loads.
-- **NEXT: Phase C (actions, confirmed + audited)** — booking-create (refactor postBookOrder
-  core into a reusable createOrder service method → slot-fill → quote → confirm → place),
-  apply wallet/credit to an order, open/update complaint (RecoveryService.openCase + dedupe +
-  photo), structured feedback (FeedbackService.submitFeedback), phone change w/ OTP.
+- **Phase C (actions) — booking-create DONE (verified); rest queued.**
+  - KEY DISCOVERY: `postBookOrder(req,res)` never touches `res` and returns the plain
+    `{success,data}` envelope (BaseService static methods just return objects). So NO risky
+    refactor of the 600-line money method was needed — added a thin
+    `BookOrderService.createOrder({userId,payload})` that calls
+    `postBookOrder({ body:payload, user:{id:userId} })`. Bot places orders through the EXACT
+    same pricing/validation/credit/notification/audit path.
+  - **Guided booking flow (`bookingFlow` in botOrchestrator):** BOOKING_GUIDE intent now runs
+    a multi-turn slot-fill instead of static text. Steps: collect-items → collect-service →
+    collect-address → collect-datetime → (collect-phone if profile has none) → confirm. On
+    "yes" builds payload (items priced from OrderItem catalog; classic/standard/pay-per-item/
+    pickup+delivery defaults; name/phone from profile) and calls createOrder; shows the placed
+    order's oscNumber + amount; clears state. "no" cancels. Estimate shown at confirm =
+    roundToNearestHundred(catalogPrice × pricePerPiece)×qty + pickup + delivery (labelled an
+    estimate; exact total from the placed order). Reuses `cleanDetailValue` for the address
+    answer. Phase A memory: "the usual"/"same as last time" prefills items/service/address from
+    memory.lastOrder snapshot.
+  - Helpers: `_placeBooking`, `_resolveBookingItems` (catalog match + unmatched), `_parseItemsFromText`
+    (offline "6 shirts" fallback), `_matchServiceType`, `_bookingEstimate`, `_resolvePickupDate`
+    (today/tomorrow/weekday→Date, else null). Guardrail: NEVER places without an explicit confirm.
+  - Files: services/bookOrder.service.js (createOrder wrapper), services/botOrchestrator.service.js
+    (bookingFlow + helpers, BOOKING_GUIDE case, requires BookOrderService).
+  - Verified (stubbed models, no DB): full 6-turn booking (guide→items→service→address→datetime→
+    confirm→placed) with correct payload + estimate ₦9,400; "the usual" prefill jumps to
+    datetime; confirm=no cancels; chain loads.
+- **NEXT: Phase C continued (each its own step, all confirmed + audited, money stays human):**
+  apply wallet/credit to an existing unpaid order ("use my balance" — needs a settle-existing-
+  order-from-wallet path; verify one exists vs. chargeWalletForOrder which is used at booking
+  time); open/update complaint (RecoveryService.openCase + dedupe vs open ComplaintCase + photo);
+  structured feedback (FeedbackService.submitFeedback, delivered-order + type); phone change w/ OTP.
+  Then Phase D (CRM inbound bridge + quick-action buttons).
 
 ## Session: 2026-08-02 — Client "Fix & Improvement Brief" (8 sections)
 

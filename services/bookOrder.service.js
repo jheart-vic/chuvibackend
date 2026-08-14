@@ -775,7 +775,16 @@ class BookOrderService extends BaseService {
         }
     }
 
-async postBookOrder(req, res) {
+// Reusable booking entry so callers other than the HTTP route (the in-app
+    // assistant) can place an order through the EXACT same pricing / validation /
+    // credit / notification path. postBookOrder only reads req.body + req.user.id
+    // and never touches res, so we drive it with a synthetic request and return
+    // its plain envelope { success, data }. No money logic is duplicated.
+    async createOrder({ userId, payload }) {
+        return this.postBookOrder({ body: payload || {}, user: { id: userId } })
+    }
+
+    async postBookOrder(req, res) {
         try {
             const post = req.body
             const userId = req.user.id
