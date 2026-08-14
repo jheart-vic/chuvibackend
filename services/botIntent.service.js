@@ -76,12 +76,56 @@ class BotIntentService {
                 confidence: { type: 'number', description: '0..1 confidence' },
                 slots: {
                     type: 'object',
-                    description: 'Optional extracted values',
+                    description:
+                        'Optional values extracted from the message. Only fill a field when the customer actually stated it — never guess or invent. Leave unknown fields out.',
                     properties: {
-                        orderNumber: { type: 'string' },
-                        code: { type: 'string' },
+                        orderNumber: {
+                            type: 'string',
+                            description: 'An order reference the customer named (e.g. OSC1234).',
+                        },
+                        code: { type: 'string', description: 'A referral/promo code.' },
                         field: { type: 'string', description: 'phone | pickupAddress' },
                         value: { type: 'string' },
+                        // ── booking / natural-language slots (Phase A) ──────────
+                        items: {
+                            type: 'array',
+                            description:
+                                'Laundry items the customer listed, with quantities, e.g. "6 shirts, 3 trousers, 1 hoodie".',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    type: { type: 'string', description: 'Item name, singular (shirt, trouser, dress…).' },
+                                    quantity: { type: 'number', description: 'How many of this item.' },
+                                },
+                            },
+                        },
+                        itemName: {
+                            type: 'string',
+                            description: 'A single item the customer is asking a price/question about (e.g. "trouser").',
+                        },
+                        pickupDate: {
+                            type: 'string',
+                            description:
+                                'Pickup day exactly as said — a natural phrase ("tomorrow", "tomorrow morning", "Saturday") is fine; do not convert to a calendar date.',
+                        },
+                        pickupTime: {
+                            type: 'string',
+                            description: 'Preferred time as said ("morning", "around 10", "4pm").',
+                        },
+                        addressRef: {
+                            type: 'string',
+                            description:
+                                'A referenced place rather than a literal address: one of "same", "home", "office", or "other" — use "same" for "same place as last time".',
+                            enum: ['same', 'home', 'office', 'other'],
+                        },
+                        address: {
+                            type: 'string',
+                            description: 'A literal address the customer typed out.',
+                        },
+                        amount: {
+                            type: 'number',
+                            description: 'A money amount the customer mentioned, in naira (digits only).',
+                        },
                         text: { type: 'string' },
                     },
                 },
@@ -102,8 +146,13 @@ class BotIntentService {
             'If the customer asks who or what you are, your name, or what you can do, use "about". ' +
             'If the customer asks for MORE THAN ONE thing (e.g. "my balance and order status"), set `intent` to the primary one AND list every applicable intent in `intents` (most important first). ' +
             'If unsure, use "unknown". ' +
+            // Slot extraction (Phase A): pull out every concrete detail the
+            // customer states so the assistant does not have to ask again.
+            'Also extract concrete details into `slots` — items and quantities, a pickup day/time as phrased, a literal address, a place reference (addressRef: same/home/office), a single item being asked about (itemName), a money amount, an order number, or a code. ' +
+            'Only fill a slot the customer actually stated; never guess, resolve, or invent. ' +
+            'Do NOT try to resolve natural references like "the usual", "same as last time", "same place", "go ahead", or pronouns ("are they ready?") — for a place reference set addressRef:"same" and otherwise just classify the intent; the assistant resolves those against its own memory. ' +
             (pendingIntent
-                ? `The assistant is currently in the middle of a "${pendingIntent}" flow, so a short reply likely continues it.`
+                ? `The assistant is currently in the middle of a "${pendingIntent}" flow, so a short reply likely continues it (and usually fills the detail it just asked for).`
                 : '')
         )
     }

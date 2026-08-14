@@ -30,10 +30,18 @@ const conversationSchema = new mongoose.Schema(
         mode: { type: String, enum: ['bot', 'human'], default: 'human' },
         // Phase 6 bot: in-flight multi-turn workflow state (intent + collected
         // slots), so a follow-up message continues where the last one left off.
+        //
+        // `memory` (Phase A) is longer-lived conversation memory that survives
+        // across turns even when no workflow is in flight: the last order the
+        // customer referenced, saved defaults, and what an anaphor like
+        // "it/they/go ahead/the usual/same as last time" currently points to.
+        // The assistant uses it to stop re-asking for details already known and
+        // to resolve natural references (doc §1, §10). Never holds money/authz.
         botState: {
             intent: { type: String, default: null },
             step: { type: String, default: null },
             slots: { type: mongoose.Schema.Types.Mixed, default: {} },
+            memory: { type: mongoose.Schema.Types.Mixed, default: {} },
         },
         open: { type: Boolean, default: true },
         // when a human staff member first engaged a handed-off support chat, used

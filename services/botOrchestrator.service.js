@@ -1,5 +1,6 @@
 const ConversationService = require('./conversation.service')
 const BotIntentService = require('./botIntent.service')
+const BotContextService = require('./botContext.service')
 const ReferralService = require('./referral.service')
 const OfferService = require('./offer.service')
 const WalletModel = require('../models/wallet.model')
@@ -89,6 +90,11 @@ class BotOrchestratorService {
         const escalationIntents = [BOT_INTENT.TALK_TO_HUMAN, BOT_INTENT.FILE_COMPLAINT]
         const mergedSlots = { ...(convo.botState?.slots || {}), ...slots }
 
+        // Resolve a natural place reference ("same place as last time") into a
+        // concrete address from memory / saved defaults, so downstream flows get
+        // a real value instead of the word "same". Memory-only — never invents.
+        await this._resolveAddressRef({ convo, userId, slots: mergedSlots })
+
         // A) A pending "…would you like a person?" offer (from a delayed-order
         //    reply): a yes hands off; anything else drops the offer and the new
         //    message is handled normally.
@@ -115,7 +121,13 @@ class BotOrchestratorService {
                 const body = (r.replies || []).filter(Boolean).join('\n')
                 if (body) sections.push(`${INTENT_ICON[it] ? INTENT_ICON[it] + ' ' : ''}${body}`)
             }
-            convo.botState = { intent: null, step: null, slots: {} }
+            convo.botState = {
+                intent: null,
+                step: null,
+                slots: {},
+                memory: await this._updateMemory(convo, userId, batch[0]),
+            }
+            convo.markModified('botState')
             await convo.save()
             const combined =
                 sections.length > 1
@@ -142,7 +154,14 @@ class BotOrchestratorService {
     // Run one intent's workflow, persist multi-turn state, post replies, hand off.
     async _runSingle({ convo, userId, text, intent, confidence, slots }) {
         const result = await this.runWorkflow({ convo, userId, text, intent, confidence, slots })
-        convo.botState = result.state || { intent: null, step: null, slots: {} }
+        // Preserve long-lived memory across the per-turn botState reset — the
+        // workflow only returns intent/step/slots, never memory.
+        const memory = await this._updateMemory(convo, userId, intent)
+        convo.botState = {
+            ...(result.state || { intent: null, step: null, slots: {} }),
+            memory,
+        }
+        convo.markModified('botState')
         await convo.save()
 
         const posted = []
@@ -196,7 +215,7 @@ class BotOrchestratorService {
             case BOT_INTENT.APPLY_REFERRAL_CODE:
                 return await this.applyReferralCode(userId, text, slots)
             case BOT_INTENT.UPDATE_DETAILS:
-                return await this.updateDetails(userId, text, slots)
+                return await this.updateDetails(userId, text, slots, convo.botState?.step)
             case BOT_INTENT.BOOKING_GUIDE:
                 return { replies: [this.bookingGuide()] }
             case BOT_INTENT.SUBMIT_FEEDBACK:
@@ -267,7 +286,14 @@ class BotOrchestratorService {
 
     // Loose yes-detector for the "connect you to a person?" offer.
     isAffirmative(text) {
-        return /\b(yes|yeah|yep|yup|sure|ok|okay|okk|please|pls|connect|do it|go ahead|alright|yh|ya|talk|speak)\b/i.test(
+        return /\b(yes|yeah|yep|yup|sure|ok|okay|okk|please|pls|connect|do it|go ahead|alright|yh|ya|talk|speak|correct|confirm)\b/i.test(
+            String(text || ''),
+        )
+    }
+
+    // Loose no-detector for the update-details confirmation step.
+    isNegative(text) {
+        return /\b(no|nope|nah|don'?t|do ?not|cancel|stop|wrong|incorrect|not right|change it)\b/i.test(
             String(text || ''),
         )
     }
@@ -338,7 +364,72 @@ class BotOrchestratorService {
         return { replies: [`Done! Code "${code}" applied. 🎉`] }
     }
 
-    async updateDetails(userId, text, slots) {
+    // Multi-turn: (1) figure out the field, (2) capture the value, (3) confirm,
+    // (4) write. `step` is the PENDING step from botState so we know which turn
+    // this is — on `awaiting-value` the WHOLE message is the answer (no keyword
+    // re-parsing), which is what stops the "What's the new pickup address?" loop.
+    async updateDetails(userId, text, slots, step) {
+        const label = (f) => (f === 'phone' ? 'phone number' : 'pickup address')
+
+        // (3) Confirmation turn — we already have field + value, awaiting yes/no.
+        if (step === 'awaiting-confirm' && slots.field && slots.value) {
+            if (this.isAffirmative(text)) {
+                const set =
+                    slots.field === 'phone'
+                        ? { phoneNumber: slots.value }
+                        : { defaultPickupAddress: slots.value }
+                await UserModel.updateOne({ _id: userId }, { $set: set })
+                return { replies: [`Done — your ${label(slots.field)} is now "${slots.value}".`] }
+            }
+            if (this.isNegative(text)) {
+                return {
+                    replies: [`No problem — I've left it unchanged. What's the correct ${label(slots.field)}?`],
+                    state: {
+                        intent: BOT_INTENT.UPDATE_DETAILS,
+                        step: 'awaiting-value',
+                        slots: { field: slots.field },
+                    },
+                }
+            }
+            // Unclear reply → re-ask the confirmation, keep the pending value.
+            return {
+                replies: [`Just to confirm — set your ${label(slots.field)} to "${slots.value}"? (yes/no)`],
+                state: {
+                    intent: BOT_INTENT.UPDATE_DETAILS,
+                    step: 'awaiting-confirm',
+                    slots: { field: slots.field, value: slots.value },
+                },
+            }
+        }
+
+        // (2) Value turn — the field is known, so the whole message IS the value.
+        if (step === 'awaiting-value' && slots.field) {
+            const value = this.cleanDetailValue(slots.field, text)
+            if (!value) {
+                return {
+                    replies: [
+                        slots.field === 'phone'
+                            ? "That doesn't look like a phone number — please send just the digits, e.g. 08031234567."
+                            : "I didn't catch an address there — please type your pickup address, e.g. 12 Marina, Lagos.",
+                    ],
+                    state: {
+                        intent: BOT_INTENT.UPDATE_DETAILS,
+                        step: 'awaiting-value',
+                        slots: { field: slots.field },
+                    },
+                }
+            }
+            return {
+                replies: [`Set your ${label(slots.field)} to "${value}"? (yes/no)`],
+                state: {
+                    intent: BOT_INTENT.UPDATE_DETAILS,
+                    step: 'awaiting-confirm',
+                    slots: { field: slots.field, value },
+                },
+            }
+        }
+
+        // (1) First turn — parse what we can from the message.
         const parsed = this.parseDetail(text, slots)
         if (!parsed.field) {
             return {
@@ -350,7 +441,7 @@ class BotOrchestratorService {
         }
         if (!parsed.value) {
             return {
-                replies: [`What's the new ${parsed.field === 'phone' ? 'phone number' : 'pickup address'}?`],
+                replies: [`What's the new ${label(parsed.field)}?`],
                 state: {
                     intent: BOT_INTENT.UPDATE_DETAILS,
                     step: 'awaiting-value',
@@ -358,15 +449,14 @@ class BotOrchestratorService {
                 },
             }
         }
-        const set =
-            parsed.field === 'phone'
-                ? { phoneNumber: parsed.value }
-                : { defaultPickupAddress: parsed.value }
-        await UserModel.updateOne({ _id: userId }, { $set: set })
+        // Got both in one message → confirm before writing.
         return {
-            replies: [
-                `Updated your ${parsed.field === 'phone' ? 'phone number' : 'pickup address'} to "${parsed.value}".`,
-            ],
+            replies: [`Set your ${label(parsed.field)} to "${parsed.value}"? (yes/no)`],
+            state: {
+                intent: BOT_INTENT.UPDATE_DETAILS,
+                step: 'awaiting-confirm',
+                slots: { field: parsed.field, value: parsed.value },
+            },
         }
     }
 
@@ -480,6 +570,90 @@ class BotOrchestratorService {
             }
         }
         return { field, value }
+    }
+
+    // Clean a value captured on the `awaiting-value` turn, where the whole
+    // message is the answer. Phone → just the digit run; address → strip common
+    // lead-in filler ("the new address is at …") so we store "Aroma", not
+    // "is at aroma". Returns null when nothing usable is found.
+    cleanDetailValue(field, text) {
+        const raw = String(text || '').trim()
+        if (!raw) return null
+        if (field === 'phone') {
+            const m = raw.match(/(\+?\d[\d\s-]{6,}\d)/)
+            return m ? m[1].replace(/\s+/g, '') : null
+        }
+        // address: peel a leading preamble only when it's clearly one — either
+        // "…address/location is/at/to VALUE" or a conversational lead-in like
+        // "it's …" / "make it …". A bare address that merely starts with a filler
+        // word ("New Haven Street") has no connector, so it's left untouched.
+        let v = raw
+            // (a) "the new pickup address is at VALUE" → VALUE
+            .replace(
+                /^.*\b(?:address|location|pickup|pick\s*up)\b[\s,:.-]*(?:\b(?:is|are|at|to)\b[\s,:.-]*)*/i,
+                '',
+            )
+        // (b) conversational lead-in with no address keyword ("it's aroma",
+        //     "make it 5 Broad", "set it to …")
+        v = v.replace(
+            /^\s*(?:it'?s|it\s+is|(?:change|update|set|make)\s+it(?:\s+to)?|please|pls)\b[\s,:.-]*/i,
+            '',
+        )
+        v = (v.trim() || raw).trim()
+        // must contain a real character, not just punctuation ("???" → re-prompt)
+        return /[a-z0-9]/i.test(v) ? v : null
+    }
+
+    // ─── conversation memory (Phase A) ────────────────────────────────────────
+
+    // Refresh the conversation's long-lived memory after a turn: remember the
+    // intent just handled and, on order-touching turns, a snapshot of the
+    // customer's most recent order so natural references ("the usual", "are they
+    // ready?") have a concrete target later. Best-effort — never throws into the
+    // reply path. Returns the merged memory object for the caller to store.
+    async _updateMemory(convo, userId, intent) {
+        const patch = { lastIntent: intent || null }
+        const orderTouching = [
+            BOT_INTENT.ORDER_STATUS,
+            BOT_INTENT.SUBMIT_FEEDBACK,
+            BOT_INTENT.FILE_COMPLAINT,
+            BOT_INTENT.BOOKING_GUIDE,
+        ].includes(intent)
+        if (orderTouching) {
+            try {
+                const order = await BotContextService.getLastOrder(userId)
+                if (order) patch.lastOrder = BotContextService.buildOrderSnapshot(order)
+            } catch (_) {
+                /* memory refresh is best-effort */
+            }
+        }
+        return BotContextService.mergeMemory(convo, patch)
+    }
+
+    // Turn a place reference (addressRef: "same"/"home") into a concrete address
+    // from memory or the saved profile, writing it into slots. Never invents —
+    // if nothing is stored, it leaves the slot empty and the flow will ask.
+    async _resolveAddressRef({ convo, userId, slots }) {
+        if (!slots || slots.address || slots.value) return
+        const ref = slots.addressRef
+        if (!ref || ref === 'other' || ref === 'office') return // no stored office field yet
+        let resolved = null
+        if (ref === 'same') {
+            const mem = BotContextService.loadMemory(convo)
+            resolved = mem.lastOrder?.pickupAddress || null
+        }
+        if (!resolved) {
+            try {
+                const defaults = await BotContextService.savedDefaults(userId)
+                resolved = defaults.pickupAddress || null
+            } catch (_) {
+                /* best-effort */
+            }
+        }
+        if (resolved) {
+            slots.address = resolved
+            if (!slots.value) slots.value = resolved
+        }
     }
 }
 
