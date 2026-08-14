@@ -1085,7 +1085,7 @@
  *         conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
  *         mode: { type: string, enum: [bot, human], example: bot }
  *         handledBy: { type: string, enum: [bot, handoff, human], example: bot }
- *         intent: { type: string, nullable: true, description: "The resolved intent — usually one of: greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, unknown. For a COMPOUND read-only request it is a '+'-joined string, e.g. 'wallet-balance+order-status'. Don't hard-switch on exact values.", example: order-status }
+ *         intent: { type: string, nullable: true, description: "The resolved intent — usually one of: greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, pricing, turnaround, service-info, policy, payment-status, reward-status, unknown. For a COMPOUND read-only request it is a '+'-joined string, e.g. 'wallet-balance+order-status'. Don't hard-switch on exact values.", example: order-status }
  *         replies:
  *           type: array
  *           description: "Bot messages posted in reply (empty once handed to a human). A compound request returns ONE combined message; single requests one. Render the whole array; dedupe against socket pushes by _id."

@@ -679,6 +679,13 @@ const BOT_INTENT = {
     SUBMIT_FEEDBACK: 'submit-feedback',
     FILE_COMPLAINT: 'file-complaint',
     TALK_TO_HUMAN: 'talk-to-human',
+    // ── V1 Phase B: read-only answers from approved data (never invents) ──────
+    PRICING: 'pricing', // "how much is a trouser", "your prices"
+    TURNAROUND: 'turnaround', // "how many days does it take"
+    SERVICE_INFO: 'service-info', // services, tiers, delivery speeds offered
+    POLICY: 'policy', // payment/cancellation/pickup policy (curated facts only)
+    PAYMENT_STATUS: 'payment-status', // "I paid already" — read the payment record
+    REWARD_STATUS: 'reward-status', // "my friend used my code, where's my reward?"
     UNKNOWN: 'unknown',
 }
 

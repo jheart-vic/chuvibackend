@@ -143,6 +143,13 @@ class BotIntentService {
             'If the customer says their ORDER, DELIVERY, or laundered ITEMS are damaged, wrong, missing, or were not received, use "file-complaint" (a clear service problem to open a case for). ' +
             'If the customer mentions losing a personal item (like their own bag), or raises a vague or out-of-scope problem you have no tool for, use "talk-to-human" — a neutral handoff; do NOT assume Chuvi is at fault or apologise. ' +
             'A plain question about where an order is or its progress/status — with nothing reported wrong — is "order-status", NOT a complaint. ' +
+            // Phase B read-only answer intents.
+            'If the customer asks how much an item/service costs or about your prices, use "pricing". ' +
+            'If they ask how long it takes / turnaround / when it will be ready in general, use "turnaround". ' +
+            'If they ask what services, tiers, or delivery speeds you offer / how it works, use "service-info". ' +
+            'If they ask about payment methods, cancellation, refunds-in-general, or pickup/delivery policy, use "policy". ' +
+            'If they say they already paid or question whether a payment went through, use "payment-status". ' +
+            'If they ask where their referral reward/money is for a friend who used their code, use "reward-status". ' +
             'If the customer asks who or what you are, your name, or what you can do, use "about". ' +
             'If the customer asks for MORE THAN ONE thing (e.g. "my balance and order status"), set `intent` to the primary one AND list every applicable intent in `intents` (most important first). ' +
             'If unsure, use "unknown". ' +
@@ -338,10 +345,32 @@ class BotIntentService {
             intent = BOT_INTENT.FILE_COMPLAINT
         else if (has('feedback', 'suggestion', 'review', 'rate'))
             intent = BOT_INTENT.SUBMIT_FEEDBACK
+        else if (has('i paid', 'already paid', 'paid already', 'made payment', 'sent the money',
+            'payment go through', 'payment went through', 'confirm my payment', 'did you get my payment', 'my transfer'))
+            intent = BOT_INTENT.PAYMENT_STATUS
+        else if (has('used my code', 'friend used my code', 'where is my reward', 'wheres my reward',
+            "where's my reward", 'my referral reward', 'referral bonus', 'my reward'))
+            intent = BOT_INTENT.REWARD_STATUS
+        // cancellation is a policy question — check before order-status so
+        // "can i cancel my order" isn't swallowed by the "my order" keyword.
+        else if (has('cancel', 'cancellation'))
+            intent = BOT_INTENT.POLICY
         else if (has('where', 'status', 'my order', 'my clothes', 'my laundry', 'track', 'ready', 'arrive', 'delivered'))
             intent = BOT_INTENT.ORDER_STATUS
         else if (has('wallet', 'balance', 'credit', 'how much do i have'))
             intent = BOT_INTENT.WALLET_BALANCE
+        // pricing/turnaround/service-info/policy are checked BEFORE offers so a
+        // VERB "offer" ("what do you offer") doesn't get caught by the offers
+        // (noun) branch; genuine "my offers / any promo" still fall through to it.
+        else if (has('how much', 'price', 'pricing', 'cost', 'how much is', 'what is the price', 'charge for', 'rate for'))
+            intent = BOT_INTENT.PRICING
+        else if (has('how long', 'how many days', 'turnaround', 'turn around', 'how soon', 'how fast', 'ready by'))
+            intent = BOT_INTENT.TURNAROUND
+        else if (has('what services', 'services do you', 'what do you offer', 'how does it work',
+            'how does this work', 'service tier', 'delivery speed', 'what tiers'))
+            intent = BOT_INTENT.SERVICE_INFO
+        else if (has('policy', 'cancellation', 'can i cancel', 'how do i pay', 'payment method', 'how can i pay', 'ways to pay'))
+            intent = BOT_INTENT.POLICY
         else if (has('offer', 'discount', 'promo'))
             intent = BOT_INTENT.VIEW_OFFERS
         else if (slots.code || has('apply', 'redeem', 'i have a code', 'use this code', 'enter code'))

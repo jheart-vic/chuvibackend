@@ -3,6 +3,76 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-14 — Bot bugfix + "V1 AI Assistant" upgrade (Phase A)
+
+Branch: smart-book-feature (bot work is off-topic to that branch; uncommitted).
+
+### Bot bugfix — update-pickup-address loop (DONE, verified)
+- Symptom (client screenshot): "change my address" → "Aroma" looped on *"What's the
+  new pickup address?"* forever; only a sentence containing the word "address" broke out,
+  and it saved garbage ("is at aroma").
+- Root cause: `parseDetail` re-ran FIRST-turn keyword extraction on the value turn; its
+  guard `after !== t` rejects a bare value like "Aroma".
+- Fix (all in botOrchestrator.service.js): made `updateDetails` **step-aware** — on
+  `awaiting-value` the whole message IS the value; added `cleanDetailValue` (connector-
+  based address preamble strip so "the new pickup address is at aroma" → "Aroma", keeps
+  "New Haven Street" intact, rejects punctuation-only); added a **confirm step**
+  (awaiting-confirm, yes/no) before writing; added `isNegative` + extended `isAffirmative`.
+  Verified 11 address phrasings + phone + junk + yes/no/unclear branches.
+
+### V1 AI Assistant upgrade — plan approved, Phase A DONE (verified)
+- Client doc asks the bot to become an ACTOR: quote prices, place bookings, open
+  complaints, capture feedback, apply wallet/credit, resolve natural language + context,
+  bridge CRM replies. **Client-approved decisions:** (1) bot NOW quotes prices, places
+  orders, opens complaints — each behind a **confirm step + audit**; money-approval
+  (refunds/compensation/reward-release/balance edits) STAYS human-only; (2) **phased A→D**.
+  Plan file: `C:\Users\LENOVO\.claude\plans\take-a-look-at-majestic-cherny.md`.
+- **Phase A (foundation) — understanding core + conversation memory. DONE:**
+  - `conversation.model.js`: added `botState.memory` (Mixed) — long-lived memory that
+    survives the per-turn botState reset.
+  - NEW `services/botContext.service.js`: `getLastOrder`/`buildOrderSnapshot` (money-free
+    order snapshot), `detectReferent` (the usual / same as last / same place / go ahead /
+    pronoun), `savedDefaults` (name/phone/pickup addr), `loadMemory`/`mergeMemory`.
+  - `botIntent.service.js`: expanded classify `slots` schema (items[], pickupDate,
+    pickupTime, addressRef same/home/office, literal address, itemName, amount) + prompt
+    tells LLM to extract stated details only, never resolve references itself.
+  - `botOrchestrator.service.js`: **preserves `memory` across the botState reset** in
+    `_runSingle` + batch path (was being wiped every turn) via markModified; `_updateMemory`
+    (lastIntent + refresh lastOrder snapshot on order-touching turns); `_resolveAddressRef`
+    turns addressRef:"same" into the real stored address from memory/profile (memory-only,
+    never invents, leaves empty → flow asks; value-guard preserves an existing literal).
+  - `CLAUDE.md`: rewrote the bot guardrail paragraph to the new act-with-confirm direction
+    + Phase A-done / B–D-pending note (so future sessions don't revert the behavior).
+  - Verified: full bot chain loads; referent detection, snapshot, memory merge, address-ref
+    resolution (incl. office-left-to-ask + value-guard) all correct. No new action workflows
+    yet — those are Phase B (answers), C (actions), D (CRM bridge + quick-action buttons).
+- **Phase B (read-only answers) — DONE (verified):**
+  - New BOT_INTENTs: pricing, turnaround, service-info, policy, payment-status, reward-status
+    (constants + classifier prompt + rulesFallback keywords; rules ordering: reward/payment
+    before order-status, cancel→policy before order-status, pricing/turnaround/service-info/
+    policy before offers so the VERB "offer" doesn't hit the offers noun branch). 10/10 rules
+    routing verified.
+  - orchestrator workflows (all read-only, never invent): `pricingReply` (per-piece =
+    roundToNearestHundred(OrderItem.price × serviceType.pricePerPiece) — EXACT booking math,
+    item + general list), `turnaroundReply` (AdminSetting.standardDeliveryPeriod + active
+    order ETA), `serviceInfoReply`, `policyReply` (curated approved facts only — payment/
+    cancellation/refund/pickup-delivery; returns null→handoff for anything else),
+    `paymentStatusReply` (reads BookOrder.paymentStatus; pending→offered-handoff, never
+    accuses), `rewardStatusReply` (ReferralService.getReferralPage; explains granted/pending/
+    deferred, never releases).
+  - Enriched `orderStatusReply`: STAGE_EXPLAIN plain-language stage line + `_readinessAndDispatchLine`
+    answering "are they ready?"/"has the rider left?" from stage + dispatchDetails (pickup/
+    delivery status) — never states a state the record doesn't show.
+  - Batching: pricing/turnaround/service-info added to READ_ONLY_INFO + INTENT_ICON (💵/⏱️/ℹ️).
+    allowedIntents extended. capabilities() sentence + swagger BotReply intent enum updated.
+  - Verified: pricing (item ₦1,400 trouser + general list), turnaround, service-info, policy
+    (pay/cancel/unknown→null), reward-status, payment-pending, order-status ready + rider
+    lines, swagger parses, full chain loads.
+- **NEXT: Phase C (actions, confirmed + audited)** — booking-create (refactor postBookOrder
+  core into a reusable createOrder service method → slot-fill → quote → confirm → place),
+  apply wallet/credit to an order, open/update complaint (RecoveryService.openCase + dedupe +
+  photo), structured feedback (FeedbackService.submitFeedback), phone change w/ OTP.
+
 ## Session: 2026-08-02 — Client "Fix & Improvement Brief" (8 sections)
 
 Client delivered a final correction brief. Building in phases; **quick wins first**
