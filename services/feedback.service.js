@@ -109,7 +109,7 @@ class FeedbackService extends BaseService {
     async getFeedbackForOrder(req) {
         try {
             const feedback = await FeedbackModel.findOne({
-                orderId: req.params.orderId,
+                orderId: req.params.bookOrderId,
                 userId: req.user.id,
             }).lean()
             return BaseService.sendSuccessResponse({ message: feedback })

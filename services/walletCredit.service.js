@@ -8,6 +8,7 @@ const {
     CREDIT_SOURCE,
     WALLET_TX_TYPE,
     NOTIFICATION_TYPE,
+    REFERRAL_LEVEL,
 } = require('../util/constants')
 
 const DAY = 24 * 60 * 60 * 1000
@@ -24,6 +25,81 @@ class WalletCreditService {
         if (!settings) {
             settings = await RewardSettingModel.create({})
         }
+        return settings
+    }
+
+    // Admin: partial-update the singleton reward settings (admin config for the
+    // complaint SLA / reopen window, recovery approval threshold, credit expiry
+    // and referral economy). Only known fields are accepted; unknown keys are
+    // ignored. Numbers must be >= 0; a few limit fields may be null ("no limit").
+    // Returns the updated doc. Throws a 400-tagged Error on invalid input.
+    async updateSettings(patch = {}) {
+        const settings = await this.getSettings()
+        const bad = (msg) => {
+            const e = new Error(msg)
+            e.statusCode = 400
+            return e
+        }
+        const isBadNum = (v, { nullable = false } = {}) => {
+            if (nullable && v === null) return false
+            return typeof v !== 'number' || Number.isNaN(v) || v < 0
+        }
+
+        // scalar numeric fields → nullable? (null means "no limit")
+        const NUMERIC = {
+            recoveryApprovalThreshold: false,
+            complaintReviewHours: false,
+            complaintResolutionHours: false,
+            complaintConfirmWindowHours: false,
+            complaintReopenDays: false,
+            referralRewardPercent: false,
+            referralRewardMax: true,
+            referralMonthlyCap: true,
+            referralWelcomeAmount: false,
+        }
+        for (const [field, nullable] of Object.entries(NUMERIC)) {
+            if (patch[field] === undefined) continue
+            if (isBadNum(patch[field], { nullable })) {
+                throw bad(`${field} must be a number >= 0${nullable ? ' or null' : ''}`)
+            }
+            settings[field] = patch[field]
+        }
+
+        // nested credit expiry days (by credit type)
+        if (patch.creditExpiryDays !== undefined) {
+            if (typeof patch.creditExpiryDays !== 'object' || patch.creditExpiryDays === null) {
+                throw bad('creditExpiryDays must be an object')
+            }
+            for (const key of ['referral', 'recovery', 'promotional', 'laundry']) {
+                if (patch.creditExpiryDays[key] === undefined) continue
+                if (isBadNum(patch.creditExpiryDays[key])) {
+                    throw bad(`creditExpiryDays.${key} must be a number >= 0`)
+                }
+                settings.creditExpiryDays[key] = patch.creditExpiryDays[key]
+            }
+            settings.markModified('creditExpiryDays')
+        }
+
+        // advocacy ladder — optional full replacement (validated)
+        if (patch.referralLevels !== undefined) {
+            if (!Array.isArray(patch.referralLevels) || !patch.referralLevels.length) {
+                throw bad('referralLevels must be a non-empty array')
+            }
+            const validKeys = Object.values(REFERRAL_LEVEL)
+            for (const lvl of patch.referralLevels) {
+                if (!lvl || !validKeys.includes(lvl.key)) {
+                    throw bad(`referralLevels: each entry needs a valid key (${validKeys.join(', ')})`)
+                }
+                for (const nkey of ['lifetimeTarget', 'monthlyTarget', 'rewardPercent', 'monthlyFreeLaundryAmount']) {
+                    if (lvl[nkey] !== undefined && isBadNum(lvl[nkey])) {
+                        throw bad(`referralLevels.${nkey} must be a number >= 0`)
+                    }
+                }
+            }
+            settings.referralLevels = patch.referralLevels
+        }
+
+        await settings.save()
         return settings
     }
 
