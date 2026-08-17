@@ -3,6 +3,177 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-14 — Bot bugfix + "V1 AI Assistant" upgrade (Phase A)
+
+Branch: smart-book-feature (bot work is off-topic to that branch; uncommitted).
+
+### Bot bugfix — update-pickup-address loop (DONE, verified)
+- Symptom (client screenshot): "change my address" → "Aroma" looped on *"What's the
+  new pickup address?"* forever; only a sentence containing the word "address" broke out,
+  and it saved garbage ("is at aroma").
+- Root cause: `parseDetail` re-ran FIRST-turn keyword extraction on the value turn; its
+  guard `after !== t` rejects a bare value like "Aroma".
+- Fix (all in botOrchestrator.service.js): made `updateDetails` **step-aware** — on
+  `awaiting-value` the whole message IS the value; added `cleanDetailValue` (connector-
+  based address preamble strip so "the new pickup address is at aroma" → "Aroma", keeps
+  "New Haven Street" intact, rejects punctuation-only); added a **confirm step**
+  (awaiting-confirm, yes/no) before writing; added `isNegative` + extended `isAffirmative`.
+  Verified 11 address phrasings + phone + junk + yes/no/unclear branches.
+
+### V1 AI Assistant upgrade — plan approved, Phase A DONE (verified)
+- Client doc asks the bot to become an ACTOR: quote prices, place bookings, open
+  complaints, capture feedback, apply wallet/credit, resolve natural language + context,
+  bridge CRM replies. **Client-approved decisions:** (1) bot NOW quotes prices, places
+  orders, opens complaints — each behind a **confirm step + audit**; money-approval
+  (refunds/compensation/reward-release/balance edits) STAYS human-only; (2) **phased A→D**.
+  Plan file: `C:\Users\LENOVO\.claude\plans\take-a-look-at-majestic-cherny.md`.
+- **Phase A (foundation) — understanding core + conversation memory. DONE:**
+  - `conversation.model.js`: added `botState.memory` (Mixed) — long-lived memory that
+    survives the per-turn botState reset.
+  - NEW `services/botContext.service.js`: `getLastOrder`/`buildOrderSnapshot` (money-free
+    order snapshot), `detectReferent` (the usual / same as last / same place / go ahead /
+    pronoun), `savedDefaults` (name/phone/pickup addr), `loadMemory`/`mergeMemory`.
+  - `botIntent.service.js`: expanded classify `slots` schema (items[], pickupDate,
+    pickupTime, addressRef same/home/office, literal address, itemName, amount) + prompt
+    tells LLM to extract stated details only, never resolve references itself.
+  - `botOrchestrator.service.js`: **preserves `memory` across the botState reset** in
+    `_runSingle` + batch path (was being wiped every turn) via markModified; `_updateMemory`
+    (lastIntent + refresh lastOrder snapshot on order-touching turns); `_resolveAddressRef`
+    turns addressRef:"same" into the real stored address from memory/profile (memory-only,
+    never invents, leaves empty → flow asks; value-guard preserves an existing literal).
+  - `CLAUDE.md`: rewrote the bot guardrail paragraph to the new act-with-confirm direction
+    + Phase A-done / B–D-pending note (so future sessions don't revert the behavior).
+  - Verified: full bot chain loads; referent detection, snapshot, memory merge, address-ref
+    resolution (incl. office-left-to-ask + value-guard) all correct. No new action workflows
+    yet — those are Phase B (answers), C (actions), D (CRM bridge + quick-action buttons).
+- **Phase B (read-only answers) — DONE (verified):**
+  - New BOT_INTENTs: pricing, turnaround, service-info, policy, payment-status, reward-status
+    (constants + classifier prompt + rulesFallback keywords; rules ordering: reward/payment
+    before order-status, cancel→policy before order-status, pricing/turnaround/service-info/
+    policy before offers so the VERB "offer" doesn't hit the offers noun branch). 10/10 rules
+    routing verified.
+  - orchestrator workflows (all read-only, never invent): `pricingReply` (per-piece =
+    roundToNearestHundred(OrderItem.price × serviceType.pricePerPiece) — EXACT booking math,
+    item + general list), `turnaroundReply` (AdminSetting.standardDeliveryPeriod + active
+    order ETA), `serviceInfoReply`, `policyReply` (curated approved facts only — payment/
+    cancellation/refund/pickup-delivery; returns null→handoff for anything else),
+    `paymentStatusReply` (reads BookOrder.paymentStatus; pending→offered-handoff, never
+    accuses), `rewardStatusReply` (ReferralService.getReferralPage; explains granted/pending/
+    deferred, never releases).
+  - Enriched `orderStatusReply`: STAGE_EXPLAIN plain-language stage line + `_readinessAndDispatchLine`
+    answering "are they ready?"/"has the rider left?" from stage + dispatchDetails (pickup/
+    delivery status) — never states a state the record doesn't show.
+  - Batching: pricing/turnaround/service-info added to READ_ONLY_INFO + INTENT_ICON (💵/⏱️/ℹ️).
+    allowedIntents extended. capabilities() sentence + swagger BotReply intent enum updated.
+  - Verified: pricing (item ₦1,400 trouser + general list), turnaround, service-info, policy
+    (pay/cancel/unknown→null), reward-status, payment-pending, order-status ready + rider
+    lines, swagger parses, full chain loads.
+- **Phase C (actions) — booking-create DONE (verified); rest queued.**
+  - KEY DISCOVERY: `postBookOrder(req,res)` never touches `res` and returns the plain
+    `{success,data}` envelope (BaseService static methods just return objects). So NO risky
+    refactor of the 600-line money method was needed — added a thin
+    `BookOrderService.createOrder({userId,payload})` that calls
+    `postBookOrder({ body:payload, user:{id:userId} })`. Bot places orders through the EXACT
+    same pricing/validation/credit/notification/audit path.
+  - **Guided booking flow (`bookingFlow` in botOrchestrator):** BOOKING_GUIDE intent now runs
+    a multi-turn slot-fill instead of static text. Steps: collect-items → collect-service →
+    collect-address → collect-datetime → (collect-phone if profile has none) → confirm. On
+    "yes" builds payload (items priced from OrderItem catalog; classic/standard/pay-per-item/
+    pickup+delivery defaults; name/phone from profile) and calls createOrder; shows the placed
+    order's oscNumber + amount; clears state. "no" cancels. Estimate shown at confirm =
+    roundToNearestHundred(catalogPrice × pricePerPiece)×qty + pickup + delivery (labelled an
+    estimate; exact total from the placed order). Reuses `cleanDetailValue` for the address
+    answer. Phase A memory: "the usual"/"same as last time" prefills items/service/address from
+    memory.lastOrder snapshot.
+  - Helpers: `_placeBooking`, `_resolveBookingItems` (catalog match + unmatched), `_parseItemsFromText`
+    (offline "6 shirts" fallback), `_matchServiceType`, `_bookingEstimate`, `_resolvePickupDate`
+    (today/tomorrow/weekday→Date, else null). Guardrail: NEVER places without an explicit confirm.
+  - Files: services/bookOrder.service.js (createOrder wrapper), services/botOrchestrator.service.js
+    (bookingFlow + helpers, BOOKING_GUIDE case, requires BookOrderService).
+  - Verified (stubbed models, no DB): full 6-turn booking (guide→items→service→address→datetime→
+    confirm→placed) with correct payload + estimate ₦9,400; "the usual" prefill jumps to
+    datetime; confirm=no cancels; chain loads.
+- **Phase C — apply-payment DONE (verified).**
+  - Found the existing settle-an-unpaid-order path: `WalletService.payWithWallet(req)` (instance
+    method, validates, rejects already-paid, charges credit-first then cash, sets paymentStatus
+    success, notifies) — also never uses `res`, returns the plain envelope. Bot calls it via
+    `new WalletService().payWithWallet({ body:{bookOrderId,useCredit:true}, user:{id:userId} })`.
+  - New BOT_INTENT.APPLY_PAYMENT (constants + classifier prompt + rules keywords placed BEFORE
+    wallet-balance so "use my wallet/balance" is a pay action, not a balance lookup). `applyPaymentFlow`
+    (botOrchestrator): finds latest unpaid non-cancelled order → shows amount + wallet cash/credit →
+    confirm-pay (yes/no) → on yes calls payWithWallet(useCredit:true) + writes a bot-initiated
+    createAuditLog (WALLET, non-fatal) → success msg (notes credit used). Insufficient funds →
+    offered-handoff; no unpaid order → graceful. Guardrail: only spends the customer's OWN wallet on
+    their OWN order, behind a confirm; never edits balances or adds money.
+  - Imports added to orchestrator: WalletService, createAuditLog, AUDIT_LOG_CATEGORIES. allowedIntents
+    + switch case wired.
+  - Verified (stubbed): routing 5/5 (apply-payment vs wallet-balance), enough→confirm→pay (credit
+    note), insufficient→handoff, no-unpaid-order graceful, chain loads. (Audit cast error in test was
+    a fake-id artifact — try/catch made it non-fatal, reply still correct.)
+- **Phase C — COMPLETE (all 5 actions, verified). complaint + feedback + phone-OTP:**
+  - **complaint-open** (`complaintFlow`): FILE_COMPLAINT no longer just hands off — it identifies the
+    latest order, DEDUPES vs an open ComplaintCase (status $nin closed/customer-confirmed →
+    offered-handoff, no duplicate), auto-matches a ComplaintType from the description (`_matchComplaintType`,
+    name words ≥5 chars) or lists the active catalog to pick (`_pickComplaintType`, number or name),
+    optional photo (threaded `attachments` through handleCustomerMessage→_runSingle→runWorkflow→flow),
+    confirm → `RecoveryService.openCase({userId,orderId,complaintTypeIds,description,photos})` + bot
+    audit (RECOVERY). Never resolves/compensates. Verified: auto-match, pick, dedupe, no-order handoff.
+  - **structured feedback** (`feedbackFlow`): finds latest DELIVERED order → asks 1–5 + comment
+    (`_parseRating`: digit/stars/sentiment) → ≥4 satisfied, 3 neutral via
+    `new FeedbackService().submitFeedback({body,user})`; ≤2 → offers to open a complaint (routes into
+    complaintFlow with the comment as description). Verified positive/neutral/poor + parse.
+  - **phone change w/ OTP** (`_startPhoneOtp` + `verify-phone-otp` step in updateDetails): on confirm of
+    a PHONE change, instead of writing, generateOTP + `sendSmsOtp(newPhone,otp)` (util/sendOtp, Termii);
+    pending number stored under `pendingPhone` (distinct key so the classifier can't clobber it), otp +
+    5-min expiry on botState; customer enters code → match writes phoneNumber + audit (USER); wrong→retry,
+    expired→restart, SMS-send failure→handoff (never changes unverified). Address change stays no-OTP.
+    Verified: send/wrong/right/expired.
+  - Imports added: RecoveryService, FeedbackService, ComplaintType/ComplaintCase models, generateOTP,
+    sendSmsOtp, COMPLAINT_STATUS, FEEDBACK_TYPE. capabilities() + swagger BotReply enum updated.
+  - GUARDRAILS intact across all C actions: every write behind an explicit confirm (feedback rating is
+    its own confirmation); OTP gates phone; bot NEVER approves refunds/compensation, edits balances, or
+    resolves complaint cases — those stay human.
+- **Booking-routing fix (found during Phase C verify):** the classifier prompt never told the LLM when
+  to use `booking-guide`, so "book my laundry" fell to unknown/order-status. Added a booking line to the
+  LLM systemPrompt AND an offline rules branch (book my / carry my / come carry / the usual / place an
+  order …) placed BEFORE order-status so "my laundry"/"my clothes" don't swallow booking requests.
+  Verified 10/10 offline (booking phrases → booking-guide; where/track/ready → order-status).
+- **Phase D — DONE (verified). Quick-action buttons + CRM inbound bridge (IN-APP bot).**
+  - **Quick actions:** `MAIN_QUICK_ACTIONS` (Book/Track/Wallet/Offers/Complaint/Feedback/Staff) +
+    `YES_NO_ACTIONS`; `_quickActionsForTurn(result)` → confirm/offer step = Yes/No, mid-collect step =
+    Talk To Staff, completed answer = main menu, handoff = none. Each chip is `{label,message}` — tapping
+    sends `message` as the next customer message (reuses the whole pipeline, no new action protocol).
+    Surfaced on every bot turn via `botApi._replyPayload` (sendMessage + replyToConversation bot branch);
+    swagger BotReply gained `quickActions[]`.
+  - **CRM frame bias (in-app only):** `handleCustomerMessage` takes optional `crmContext`; a NEW block (B2)
+    frames an AMBIGUOUS reply (unknown / conf<0.5 / bare affirmative, and NOT mid-flow) via `_crmFrameToIntent`:
+    reactivation+yes→booking, reactivation+reason→talk-to-human, reorder→booking, feedback/post-delivery→
+    feedback, lead→booking. Never overrides a clear specific intent. Exposed via the normal customer
+    `POST /bot/message` (optional `crmContext` body field) so the app can frame the first reply when it
+    DEEP-LINKS the in-app assistant from a CRM nudge ("Ready for another pickup?"→opens framed as reorder).
+  - Verified: quickActions per turn-type, `_crmFrameToIntent` mapping (7 cases), chain + swagger load.
+  - **TWO-BOT BOUNDARY (client-confirmed):** in-app bot lives HERE; WhatsApp bot is a SEPARATE repo that
+    consumes this backend via the EXISTING REST APIs (reads + writes what it needs — order status, place
+    order, open case). It has its OWN conversation over there. So NO special bridge endpoint is needed here.
+    An earlier `POST /bot/internal/crm-reply` (x-bot-secret) I had added was REMOVED — no consumer; the
+    WhatsApp bot uses existing REST. No stateless "brain" endpoint built (would need the orchestrator
+    decoupled from the in-app Conversation) — client explicitly said not needed.
+- **ALL PHASES A–D COMPLETE.** Bot-side work is UNCOMMITTED on branch smart-book-feature.
+- **Swagger:** verified complete — 41 schemas parse; BotReply gained `quickActions[]`; `/bot/message`
+  documents optional `crmContext` + `attachments`, and its description lists the new answer/action
+  capabilities; intent enum includes all new intents; removed crm-reply path gone. Live at /api-docs (Bot tag).
+- **Frontend handoff block** produced (changelog + FE tasks) — quickActions chip renderer + photo-attach for
+  complaints are the only real FE work; everything else flows through the existing /bot/message.
+- **LIVE SMOKE (done):** booted server (PORT=7333, dev) → /api-docs 200, /api/bot/message 401 (routes+guard OK).
+  Read-path DB smoke via a throwaway user through the REAL orchestrator + REAL LLM classifier: greeting,
+  pricing ("shirt ₦700"), turnaround (2 days), service-info, order-status(no orders→booking guide),
+  wallet(₦0), offers — all correct, correct chips, no exceptions; throwaway data cleaned up. LLM correctly
+  routed the new Phase-B intents (prompt additions work in prod, not just rules).
+- **STILL TO DO before/at commit:** WRITE actions (booking, apply-payment, complaint, feedback, phone-OTP)
+  were NOT run against live DB on purpose — they create real orders/cases + fire CRM/referral hooks, staff
+  notifications, capacity changes, and SMS. Verify these in a CONTROLLED STAGING run (throwaway user, watch
+  side effects) before trusting in prod. TERMII_API_KEY must be set for phone-OTP SMS. Then commit.
+
 ## Session: 2026-08-02 — Client "Fix & Improvement Brief" (8 sections)
 
 Client delivered a final correction brief. Building in phases; **quick wins first**

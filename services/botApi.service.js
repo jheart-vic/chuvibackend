@@ -42,28 +42,41 @@ class BotApiService extends BaseService {
                 })
             }
 
+            // Optional CRM frame: when the app deep-links the assistant from a CRM
+            // nudge ("Ready for another pickup?"), the frontend passes the nudge's
+            // context so an ambiguous first reply is routed to the right workflow.
+            const crmContext =
+                typeof req.body.crmContext === 'string' ? req.body.crmContext : null
             const result = await BotOrchestratorService.handleCustomerMessage({
                 userId: req.user.id,
                 text,
                 attachments,
+                crmContext,
             })
             return BaseService.sendSuccessResponse({
-                message: {
-                    conversationId: result.conversation._id,
-                    mode: result.conversation.mode,
-                    handledBy: result.handledBy,
-                    intent: result.intent || null,
-                    replies: (result.replies || []).map((m) => ({
-                        _id: m._id,
-                        senderType: m.senderType,
-                        text: m.text,
-                        createdAt: m.createdAt,
-                    })),
-                },
+                message: this._replyPayload(result),
             })
         } catch (error) {
             console.error(error)
             return BaseService.sendFailedResponse({ error: 'Failed to process your message' })
+        }
+    }
+
+    // Shared shape for a bot turn returned to the customer (replies + quick-action
+    // chips the frontend renders as tappable buttons).
+    _replyPayload(result) {
+        return {
+            conversationId: result.conversation._id,
+            mode: result.conversation.mode,
+            handledBy: result.handledBy,
+            intent: result.intent || null,
+            replies: (result.replies || []).map((m) => ({
+                _id: m._id,
+                senderType: m.senderType,
+                text: m.text,
+                createdAt: m.createdAt,
+            })),
+            quickActions: result.quickActions || [],
         }
     }
 
@@ -170,18 +183,7 @@ class BotApiService extends BaseService {
                     attachments,
                 })
                 return BaseService.sendSuccessResponse({
-                    message: {
-                        conversationId: result.conversation._id,
-                        mode: result.conversation.mode,
-                        handledBy: result.handledBy,
-                        intent: result.intent || null,
-                        replies: (result.replies || []).map((m) => ({
-                            _id: m._id,
-                            senderType: m.senderType,
-                            text: m.text,
-                            createdAt: m.createdAt,
-                        })),
-                    },
+                    message: this._replyPayload(result),
                 })
             }
 
