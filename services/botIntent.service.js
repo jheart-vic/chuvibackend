@@ -143,12 +143,15 @@ class BotIntentService {
             'If the customer says their ORDER, DELIVERY, or laundered ITEMS are damaged, wrong, missing, or were not received, use "file-complaint" (a clear service problem to open a case for). ' +
             'If the customer mentions losing a personal item (like their own bag), or raises a vague or out-of-scope problem you have no tool for, use "talk-to-human" — a neutral handoff; do NOT assume Chuvi is at fault or apologise. ' +
             'A plain question about where an order is or its progress/status — with nothing reported wrong — is "order-status", NOT a complaint. ' +
+            // Booking: the customer wants to place/schedule an order (an action).
+            'If the customer wants to BOOK or schedule a laundry pickup, place a new order, reorder, or asks you to come and carry/collect/pick up their clothes ("come carry my clothes tomorrow", "book a pickup", "I want to send my clothes", "do the usual"), use "booking-guide". ' +
             // Phase B read-only answer intents.
             'If the customer asks how much an item/service costs or about your prices, use "pricing". ' +
             'If they ask how long it takes / turnaround / when it will be ready in general, use "turnaround". ' +
             'If they ask what services, tiers, or delivery speeds you offer / how it works, use "service-info". ' +
             'If they ask about payment methods, cancellation, refunds-in-general, or pickup/delivery policy, use "policy". ' +
             'If they say they already paid or question whether a payment went through, use "payment-status". ' +
+            'If they want to PAY an order using their wallet, balance, or credit ("use my balance", "use the money I have with you", "pay from my wallet"), use "apply-payment". ' +
             'If they ask where their referral reward/money is for a friend who used their code, use "reward-status". ' +
             'If the customer asks who or what you are, your name, or what you can do, use "about". ' +
             'If the customer asks for MORE THAN ONE thing (e.g. "my balance and order status"), set `intent` to the primary one AND list every applicable intent in `intents` (most important first). ' +
@@ -355,8 +358,19 @@ class BotIntentService {
         // "can i cancel my order" isn't swallowed by the "my order" keyword.
         else if (has('cancel', 'cancellation'))
             intent = BOT_INTENT.POLICY
+        // booking verbs before order-status so "book my laundry" / "come carry my
+        // clothes" aren't swallowed by the "my laundry"/"my clothes" keywords.
+        else if (has('book my', 'book a', 'carry my', 'come carry', 'come and carry', 'come get my',
+            'collect my', 'pick up my', 'pickup my', 'send my clothes', 'the usual', 'place an order', 'new order'))
+            intent = BOT_INTENT.BOOKING_GUIDE
         else if (has('where', 'status', 'my order', 'my clothes', 'my laundry', 'track', 'ready', 'arrive', 'delivered'))
             intent = BOT_INTENT.ORDER_STATUS
+        // apply-payment must beat wallet-balance: "use my wallet/balance" is a pay
+        // action, not a balance lookup ("what's my balance").
+        else if (has('use my wallet', 'use my balance', 'use the money', 'use my money',
+            'use my credit', 'use wallet', 'pay with wallet', 'pay from wallet', 'pay with my wallet',
+            'pay from my wallet', 'deduct from my wallet', 'charge my wallet', 'settle from wallet'))
+            intent = BOT_INTENT.APPLY_PAYMENT
         else if (has('wallet', 'balance', 'credit', 'how much do i have'))
             intent = BOT_INTENT.WALLET_BALANCE
         // pricing/turnaround/service-info/policy are checked BEFORE offers so a

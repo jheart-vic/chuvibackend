@@ -31,12 +31,21 @@ const {
  *   post:
  *     summary: Send a message to the in-app assistant
  *     description: >
- *       The assistant classifies the message intent (via Claude, with a rules
- *       fallback) and runs the matching low-risk workflow against the existing
- *       systems (order status, wallet, offers, referral, apply-code,
- *       update-details, guided booking). High-risk requests are handed to a
- *       human — the bot never approves compensation, edits credits, or changes
- *       records. Once handed off, the bot stays silent and staff reply.
+ *       The assistant classifies the message intent (LLM with a rules fallback)
+ *       and runs the matching deterministic workflow against the existing systems.
+ *       It ANSWERS (order status incl. "are they ready?"/"has the rider left?",
+ *       prices, turnaround, services, policy, wallet balance, payment status,
+ *       offers, referral code/level and reward status) and TAKES confirmed,
+ *       audited ACTIONS (place a booking, pay an order from the wallet, open a
+ *       complaint, record feedback, apply a referral code, update pickup address,
+ *       change phone with an SMS OTP). Every action is confirmed before it runs;
+ *       multi-turn flows carry their own state server-side, so just keep sending
+ *       the customer's messages. The bot NEVER approves refunds/compensation,
+ *       edits wallet balances/credits, releases rewards, or resolves complaint
+ *       cases — those, and anything it can't handle, hand off to a human (after
+ *       which the bot stays silent and staff reply). Each reply also returns
+ *       `quickActions` (tappable chips — send a chip's `message` back as the next
+ *       message).
  *     tags: [Bot]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -54,6 +63,15 @@ const {
  *                   Photo URLs — upload each file via POST /api/utils/image-upload-single
  *                   first, then send the returned imageUrl string(s) here.
  *                 items: { type: string, example: "https://res.cloudinary.com/.../photo.jpg" }
+ *               crmContext:
+ *                 type: string
+ *                 description: >
+ *                   Optional. When the app opens the assistant from a CRM nudge
+ *                   (e.g. "Ready for another pickup?"), pass the nudge frame
+ *                   (CRM workflow / message-type / label) so an ambiguous first
+ *                   reply is routed to the right workflow (feedback / booking /
+ *                   reactivation→human). Ignored once a multi-turn flow is in progress.
+ *                 example: reorder-prompt
  *     responses:
  *       200:
  *         description: The assistant's reply (or a handoff notice)

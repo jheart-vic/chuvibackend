@@ -1,114 +1,119 @@
-# Current Feature: §4 — Offer multi-criteria targeting (LAST piece of the client brief)
+# Current Feature: CHUVI V1 AI Assistant — in-app bot upgrade (Phases A–D)
 
-Branch: `bot-polising` (all prior work uncommitted per client — see session.md).
-This is the ONLY remaining part of the client "Fix & Improvement Brief". Sections
-§1, §2, §3, §5, §6, §7, §8 are DONE + verified (details in session.md).
+Branch: `smart-book-feature`. ALL bot work is **UNCOMMITTED** (do NOT commit unless asked).
+Started from a client doc ("CHUVI V1 AI Assistant") that turns the read-only Phase-6 bot
+into a full conversational assistant that answers AND takes actions. Approved plan file:
+`C:\Users\LENOVO\.claude\plans\take-a-look-at-majestic-cherny.md`. Blow-by-blow in session.md.
 
-## What the client asked (§4 targeting bullets)
+## The two-bot distinction (client-confirmed — never blur this)
+- **In-app bot = THIS repo.** `botIntent` + `botOrchestrator` + `Conversation`/`ChatMessage`
+  support thread + sockets. Everything below is the in-app bot.
+- **WhatsApp bot = SEPARATE repo.** It consumes THIS backend via the EXISTING REST APIs
+  (order status, place order, open case, …) and owns its own conversation over there.
+  There is NO special WhatsApp bridge endpoint here (an earlier `/bot/internal/crm-reply`
+  was built then REMOVED — no consumer). Do NOT re-add one; do NOT build a stateless "brain"
+  endpoint unless the client explicitly asks (would need the orchestrator decoupled from the
+  in-app Conversation).
 
-- Admin can select MULTIPLE triggers, stages, tags and customer groups.
-- Multiple choices inside one category = OR; different categories = AND.
-- Example: Trigger = First Order OR Referral; Stage = Lead OR First Order;
-  Tag = Student OR Young Professional. The customer must meet one trigger AND one
-  selected stage AND one selected tag.
-- (The stacking / one-personal / baseline / no-reuse-until-new-event bullets in §4
-  are ALREADY built — see summary.md Offer quick reference + the booking-options
-  work in session.md.)
+## Locked client decisions
+1. The bot NOW quotes prices, places orders, opens complaints, records feedback, applies
+   wallet payment, changes phone (OTP) — **each behind an explicit confirm + audit**.
+2. Hard guardrails STAY (structural — never invent data; the bot has NO code path to):
+   approve refunds/compensation, edit wallet balances/credits, release referral rewards,
+   or resolve/close complaint cases. Those + anything unhandled → human handoff.
+3. Phased build **A→D**, each shippable on its own.
 
-## Locked design decision (from the client, already agreed)
+## Core architecture (how the whole thing hangs together)
+- LLM does TWO jobs only (`services/botIntent.service.js`): `classify()` → one `BOT_INTENT`
+  (+ `intents[]` for compound, + rich `slots`), and `smallTalkReply()` for greetings/OOS.
+  Keyword `rulesFallback` when no provider key / LLM fails (never hard-fails).
+- `services/botOrchestrator.service.js` is the deterministic brain: routes intent → workflow.
+  Multi-turn flows persist on `conversation.botState = { intent, step, slots, memory }`.
+- **Reuse pattern that unblocked everything:** the controller-style services (`postBookOrder`,
+  `payWithWallet`, `submitFeedback`) never touch `res` and return the plain `{success,data}`
+  envelope — so the bot drives them with a synthetic `{ body, user:{id} }` request and reuses
+  the EXACT production pricing/validation/credit/audit path. No money logic duplicated.
+- Every write action is behind a confirm step; wallet/case/OTP verified before mutating.
 
-- All four categories become arrays; **OR within a category, AND across categories,
-  and an EMPTY category = "no constraint" (skipped).**
-- `triggers[]` = the events that can MINT/assign the offer. `stages[]` / `tags[]` /
-  `customerGroups[]` = eligibility GATES, evaluated at assignment AND re-checked at
-  booking/redeem (drives the "why it can't apply" reason already surfaced by the
-  §4 booking-options work).
-- One shared matching function used at both assignment and booking so they can't drift.
-- Backward-compatible: migrate the single `trigger` → `triggers:[trigger]`, keep
-  reading the old field.
+## Deliverables checklist — Phases A–D ALL DONE (stub-verified; reads live-verified)
 
-## KEY FINDING — most of this already works
+### Phase A — understanding core + conversation memory  ✅
+- [x] `conversation.model.js`: added `botState.memory` (Mixed) — survives the per-turn reset.
+- [x] NEW `services/botContext.service.js`: `getLastOrder`/`buildOrderSnapshot`,
+      `detectReferent` (the usual / same-as-last / same place / go ahead / pronoun),
+      `savedDefaults`, `loadMemory`/`mergeMemory`.
+- [x] `botIntent`: expanded `slots` (items[], pickupDate, pickupTime, addressRef same/home/office,
+      address, itemName, amount) + prompt extracts stated details only, never resolves refs.
+- [x] `botOrchestrator`: PRESERVES `memory` across the botState reset (`_runSingle` + batch,
+      `markModified`); `_updateMemory` (lastIntent + lastOrder snapshot on order-touching turns);
+      `_resolveAddressRef` turns addressRef:"same" → real address from memory/profile.
 
-`services/offer.service.js` `checkProfileRules(offer, stats)` ALREADY treats
-`rules.stages[]` and `rules.tags[]` as **OR-within** (stage ∈ list; tag overlap),
-**AND-across** (both must pass), and **empty = skipped**. So stages + tags are DONE.
-`offer.model.js` already has `rules.stages[]` and `rules.tags[]`.
+### Phase B — read-only answers  ✅
+- [x] New intents: pricing, turnaround, service-info, policy, payment-status, reward-status.
+- [x] `pricingReply` (per-piece = `roundToNearestHundred(OrderItem.price × serviceType.pricePerPiece)`
+      — the EXACT booking math; item or general list), `turnaroundReply`, `serviceInfoReply`,
+      `policyReply` (curated approved facts only; null→handoff), `paymentStatusReply` (reads
+      BookOrder.paymentStatus; never accuses), `rewardStatusReply` (referral ledger; never releases).
+- [x] Enriched `orderStatusReply`: `STAGE_EXPLAIN` plain-language stage +
+      `_readinessAndDispatchLine` ("are they ready?"/"has the rider left?") from stage+dispatchDetails.
+- [x] Batching (READ_ONLY_INFO + icons), classifier prompt + rules keywords, swagger enum.
 
-So the ACTUAL remaining work is just:
-1. **Multi-trigger** (`trigger` single → `triggers[]`).
-2. **`customerGroups[]`** — a NEW 4th dimension (needs one definition decision, below).
+### Phase C — confirmed + audited actions  ✅
+- [x] **Booking** (`bookingFlow`): BOOKING_GUIDE runs slot-fill (items→service→address→date/time→
+      confirm) → `BookOrderService.createOrder({userId,payload})` (thin wrapper over postBookOrder).
+      "the usual" prefills from `memory.lastOrder`. Helpers: `_placeBooking`, `_resolveBookingItems`,
+      `_parseItemsFromText`, `_matchServiceType`, `_bookingEstimate`, `_resolvePickupDate`.
+- [x] **Apply-payment** (`applyPaymentFlow`, intent APPLY_PAYMENT): latest unpaid order → confirm →
+      `WalletService.payWithWallet(useCredit:true)` + audit. Insufficient→handoff.
+- [x] **Complaint** (`complaintFlow`, FILE_COMPLAINT no longer just hands off): order → DEDUPE vs open
+      ComplaintCase → match/pick ComplaintType (`_matchComplaintType`/`_pickComplaintType`) → optional
+      photo (attachments threaded handleCustomerMessage→_runSingle→runWorkflow) → confirm →
+      `RecoveryService.openCase`. Opens+routes to CX, never resolves.
+- [x] **Feedback** (`feedbackFlow`): delivered order → 1–5 (`_parseRating`) → `FeedbackService.submitFeedback`
+      (≥4 satisfied/3 neutral); ≤2 offers to open a complaint (routes into complaintFlow).
+- [x] **Phone OTP** (`_startPhoneOtp` + `verify-phone-otp` step in updateDetails): sendSmsOtp(new number),
+      write only on matching code; pending number under `pendingPhone` (classifier can't clobber);
+      5-min expiry; SMS-send fail→handoff; address change stays no-OTP.
 
-## OPEN DECISION to resolve at the START of §4
+### Phase D — quick actions + in-app CRM framing  ✅
+- [x] `quickActions[]` (`{label,message}`) on every turn via `_quickActionsForTurn` (confirm→Yes/No,
+      mid-collect→Talk To Staff, answered→MAIN menu, handoff→none). Surfaced by `botApi._replyPayload`
+      (sendMessage + replyToConversation bot branch). Tapping sends `message` as the next message.
+- [x] `crmContext` framing: `handleCustomerMessage` optional param → block B2 frames an AMBIGUOUS reply
+      (`_crmFrameToIntent`: reactivation→booking/human, reorder→booking, feedback/post-delivery→feedback,
+      lead→booking); passed via the normal `POST /bot/message` body (in-app deep-link from a CRM nudge).
+- [x] Booking-routing fix: classifier prompt never told the LLM to use booking-guide → added prompt line
+      + offline rules branch (book my/carry my/come carry/the usual…) BEFORE order-status.
 
-**What is a "customer group"?** The brief lists tags AND customer groups as separate
-categories, but the example puts Student/Young-Professional under TAGS. So
-customerGroups is underspecified. Options to put to the client:
-  (a) another set of CRM tags, admin-managed as "groups" (simple; slightly redundant
-      with tags) — evaluate against `stats.tags` like tags;
-  (b) a distinct profile dimension — e.g. service TIER (classic/premium/vip), or
-      subscription status, or channel (website/whatsapp/office);
-  (c) a real CRM "segment" field added to CrmProfile.
-Recommendation: (a) unless the client wants a specific non-tag dimension. Confirm
-before building this part; multi-trigger can proceed regardless.
+## Files touched (all uncommitted)
+- `services/botOrchestrator.service.js` (biggest — all workflows + helpers + memory + quick actions + CRM frame)
+- `services/botIntent.service.js` (slot schema, prompt, rules), NEW `services/botContext.service.js`
+- `services/bookOrder.service.js` (createOrder wrapper), `services/botApi.service.js` (_replyPayload + crmContext)
+- `models/conversation.model.js` (botState.memory)
+- `util/constants.js` (new BOT_INTENTs), `util/page-route.js` (net no change — crm-reply added then removed)
+- `controllers/bot.controller.js` (net no change), `routes/bot.js` (message desc + crmContext + BotReply doc)
+- `swagger/schemas.js` (BotReply intent enum + quickActions), `CLAUDE.md`, `context/session.md`
 
-## Implementation plan
+## Verified
+- Unit/stub: each workflow simulated (staged botState) — booking 6-turn + the-usual + cancel; apply-payment
+  routing/confirm/insufficient; complaint auto-match/pick/dedupe/no-order; feedback pos/neutral/poor;
+  phone-OTP send/wrong/right/expired; quickActions per turn; CRM frame 7 cases; offline routing 10/10.
+- LIVE (real DB + real LLM): boot :7333 → /api-docs 200, /bot/message 401; read-path smoke (greeting,
+  pricing ₦700, turnaround, service-info, order-status, wallet, offers) all correct + chips; cleaned up.
+- Swagger: 41 schemas parse; quickActions + crmContext + intents + description all present.
 
-### 1. Multi-trigger
-- `models/offer.model.js`: add `triggers: [{ type: String, enum: OFFER_TRIGGER }]`.
-  Keep `trigger` (deprecated). Update the `{ trigger:1, status:1 }` index → also index
-  `triggers`.
-- `offer.service.getActiveOfferForTrigger(trigger)`: query offers where
-  `triggers: trigger` OR legacy `trigger: trigger`, still "newest ACTIVE" pick.
-  (Find the method — it's what handleTrigger calls at ~line 239.)
-- `services/offerApi.service.validateOfferPayload` (admin builder create/update):
-  accept `triggers[]`; validate each ∈ OFFER_TRIGGER. If only `trigger` sent, normalise
-  to `[trigger]`. If only `triggers[]` sent, set `trigger = triggers[0]` for back-compat.
-- Migration: one-time backfill in `config/setup.js` (or a throwaway) — for offers with
-  `trigger` and empty `triggers`, set `triggers = [trigger]`.
+## What later phases / commit expect (STILL TO DO)
+- **WRITE actions NOT run against live DB yet** (booking/pay/complaint/feedback/OTP create real records +
+  fire CRM/referral hooks, staff notifications, capacity changes, SMS). Do a CONTROLLED STAGING run with a
+  throwaway user, watching side effects, before trusting in prod. Set `TERMII_API_KEY` for OTP SMS.
+- Frontend work (only two real tasks): render `quickActions` chips (tap → send `message`); wire photo
+  upload (`POST /api/utils/image-upload-single`) → `attachments[]` for complaints. Copy-paste FE handoff
+  block is in the session (changelog + tasks).
+- Then commit (client review gate — confirm first).
 
-### 2. customerGroups (after the decision)
-- `offer.model.js` `rules.customerGroups: [String]` (if option a/c) or a typed field.
-- `checkProfileRules`: add the AND-across clause, OR-within, empty-skip — mirror the
-  existing stages/tags pattern exactly. Pull the compared value from `stats` (extend
-  `getCustomerStats` if the dimension isn't already there).
-
-### 3. Shared matching (already effectively shared)
-- `checkProfileRules` is already called at assignment (`handleTrigger`), in
-  `getCustomerOffers`, `getBookingOptions`, and `_offerRejection` (validate). Adding
-  customerGroups there covers all paths automatically. No new function needed — just
-  keep everything going through `checkProfileRules`.
-
-### 4. Swagger
-- `swagger/schemas.js` Offer schema: add `triggers[]` + `rules.customerGroups[]`.
-- Offer builder route bodies (routes/offer.js create/update): document `triggers[]`.
-
-## Verify (throwaway script, dev DB — pattern in session.md / scratchpad)
-- Multi-trigger: an offer with `triggers:['first-experience','referral-reward']` is
-  minted by EITHER trigger; not by a third.
-- OR-within/AND-across: offer with stages:[lead,first-order] + tags:[student,young-pro]
-  → customer matching one stage AND one tag is eligible; missing the tag → rejected
-  with reason; empty category → no constraint.
-- Legacy back-compat: an offer with only `trigger` still mints.
-- customerGroups (once defined): analogous.
-
-## Deliverables checklist — ALL DONE (verified 19/19 + boot), uncommitted
-- [x] offer.model triggers[] + rules.customerGroups[] (customerGroups = admin-managed
-      CRM tag list, per client decision option (a) — matched against customer's tags)
-- [x] getActiveOfferForTrigger matches triggers[] ($or with legacy trigger)
-- [x] offerApi.validateOfferPayload accepts/normalises triggers[] (+ normaliseTriggers
-      helper keeps legacy `trigger` == triggers[0]; personal needs ≥1 trigger)
-- [x] checkProfileRules gains customerGroups clause (OR-within, AND-across, empty-skip)
-- [x] trigger→triggers[] backfill (config/setup.js backfillOfferTriggers, idempotent)
-- [x] Swagger Offer schema + builder create route + rules.customerGroups
-- [x] Verify script (scratchpad/verify_s4.js) 19/19 + boot :7994 clean
-
-## §4 DONE — the entire client "Fix & Improvement Brief" (all 8 sections) is complete.
-
-## Housekeeping reminders for the fresh session
-- EVERYTHING since the appliedOffers hotfix is UNCOMMITTED (7 brief sections). The
-  client is reviewing before commit. Do NOT commit unless asked.
-- §3C deep-link FE routes in `util/deepLink.js` PAGE_ROUTES are best-guess — the client
-  may hand over exact paths to correct.
-- appliedOffers CastError hotfix (models/bookOrder.model.js pricing.appliedOffers using
-  `type:{type:String}`) is a production fix sitting uncommitted — flag for a standalone commit.
-- Verification scripts are in the session scratchpad (outside the repo), not committed.
+## Housekeeping for a fresh session
+- Read summary.md + session.md + this file first (CLAUDE.md rule).
+- Bot section of CLAUDE.md was rewritten to the new "acts-with-confirm" direction incl. Phase A–D status —
+  trust it over any older "the bot never places an order / never quotes prices" phrasing elsewhere.
+- Provider: no key in a bare `node -e` (rules path); the full app chain loads dotenv so classify() hits the
+  LLM — mind token cost when smoke-testing via the app.

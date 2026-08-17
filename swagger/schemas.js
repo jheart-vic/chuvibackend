@@ -1085,7 +1085,7 @@
  *         conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
  *         mode: { type: string, enum: [bot, human], example: bot }
  *         handledBy: { type: string, enum: [bot, handoff, human], example: bot }
- *         intent: { type: string, nullable: true, description: "The resolved intent — usually one of: greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, pricing, turnaround, service-info, policy, payment-status, reward-status, unknown. For a COMPOUND read-only request it is a '+'-joined string, e.g. 'wallet-balance+order-status'. Don't hard-switch on exact values.", example: order-status }
+ *         intent: { type: string, nullable: true, description: "The resolved intent — usually one of: greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, pricing, turnaround, service-info, policy, payment-status, reward-status, apply-payment, unknown. For a COMPOUND read-only request it is a '+'-joined string, e.g. 'wallet-balance+order-status'. Don't hard-switch on exact values.", example: order-status }
  *         replies:
  *           type: array
  *           description: "Bot messages posted in reply (empty once handed to a human). A compound request returns ONE combined message; single requests one. Render the whole array; dedupe against socket pushes by _id."
@@ -1096,6 +1096,14 @@
  *               senderType: { type: string, example: bot }
  *               text: { type: string, example: "Order CHUVI-1042: out for delivery\nEstimated delivery: Mon Jul 20 2026" }
  *               createdAt: { type: string, format: date-time }
+ *         quickActions:
+ *           type: array
+ *           description: "Context-aware tappable chips for this turn. Tapping one sends its `message` back as the next customer message (no separate action protocol). A confirm/offer step → Yes/No; a mid-collection step → Talk To Staff; a completed answer → the main menu; a handoff → empty."
+ *           items:
+ *             type: object
+ *             properties:
+ *               label: { type: string, example: Book Laundry }
+ *               message: { type: string, example: "I want to book a pickup" }
  *
  *     # ── Communication ────────────────────────────────────────────────────
  *     CommunicationTemplate:

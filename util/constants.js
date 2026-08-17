@@ -686,6 +686,8 @@ const BOT_INTENT = {
     POLICY: 'policy', // payment/cancellation/pickup policy (curated facts only)
     PAYMENT_STATUS: 'payment-status', // "I paid already" — read the payment record
     REWARD_STATUS: 'reward-status', // "my friend used my code, where's my reward?"
+    // ── V1 Phase C: confirmed + audited actions (money-approval stays human) ──
+    APPLY_PAYMENT: 'apply-payment', // "use my balance/wallet" — settle an unpaid order
     UNKNOWN: 'unknown',
 }
 

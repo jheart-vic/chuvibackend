@@ -93,12 +93,86 @@ Branch: smart-book-feature (bot work is off-topic to that branch; uncommitted).
   - Verified (stubbed models, no DB): full 6-turn booking (guide→items→service→address→datetime→
     confirm→placed) with correct payload + estimate ₦9,400; "the usual" prefill jumps to
     datetime; confirm=no cancels; chain loads.
-- **NEXT: Phase C continued (each its own step, all confirmed + audited, money stays human):**
-  apply wallet/credit to an existing unpaid order ("use my balance" — needs a settle-existing-
-  order-from-wallet path; verify one exists vs. chargeWalletForOrder which is used at booking
-  time); open/update complaint (RecoveryService.openCase + dedupe vs open ComplaintCase + photo);
-  structured feedback (FeedbackService.submitFeedback, delivered-order + type); phone change w/ OTP.
-  Then Phase D (CRM inbound bridge + quick-action buttons).
+- **Phase C — apply-payment DONE (verified).**
+  - Found the existing settle-an-unpaid-order path: `WalletService.payWithWallet(req)` (instance
+    method, validates, rejects already-paid, charges credit-first then cash, sets paymentStatus
+    success, notifies) — also never uses `res`, returns the plain envelope. Bot calls it via
+    `new WalletService().payWithWallet({ body:{bookOrderId,useCredit:true}, user:{id:userId} })`.
+  - New BOT_INTENT.APPLY_PAYMENT (constants + classifier prompt + rules keywords placed BEFORE
+    wallet-balance so "use my wallet/balance" is a pay action, not a balance lookup). `applyPaymentFlow`
+    (botOrchestrator): finds latest unpaid non-cancelled order → shows amount + wallet cash/credit →
+    confirm-pay (yes/no) → on yes calls payWithWallet(useCredit:true) + writes a bot-initiated
+    createAuditLog (WALLET, non-fatal) → success msg (notes credit used). Insufficient funds →
+    offered-handoff; no unpaid order → graceful. Guardrail: only spends the customer's OWN wallet on
+    their OWN order, behind a confirm; never edits balances or adds money.
+  - Imports added to orchestrator: WalletService, createAuditLog, AUDIT_LOG_CATEGORIES. allowedIntents
+    + switch case wired.
+  - Verified (stubbed): routing 5/5 (apply-payment vs wallet-balance), enough→confirm→pay (credit
+    note), insufficient→handoff, no-unpaid-order graceful, chain loads. (Audit cast error in test was
+    a fake-id artifact — try/catch made it non-fatal, reply still correct.)
+- **Phase C — COMPLETE (all 5 actions, verified). complaint + feedback + phone-OTP:**
+  - **complaint-open** (`complaintFlow`): FILE_COMPLAINT no longer just hands off — it identifies the
+    latest order, DEDUPES vs an open ComplaintCase (status $nin closed/customer-confirmed →
+    offered-handoff, no duplicate), auto-matches a ComplaintType from the description (`_matchComplaintType`,
+    name words ≥5 chars) or lists the active catalog to pick (`_pickComplaintType`, number or name),
+    optional photo (threaded `attachments` through handleCustomerMessage→_runSingle→runWorkflow→flow),
+    confirm → `RecoveryService.openCase({userId,orderId,complaintTypeIds,description,photos})` + bot
+    audit (RECOVERY). Never resolves/compensates. Verified: auto-match, pick, dedupe, no-order handoff.
+  - **structured feedback** (`feedbackFlow`): finds latest DELIVERED order → asks 1–5 + comment
+    (`_parseRating`: digit/stars/sentiment) → ≥4 satisfied, 3 neutral via
+    `new FeedbackService().submitFeedback({body,user})`; ≤2 → offers to open a complaint (routes into
+    complaintFlow with the comment as description). Verified positive/neutral/poor + parse.
+  - **phone change w/ OTP** (`_startPhoneOtp` + `verify-phone-otp` step in updateDetails): on confirm of
+    a PHONE change, instead of writing, generateOTP + `sendSmsOtp(newPhone,otp)` (util/sendOtp, Termii);
+    pending number stored under `pendingPhone` (distinct key so the classifier can't clobber it), otp +
+    5-min expiry on botState; customer enters code → match writes phoneNumber + audit (USER); wrong→retry,
+    expired→restart, SMS-send failure→handoff (never changes unverified). Address change stays no-OTP.
+    Verified: send/wrong/right/expired.
+  - Imports added: RecoveryService, FeedbackService, ComplaintType/ComplaintCase models, generateOTP,
+    sendSmsOtp, COMPLAINT_STATUS, FEEDBACK_TYPE. capabilities() + swagger BotReply enum updated.
+  - GUARDRAILS intact across all C actions: every write behind an explicit confirm (feedback rating is
+    its own confirmation); OTP gates phone; bot NEVER approves refunds/compensation, edits balances, or
+    resolves complaint cases — those stay human.
+- **Booking-routing fix (found during Phase C verify):** the classifier prompt never told the LLM when
+  to use `booking-guide`, so "book my laundry" fell to unknown/order-status. Added a booking line to the
+  LLM systemPrompt AND an offline rules branch (book my / carry my / come carry / the usual / place an
+  order …) placed BEFORE order-status so "my laundry"/"my clothes" don't swallow booking requests.
+  Verified 10/10 offline (booking phrases → booking-guide; where/track/ready → order-status).
+- **Phase D — DONE (verified). Quick-action buttons + CRM inbound bridge (IN-APP bot).**
+  - **Quick actions:** `MAIN_QUICK_ACTIONS` (Book/Track/Wallet/Offers/Complaint/Feedback/Staff) +
+    `YES_NO_ACTIONS`; `_quickActionsForTurn(result)` → confirm/offer step = Yes/No, mid-collect step =
+    Talk To Staff, completed answer = main menu, handoff = none. Each chip is `{label,message}` — tapping
+    sends `message` as the next customer message (reuses the whole pipeline, no new action protocol).
+    Surfaced on every bot turn via `botApi._replyPayload` (sendMessage + replyToConversation bot branch);
+    swagger BotReply gained `quickActions[]`.
+  - **CRM frame bias (in-app only):** `handleCustomerMessage` takes optional `crmContext`; a NEW block (B2)
+    frames an AMBIGUOUS reply (unknown / conf<0.5 / bare affirmative, and NOT mid-flow) via `_crmFrameToIntent`:
+    reactivation+yes→booking, reactivation+reason→talk-to-human, reorder→booking, feedback/post-delivery→
+    feedback, lead→booking. Never overrides a clear specific intent. Exposed via the normal customer
+    `POST /bot/message` (optional `crmContext` body field) so the app can frame the first reply when it
+    DEEP-LINKS the in-app assistant from a CRM nudge ("Ready for another pickup?"→opens framed as reorder).
+  - Verified: quickActions per turn-type, `_crmFrameToIntent` mapping (7 cases), chain + swagger load.
+  - **TWO-BOT BOUNDARY (client-confirmed):** in-app bot lives HERE; WhatsApp bot is a SEPARATE repo that
+    consumes this backend via the EXISTING REST APIs (reads + writes what it needs — order status, place
+    order, open case). It has its OWN conversation over there. So NO special bridge endpoint is needed here.
+    An earlier `POST /bot/internal/crm-reply` (x-bot-secret) I had added was REMOVED — no consumer; the
+    WhatsApp bot uses existing REST. No stateless "brain" endpoint built (would need the orchestrator
+    decoupled from the in-app Conversation) — client explicitly said not needed.
+- **ALL PHASES A–D COMPLETE.** Bot-side work is UNCOMMITTED on branch smart-book-feature.
+- **Swagger:** verified complete — 41 schemas parse; BotReply gained `quickActions[]`; `/bot/message`
+  documents optional `crmContext` + `attachments`, and its description lists the new answer/action
+  capabilities; intent enum includes all new intents; removed crm-reply path gone. Live at /api-docs (Bot tag).
+- **Frontend handoff block** produced (changelog + FE tasks) — quickActions chip renderer + photo-attach for
+  complaints are the only real FE work; everything else flows through the existing /bot/message.
+- **LIVE SMOKE (done):** booted server (PORT=7333, dev) → /api-docs 200, /api/bot/message 401 (routes+guard OK).
+  Read-path DB smoke via a throwaway user through the REAL orchestrator + REAL LLM classifier: greeting,
+  pricing ("shirt ₦700"), turnaround (2 days), service-info, order-status(no orders→booking guide),
+  wallet(₦0), offers — all correct, correct chips, no exceptions; throwaway data cleaned up. LLM correctly
+  routed the new Phase-B intents (prompt additions work in prod, not just rules).
+- **STILL TO DO before/at commit:** WRITE actions (booking, apply-payment, complaint, feedback, phone-OTP)
+  were NOT run against live DB on purpose — they create real orders/cases + fire CRM/referral hooks, staff
+  notifications, capacity changes, and SMS. Verify these in a CONTROLLED STAGING run (throwaway user, watch
+  side effects) before trusting in prod. TERMII_API_KEY must be set for phone-OTP SMS. Then commit.
 
 ## Session: 2026-08-02 — Client "Fix & Improvement Brief" (8 sections)
 
