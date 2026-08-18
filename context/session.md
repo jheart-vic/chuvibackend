@@ -3,6 +3,34 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-18 — Wire up crmContext (CRM-nudge → in-app assistant deep link)
+
+FE reported Phase-D `crmContext` was DORMANT end-to-end: the FE plumbing reads `?crmContext=`
+off `/user/support` and forwards it once, and the backend framer (`_crmFrameToIntent`, block B2)
+was built — but NOTHING produced the deep link, so no nudge ever put a customer into
+`/user/support?crmContext=…`. Confirmed the CRM nudge path is EXTERNAL-only
+(`crmMessenger.sendCrmMessage` → WhatsApp → SMS → email; no in-app notification channel). So the
+missing piece was purely the SENDER. Wired it (Option A, client-approved), additive:
+- **util/deepLink.js:** added `support` to PAGE_ROUTES (`/user/support`) + new `supportLink(crmContext)`
+  helper (builds `CLIENT_URL/user/support?crmContext=<ctx>`, URL-encoded; `deepLink()` couldn't do
+  query params). Exported `supportLink`.
+- **crmMessenger.service.js:** new `SUPPORT_CONTEXT_BY_MESSAGE_TYPE` map (reactivation-1/2/3 +
+  churn-broadcast → `reactivation`; delivery-confirmation → `post-delivery`; feedback-request →
+  `feedback`; reorder-prompt → `reorder`). In `sendCrmMessage`, after the existing lead-link block,
+  append `\nContinue in the app: <supportLink(ctx)>` — GUARDED by `profile.userId` so account-less
+  leads (login-gated `/user/support`) never get it and keep their registration link. Offer/wallet/
+  complaint nudges keep their own specific deep links (map is opt-in per message type).
+- **Non-breaking by design:** additive line only; framer only re-frames an AMBIGUOUS first reply and
+  never overrides a clear intent or mid-flow step; worst case (param lost / unknown ctx) degrades to
+  a normal bot chat = today's behavior. No route/Swagger contract change.
+- **Verified** (scratchpad/verify_crmctx.js): supportLink URLs exact; every emitted crmContext
+  (`reactivation`/`post-delivery`/`feedback`/`reorder`) round-trips through a mirror of
+  `_crmFrameToIntent` to a real intent (booking-guide/talk-to-human/submit-feedback) — never null.
+  `node -c` clean on both files.
+- **One FE check (not a backend break):** the login redirect must PRESERVE `?crmContext=` through the
+  auth gate, else it's silently dropped (degrades to a normal chat).
+- Uncommitted (same branch smart-book-feature, part of the bot work awaiting the client review gate).
+
 ## Session: 2026-08-14 — Bot bugfix + "V1 AI Assistant" upgrade (Phase A)
 
 Branch: smart-book-feature (bot work is off-topic to that branch; uncommitted).
