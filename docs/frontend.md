@@ -93,7 +93,7 @@ Customer:
 - POST /api/offers/validate             → price an order with an offer applied
         body: { offerId, orderDraft }   → returns a quote (savings, final total)
 - POST /api/offers/attach               → attach a chosen offer to a booking
-        body: { offerId, orderId }
+        body: { customerOfferId, bookOrderId }   (+ optional promoOfferId)
 
 Admin (Offer Builder): GET/POST/PUT/DELETE /api/offers ,
   GET /api/offers/:id/performance , POST /api/offers/assign ,
@@ -113,10 +113,10 @@ compensate the customer (approval-gated on the staff side).
 Customer (/api/feedback):
 - GET  /api/feedback/complaint-types                 → list of complaint categories
 - POST /api/feedback/                                → submit feedback for a delivered order
-        body: { orderId, type:"satisfied"|"neutral"|"complaint", rating?, comment?,
-                complaintTypeId? (if complaint) }
+        body: { bookOrderId, type:"satisfied"|"neutral"|"complaint", rating?, comment?,
+                complaintTypeId? or complaintTypeIds? (array, if complaint) }
         returns: { feedback, complaint?, referralEligible }
-- GET  /api/feedback/order/:orderId                  → my feedback for an order
+- GET  /api/feedback/order/:bookOrderId              → my feedback for an order
 - GET  /api/feedback/my-complaints                   → my complaint cases
 - GET  /api/feedback/complaints/:id                  → one case (status, actions, timeline)
 - POST /api/feedback/complaints/:id/confirm          → I'm satisfied → close case

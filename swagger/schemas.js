@@ -795,6 +795,46 @@
  *             rewardPercent: { type: number, example: 15 }
  *         progressPercent: { type: integer, example: 60 }
  *
+ *     RewardSettingLevel:
+ *       type: object
+ *       description: One configured advocacy tier on the RewardSetting ladder (admin-editable). Distinct from ReferralLevel, which is a customer's derived standing.
+ *       properties:
+ *         key: { type: string, enum: [member, promoter, ambassador, champion], example: ambassador }
+ *         name: { type: string, example: Ambassador }
+ *         lifetimeTarget: { type: integer, example: 8, description: Lifetime successful referrals to permanently unlock this tier }
+ *         monthlyTarget: { type: integer, example: 3, description: Referrals in a month to activate the monthly free-laundry perk }
+ *         rewardPercent: { type: number, example: 10 }
+ *         monthlyFreeLaundryAmount: { type: number, example: 5000 }
+ *         offerTrigger: { type: string, nullable: true, example: level-ambassador, description: OFFER_TRIGGER for the tier's exclusive offer (null = none) }
+ *
+ *     RewardSetting:
+ *       type: object
+ *       description: Singleton admin config for the reward economy — complaint SLA & reopen window, recovery approval threshold, credit expiry, and referral rewards/levels.
+ *       properties:
+ *         _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *         creditExpiryDays:
+ *           type: object
+ *           description: Default credit lifetime in days, by credit type.
+ *           properties:
+ *             referral: { type: integer, example: 45 }
+ *             recovery: { type: integer, example: 90 }
+ *             promotional: { type: integer, example: 30 }
+ *             laundry: { type: integer, example: 90 }
+ *         recoveryApprovalThreshold: { type: number, example: 10000, description: Recovery compensation above this needs Admin/Founder approval }
+ *         complaintReviewHours: { type: integer, example: 24 }
+ *         complaintResolutionHours: { type: integer, example: 72 }
+ *         complaintConfirmWindowHours: { type: integer, example: 48, description: Hours a customer has to confirm a resolved complaint before CX may close it }
+ *         complaintReopenDays: { type: integer, example: 7, description: Days a customer may reopen a closed complaint }
+ *         referralRewardPercent: { type: number, example: 5 }
+ *         referralRewardMax: { type: number, nullable: true, example: null, description: Per-referral reward ceiling in naira (null = no ceiling) }
+ *         referralMonthlyCap: { type: number, nullable: true, example: null, description: Monthly cap on total referral rewards per customer (null = off) }
+ *         referralWelcomeAmount: { type: number, example: 0, description: Welcome credit for a referred customer on signup (0 = disabled) }
+ *         referralLevels:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/RewardSettingLevel' }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *
  *     ReferralPage:
  *       type: object
  *       properties:
