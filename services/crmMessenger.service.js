@@ -7,8 +7,23 @@ const sendSms = require('../util/sendSms')
 const sendEmail = require('../util/emailService')
 const CrmMessageLogModel = require('../models/crmMessageLog.model')
 const CrmSettingModel = require('../models/crmSetting.model')
-const { CRM_WORKFLOW } = require('../util/constants')
-const { registerLink } = require('../util/deepLink')
+const { CRM_WORKFLOW, CRM_MESSAGE_TYPE } = require('../util/constants')
+const { registerLink, supportLink } = require('../util/deepLink')
+
+// Re-engagement nudges that should deep-link the customer into the in-app
+// assistant, tagged with the `crmContext` the bot's `_crmFrameToIntent` maps to
+// (reactivation → book/human, reorder → book, feedback/post-delivery → feedback).
+// Only these message types open the assistant; offer/wallet/complaint nudges keep
+// their own specific deep links, and account-less leads keep the registration link.
+const SUPPORT_CONTEXT_BY_MESSAGE_TYPE = {
+    [CRM_MESSAGE_TYPE.REACTIVATION_1]: 'reactivation',
+    [CRM_MESSAGE_TYPE.REACTIVATION_2]: 'reactivation',
+    [CRM_MESSAGE_TYPE.REACTIVATION_3]: 'reactivation',
+    [CRM_MESSAGE_TYPE.CHURN_BROADCAST]: 'reactivation',
+    [CRM_MESSAGE_TYPE.DELIVERY_CONFIRMATION]: 'post-delivery',
+    [CRM_MESSAGE_TYPE.FEEDBACK_REQUEST]: 'feedback',
+    [CRM_MESSAGE_TYPE.REORDER_PROMPT]: 'reorder',
+}
 
 const renderTemplate = (template, profile) => {
     const name = profile.fullName || 'there'
@@ -96,6 +111,16 @@ const sendCrmMessage = async (profile, { workflow, messageType }) => {
     // leads — a profile that already has a userId is registered.
     if (workflow === CRM_WORKFLOW.LEAD && !profile.userId) {
         content = `${content}\nSign up: ${registerLink({ phone: profile.phoneNumber })}`
+    }
+
+    // Re-engagement nudges (reactivation/reorder/post-delivery) deep-link a
+    // REGISTERED customer into the in-app assistant, framed by crmContext so the
+    // bot understands why they arrived. Guarded by userId — /user/support is
+    // login-gated, so account-less profiles (still on the registration link) are
+    // never sent here. Additive: this is a separate line, existing links untouched.
+    const supportCtx = SUPPORT_CONTEXT_BY_MESSAGE_TYPE[messageType]
+    if (supportCtx && profile.userId) {
+        content = `${content}\nContinue in the app: ${supportLink(supportCtx)}`
     }
 
     let channel = null

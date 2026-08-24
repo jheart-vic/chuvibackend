@@ -277,6 +277,31 @@ class BotIntentService {
         }
     }
 
+    // Part E — lightly rewrite a FIXED deterministic reply to be warmer/shorter.
+    // It must not change meaning or touch data: the caller passes text with every
+    // number/price/code already swapped for §n§ placeholders, and we require them
+    // back verbatim. Returns the input unchanged when no provider / on any error.
+    async styleReply(text) {
+        const client = this.client()
+        if (!client || !text || !text.trim()) return text
+        try {
+            const system =
+                "You lightly re-word a laundry assistant's reply to sound warm and natural. " +
+                'STRICT RULES: keep it to at most two short sentences; keep every §number§ placeholder ' +
+                'EXACTLY as written; do NOT add any facts, prices, promises, or new information; ' +
+                'do NOT remove a question that is present; keep any ✅ or link as-is. ' +
+                'Return ONLY the reworded reply, nothing else.'
+            const out =
+                this.provider === 'anthropic'
+                    ? await this._generateAnthropic(client, system, text)
+                    : await this._generateOpenAI(client, system, text)
+            return (out || '').trim() || text
+        } catch (err) {
+            console.warn('Bot style LLM failed, using original:', err.message)
+            return text
+        }
+    }
+
     smallTalkPrompt(kind) {
         const capabilities =
             'check order status, show wallet balance, view offers, share their referral code/level, ' +

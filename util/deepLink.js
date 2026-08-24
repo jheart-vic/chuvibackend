@@ -27,9 +27,24 @@ const PAGE_ROUTES = {
     // keyed by ORDER id. So a `feedback` deep link must be given the orderId and
     // resolves to the order page. (Not currently emitted by any sender.)
     feedback: (id) => (id ? `/user/order-history/${id}` : '/user/order-history'),
+    // In-app assistant/support thread. A CRM nudge deep-links here with a
+    // `?crmContext=` param (see supportLink) so the bot can frame the first
+    // reply into the right workflow (reactivation/reorder/feedback).
+    support: () => '/user/support',
 }
 
 const clientUrl = () => CLIENT_URL
+
+// Deep link into the in-app assistant, carrying an optional `crmContext` so the
+// orchestrator's `_crmFrameToIntent` can bias an ambiguous first reply into the
+// nudge's workflow. `crmContext` is a free label matched on substring by the bot
+// (e.g. 'reactivation' | 'reorder' | 'feedback' | 'post-delivery'). Login-gated:
+// the app's auth guard must preserve the query param through login.
+const supportLink = (crmContext) => {
+    const path = PAGE_ROUTES.support()
+    if (!crmContext) return `${CLIENT_URL}${path}`
+    return `${CLIENT_URL}${path}?crmContext=${encodeURIComponent(crmContext)}`
+}
 
 // Absolute deep link for a notification `page` (+ optional record id). Unknown
 // page keys are treated as a literal path. Returns null when no page is given.
@@ -54,4 +69,4 @@ const registerLink = ({ phone } = {}) => {
     return `${base}${sep}phone=${encodeURIComponent(phone)}`
 }
 
-module.exports = { clientUrl, deepLink, registerLink, PAGE_ROUTES }
+module.exports = { clientUrl, deepLink, supportLink, registerLink, PAGE_ROUTES }
