@@ -5,23 +5,28 @@ const ReferralService = require('./referral.service')
 const OfferService = require('./offer.service')
 const BookOrderService = require('./bookOrder.service')
 const WalletService = require('./wallet.service')
+const WalletCreditService = require('./walletCredit.service')
+const PaystackService = require('./paystack.service')
 const RecoveryService = require('./recovery.service')
 const FeedbackService = require('./feedback.service')
 const ComplaintTypeModel = require('../models/complaintType.model')
 const ComplaintCaseModel = require('../models/complaintCase.model')
 const WalletModel = require('../models/wallet.model')
 const WalletCreditModel = require('../models/walletCredit.model')
+const SubscriptionModel = require('../models/subscription.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const UserModel = require('../models/user.model')
 const AdminSettingModel = require('../models/adminSetting.model')
 const OrderItemModel = require('../models/orderItem.model')
 const createNotification = require('../util/createNotification')
 const createAuditLog = require('../util/createAuditLog')
-const { roundToNearestHundred, generateOTP } = require('../util/helper')
+const { roundToNearestHundred, generateOTP, calculateDueDate } = require('../util/helper')
 const sendSmsOtp = require('../util/sendOtp')
 const { emitChatMessage } = require('../config/socket')
 const {
     BOT_INTENT,
+    BILLING_TYPE,
+    DELIVERY_SPEED,
     CHAT_SENDER,
     CREDIT_STATUS,
     CONVERSATION_TYPE,
@@ -166,6 +171,16 @@ class BotOrchestratorService {
         // a real value instead of the word "same". Memory-only — never invents.
         await this._resolveAddressRef({ convo, userId, slots: mergedSlots })
 
+        // D) Cancel an in-progress flow at any point ("cancel", "never mind",
+        //    "start over"). Clears the flow but keeps long-lived memory.
+        if (pendingStep && pendingStep !== 'offered-handoff' && this._isCancel(text)) {
+            convo.botState = { intent: null, step: null, slots: {}, memory: convo.botState?.memory || {} }
+            convo.markModified('botState')
+            await convo.save()
+            const msg = await this.say(convo, "No problem — I've cancelled that. What else can I help with?")
+            return { conversation: convo, handledBy: 'bot', intent: BOT_INTENT.UNKNOWN, replies: [msg], quickActions: MAIN_QUICK_ACTIONS }
+        }
+
         // A) A pending "…would you like a person?" offer (from a delayed-order
         //    reply): a yes hands off; anything else drops the offer and the new
         //    message is handled normally.
@@ -231,23 +246,69 @@ class BotOrchestratorService {
             }
         }
 
+        // D2) Side-question mid-flow: a clear read-only question asked DURING a
+        //     collection flow ("how much is a shirt?" while booking) → answer it,
+        //     then resume the flow where it left off. Never for confirm/handoff
+        //     steps, and never hijacks a genuine answer (needs decent confidence).
+        const SIDE_QUESTION = [BOT_INTENT.PRICING, BOT_INTENT.TURNAROUND, BOT_INTENT.SERVICE_INFO]
+        const midFlow = pendingIntent && pendingStep && !/confirm|offered-handoff/.test(pendingStep)
+        if (midFlow && SIDE_QUESTION.includes(intent) && confidence >= 0.6) {
+            const info = await this.runWorkflow({ convo, userId, text, intent, confidence, slots: mergedSlots })
+            // resume the flow with NO new input so it just re-asks the current step
+            const resume = await this.runWorkflow({
+                convo, userId, text: '', intent: pendingIntent, confidence: 1, slots: convo.botState?.slots || {},
+            })
+            const infoReply = (info.replies || []).filter(Boolean).join('\n')
+            const resumeReply = (resume.replies || []).filter(Boolean).join('\n')
+            const combined = [infoReply, resumeReply].filter(Boolean).join('\n\n')
+            const st = resume.state || convo.botState
+            convo.botState = {
+                ...st,
+                slots: { ...(st.slots || {}), _stall: 0 }, // a question isn't a stall
+                memory: convo.botState?.memory || {},
+            }
+            convo.markModified('botState')
+            await convo.save()
+            const msg = await this.say(convo, combined || this.cantUnderstand())
+            return { conversation: convo, handledBy: 'bot', intent, replies: [msg], quickActions: this._quickActionsForTurn(resume) }
+        }
+
         // C) Single intent. Escalation always wins; otherwise continue a genuinely
         //    mid-step flow (guards the always-0.4 keyword fallback from trapping
         //    the customer in a previous flow).
         let effectiveIntent = intent
         if (!escalationIntents.includes(intent)) {
+            // Some collection steps expect a bare answer that is ITSELF a strong
+            // keyword for a DIFFERENT intent, so a *confident* (mis)classification
+            // would hijack the flow: "card"/"use my balance" at a booking's payment
+            // step reads as apply-payment; a 6-digit OTP reads as an order number
+            // (order-status). Pin the owning flow on those steps regardless of
+            // confidence. (Escalation still wins above; cancel + side-questions
+            // were handled earlier. Chip taps send the bare word and mostly dodge
+            // this — a customer who types the phrase must not be punished for it.)
+            const isPinnedStep =
+                (pendingIntent === BOT_INTENT.BOOKING_GUIDE && pendingStep === 'collect-payment') ||
+                (pendingIntent === BOT_INTENT.UPDATE_DETAILS && pendingStep === 'verify-phone-otp')
             const continuesFlow =
                 pendingIntent &&
                 pendingStep &&
                 (confidence < 0.6 || intent === BOT_INTENT.UNKNOWN)
-            if (continuesFlow) effectiveIntent = pendingIntent
+            if (isPinnedStep || continuesFlow) effectiveIntent = pendingIntent
         }
         return this._runSingle({ convo, userId, text, intent: effectiveIntent, confidence, slots: mergedSlots, attachments })
     }
 
     // Run one intent's workflow, persist multi-turn state, post replies, hand off.
     async _runSingle({ convo, userId, text, intent, confidence, slots, attachments = [] }) {
+        // Loop/repeat guard (Part C): remember the step we were on BEFORE this turn
+        // so we can detect a flow that keeps re-asking without advancing.
+        const prevStep = convo.botState?.step || null
+        const prevIntent = convo.botState?.intent || null
+        const prevStall = convo.botState?.slots?._stall || 0
+
         const result = await this.runWorkflow({ convo, userId, text, intent, confidence, slots, attachments })
+        this._applyLoopGuard(result, { prevStep, prevIntent, prevStall })
+
         // Preserve long-lived memory across the per-turn botState reset — the
         // workflow only returns intent/step/slots, never memory.
         const memory = await this._updateMemory(convo, userId, intent)
@@ -258,9 +319,17 @@ class BotOrchestratorService {
         convo.markModified('botState')
         await convo.save()
 
+        // Only warm a reply that ENDS the turn cleanly (no next step, not a
+        // handoff): informational answers, greetings, confirmations of a done
+        // action. NEVER style a functional flow prompt ("what's the new phone
+        // number?", "wallet or card?") or a handoff line — rewording those risks
+        // inverting their meaning or dropping a placeholder, which is worse than
+        // a plainly-worded prompt.
+        const canStyle = !result.handoff && !result.state?.step
         const posted = []
         for (const reply of result.replies || []) {
-            posted.push(await this.say(convo, reply))
+            const shaped = canStyle ? await this._maybeStyle(reply) : reply
+            posted.push(await this.say(convo, shaped))
         }
         if (result.handoff) await this.handoff(convo, userId)
 
@@ -281,7 +350,97 @@ class BotOrchestratorService {
         const step = result.state?.step
         if (!step) return MAIN_QUICK_ACTIONS
         if (/confirm/i.test(step) || step === 'offered-handoff') return YES_NO_ACTIONS
+        if (step === 'collect-payment') {
+            return [
+                { label: 'Pay from wallet', message: 'wallet' },
+                { label: 'Pay by card', message: 'card' },
+            ]
+        }
+        if (step === 'collect-speed') {
+            return [
+                { label: 'Standard', message: 'standard' },
+                { label: 'Express', message: 'express' },
+                { label: 'Same-day', message: 'same-day' },
+            ]
+        }
         return [{ label: 'Talk To Staff', message: 'talk to a human' }]
+    }
+
+    // Part C — never trap a customer re-asking the same thing. If a multi-turn
+    // flow returns the SAME step it was already on (the customer's reply didn't
+    // advance it), count the stall: after the 2nd no-advance, stop repeating and
+    // offer a human (reuses the offered-handoff step so a "yes" hands off). The
+    // counter lives in botState.slots._stall and resets the moment a step advances.
+    _applyLoopGuard(result, { prevStep, prevIntent, prevStall }) {
+        if (!result?.state?.step) return // answered/ended — nothing to stall on
+        const noAdvance =
+            result.state.step === prevStep &&
+            (result.state.intent || null) === (prevIntent || null)
+        const stall = noAdvance ? prevStall + 1 : 0
+
+        if (stall >= 2 && !/handoff/i.test(result.state.step)) {
+            result.replies = [
+                "I'm sorry — I'm having trouble getting that right. Would you like me to connect you to a member of staff? (yes/no)",
+            ]
+            result.state = {
+                ...result.state,
+                step: 'offered-handoff',
+                slots: { ...(result.state.slots || {}), _stall: 0 },
+            }
+            return
+        }
+
+        result.state.slots = { ...(result.state.slots || {}), _stall: stall }
+        if (stall === 1 && Array.isArray(result.replies) && result.replies.length) {
+            result.replies[result.replies.length - 1] +=
+                '\n(If it’s easier, just tap “Talk To Staff”.)'
+        }
+    }
+
+    // Part D — an explicit cancel/reset of an in-progress flow (not "no", which
+    // is a valid step answer).
+    _isCancel(text) {
+        return /\b(cancel|never ?mind|forget (it|about it)|scrap that|start over|abort)\b/i.test(String(text || ''))
+    }
+
+    // Part E — optionally re-word a single-line PROSE reply to be warmer/shorter,
+    // protecting all data (₦ amounts, order codes, times, numbers, links) behind
+    // §n§ placeholders and falling back to the EXACT deterministic text on any
+    // doubt (missing token, no provider, error). Skips multi-line/link/very-short
+    // replies so summaries, offers and links stay byte-for-byte intact. Gated by
+    // BOT_STYLE_REPLIES (set to "false" to disable); a no-op when no LLM provider.
+    async _maybeStyle(reply) {
+        if (process.env.BOT_STYLE_REPLIES === 'false') return reply
+        if (!reply || typeof reply !== 'string') return reply
+        if (/\n/.test(reply) || /https?:\/\//i.test(reply) || reply.length < 25) return reply
+        const tokens = []
+        const guarded = reply.replace(
+            /₦[\d,]+(?:\.\d+)?|\bOSC[-\w]*|\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b|\b\d[\d,]*(?:\.\d+)?%?\b/gi,
+            (m) => {
+                const key = `§${tokens.length}§`
+                tokens.push(m)
+                return key
+            },
+        )
+        let styled
+        try {
+            styled = await BotIntentService.styleReply(guarded)
+        } catch (_) {
+            return reply
+        }
+        if (!styled || typeof styled !== 'string') return reply
+        for (let i = 0; i < tokens.length; i++) {
+            if (!styled.includes(`§${i}§`)) return reply // a token vanished → don't trust it
+        }
+        let restored = styled
+        for (let i = 0; i < tokens.length; i++) restored = restored.split(`§${i}§`).join(tokens[i])
+        // Any leftover § means the model invented a placeholder of its own (seen:
+        // "…the number at §number§") — reject rather than leak it to the customer.
+        if (/§/.test(restored)) return reply
+        // A trailing "?" flipping to/from a statement means the meaning changed
+        // (a question became an assertion or vice-versa) — don't trust it.
+        if (/\?\s*$/.test(reply.trim()) !== /\?\s*$/.test(restored.trim())) return reply
+        return restored.trim() || reply
     }
 
     // Map a CRM nudge frame to the workflow an ambiguous reply should enter.
@@ -735,6 +894,16 @@ class BotOrchestratorService {
     // bot NEVER places an order without a "yes" at the confirm step. Uses Phase A
     // memory so "the usual" prefills from the last order.
     async bookingFlow({ convo, userId, text, slots, step }) {
+        // Payment step (after the order is placed) — handled FIRST so a
+        // "wallet"/"card" reply is never mis-parsed as items/service, and so we
+        // skip the catalog/settings reads the slot-fill needs.
+        if (step === 'collect-payment') {
+            return await this._bookingPaymentStep({ userId, text, slots })
+        }
+        if (step === 'confirm-credit') {
+            return await this._bookingCreditOptinStep({ userId, text, slots })
+        }
+
         const setting = await AdminSettingModel.findOne({}).lean()
         const catalog = await OrderItemModel.find({}).lean()
         const memory = BotContextService.loadMemory(convo)
@@ -747,7 +916,10 @@ class BotOrchestratorService {
         let bAddress = slots.bPickupAddress || null
         let bDate = slots.bDatePhrase || null
         let bTime = slots.bTime || null
+        let bTimeAuto = slots.bTimeAuto || false
         let bPhone = slots.bPhone || null
+        let bQtyConfirmed = slots.bQtyConfirmed || false
+        let bSpeed = slots.bSpeed || null
         let unmatched = []
 
         // ── ingest anything this turn provided ──────────────────────────────
@@ -768,8 +940,13 @@ class BotOrchestratorService {
                     ? this.cleanDetailValue('pickupAddress', text)
                     : null)
         }
-        if (!bDate) bDate = slots.pickupDate || (step === 'collect-datetime' ? String(text || '').trim() : null)
-        if (!bTime) bTime = slots.pickupTime || null
+        // Date/time (Part A): prefer the LLM's structured slots, then a keyword
+        // parse of the raw text — NEVER dump the whole message as the date (that
+        // was the "When should we come?" loop). Parsed every turn so a multi-slot
+        // answer ("tomorrow morning, same address") fills date + time at once.
+        const dt = this._parseDateTimeFromText(text)
+        if (!bDate) bDate = slots.pickupDate || dt.datePhrase || null
+        if (!bTime) bTime = slots.pickupTime || dt.timePhrase || null
         if (!bPhone && step === 'collect-phone') {
             const m = String(text || '').match(/(\+?\d[\d\s-]{6,}\d)/)
             if (m) bPhone = m[1].replace(/\s+/g, '')
@@ -794,9 +971,46 @@ class BotOrchestratorService {
                 bPickupAddress: bAddress,
                 bDatePhrase: bDate,
                 bTime,
+                bTimeAuto,
                 bPhone,
+                bQtyConfirmed,
+                bSpeed,
             },
         })
+
+        // Human-readable item list, e.g. "50 shirts, 3 trousers".
+        const describeItems = () =>
+            (bItems || [])
+                .map((i) => `${i.quantity} ${i.type}${i.quantity > 1 ? 's' : ''}`)
+                .join(', ')
+
+        // Large-quantity sanity confirm (guards typos like 50 vs 5). Asked once,
+        // right after items are captured, before we price/continue.
+        const LARGE_QTY = 30
+        if (step === 'confirm-qty') {
+            if (this.isNegative(text)) {
+                bItems = null
+                bQtyConfirmed = false
+                return {
+                    replies: ['No problem — tell me the items and how many again, e.g. "6 shirts, 3 trousers".'],
+                    state: persist('collect-items'),
+                }
+            }
+            if (this.isAffirmative(text)) {
+                bQtyConfirmed = true // fall through and continue the flow
+            } else {
+                return {
+                    replies: [`Just to confirm the quantities — ${describeItems()}? (yes/no)`],
+                    state: persist('confirm-qty'),
+                }
+            }
+        }
+        if (bItems && bItems.length && !bQtyConfirmed && bItems.some((i) => i.quantity > LARGE_QTY)) {
+            return {
+                replies: [`Just to confirm — that's ${describeItems()}. That's a large order, so I want to be sure before I price it. (yes/no)`],
+                state: persist('confirm-qty'),
+            }
+        }
 
         // ── confirm step: yes places it, no cancels, anything else re-checks ──
         if (step === 'confirm') {
@@ -807,7 +1021,7 @@ class BotOrchestratorService {
             }
             if (this.isAffirmative(text)) {
                 return await this._placeBooking({
-                    userId, bItems, bServiceType, bAddress, bDate, bTime, bPhone,
+                    userId, bItems, bServiceType, bAddress, bDate, bTime, bTimeAuto, bPhone, bSpeed,
                 })
             }
             // otherwise treat it as a correction and fall through to re-summarise
@@ -839,10 +1053,36 @@ class BotOrchestratorService {
                 state: persist('collect-address'),
             }
         }
-        if (!bDate || !bTime) {
+        // Part B — a DAY is enough; if no time is given we default a pickup window
+        // (and say so at confirm) rather than trapping the customer on this step.
+        if (!bDate) {
             return {
-                replies: ['When should we come? Give me a day and rough time — e.g. "tomorrow morning".'],
+                replies: ['When should we come? A day is fine — e.g. "tomorrow" or "Saturday" — and add a rough time (morning/afternoon) if you have one.'],
                 state: persist('collect-datetime'),
+            }
+        }
+        if (!bTime) {
+            bTime = this._defaultPickupWindow(setting)
+            bTimeAuto = true
+        }
+        // Delivery speed — offer only what's available at THIS clock time (uses the
+        // backend cutoff rule as the single source), with charge + ETA. Parses the
+        // reply here so a multi-slot "tomorrow express" is caught too.
+        if (!bSpeed) {
+            const avail = this._availableSpeeds(setting)
+            const availSpeeds = avail.map((s) => s.speed)
+            const candidate = this._parseDeliverySpeed(text)
+            if (candidate && availSpeeds.includes(candidate)) {
+                bSpeed = candidate
+            } else {
+                const note =
+                    candidate && !availSpeeds.includes(candidate)
+                        ? `Sorry, ${candidate} isn't available right now (past today's cut-off). `
+                        : ''
+                return {
+                    replies: [`${note}${this._speedOfferText(avail)}`],
+                    state: persist('collect-speed'),
+                }
             }
         }
         const defaults = await BotContextService.savedDefaults(userId)
@@ -854,7 +1094,7 @@ class BotOrchestratorService {
         }
 
         // ── everything gathered → show summary + estimate, ask to confirm ────
-        const estimate = this._bookingEstimate(bItems, bServiceType, setting)
+        const estimate = this._bookingEstimate(bItems, bServiceType, setting, bSpeed)
         const itemsLine = bItems
             .map((i) => `${i.quantity} ${i.type}${i.quantity > 1 ? 's' : ''}`)
             .join(', ')
@@ -862,25 +1102,28 @@ class BotOrchestratorService {
             "Here's your booking:",
             `• Items: ${itemsLine}`,
             `• Service: ${bServiceType} (classic tier)`,
-            `• Pickup: ${bAddress}${bDate ? `, ${bDate}` : ''}${bTime ? ` ${bTime}` : ''}`,
-            `• Delivery: standard`,
-            `Estimated total: about ${naira(estimate)} — you'll see the exact amount once it's placed, and you can pay in the app or from your wallet.`,
+            `• Pickup: ${bAddress}${bDate ? `, ${bDate}` : ''}${bTime ? ` ${bTime}${bTimeAuto ? ' (default window — tell me if you’d prefer another time)' : ''}` : ''}`,
+            `• Delivery: ${this._describeSpeed(bSpeed, setting)}`,
+            `Estimated total: about ${naira(estimate)} — you'll see the exact amount once it's placed.`,
             'Shall I place it? (yes/no)',
         ].join('\n')
         return { replies: [summary], state: persist('confirm') }
     }
 
     // Build the payload and place the order through the shared booking path.
-    async _placeBooking({ userId, bItems, bServiceType, bAddress, bDate, bTime, bPhone }) {
+    // Billing precedence: (1) if the customer has an ACTIVE subscription, try to
+    // cover it with their plan (reuses postBookOrder's own limit/heavy-item
+    // validation — a rejected attempt creates NO order); (2) otherwise / on plan
+    // rejection, place pay-per-item and collect payment (wallet or card).
+    async _placeBooking({ userId, bItems, bServiceType, bAddress, bDate, bTime, bTimeAuto, bPhone, bSpeed }) {
         const defaults = await BotContextService.savedDefaults(userId)
         const phone = bPhone || defaults.phoneNumber
-        const payload = {
+        const basePayload = {
             fullName: defaults.fullName || 'Customer',
             phoneNumber: phone,
             serviceType: bServiceType,
             serviceTier: 'classic',
-            billingType: 'pay-per-item',
-            deliverySpeed: 'standard',
+            deliverySpeed: bSpeed || DELIVERY_SPEED.STANDARD,
             isDelivery: true,
             isPickUp: true,
             items: (bItems || []).map((i) => ({
@@ -890,26 +1133,90 @@ class BotOrchestratorService {
             })),
             pickupAddress: bAddress,
         }
-        if (bTime) payload.pickupTime = bTime
+        if (bTime) basePayload.pickupTime = bTime
         const day = this._resolvePickupDate(bDate)
-        if (day) payload.pickupDate = day
+        if (day) basePayload.pickupDate = day
 
-        let result
-        try {
-            result = await new BookOrderService().createOrder({ userId, payload })
-        } catch (e) {
-            result = { success: false, data: { error: e.message } }
+        // (1) Subscriber → try the plan first.
+        let subLead = ''
+        const sub = await SubscriptionModel.findOne({ userId, status: 'active' }).lean()
+        if (sub) {
+            const subRes = await this._createOrderSafe(userId, {
+                ...basePayload,
+                billingType: BILLING_TYPE.PAY_FROM_SUBSCRIPTION,
+            })
+            if (subRes?.success) {
+                const order = subRes.data?.order
+                return {
+                    replies: [
+                        `Done! Order ${order?.oscNumber || ''} is placed and covered by your subscription ✅. We'll arrange your pickup shortly!`,
+                    ],
+                }
+            }
+            // Plan can't cover it (over monthly limit / heavy items / etc.) → fall
+            // back to pay-per-item, telling the customer why in plain language.
+            subLead = this._subFallbackLead(subRes?.data?.error)
         }
+
+        // (2) Pay-per-item (default / fallback) → then collect payment.
+        const result = await this._createOrderSafe(userId, {
+            ...basePayload,
+            billingType: BILLING_TYPE.PAY_PER_ITEM,
+        })
         if (result?.success) {
             const order = result.data?.order
+            const amount = Number(order?.amount) || 0
+            const osc = order?.oscNumber || ''
+            // Fully covered at creation (offer/credit) → nothing to collect.
+            if (amount <= 0) {
+                return {
+                    replies: [
+                        `${subLead}Done! Order ${osc} is placed and fully covered — nothing to pay ✅. We'll arrange your pickup shortly!`,
+                    ],
+                }
+            }
+            // Order exists but is UNPAID — drive payment instead of ending here,
+            // and DON'T call it "done" until money is actually collected.
             return {
                 replies: [
-                    `Done! Your order ${order?.oscNumber || ''} is placed ✅. Total ${naira(order?.amount)}. We'll arrange your pickup shortly — you can pay in the app, or say "use my wallet" and I'll apply your balance.`,
+                    `${subLead}Your order ${osc} is placed and awaiting payment — total ${naira(amount)}. How would you like to pay — from your wallet, or by card?`,
                 ],
+                state: {
+                    intent: BOT_INTENT.BOOKING_GUIDE,
+                    step: 'collect-payment',
+                    slots: {
+                        payOrderId: String(order?._id || ''),
+                        payAmount: amount,
+                        payOsc: osc,
+                    },
+                },
             }
         }
         const err = result?.data?.error
         const msg = typeof err === 'string' ? err : 'something went wrong on our side'
+        // Delivery-speed cutoff passed mid-chat (before 2pm/10am) or the speed is
+        // at capacity → don't dead-end: send them back to pick another speed
+        // (the offer will now exclude the unavailable one). Keeps all other slots.
+        if (/before 10am|before 2pm|full capacity/i.test(msg)) {
+            return {
+                replies: [`${msg} Let's choose another delivery speed.`],
+                state: {
+                    intent: BOT_INTENT.BOOKING_GUIDE,
+                    step: 'collect-speed',
+                    slots: {
+                        bItems,
+                        bServiceType,
+                        bPickupAddress: bAddress,
+                        bDatePhrase: bDate,
+                        bTime,
+                        bTimeAuto: !!bTimeAuto,
+                        bPhone,
+                        bQtyConfirmed: true,
+                        bSpeed: null,
+                    },
+                },
+            }
+        }
         return {
             replies: [
                 `I couldn't place the order — ${msg}. Would you like me to connect you to a person?`,
@@ -918,57 +1225,272 @@ class BotOrchestratorService {
         }
     }
 
+    // Place an order through the exact production path, never throwing.
+    async _createOrderSafe(userId, payload) {
+        try {
+            return await new BookOrderService().createOrder({ userId, payload })
+        } catch (e) {
+            return { success: false, data: { error: e.message } }
+        }
+    }
+
+    // Friendly one-liner explaining why a subscriber's order fell back to
+    // pay-as-you-go (from postBookOrder's own rejection reason).
+    _subFallbackLead(error) {
+        const e = String(error || '').toLowerCase()
+        if (/heavy/.test(e)) return "Your plan doesn't cover heavy items, so this one is pay-as-you-go. "
+        if (/limit|exceed/.test(e)) return "That's over your plan's items for this period, so this one is pay-as-you-go. "
+        return 'This one is pay-as-you-go. '
+    }
+
+    // Part G — collect payment for a freshly-placed (unpaid) booking. The order
+    // already exists via the exact production path; here we settle it from the
+    // customer's wallet (reusing WalletService.payWithWallet) or hand them a
+    // Paystack checkout link (reusing PaystackService.initializePayment). The bot
+    // gains NO new money authority: it only spends the customer's own wallet on
+    // their own order, or gives them a link they authorise themselves. The order
+    // stays PENDING (paymentStatus unchanged) until wallet succeeds or the
+    // Paystack webhook confirms the card payment — the bot never confirms it.
+    async _bookingPaymentStep({ userId, text, slots }) {
+        const orderId = slots?.payOrderId
+        const amount = Number(slots?.payAmount) || 0
+        const osc = slots?.payOsc || ''
+        const stay = {
+            intent: BOT_INTENT.BOOKING_GUIDE,
+            step: 'collect-payment',
+            slots: { payOrderId: orderId, payAmount: amount, payOsc: osc },
+        }
+        if (!orderId) {
+            return {
+                replies: ['I lost track of that order, sorry. Shall I connect you to a member of staff? (yes/no)'],
+                state: { intent: BOT_INTENT.BOOKING_GUIDE, step: 'offered-handoff', slots: {} },
+            }
+        }
+
+        const choice = this._parsePaymentChoice(text)
+
+        if (choice === 'wallet') {
+            const { cash, creditTotal, available } = await this._walletAvailable(userId)
+            if (available < amount) {
+                return {
+                    replies: [
+                        `Your wallet has ${naira(available)}, which isn't enough for the ${naira(amount)} total. You can top up in the app, pay by card, or I can connect you to a person.`,
+                    ],
+                    state: stay,
+                }
+            }
+            // Reward credit present → ASK before spending it (opt-in), rather than
+            // silently using it. No credit → go straight to a cash charge.
+            if (creditTotal > 0) {
+                return {
+                    replies: [`You have ${naira(creditTotal)} in reward credit. Use it toward this ${naira(amount)}? (yes/no)`],
+                    state: {
+                        intent: BOT_INTENT.BOOKING_GUIDE,
+                        step: 'confirm-credit',
+                        slots: { payOrderId: orderId, payAmount: amount, payOsc: osc, payCash: cash },
+                    },
+                }
+            }
+            const r = await this._settleWalletCharge({ userId, orderId, useCredit: false })
+            return r.ok
+                ? { replies: [this._walletPaidReply(amount, osc, r.creditApplied)] }
+                : { replies: [`I couldn't complete the wallet payment — ${r.error}. You can pay by card instead, or I can connect you to a person.`], state: stay }
+        }
+
+        if (choice === 'card') {
+            let res
+            try {
+                res = await new PaystackService().initializePayment({
+                    body: { transactionType: 'order', orderId },
+                    user: { id: userId },
+                })
+            } catch (e) {
+                res = { success: false, data: { error: e.message } }
+            }
+            const url = res?.success && res.data?.message?.data?.authorization_url
+            if (url) {
+                return {
+                    replies: [
+                        `Great — tap here to pay ${naira(amount)} securely for order ${osc}:\n${url}\nYour order is confirmed the moment the payment goes through. You can say "I've paid" or ask for your order status anytime.`,
+                    ],
+                }
+            }
+            const cerr = (res && res.data && res.data.error) || 'I could not create the payment link'
+            return {
+                replies: [`Sorry — ${cerr}. You can pay from your wallet instead, or I can connect you to a person.`],
+                state: stay,
+            }
+        }
+
+        // unclear reply → ask the method again (the loop guard escalates if it repeats)
+        return {
+            replies: [`Would you like to pay for order ${osc} (${naira(amount)}) from your wallet, or by card?`],
+            state: stay,
+        }
+    }
+
+    // 'wallet' | 'card' | null — how the customer wants to pay for a booking.
+    _parsePaymentChoice(text) {
+        const t = String(text || '').toLowerCase()
+        if (/\bwallet\b|\bbalance\b|\bcredit\b|from my (wallet|balance)/.test(t)) return 'wallet'
+        if (/\bcard\b|paystack|online|debit|\bbank\b|transfer|\blink\b|pay now/.test(t)) return 'card'
+        return null
+    }
+
+    // Shared wallet settlement: charge (credit-first ONLY when useCredit), write a
+    // WALLET audit, and stamp the order billingType so reporting matches. Returns
+    // { ok:true, creditApplied } | { ok:false, error }. Callers phrase their own
+    // success line. Used by booking + apply-payment.
+    async _settleWalletCharge({ userId, orderId, useCredit }) {
+        let result
+        try {
+            result = await new WalletService().payWithWallet({
+                body: { bookOrderId: orderId, useCredit: !!useCredit },
+                user: { id: userId },
+            })
+        } catch (e) {
+            result = { success: false, data: { error: e.message } }
+        }
+        if (!result?.success) {
+            return { ok: false, error: (result && result.data && result.data.error) || 'the payment could not be completed' }
+        }
+        try {
+            await createAuditLog({
+                userId,
+                action: `Bot settled order ${orderId} from wallet (useCredit=${!!useCredit})`,
+                category: AUDIT_LOG_CATEGORIES.WALLET,
+                orderId,
+            })
+        } catch (_) {
+            /* audit best-effort; the WalletTransaction is the money record */
+        }
+        try {
+            await BookOrderModel.findByIdAndUpdate(orderId, {
+                billingType: BILLING_TYPE.PAY_FROM_WALLET,
+            })
+        } catch (_) {
+            /* label only — the WalletTransaction is the money record */
+        }
+        return { ok: true, creditApplied: (result.data && result.data.creditApplied) || 0 }
+    }
+
+    // Booking "Paid ✅" line with an optional reward-credit note.
+    _walletPaidReply(amount, osc, creditApplied) {
+        const note = creditApplied > 0 ? ` (${naira(creditApplied)} from your reward credit)` : ''
+        return `Paid ✅ — order ${osc} is confirmed and your wallet covered ${naira(amount)}${note}. We'll arrange your pickup shortly!`
+    }
+
+    // Credit opt-in for a booking wallet payment: yes → spend reward credit first;
+    // no → cash only (if cash covers), else route back to choose credit or card.
+    async _bookingCreditOptinStep({ userId, text, slots }) {
+        const orderId = slots?.payOrderId
+        const amount = Number(slots?.payAmount) || 0
+        const osc = slots?.payOsc || ''
+        const cash = Number(slots?.payCash) || 0
+        const backToPay = {
+            intent: BOT_INTENT.BOOKING_GUIDE,
+            step: 'collect-payment',
+            slots: { payOrderId: orderId, payAmount: amount, payOsc: osc },
+        }
+        const failReply = (err) => ({
+            replies: [`I couldn't complete it — ${err}. You can pay by card, or I can connect you to a person.`],
+            state: backToPay,
+        })
+        if (this.isAffirmative(text)) {
+            const r = await this._settleWalletCharge({ userId, orderId, useCredit: true })
+            return r.ok ? { replies: [this._walletPaidReply(amount, osc, r.creditApplied)] } : failReply(r.error)
+        }
+        if (this.isNegative(text)) {
+            if (cash >= amount) {
+                const r = await this._settleWalletCharge({ userId, orderId, useCredit: false })
+                return r.ok ? { replies: [this._walletPaidReply(amount, osc, r.creditApplied)] } : failReply(r.error)
+            }
+            return {
+                replies: [`No problem — but your cash balance (${naira(cash)}) alone won't cover ${naira(amount)}. Would you like to use your reward credit after all, or pay by card?`],
+                state: backToPay,
+            }
+        }
+        // unclear → re-ask (loop guard escalates if it repeats)
+        return {
+            replies: [`Use your reward credit toward order ${osc}? (yes/no)`],
+            state: {
+                intent: BOT_INTENT.BOOKING_GUIDE,
+                step: 'confirm-credit',
+                slots: { payOrderId: orderId, payAmount: amount, payOsc: osc, payCash: cash },
+            },
+        }
+    }
+
+    // Available wallet value = cash balance + usable reward credit. Uses the
+    // CANONICAL credit source (WalletCreditService.getCreditBalances) so this
+    // "do you have enough?" check can never drift from what chargeWalletForOrder
+    // actually consumes (same ACTIVE / remaining>0 / not-expired filter).
+    async _walletAvailable(userId) {
+        const wallet = await WalletModel.findOne({ userId }).lean()
+        const cash = wallet?.balance || 0
+        const { total: creditTotal } = await WalletCreditService.getCreditBalances(userId)
+        return { cash, creditTotal, available: cash + creditTotal }
+    }
+
     // "Use my balance / wallet" — settle the customer's latest UNPAID order from
     // their wallet (credits first, then cash), behind an explicit confirm. Goes
     // through the existing WalletService.payWithWallet path (same charge/receipt/
     // notification as the app). The bot never edits balances or adds money — it
     // only spends what's already there, on the customer's own order.
     async applyPaymentFlow({ convo, userId, text, slots, step }) {
-        // confirm turn
+        // apply-payment success/failure reply (own wording; shares the charge helper)
+        const applyPaidReply = async (orderId, useCredit) => {
+            const r = await this._settleWalletCharge({ userId, orderId, useCredit })
+            if (r.ok) {
+                const note = r.creditApplied > 0 ? ` (${naira(r.creditApplied)} from your reward credit)` : ''
+                return { replies: [`Paid ✅ — your wallet covered the order${note}. Thank you!`] }
+            }
+            return {
+                replies: [`I couldn't complete it — ${r.error}. You can top up your wallet in the app, or I can connect you to a person.`],
+                state: { intent: BOT_INTENT.APPLY_PAYMENT, step: 'offered-handoff', slots: {} },
+            }
+        }
+
+        // confirm turn: on yes, ask the credit opt-in first (only if they have credit)
         if (step === 'confirm-pay') {
             const orderId = slots?.payOrderId
+            const amount = Number(slots?.payAmount) || 0
+            const osc = slots?.payOsc || ''
             if (this.isNegative(text)) {
                 return { replies: ["Okay — I won't touch your wallet. Anything else?"] }
             }
             if (this.isAffirmative(text) && orderId) {
-                let result
-                try {
-                    result = await new WalletService().payWithWallet({
-                        body: { bookOrderId: orderId, useCredit: true },
-                        user: { id: userId },
-                    })
-                } catch (e) {
-                    result = { success: false, data: { error: e.message } }
-                }
-                if (result?.success) {
-                    try {
-                        await createAuditLog({
-                            userId,
-                            action: `Bot applied wallet payment to order ${orderId} on customer request`,
-                            category: AUDIT_LOG_CATEGORIES.WALLET,
-                            orderId,
-                        })
-                    } catch (_) {
-                        /* audit is best-effort; the WalletTransaction is the money record */
+                const { cash, creditTotal } = await this._walletAvailable(userId)
+                if (creditTotal > 0) {
+                    return {
+                        replies: [`You have ${naira(creditTotal)} in reward credit. Use it toward this ${naira(amount)}? (yes/no)`],
+                        state: { intent: BOT_INTENT.APPLY_PAYMENT, step: 'confirm-pay-credit', slots: { payOrderId: orderId, payAmount: amount, payOsc: osc, payCash: cash } },
                     }
-                    const d = result.data || {}
-                    const note =
-                        d.creditApplied > 0
-                            ? ` (${naira(d.creditApplied)} from your reward credit)`
-                            : ''
-                    return { replies: [`Paid ✅ — your wallet covered the order${note}. Thank you!`] }
                 }
-                const err =
-                    (result && result.data && result.data.error) ||
-                    'the payment could not be completed'
+                return await applyPaidReply(orderId, false)
+            }
+            // unclear reply → fall through and re-summarise
+        }
+
+        // credit opt-in turn: yes → credit-first; no → cash only (if it covers)
+        if (step === 'confirm-pay-credit') {
+            const orderId = slots?.payOrderId
+            const amount = Number(slots?.payAmount) || 0
+            const cash = Number(slots?.payCash) || 0
+            if (this.isAffirmative(text) && orderId) {
+                return await applyPaidReply(orderId, true)
+            }
+            if (this.isNegative(text) && orderId) {
+                if (cash >= amount) return await applyPaidReply(orderId, false)
                 return {
-                    replies: [
-                        `I couldn't complete it — ${err}. You can top up your wallet in the app, or I can connect you to a person.`,
-                    ],
+                    replies: [`Without your reward credit, your ${naira(cash)} cash won't cover ${naira(amount)}. You can top up in the app, or I can connect you to a person.`],
                     state: { intent: BOT_INTENT.APPLY_PAYMENT, step: 'offered-handoff', slots: {} },
                 }
             }
-            // unclear reply → fall through and re-summarise
+            return {
+                replies: ['Use your reward credit toward the order? (yes/no)'],
+                state: { intent: BOT_INTENT.APPLY_PAYMENT, step: 'confirm-pay-credit', slots: { payOrderId: orderId, payAmount: amount, payOsc: slots?.payOsc || '', payCash: cash } },
+            }
         }
 
         // find the latest unpaid, non-cancelled order
@@ -991,15 +1513,7 @@ class BotOrchestratorService {
         }
 
         // available wallet value (cash + active reward credit)
-        const wallet = await WalletModel.findOne({ userId }).lean()
-        const cash = wallet?.balance || 0
-        const credits = await WalletCreditModel.find({
-            userId,
-            status: CREDIT_STATUS.ACTIVE,
-            expiresAt: { $gt: new Date() },
-        }).lean()
-        const creditTotal = credits.reduce((s, c) => s + (c.remaining || 0), 0)
-        const available = cash + creditTotal
+        const { cash, creditTotal, available } = await this._walletAvailable(userId)
 
         const lines = [
             `Order ${order.oscNumber} comes to ${naira(order.amount)}.`,
@@ -1020,7 +1534,7 @@ class BotOrchestratorService {
             state: {
                 intent: BOT_INTENT.APPLY_PAYMENT,
                 step: 'confirm-pay',
-                slots: { payOrderId: String(order._id) },
+                slots: { payOrderId: String(order._id), payAmount: order.amount, payOsc: order.oscNumber },
             },
         }
     }
@@ -1368,13 +1882,78 @@ class BotOrchestratorService {
     // Offline fallback item parser ("6 shirts and 3 trousers") for when the LLM
     // isn't available to structure slots.items.
     _parseItemsFromText(text, catalog) {
+        // Digits AND spelled-out numbers, incl. tens/compounds ("2 shirts,
+        // two duvets, thirty-five towels, fifty shorts").
+        const tens = 'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety'
+        const teens = 'ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen'
+        const ones = 'one|two|three|four|five|six|seven|eight|nine'
+        // tens (+ optional ones) matched first so "thirty five" is one number.
+        const numWord = `(?:${tens})(?:[\\s-](?:${ones}))?|${teens}|${ones}`
+        const re = new RegExp(`\\b(\\d+|${numWord})\\s+([a-zA-Z]+)`, 'gi')
         const out = []
-        const re = /(\d+)\s+([a-zA-Z]+)/g
         let m
         while ((m = re.exec(String(text || '')))) {
-            out.push({ type: m[2].toLowerCase(), quantity: parseInt(m[1], 10) })
+            const q = this._wordToNumber(m[1])
+            if (!q) continue
+            out.push({ type: m[2].toLowerCase(), quantity: q })
         }
         return out
+    }
+
+    // Parse a number written as digits or words ("35", "thirty-five", "fifty",
+    // "seven") to an integer; null if any token isn't a known number word.
+    _wordToNumber(str) {
+        const s = String(str || '').toLowerCase().trim()
+        if (/^\d+$/.test(s)) return parseInt(s, 10)
+        const map = {
+            one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+            ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+            sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+            twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+        }
+        let total = 0
+        for (const tok of s.split(/[\s-]+/)) {
+            if (map[tok] == null) return null
+            total += map[tok]
+        }
+        return total || null
+    }
+
+    // Part A: pull a day phrase and/or time-of-day from free text, WITHOUT
+    // swallowing the whole message. Returns { datePhrase, timePhrase } (either
+    // may be null). _resolvePickupDate turns datePhrase into a real Date.
+    _parseDateTimeFromText(text) {
+        const t = String(text || '').toLowerCase()
+        let datePhrase = null
+        if (/\bday after tomorrow\b/.test(t)) datePhrase = 'day after tomorrow'
+        else if (/\btomorrow\b/.test(t)) datePhrase = 'tomorrow'
+        else if (/\btoday\b/.test(t)) datePhrase = 'today'
+        else {
+            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            for (const d of days) {
+                if (new RegExp(`\\b${d}\\b`).test(t)) { datePhrase = d; break }
+            }
+        }
+        let timePhrase = null
+        const clock = t.match(/\b(\d{1,2})(:\d{2})?\s*(am|pm)\b/)
+        if (clock) timePhrase = clock[0].replace(/\s+/g, '')
+        else if (/\bmorning\b/.test(t)) timePhrase = 'morning'
+        else if (/\bafternoon\b/.test(t)) timePhrase = 'afternoon'
+        else if (/\bevening\b/.test(t)) timePhrase = 'evening'
+        else if (/\bnight\b/.test(t)) timePhrase = 'night'
+        else if (/\bnoon\b|\bmidday\b|\bmid-day\b/.test(t)) timePhrase = 'noon'
+        return { datePhrase, timePhrase }
+    }
+
+    // Default pickup window when the customer gives a day but no time. Uses the
+    // first configured pickup slot if present, else a sensible "morning".
+    _defaultPickupWindow(setting) {
+        const slots = setting?.pickupTimes || setting?.pickupTimeSlots || setting?.pickupSlots
+        if (Array.isArray(slots) && slots.length) {
+            const first = slots[0]
+            return typeof first === 'string' ? first : first?.label || first?.name || 'morning'
+        }
+        return 'morning'
     }
 
     // Map the customer's words to one of the configured service-type names.
@@ -1394,7 +1973,7 @@ class BotOrchestratorService {
     // Estimate for the confirm prompt — same per-piece math as pricing/booking
     // (classic tier) plus pickup/delivery fees. Clearly labelled an estimate;
     // the authoritative total comes from the placed order's receipt.
-    _bookingEstimate(priced, serviceType, setting) {
+    _bookingEstimate(priced, serviceType, setting, speed) {
         const svc =
             (setting?.serviceTypes || []).find((s) => s.name === serviceType) ||
             (setting?.serviceTypes || [])[0]
@@ -1402,7 +1981,60 @@ class BotOrchestratorService {
         let sum = 0
         for (const i of priced) sum += roundToNearestHundred((i.price || 0) * per) * i.quantity
         sum += (setting?.pickupFee || 0) + (setting?.deliveryFee || 0)
+        sum += this._speedCharge(speed, setting)
         return sum
+    }
+
+    // Speed surcharge (0 for standard / unknown).
+    _speedCharge(speed, setting) {
+        if (speed === DELIVERY_SPEED.EXPRESS) return setting?.expressCharge || 0
+        if (speed === DELIVERY_SPEED.SAME_DAY) return setting?.sameDayCharge || 0
+        return 0
+    }
+
+    // 'same-day' | 'express' | 'standard' | null — the customer's chosen speed.
+    _parseDeliverySpeed(text) {
+        const t = String(text || '').toLowerCase()
+        if (/same.?day|\btoday\b/.test(t)) return DELIVERY_SPEED.SAME_DAY
+        // standard BEFORE express so "no rush" isn't caught by express's "rush".
+        if (/standard|normal|regular|cheap|no rush|not in a hurry|whenever|\bslow\b/.test(t)) return DELIVERY_SPEED.STANDARD
+        if (/express|urgent|\bfast\b|\brush\b|\bquick/.test(t)) return DELIVERY_SPEED.EXPRESS
+        return null
+    }
+
+    // Speeds available at the current clock time (uses the backend cutoff rule via
+    // calculateDueDate, so the bot never offers something that would be blocked),
+    // each with its charge + a human ETA. Standard is always available.
+    _availableSpeeds(setting) {
+        const out = []
+        if (calculateDueDate(DELIVERY_SPEED.SAME_DAY)) {
+            out.push({ speed: DELIVERY_SPEED.SAME_DAY, label: 'Same-day', charge: setting?.sameDayCharge || 0, eta: 'ready today' })
+        }
+        if (calculateDueDate(DELIVERY_SPEED.EXPRESS)) {
+            out.push({ speed: DELIVERY_SPEED.EXPRESS, label: 'Express', charge: setting?.expressCharge || 0, eta: 'ready tomorrow' })
+        }
+        out.push({ speed: DELIVERY_SPEED.STANDARD, label: 'Standard', charge: 0, eta: 'ready in about 2 days' })
+        return out
+    }
+
+    _speedOfferText(avail) {
+        const lines = avail.map((s) => {
+            const price = s.charge > 0 ? ` (+${naira(s.charge)})` : ' (free)'
+            return `• ${s.label}${price} — ${s.eta}`
+        })
+        return `How soon do you need it?\n${lines.join('\n')}\nReply with one — or "standard" if you're not in a hurry.`
+    }
+
+    // One-line speed description for the confirm summary.
+    _describeSpeed(speed, setting) {
+        const map = {
+            [DELIVERY_SPEED.SAME_DAY]: { label: 'Same-day', eta: 'ready today' },
+            [DELIVERY_SPEED.EXPRESS]: { label: 'Express', eta: 'ready tomorrow' },
+            [DELIVERY_SPEED.STANDARD]: { label: 'Standard', eta: 'ready in about 2 days' },
+        }
+        const d = map[speed] || map[DELIVERY_SPEED.STANDARD]
+        const charge = this._speedCharge(speed, setting)
+        return `${d.label}${charge > 0 ? ` (+${naira(charge)})` : ''} — ${d.eta}`
     }
 
     // Resolve a simple day phrase to a real Date (today / tomorrow / weekday);
@@ -1417,6 +2049,11 @@ class BotOrchestratorService {
         }
         const now = new Date()
         if (/\btoday\b/.test(p)) return atNoon(new Date(now))
+        if (/\bday after tomorrow\b|\bovermorrow\b/.test(p)) {
+            const d = new Date(now)
+            d.setDate(d.getDate() + 2)
+            return atNoon(d)
+        }
         if (/\btomorrow\b/.test(p)) {
             const d = new Date(now)
             d.setDate(d.getDate() + 1)

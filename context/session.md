@@ -3,6 +3,260 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-24 (cont.) — STAGING RUN GREEN (11/11) + 3 real bugs found & fixed
+
+Ran `botStaging.js` against a real Atlas DB (throwaway user, real LLM + real Paystack + real Termii).
+First runs FAILED and surfaced THREE real product bugs (not harness quirks) — now fixed in
+`services/botOrchestrator.service.js`; final run 11/11 all scenarios green; all data cleaned up.
+
+- **BUG 1 — payment-step intent hijack (money bug).** Typing "by card" / "use my wallet" at a
+  booking's `collect-payment` step was CONFIDENTLY classified as `apply-payment`, so the pending
+  booking flow was abandoned and `applyPaymentFlow` ran instead of `_bookingPaymentStep` → no
+  Paystack link, freshly-placed order left unpaid. (Chip taps send the bare word "card"/"wallet"
+  which classify as UNKNOWN/low-conf and dodged it — only TYPED phrases hit it.) Root cause: the
+  mid-flow "continuesFlow" guard (`handleCustomerMessage`, ~line 279) only retains the pending
+  intent when the classifier is UNKNOWN/`confidence<0.6`.
+- **BUG 2 — OTP intent hijack.** A 6-digit OTP at `verify-phone-otp` classified as an ORDER NUMBER
+  (`order-status`, "I couldn't find order 106036") → phone change silently failed. Same root cause;
+  nondeterministic (an earlier run's code happened to classify UNKNOWN and worked).
+- **FIX 1+2 — pin collision-prone steps.** New `isPinnedStep`: when `pendingIntent===BOOKING_GUIDE
+  && pendingStep==='collect-payment'` OR `pendingIntent===UPDATE_DETAILS && pendingStep===
+  'verify-phone-otp'`, retain the pending intent REGARDLESS of confidence. Escalation still wins
+  (checked first); cancel + side-questions are handled earlier in `handleCustomerMessage`; other
+  mid-collect steps are unaffected (their answers classify UNKNOWN so continuesFlow already covers
+  them). Deliberately NOT a blanket pin — a blanket pin would swallow a legit "what's my balance?"
+  asked mid-booking (that path abandons+answers by design / D2 side-question).
+- **BUG 3 — reply styler mangled functional prompts.** The Part-E styler ran on EVERY reply incl.
+  flow prompts/handoffs. Observed: it turned "What's the new phone number?" into a STATEMENT and
+  leaked an invented placeholder ("…the number at §number§"); separately reworded a complaint
+  prompt into a spurious handoff-sounding line. The token-guard didn't catch it because that reply
+  had NO data tokens, so the LLM was free to change meaning.
+- **FIX 3 — gate the styler + harden it.** In `_runSingle` only style a reply that ENDS the turn
+  cleanly (`!result.handoff && !result.state?.step`) — informational answers/greetings/done-
+  confirmations — NEVER a functional prompt or a handoff line. Plus in `_maybeStyle`: reject any
+  restored output that still contains `§` (invented placeholder) or that flips a trailing `?`
+  (question↔statement meaning change). Styler still warms terminal replies (verified: the "Thanks
+  for your 5/5" line is styled, ₦/OSC tokens intact).
+- **Harness fixes (botStaging.js, test-only):** (a) `OrderItem.price` is a per-piece MULTIPLIER
+  (× `serviceType.pricePerPiece`=700), not naira — seeding it as 700 gave ₦490k/piece (the
+  ₦1.47M/₦1.05M nonsense); reseeded as ~1 (heavy=4) via `$set` (corrects stale items). (b) removed
+  the `CARD_PAY = ...||wants('card')` default that made wallet-booking never run; now booking(wallet)
+  + card + apply-payment all run by default.
+- **FINAL RUN 11/11 GREEN** (real DB+LLM+Paystack+Termii): booking→wallet (success, billingType
+  pay-from-wallet, credit opt-in asked, ₦4,500 for 5 shirts, 2 wallet tx + 2 audits); booking→card
+  (real Paystack link, order stays PENDING ✅); apply-payment (credit opt-in→paid ₦2k credit+cash,
+  success); complaint (auto-matched "Stain Remains", case opened→CX); feedback (satisfied 5/5);
+  phone-OTP (real SMS sent, code verified off botState, phone written). Cleanup removed all 84
+  records; nothing left behind. `node -c` clean on both files.
+- **STATUS: the pre-commit staging gate is now PASSED.** The 3 orchestrator fixes are UNCOMMITTED
+  on smart-book-feature with the rest of the bot work. Ready for the client review/commit gate.
+
+## Session: 2026-08-24 — Staging harness prepped (`botStaging.js`) — the pre-commit gate
+
+The one remaining gate before committing the bot V1/V1.1 work is a CONTROLLED STAGING RUN of the
+WRITE actions against a real DB (they were only stub-verified). Built the harness that does it:
+- **`botStaging.js` (project root, sibling to `crmBackfill.js`, UNCOMMITTED).** Drives the REAL
+  `BotOrchestratorService.handleCustomerMessage` (real DB + real LLM + real Paystack init + real
+  Termii OTP) against a THROWAWAY user, prints every turn (reply/intent/step/chips), inspects the
+  side effects each action left, then deletes everything by `userId`. No test-only code path — it
+  drives the bot exactly like the app does.
+- **Safety gate:** refuses unless `STAGING_OK=1`; refuses on `NODE_ENV=production` unless
+  `STAGING_FORCE=1`; prints the target DB host (credentials masked) up front so the operator
+  confirms it's staging, not prod. Card payments are only INITIALISED (link), never completed —
+  the card order stays PENDING (matches the guardrail: bot never confirms card).
+- **Adaptive step-driver (`drive`)** answers whatever `botState.step` the flow returns (map of
+  step→reply, from the real step-name literals) until the flow ends / bails to `offered-handoff` /
+  hits the turn cap — robust to LLM slot-fill variability (turn count isn't fixed).
+- **Scenarios:** (1) booking→WALLET pay (assert order created + paymentStatus success + debit
+  wallet tx + audit), (2) booking→CARD pay (assert Paystack link + order stays PENDING),
+  (3) apply-payment on the still-unpaid card order, (4) complaint on a delivered order (mark the
+  anchor delivered → assert ComplaintCase opened), (5) feedback rating (assert Feedback saved,
+  unique-per-order noted), (6) phone-OTP — reads the generated code straight off
+  `convo.botState.slots.otp` (staging can't read the SMS) so it proves the write happens ONLY on a
+  match; without `TERMII_API_KEY` the SMS send fails and the flow hands off (correct guardrail, flagged).
+- **Flags:** `--only=booking,card,pay,complaint,feedback,otp`, `--credit` (grants ₦2k reward credit
+  to exercise the credit opt-in ask), `--keep` (skip cleanup), `--card-pay`. `STAGING_PHONE` env sets
+  a real number to receive the OTP.
+- **Cleanup** deletes ONLY the throwaway user's data (guarded on `USER._id`): chat messages,
+  conversations, orders, complaints, feedback, wallet tx/credits/wallet, audits, CRM profile,
+  notifications, the user. Prints a per-collection deleted count.
+- **Verified:** `node -c` clean; every model/enum/field referenced confirmed against the code
+  (`wallet.service.js:137` writes the `debit` tx the booking check asserts; step-name literals
+  pulled from the orchestrator; OTP stashed on `botState.slots.otp`).
+- **NOT RUN in this session on purpose** — the session's `MONGODB_URL` is assumed to point at the
+  real/prod DB, and the harness creates real orders/SMS by design. RUN IT against a staging DB:
+  `STAGING_OK=1 node botStaging.js` (add `--credit` and set `TERMII_API_KEY` + `STAGING_PHONE` to
+  exercise the credit opt-in and the full verify-and-write OTP path). Watch the ⚠️ lines — some are
+  expected guardrails. Green run = the last gate before the client-review commit.
+
+## Session: 2026-08-23 (cont.) — D (mid-flow corrections/questions) + E (reply styler) DONE (stub-verified)
+
+Final V1.1 parts. All bot V1.1 work (G,C,A,B,D,E + credit opt-in + subscription billing + wallet label
++ delivery speed + item edge-cases) now stub-verified, UNCOMMITTED on smart-book-feature.
+- **D — mid-flow handling (handleCustomerMessage):**
+  - **Cancel** (`_isCancel`: cancel/never mind/start over/forget it/abort — NOT "no"): any in-progress flow →
+    clears botState (keeps memory), "cancelled, what else?". Block placed before A; skips offered-handoff.
+  - **Side-question** (block D2): a clear read-only question (pricing/turnaround/service-info, conf≥0.6)
+    asked DURING a collect-* step (not confirm/handoff) → answers it via runWorkflow(intent) then resumes
+    the flow via runWorkflow(pendingIntent, text:'') to re-ask the current step; combines both replies,
+    preserves the flow state, resets `_stall` (a question isn't a loop). Never hijacks a real answer.
+  - **Corrections** ("actually 2 shirts") already work — the flow re-ingests LLM slots every turn (A);
+    D adds the question/cancel cases the re-ingest didn't cover.
+- **E — reply styler (`botIntent.styleReply` + `_maybeStyle`):** bounded 3rd LLM job that lightly re-words
+  a reply warmer/shorter. SAFETY: orchestrator tokenizes all data (₦ amounts, OSC codes, clock times,
+  numbers, %) to §n§ before sending; requires every token back verbatim or FALLS BACK to the exact
+  deterministic text; skips multi-line / link / <25-char replies (summaries, offers, Paystack links stay
+  byte-for-byte). No-op when no LLM provider. Applied per single-line reply in `_runSingle`. Gated by
+  `BOT_STYLE_REPLIES` (set "false" to disable; default on) — NOTE it adds ~1 extra LLM call per prose
+  reply (classify + style), so watch cost; disable if needed.
+- **Verified** (scratchpad/verify_de.js): `_isCancel` 5/5; `_maybeStyle` (styles prose + keeps data,
+  skips multiline/url/short, token-loss→fallback, env-off); cancel mid-flow (clears + keeps memory);
+  side-question (answer+resume, flow intact, stall reset). `node -c` clean on both files.
+- ALL V1.1 PARTS COMPLETE (stub-verified). Live staging (real DB/LLM/Paystack/subscription/SMS) is the
+  remaining gate before commit — the accumulated money+booking logic has NOT been run against a real DB.
+
+## Session: 2026-08-23 (cont.) — Delivery-speed selection added to the bot (stub-verified)
+
+Gap found: `_placeBooking` hardcoded `deliverySpeed:'standard'` → the bot never offered express/same-day,
+never surfaced cut-offs/charges/capacity. Backend rules (util/helper.calculateDueDate): same-day before
+10am (due today), express before 2pm (due tomorrow), standard no cut-off (~2 days); each has a charge
+(expressCharge/sameDayCharge) + capacity; past cut-off or over capacity → postBookOrder rejects. Added:
+- **`collect-speed` step** (after date/time, before phone) — offers ONLY what's available at the current
+  clock via `calculateDueDate` (single source), each with charge + ETA (`_availableSpeeds`,`_speedOfferText`).
+  Parses the reply (`_parseDeliverySpeed`; standard checked BEFORE express so "no rush" ≠ rush→express).
+  Picking an unavailable speed → says so + re-offers. `bSpeed` persisted; chips [Standard/Express/Same-day].
+- **Estimate** now includes the speed charge (`_bookingEstimate(...,speed)` + `_speedCharge`); confirm
+  summary shows the speed line (`_describeSpeed`), e.g. "Express (+₦1,000) — ready tomorrow".
+- **Payload** uses `bSpeed` (was hardcoded standard).
+- **Mid-chat cut-off / capacity fallback** in `_placeBooking`: if postBookOrder rejects with
+  before-10am/before-2pm/full-capacity, DON'T dead-end — reroute to `collect-speed` (now excluding the
+  unavailable option), keeping all other slots. (Subscribers: pay-from-subscription zeroes the speed
+  charge but is still cut-off/capacity limited — inherited behaviour.)
+- Imports: DELIVERY_SPEED, calculateDueDate. Verified (scratchpad/verify_speed.js): helpers,
+  availability-by-clock, estimate+1000, gate ask/pick/reject-unavailable, cut-off-at-placement reroute.
+  `node -c` clean. NOTE: old scratch verify_ab asserted datetime→confirm; now datetime→collect-speed
+  (expected — the anti-loop "advances" property still holds). Uncommitted; live staging pending.
+
+## Session: 2026-08-23 (cont.) — A + B: in-flow datetime understanding + smart defaults (stub-verified)
+
+Fixes the ROOT of the screenshot loop (C only stopped the infinite repeat; A+B make it understand).
+All in `services/botOrchestrator.service.js`:
+- **A — use structured slots + a real parse, never whole-message-as-date.** Removed the
+  `collect-datetime ? String(text) : null` dump. Now: date = `slots.pickupDate` (LLM) → `_parseDateTimeFromText`
+  fallback; time = `slots.pickupTime` (LLM) → parse fallback. Parsed EVERY turn so multi-slot answers
+  ("tomorrow morning") fill both at once. New `_parseDateTimeFromText` extracts a day phrase
+  (today/tomorrow/day-after/weekday) and/or time (morning/afternoon/evening/night/noon or `\d(am|pm)`)
+  without swallowing the message.
+- **B — a day is enough; default the time.** Requirement changed from "date AND time" to DATE-ONLY; if no
+  time, `_defaultPickupWindow(setting)` sets one (first configured pickup slot else 'morning') and the confirm
+  summary shows "(default window — tell me if you'd prefer another time)". `bTimeAuto` flag persisted.
+  `_parseItemsFromText` now also reads spelled-out numbers ("two duvets"). `_resolvePickupDate` handles
+  "day after tomorrow" (was matching /tomorrow/ → wrong +1).
+- **Verified** (scratchpad/verify_ab.js): `_parseDateTimeFromText` (incl. "Tomorrow same address as before"
+  → date only, no whole-message), `_resolvePickupDate` day-after=+2, `_parseItemsFromText` digits+words, and
+  end-to-end bookingFlow: the reported "Tomorrow same address as before" at collect-datetime now ADVANCES to
+  confirm (time defaulted, note shown) instead of looping; "tomorrow morning" → no default note; an
+  unrecognisable date re-asks cleanly and NEVER stores the whole message as the date. `node -c` clean. PASSED.
+- NOTE: this is the deterministic/offline parse layer; when the LLM classify is up it already supplies
+  pickupDate/pickupTime slots — A just makes the flow actually USE them and adds a safe fallback. Items still
+  best-extracted by the LLM; `_parseItemsFromText` is the offline degrade. Uncommitted; live staging pending.
+- **Item edge-cases (2026-08-23):** offline number parsing now handles tens/compounds — `_wordToNumber`
+  ("thirty-five"/"fifty"/"twenty two") + `_parseItemsFromText` rebuilt to use it (was one–ten only, so
+  "fifty shorts" was dropped when the LLM was down). Added a **large-quantity sanity confirm** (`confirm-qty`
+  step, threshold >30): after items are captured, if any qty>30 the bot asks "that's 50 shirts? (yes/no)"
+  before pricing — yes→continue, no→clear items+re-ask; guards typos (50 vs 5). `bQtyConfirmed` persisted
+  (asked once). `describeItems()` helper. Verified (scratchpad/verify_qty.js): word-number 7/7, parse
+  fifty/thirty-five/twenty-two/50, confirm-qty yes/no + small-order-skips. Plurals resolve via
+  `_resolveBookingItems` substring match. NOTE: plan/capacity limits still count LINE ITEMS not quantity
+  (pre-existing in postBookOrder) — 50 shirts = 1 line item; flagged, not changed (backend-wide decision).
+
+## Session: 2026-08-23 — Credit opt-in (bot ASKS before spending reward credit) (stub-verified)
+
+Reversed the "always useCredit:true" behaviour so the bot no longer silently spends reward credit.
+Both wallet-payment paths now ask, ONLY when the customer actually has credit (creditTotal>0):
+- **Booking** (`_bookingPaymentStep` wallet branch): credit>0 → new `confirm-credit` step ("You have ₦X
+  reward credit. Use it? yes/no"), routed in `bookingFlow`. `_bookingCreditOptinStep`: yes → charge
+  useCredit:true; no → cash-only if cash≥amount, else reroute to collect-payment ("cash won't cover; use
+  credit or card"). No credit → charge cash directly (no needless question).
+- **Apply-payment** (`applyPaymentFlow`): `confirm-pay` yes → if credit>0 ask new `confirm-pay-credit`
+  step, else charge cash; `confirm-pay-credit`: yes→credit, no→cash-only (else offered-handoff).
+- **Shared charge helper** `_settleWalletCharge({userId,orderId,useCredit})` → payWithWallet + WALLET
+  audit + `billingType='pay-from-wallet'` stamp; returns {ok,creditApplied}|{ok,error}. Callers phrase
+  their own success line (booking via `_walletPaidReply`; apply-payment "…Thank you!"). This ALSO gave
+  apply-payment the billingType stamp it was missing. `confirm-credit`/`confirm-pay-credit` match the
+  `/confirm/` quick-actions regex → Yes/No chips; loop guard covers repeats.
+- **Verified** (scratchpad/verify_optin.js): booking (ask-when-credit, yes→credit, no→cash, no-cover→
+  reroute, no-credit→direct) + apply-payment (asks, yes→credit, no→cash, stamps label, no-credit→direct);
+  payWithWallet called with the right useCredit each branch. `node -c` clean. ALL PASSED.
+- Credit is now genuinely opt-in via the bot (was: always credit-first). Uncommitted; live staging pending.
+
+## Session: 2026-08-22 (cont.) — Billing: subscription-first + wallet billingType label + credit hardening (stub-verified)
+
+Follow-up to Part G after auditing the money path (payWithWallet → chargeWalletForOrder, shared with
+the pay-from-wallet branch; credits consumed via applyCreditsToAmount across ALL types, credit-first,
+then cash, atomic + rollback). Three changes, all in `services/botOrchestrator.service.js`:
+- **Subscription-aware billing (`_placeBooking`).** If the customer has an ACTIVE subscription, TRY
+  `pay-from-subscription` first via new `_createOrderSafe`. postBookOrder validates (no sub / heavy items /
+  over monthly limit / capacity) and returns BEFORE creating an order (confirmed bookOrder.service:974),
+  so a rejected attempt creates nothing → safe try-then-fallback. Success → "covered by your subscription ✅"
+  and NO payment step (note: sub orders have amount>0 but paymentStatus SUCCESS, so branch on the billing
+  path, not amount). Rejection → fall back to pay-per-item + a plain-language reason lead (`_subFallbackLead`:
+  heavy / over-limit / generic) then the wallet-or-card step. No subscription → pay-per-item as before.
+- **Wallet billingType label match.** payWithWallet settles a pay-per-item order (leaves billingType
+  'pay-per-item'), so after a successful bot wallet settlement we stamp
+  `BookOrderModel.findByIdAndUpdate(orderId,{billingType:'pay-from-wallet'})` (best-effort; the
+  WalletTransaction is the money record). Card stays pay-per-item (correct — online pay-per-item).
+- **Credit-availability hardening.** `_walletAvailable` now uses the CANONICAL
+  `WalletCreditService.getCreditBalances(userId).total` (same ACTIVE/remaining>0/not-expired filter the
+  charge uses) instead of a hand-rolled WalletCredit query, so the bot's "enough?" check can't drift from
+  what `chargeWalletForOrder` actually consumes. (applyPaymentFlow already reuses `_walletAvailable`.)
+- **Imports added:** SubscriptionModel, WalletCreditService, BILLING_TYPE. Helpers: `_createOrderSafe`,
+  `_subFallbackLead`.
+- **NOTE (unchanged behaviour, flagged):** the bot always passes `useCredit:true` → reward credits are
+  always spent first (customer can't opt out via bot); matches the existing apply-payment flow. Add an
+  opt-in question later if the client wants.
+- **Verified** (scratchpad/verify_billing.js, payload-aware stubs): `_walletAvailable` cash+credit;
+  subscription precedence (none→PPI, covered→no-pay-step, over-limit/heavy→fallback+reason); wallet
+  success stamps billingType=pay-from-wallet once; sufficiency via cash+credit (insufficient blocks,
+  credit-only covers). `node -c` clean. ALL PASSED. STILL pending live staging (real money/Paystack/sub).
+
+## Session: 2026-08-22 — Bot V1.1: Part G (payment gate) + Part C (loop guard) DONE (stub-verified)
+
+Started the V1.1 "Bot Intelligence & Fixes" package (plan in feature.md) with the two BUGS first.
+Motivated by a client screenshot: booking repeated "When should we come?" 3× (customer answered),
+and separately the bot placed orders WITHOUT collecting payment ("Done ✅" with ₦0 taken).
+
+- **Part C — loop/repeat guard (general, in `_runSingle`).** Capture `prevStep/prevIntent/prevStall`
+  BEFORE `runWorkflow`; new `_applyLoopGuard(result,{...})` post-processes: if the flow returns the
+  SAME step+intent (customer's reply didn't advance it) it counts a stall in `botState.slots._stall`.
+  1st stall → append "(tap Talk To Staff)" hint; 2nd → STOP repeating, replace reply with "connect you
+  to a member of staff? (yes/no)" and switch step to the existing `offered-handoff` (so a yes hands off,
+  YES_NO chips). Resets to 0 the moment a step advances; no-op when the turn ended (no step). Works for
+  EVERY multi-turn flow (booking/complaint/feedback/updateDetails/payment), not just booking.
+- **Part G — payment gate in booking.** Design: place the order via the exact prod path (unchanged),
+  then DRIVE payment instead of ending. `_placeBooking` success now → step `collect-payment` (unless
+  amount ≤ 0 → "fully covered, nothing to pay"); NEVER says "Done" until money is collected. New
+  `bookingFlow` early-return routes `collect-payment` to `_bookingPaymentStep` BEFORE the slot-fill (so
+  "wallet"/"card" isn't mis-parsed as items). `_bookingPaymentStep`: wallet → `_walletAvailable` check →
+  `WalletService.payWithWallet(useCredit:true)` + WALLET audit (reuses the exact apply-payment path);
+  card → `PaystackService.initializePayment({transactionType:'order',orderId})` → send `authorization_url`
+  as a tappable link (order stays PENDING until the existing webhook confirms — bot never confirms). New
+  chips for the step: [Pay from wallet][Pay by card]. Helpers: `_parsePaymentChoice` (wallet|card|null),
+  `_walletAvailable` (cash + active reward credit) — also refactored `applyPaymentFlow` to reuse it (DRY).
+  **Guardrail intact:** bot gains NO new money authority (own wallet on own order, or a link the customer
+  authorises). Insufficient wallet / card-init fail → stay on step (loop guard escalates to a human).
+- **Files:** `services/botOrchestrator.service.js` (loop guard + `_applyLoopGuard`; `collect-payment`
+  chips; `bookingFlow` early return; `_placeBooking` payment prompt; `_bookingPaymentStep`,
+  `_parsePaymentChoice`, `_walletAvailable`; `applyPaymentFlow` DRY), + `require('./paystack.service')`.
+- **Verified** (scratchpad/verify_gc.js, stubbed wallet/paystack/bookOrder/models): `_parsePaymentChoice`
+  6/6; `_applyLoopGuard` stall→hint→handoff + reset-on-advance + no-op-when-ended; `_placeBooking`
+  unpaid→collect-payment & ₦0→fully-covered; `_bookingPaymentStep` no-order→handoff, wallet paid,
+  insufficient, card link, card-fail, unclear. `node -c` clean. ALL PASSED.
+- **STILL TO DO:** live staging run (real DB + real Paystack) — payment writes real money/records; verify
+  the wallet charge + Paystack link + webhook confirmation end-to-end with a throwaway user before prod.
+  Then A+B (in-flow understanding) which actually fixes the datetime PARSE (C only stops the infinite loop).
+- Uncommitted (branch smart-book-feature, client review gate).
+
 ## Session: 2026-08-18 — Wire up crmContext (CRM-nudge → in-app assistant deep link)
 
 FE reported Phase-D `crmContext` was DORMANT end-to-end: the FE plumbing reads `?crmContext=`

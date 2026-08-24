@@ -103,13 +103,100 @@ into a full conversational assistant that answers AND takes actions. Approved pl
 - Swagger: 41 schemas parse; quickActions + crmContext + intents + description all present.
 
 ## What later phases / commit expect (STILL TO DO)
-- **WRITE actions NOT run against live DB yet** (booking/pay/complaint/feedback/OTP create real records +
-  fire CRM/referral hooks, staff notifications, capacity changes, SMS). Do a CONTROLLED STAGING run with a
-  throwaway user, watching side effects, before trusting in prod. Set `TERMII_API_KEY` for OTP SMS.
+- **WRITE actions STAGING GATE — PASSED 2026-08-24 (11/11 green).** Ran `botStaging.js` against a real
+  Atlas DB (throwaway user, real LLM + Paystack + Termii). All write paths verified end-to-end:
+  booking→wallet (success, pay-from-wallet, credit opt-in), booking→card (real Paystack link, stays
+  PENDING), apply-payment (credit+cash, success), complaint (case opened→CX), feedback (5/5), phone-OTP
+  (SMS + verify + write). Cleanup removed all records. **The run FOUND & FIXED 3 real product bugs**
+  (uncommitted, in `botOrchestrator.service.js`): (1) payment-step intent hijack — typed "by card"
+  hijacked the booking payment → pinned `collect-payment`; (2) OTP-step hijack — 6-digit code read as an
+  order number → pinned `verify-phone-otp`; (3) reply styler mangling flow prompts + leaking a `§`
+  placeholder → styler now only warms terminal replies + `§`/`?`-flip guards. Details in session.md.
+  - Harness: `STAGING_OK=1 node botStaging.js --seed` (no staging DB → point MONGODB_URL at a throwaway
+    local/Atlas Mongo; `--seed` seeds catalog+settings). Flags `--only=`, `--credit`, `--keep`; env
+    `TERMII_API_KEY`/`STAGING_PHONE` for OTP. Safety-gated (refuses prod without `STAGING_FORCE=1`).
 - Frontend work (only two real tasks): render `quickActions` chips (tap → send `message`); wire photo
   upload (`POST /api/utils/image-upload-single`) → `attachments[]` for complaints. Copy-paste FE handoff
   block is in the session (changelog + tasks).
 - Then commit (client review gate — confirm first).
+
+## NEXT WORK PACKAGE — Bot Intelligence & Fixes (V1.1) — PLANNED, NOT STARTED
+
+Approved direction (2026-08-21, client via user): make the bot **smarter + less verbose without
+scope drift**, and fix two real defects. Design principle stays: **LLM understands & phrases;
+deterministic code owns every fact & action; guardrails from "Locked client decisions" unchanged.**
+The LLM never generates a data answer — only (1) classify, (2) extract slots, (3) [NEW] tighten/warm
+a fixed reply, (4) small-talk.
+
+**Motivating evidence (client screenshot, WhatsApp/in-app booking):** bot repeated
+*"When should we come? …"* 3× while the customer answered ("Tomorrow same address as before" + tried
+to change items). Root cause in `bookingFlow`:
+- `botOrchestrator.service.js:771` — on `collect-datetime` it dumps the WHOLE message into the date
+  field ("Tomorrow same address as before" becomes the "date").
+- `:772` — time ONLY comes from the LLM `pickupTime` slot; customer gave none → stays empty.
+- `:842` — step requires BOTH date AND time → re-asks the IDENTICAL line forever (no attempt counter,
+  no rephrase, no escape).
+
+### Parts (priority order) — ALL PARTS DONE 2026-08-22/23 (stub-verified, UNCOMMITTED); live staging pending
+1. **G — PAYMENT GATE (highest; a money bug). ✅ DONE.** Booking now places the order then routes to a
+   `collect-payment` step (`_bookingPaymentStep`): wallet (`payWithWallet` + audit) or card (Paystack
+   `initializePayment` → `authorization_url` link; order PENDING until webhook). `_placeBooking` no
+   longer says "Done" for an unpaid order (≤0 → "fully covered"). Helpers `_parsePaymentChoice`,
+   `_walletAvailable`; chips [Pay from wallet][Pay by card]. STILL TO DO: live staging (real money).
+   **Billing follow-up DONE 2026-08-22:** (a) subscription-aware — `_placeBooking` tries `pay-from-subscription`
+   first for active subscribers (reuses postBookOrder validation; rejected attempt creates no order), success →
+   "covered by your plan" (no payment step), rejection → pay-per-item fallback + reason (`_subFallbackLead`);
+   (b) wallet billingType label match — stamp order `billingType='pay-from-wallet'` after successful wallet
+   settlement (card stays pay-per-item); (c) `_walletAvailable` hardened to the canonical
+   `WalletCreditService.getCreditBalances`. Credits (all types, credit-first) confirmed covered by the shared
+   `chargeWalletForOrder`. **Credit opt-in DONE 2026-08-23:** the bot now ASKS before spending reward credit
+   (only when creditTotal>0) in BOTH wallet paths — `confirm-credit` (booking) / `confirm-pay-credit`
+   (apply-payment); yes→credit-first, no→cash-only (else reroute). Shared `_settleWalletCharge` (charge+audit
+   +billingType stamp) used by both. No longer always credit-first.
+   Original problem statement: `_placeBooking` creates a `pay-per-item` order UNPAID
+   and says *"Done! …you can pay in the app"* (`botOrchestrator.service.js:882,907`) — no payment
+   collected, billing method hardcoded, booking declared complete with ₦0 taken. Fix: after the
+   customer confirms, CONTINUE into a payment step — ask wallet vs card (offer subscription if an
+   active plan). Wallet → reuse `WalletService.payWithWallet` (insufficient → top-up/card). Card →
+   `initialize-payment` (`transactionType:'order'`) → send `authorization_url` as a "Pay now" chip;
+   order stays PENDING until the existing Paystack webhook confirms (bot never confirms payment
+   itself). Wording: "placed — awaiting payment", NOT "Done ✅", until paid. Track pending so the
+   loop/handoff logic can nudge unpaid orders. Guardrail: bot gains NO new money authority (own
+   wallet on own order, or a standard Paystack link the customer authorizes).
+2. **C — LOOP/REPEAT GUARD (bug; stops the 3× repeat). ✅ DONE.** `_applyLoopGuard` in `_runSingle`:
+   counts stalls (same step+intent = no advance) in `botState.slots._stall`; 1st → "(tap Talk To Staff)"
+   hint, 2nd → stop repeating + offer human via existing `offered-handoff`. Resets on advance. General
+   (all flows). NOTE: C only stops the infinite LOOP — the datetime PARSE fix that makes booking actually
+   understand "tomorrow same address" is A+B (still pending).
+3. **A + B — IN-FLOW UNDERSTANDING + SMART DEFAULTS. ✅ DONE 2026-08-23.** Removed the "whole message =
+   date" dump; date/time now come from LLM slots → `_parseDateTimeFromText` fallback (parsed every turn,
+   so "tomorrow morning" fills both). DATE-ONLY accepted → `_defaultPickupWindow` defaults the time
+   (`bTimeAuto` flag, shown as "default window" at confirm). `_parseItemsFromText` reads spelled-out
+   numbers; `_resolvePickupDate` handles "day after tomorrow". Verified end-to-end that the screenshot
+   scenario ("Tomorrow same address as before" at collect-datetime) now ADVANCES instead of looping.
+   (This is the deterministic/offline layer; the LLM already supplies the slots when up — A makes the
+   flow USE them + adds a safe fallback.)
+   **Booking extras DONE 2026-08-23 (on request):** (i) offline number words incl. tens/compounds
+   (`_wordToNumber`, "fifty shorts"); (ii) large-quantity confirm (`confirm-qty`, >30) guarding typos;
+   (iii) **delivery-speed selection** (`collect-speed`) — offers only speeds available at the current
+   clock via `calculateDueDate` (same-day<10am/express<2pm/standard), charge+ETA in estimate & summary,
+   and reroutes to another speed if the cut-off passes / capacity fills at placement (was hardcoded
+   standard). NOTE: plan/capacity limits still count LINE ITEMS not quantity (pre-existing, not changed).
+4. **D — MID-FLOW CORRECTIONS & SIDE-QUESTIONS. ✅ DONE 2026-08-23.** Mid-flow **cancel** (`_isCancel`,
+   clears flow keeps memory) + **side-question** (D2 block: pricing/turnaround/service-info conf≥0.6 during
+   a collect step → answer via runWorkflow then resume via runWorkflow(text:'') , stall reset). Corrections
+   ("actually 2 shirts") already covered by A's per-turn slot re-ingest. (No new LLM output field needed —
+   derived from existing classify intent/confidence + keywords.)
+5. **E — REPLY STYLER. ✅ DONE 2026-08-23.** `botIntent.styleReply` + `_maybeStyle`: tokenize all data
+   (₦/OSC/times/numbers/%) → LLM ≤2 warm sentences → require every token back or FALL BACK to exact text;
+   skips multi-line/link/<25-char replies (summaries/offers/links intact); applied per reply in `_runSingle`;
+   gated `BOT_STYLE_REPLIES` (default on, "false" disables), no-op without provider. Chips-first already
+   shipped (Phase D). Cost: +1 LLM call per prose reply — flagged.
+6. **F — GUARDRAILS STAY (standing rule, not a task).** LLM never quotes an unapproved price, invents
+   order/wallet data, acts without the existing confirm+audit, approves refunds/compensation, or
+   resolves a case. "Smarter" only ever = better understanding + tone.
+
+**Do first before the bot touches a live customer: G + C (they're bugs, not enhancements).**
 
 ## Housekeeping for a fresh session
 - Read summary.md + session.md + this file first (CLAUDE.md rule).
