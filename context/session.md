@@ -3,6 +3,88 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-25 (cont.) — Refactor Tier 2: extracted the FLOWS; router now 561 lines (verified 11/11)
+
+Continued the split (user said continue; FE hasn't started so it's a safe window). Same mechanism —
+prototype mixins, verbatim moves, no logic change. `botOrchestrator.service.js`: **2455 → 561 lines
+(−77%)**. The whole orchestrator is now a lean ROUTER (turn engine only: handleCustomerMessage,
+_runSingle, runWorkflow dispatch, _applyLoopGuard, _maybeStyle, _crmFrameToIntent, _updateMemory,
+_resolveAddressRef, handoff, say, allowedIntents) + 10 focused modules under `services/bot/`:
+- **format.js** (25) — shared `naira` + `STAGE_EXPLAIN`.
+- **parsers.js** (376), **copy.js** (59), **quickActions.js** (48) — Tier 1 (stateless).
+- **readAnswers.js** (347) — Phase-B reads: orderStatusReply, walletBalance, viewOffers, referralInfo,
+  _readinessAndDispatchLine, pricingReply, turnaroundReply, serviceInfoReply, policyReply,
+  paymentStatusReply, rewardStatusReply.
+- **payment.flow.js** (305) — _bookingPaymentStep, _bookingCreditOptinStep, _settleWalletCharge,
+  _walletPaidReply, _walletAvailable, applyPaymentFlow.
+- **booking.flow.js** (367) — bookingFlow, _placeBooking, _createOrderSafe, _subFallbackLead.
+- **complaint.flow.js** (179), **feedback.flow.js** (103), **details.flow.js** (195 — applyReferralCode,
+  updateDetails, _startPhoneOtp).
+- **Wiring:** one `Object.assign(BotOrchestratorService.prototype, …require each module…)` before
+  `module.exports = new BotOrchestratorService()`. Cross-module `this.*` calls (e.g. bookingFlow →
+  this._bookingPaymentStep in payment.flow; feedbackFlow → this.complaintFlow; every flow → parsers/copy)
+  all resolve on the shared prototype, unchanged.
+- **Import hygiene:** the router's top imports were pruned to only what the turn engine touches
+  (ConversationService, BotIntentService, BotContextService, createNotification, emitChatMessage,
+  {BOT_INTENT,CHAT_SENDER,NOTIFICATION_TYPE,ORDER_STATUS}, MAIN_QUICK_ACTIONS); ~30 now-unused
+  model/service/util/constant imports moved into the modules that use them. `naira` import dropped from
+  the router (unused there now).
+- **Verified:** `node -c` clean on all 11 files; a load + full-surface resolve check (40/40 methods
+  resolve on the instance across every module); and the FULL `botStaging.js` end-to-end regression
+  **11/11 green** (with `--credit`, so 2 wallet tx). Behaviour identical.
+- **STATUS:** Tier 1 + Tier 2 both UNCOMMITTED local work (done after the merge to main). Behaviour-
+  identical; the staging harness is the regression gate. Commit when ready. The refactor is COMPLETE —
+  no Tier 3 planned (the router is already just the turn engine).
+
+## Session: 2026-08-25 — Refactor Tier 1: extracted stateless helpers from botOrchestrator (verified)
+
+`botOrchestrator.service.js` was a 2455-line god-class. Started splitting it (user request) WITHOUT
+behaviour change, using the safest mechanism: **prototype mixins** (physically move method bodies into
+`services/bot/*.js`, `Object.assign` them onto the prototype at the bottom of the router) — so every
+existing `this.foo()` call site works UNCHANGED; only each moved method's external refs (constants/
+util) get imported in its new file. Result: **2455 → 2014 lines (−441, ~18%)**, 3 new leaf modules.
+- **`services/bot/parsers.js`** — all stateless parsing/matching/estimate helpers: `isAffirmative`,
+  `isNegative`, `_isCancel`, `_parsePaymentChoice`, `_parseRating`, `_parseDeliverySpeed`,
+  `_parseItemsFromText`, `_wordToNumber`, `_parseDateTimeFromText`, `_resolvePickupDate`,
+  `_matchServiceType`, `_defaultPickupWindow`, `_matchComplaintType`, `_pickComplaintType`,
+  `_extractItemName`, `_resolveBookingItems`, `_bookingEstimate`, `_speedCharge`, `_availableSpeeds`,
+  `_speedOfferText`, `_describeSpeed`, `_complaintSummary`, `extractCode`, `parseDetail`,
+  `cleanDetailValue`. (Imports `roundToNearestHundred`/`calculateDueDate`/`DELIVERY_SPEED`; local `naira`
+  dup for two formatters. Internal cross-calls like `_parseItemsFromText→this._wordToNumber`,
+  `_bookingEstimate→this._speedCharge` survive on the prototype.)
+- **`services/bot/copy.js`** — canned LLM-free text: `bookingGuide`, `feedbackAck`, `capabilities`,
+  `menu`, `aboutBot`, `cantUnderstand` (menu/aboutBot/cantUnderstand keep `this.capabilities()`).
+- **`services/bot/quickActions.js`** — chip constants `MAIN_QUICK_ACTIONS`/`YES_NO_ACTIONS` +
+  `_quickActionsForTurn`; exports `{ MAIN_QUICK_ACTIONS, YES_NO_ACTIONS, mixin }`; router imports
+  `MAIN_QUICK_ACTIONS` (still returned directly in 2 places) and Object.assigns `.mixin`.
+  `READ_ONLY_INFO`/`INTENT_ICON` (batching) intentionally LEFT in the router.
+- **Wiring:** near the bottom, `Object.assign(BotOrchestratorService.prototype, require('./bot/parsers'),
+  require('./bot/copy'), require('./bot/quickActions').mixin)` then `module.exports = new ...`.
+- **Verified:** `node -c` clean on all files; a load + spot-call harness (isolated method behaviour) 13/13
+  then 7/7 then 7/7; and the FULL `botStaging.js` end-to-end regression run **11/11 green TWICE** (after
+  parsers+copy, and after quickActions) — booking/wallet/card/apply-payment/complaint/feedback/OTP all
+  unchanged. Pure structural move, no logic edits.
+- **NOTE — NOT on `main` yet:** this refactor was done AFTER the merge, so it's uncommitted local work on
+  the current branch. Commit when ready (behaviour-identical; the staging harness is the regression gate).
+- **Tier 2 (NOT done, was my recommendation to reassess):** extracting the multi-turn FLOWS (`bookingFlow`,
+  `applyPaymentFlow`/payment step, `complaintFlow`, `feedbackFlow`, `updateDetails`, + the Phase-B read
+  answers) into `services/bot/*.flow.js` mixins. Bigger + more `this`-coupled (share `say`/`handoff`/
+  `_settleWalletCharge`/`_walletAvailable`), but the mixin mechanism just proved safe. Router would drop to
+  ~500–700 lines. Left for a follow-up decision.
+
+## Session: 2026-08-24 (cont.) — MERGED TO main; next gate is FE integration
+
+User pushed to GitHub and merged the bot V1/V1.1 work (all Phases A–D + V1.1 + the 3 staging-run
+fixes) to `main`. So the whole bot upgrade is now SHIPPED to main — earlier "UNCOMMITTED" notes are
+historical. Plan going forward (user's call): the FRONTEND team builds the two FE tasks
+(quickActions chips renderer + complaint photo upload → attachments[]), THEN the team push-and-tests
+the live bot with REAL production data end-to-end from the app (integration/soft rollout), rather
+than any further backend staging. `botStaging.js` remains in the repo as the reusable write-path
+harness. Open de-riskers I flagged but that are now deferred to that real-data test: verify real
+prod `serviceType.pricePerPiece` isn't left at the misleading 700 default; exercise a real card
+webhook completion + a subscriber "covered by plan" booking; watch LLM classification variance
+across real conversations.
+
 ## Session: 2026-08-24 (cont.) — STAGING RUN GREEN (11/11) + 3 real bugs found & fixed
 
 Ran `botStaging.js` against a real Atlas DB (throwaway user, real LLM + real Paystack + real Termii).

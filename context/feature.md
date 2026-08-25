@@ -1,6 +1,11 @@
 # Current Feature: CHUVI V1 AI Assistant — in-app bot upgrade (Phases A–D)
 
-Branch: `smart-book-feature`. ALL bot work is **UNCOMMITTED** (do NOT commit unless asked).
+**STATUS 2026-08-24: MERGED TO `main`.** All bot V1/V1.1 work (Phases A–D + V1.1 parts + the 3
+staging-run bug fixes: payment-step pin, OTP-step pin, styler gating) is committed and merged to
+main — no longer uncommitted. The staging gate passed 11/11 (see session.md). **Next gate is NOT
+backend:** the frontend team builds the two FE tasks (quickActions chips + complaint photo upload),
+then INTEGRATION-TEST the live bot with REAL production data end-to-end from the app. Historical
+"UNCOMMITTED" notes below predate the merge — read them as "what was built," not current git state.
 Started from a client doc ("CHUVI V1 AI Assistant") that turns the read-only Phase-6 bot
 into a full conversational assistant that answers AND takes actions. Approved plan file:
 `C:\Users\LENOVO\.claude\plans\take-a-look-at-majestic-cherny.md`. Blow-by-blow in session.md.
