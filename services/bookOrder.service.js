@@ -3,6 +3,7 @@ const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
 const { normalizeAddress } = require('../util/address')
 const BookOrderModel = require('../models/bookOrder.model')
+const ItemSetModel = require('../models/itemSet.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const {
     generateOscNumber,
@@ -902,13 +903,19 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                // ← fetch all heavy items from DB
-                const heavyItems = await OrderItemModel.find({
-                    isHeavy: true,
-                }).lean()
+                // ← fetch all heavy items from DB (single items + set pieces)
+                const [heavyItems, sets] = await Promise.all([
+                    OrderItemModel.find({ isHeavy: true }).lean(),
+                    ItemSetModel.find({ 'pieces.isHeavy': true }).lean(),
+                ])
                 const heavyItemNames = heavyItems.map((i) =>
                     i.name.toLowerCase(),
                 )
+                for (const s of sets) {
+                    for (const p of s.pieces || []) {
+                        if (p.isHeavy) heavyItemNames.push(p.name.toLowerCase())
+                    }
+                }
 
                 // ← block if any submitted item is heavy
                 const heavyItemFound = post.items.find((item) =>

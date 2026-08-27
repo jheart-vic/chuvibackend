@@ -19,12 +19,14 @@ comments kept LIGHT.
 - [x] Gap closed (2026-08-27): customer `postBookOrder` now REQUIRES an address be PRESENT when isPickUp/isDelivery (presence only — label/landmark stay optional; back-compat). Bot payload now sends `deliveryAddress = pickupAddress` (single-address return) so the new isDelivery guard doesn't reject bot bookings.
 - [ ] ⚠️ FE/verify note: staff intake REJECTS a bare-string address (needs label+landmark). Customer app: if it sets isDelivery:true it must now send a delivery address (was silently optional before). Live DB write-path run still pending (only unit+syntax+swagger verified).
 
-### Phase 2 — Set Items
-- [ ] `ItemSet` model `{name*, pieces:[{name*,price*,isHeavy}], active}` (no set price, ≥1 piece)
-- [ ] 5 endpoints mirroring `/admin/*-order-item` (add/get-all/get-one/update/delete); routes in `page-route.js`
-- [ ] Catalog browse (`get-order-items`) also returns sets tagged `kind:'set'`
-- [ ] Booking: extend heavy-detection (`bookOrder.service.js:889`) to consult `ItemSet` piece `isHeavy`; optional `fromSet` tag
-- [ ] Swagger: `ItemSet` schema + 5 endpoints
+### Phase 2 — Set Items  ✅ DONE 2026-08-28
+- [x] `models/itemSet.model.js` — `{name*, pieces:[{name*,price*,isHeavy}], active}` (no set price; ≥1 piece enforced in service)
+- [x] 5 endpoints mirroring `/admin/*-order-item`: add/update/get-all/get-one/delete (admin write; get uses `[auth]`). Routes in `page-route.js`, service `admin.service.js`, controller `admin.controller.js`. Shared `_validateSetPayload` (name + ≥1 priced piece; coerces price, defaults isHeavy). Unit-tested.
+- [x] Catalog browse (`getItems`/`get-order-items`) now returns single items (`kind:'item'`) + ACTIVE sets (`kind:'set'`) in one array
+- [x] Booking heavy-detection (subscription branch) also consults `ItemSet` pieces where `isHeavy` (matched by piece name vs booked item `.type`)
+- [x] Optional `fromSet` tag added to order `ItemSchema` (passes through via `...post`)
+- [x] Swagger: `ItemSet` + `ItemSetPiece` schemas (46 total, parses) + 5 endpoints (278 paths)
+- [ ] ⚠️ Verify note: `get-order-items` response now mixes items+sets with a `kind` field — FE must branch on `kind` (additive; items unchanged otherwise). Live DB run still pending.
 
 ### Phase 3 — Split-Flow Engine (+ recovery add-on)
 - [ ] Model: `Item.currentStation` (enum `STATION_STATUS`); `order.handoffs[]`; helpers `countByStation`/`isWholeAt`/`summaryStatus` (keep `stage.status` computed)

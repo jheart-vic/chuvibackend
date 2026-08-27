@@ -952,6 +952,30 @@
  *         qcStatus: { type: string, enum: [pending, passed, failed], example: pending }
  *         itemNote: { type: string, example: "small stain on collar" }
  *
+ *     ItemSetPiece:
+ *       type: object
+ *       description: "One individually-priced piece inside a Set."
+ *       properties:
+ *         _id: { type: string, example: 64c1f9a2e3c3b4a1d2f1c1a5 }
+ *         name: { type: string, example: "Agbada (outer)" }
+ *         price: { type: number, example: 3500 }
+ *         isHeavy: { type: boolean, example: true }
+ *       required: [name, price]
+ *
+ *     ItemSet:
+ *       type: object
+ *       description: "A named catalog group of individually-priced pieces. No set-level price — an order total is the sum of ONLY the selected pieces, and each selected piece is booked as its own countable order item. When returned inside the catalog browse (get-order-items) each set also carries kind:'set'."
+ *       properties:
+ *         _id: { type: string, example: 64c1f9a2e3c3b4a1d2f1c1a0 }
+ *         name: { type: string, example: "Agbada Set" }
+ *         active: { type: boolean, example: true }
+ *         pieces:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/ItemSetPiece' }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *       required: [name, pieces]
+ *
  *     OrderAddress:
  *       type: object
  *       description: "Structured order address. Staff intake (createBookOrder with isPickUp/isDelivery) REQUIRES label + address + landmark. Customer/app and bot bookings may send a plain string, which is stored as { label:'', address, landmark:'' }; legacy orders may still return a plain string, so consumers should accept either shape."

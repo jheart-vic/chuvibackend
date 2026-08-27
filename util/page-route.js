@@ -188,6 +188,11 @@ exports.ROUTE_UPDATE_ORDER_ITEM_ID = '/update-order-item/:id'
 exports.ROUTE_GET_ORDER_ITEMS = '/get-order-items'
 exports.ROUTE_GET_ORDER_ITEM_ID = '/get-order-item/:id'
 exports.ROUTE_DELETE_ORDER_ITEM_ID = '/delete-order-item/:id'
+exports.ROUTE_ADD_ORDER_SET = '/add-order-set'
+exports.ROUTE_UPDATE_ORDER_SET_ID = '/update-order-set/:id'
+exports.ROUTE_GET_ORDER_SETS = '/get-order-sets'
+exports.ROUTE_GET_ORDER_SET_ID = '/get-order-set/:id'
+exports.ROUTE_DELETE_ORDER_SET_ID = '/delete-order-set/:id'
 exports.ROUTE_GET_AUDIT_LOGS = '/audit-logs'
 
 

@@ -26,6 +26,8 @@ const ItemSchema = new mongoose.Schema(
         type: { type: String, required: true },
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
+        // Optional: name of the Set this piece was selected from (traceability).
+        fromSet: { type: String },
         tagId: { type: String },
         tagState: [
             {

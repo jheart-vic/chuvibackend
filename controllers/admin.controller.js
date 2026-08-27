@@ -200,6 +200,46 @@ class AdminController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async addOrderSet(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.addOrderSet(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async updateOrderSet(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.updateOrderSet(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async getOrderSets(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.getOrderSets(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async getOrderSet(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.getOrderSet(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async deleteOrderSet(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.deleteOrderSet(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async getAuditLogs(req, res) {
         const adminService = new AdminService()
         const result = await adminService.getAuditLogs(req)

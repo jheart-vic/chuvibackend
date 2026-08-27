@@ -24,6 +24,11 @@ const {
     ROUTE_GET_ORDER_ITEMS,
     ROUTE_GET_ORDER_ITEM_ID,
     ROUTE_DELETE_ORDER_ITEM_ID,
+    ROUTE_ADD_ORDER_SET,
+    ROUTE_UPDATE_ORDER_SET_ID,
+    ROUTE_GET_ORDER_SETS,
+    ROUTE_GET_ORDER_SET_ID,
+    ROUTE_DELETE_ORDER_SET_ID,
     ROUTE_UPDATE_ORDER_DETAILS,
     ROUTE_UPDATE_ADMIN_SETTING,
     ROUTE_GET_ADMIN_SETTING,
@@ -2190,6 +2195,201 @@ router.get(ROUTE_GET_ORDER_ITEM_ID, [auth], (req, res) => {
 router.delete(ROUTE_DELETE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.deleteItem(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/add-order-set:
+ *   post:
+ *     summary: Create an item set
+ *     tags: [Admin]
+ *     description: "A Set is a named catalog group of individually-priced pieces. There is NO set-level price; an order total is the sum of only the pieces a customer selects, and each selected piece is booked as its own countable item. Requires a name and at least one priced piece."
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, pieces]
+ *             properties:
+ *               name: { type: string, example: "Agbada Set" }
+ *               active: { type: boolean, example: true }
+ *               pieces:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [name, price]
+ *                   properties:
+ *                     name: { type: string, example: "Agbada (outer)" }
+ *                     price: { type: number, example: 3500 }
+ *                     isHeavy: { type: boolean, example: true }
+ *     responses:
+ *       200:
+ *         description: Set created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "Set added successfully" }
+ *       400:
+ *         description: Missing name or pieces
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ADD_ORDER_SET, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.addOrderSet(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/update-order-set/{id}:
+ *   put:
+ *     summary: Update an item set
+ *     tags: [Admin]
+ *     description: "Update a set's name, active flag, and/or its full pieces[] list. When pieces[] is supplied it REPLACES the existing pieces and must still contain at least one priced piece."
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Set ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, example: "Agbada Set" }
+ *               active: { type: boolean, example: false }
+ *               pieces:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [name, price]
+ *                   properties:
+ *                     name: { type: string, example: "Cap" }
+ *                     price: { type: number, example: 1000 }
+ *                     isHeavy: { type: boolean, example: false }
+ *     responses:
+ *       200:
+ *         description: Set updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "Set updated successfully" }
+ *       400:
+ *         description: Invalid pieces
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Set not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.put(ROUTE_UPDATE_ORDER_SET_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.updateOrderSet(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/get-order-sets:
+ *   get:
+ *     summary: List all item sets
+ *     tags: [Admin]
+ *     description: Returns every item set (active and inactive).
+ *     responses:
+ *       200:
+ *         description: Sets returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/ItemSet' }
+ */
+router.get(ROUTE_GET_ORDER_SETS, [auth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getOrderSets(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/get-order-set/{id}:
+ *   get:
+ *     summary: Get one item set
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Set ID
+ *     responses:
+ *       200:
+ *         description: Set returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/ItemSet' }
+ *       404:
+ *         description: Set not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_GET_ORDER_SET_ID, [auth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getOrderSet(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/delete-order-set/{id}:
+ *   delete:
+ *     summary: Delete an item set
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Set ID
+ *     responses:
+ *       200:
+ *         description: Set deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "Set deleted successfully" }
+ *       404:
+ *         description: Set not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.delete(ROUTE_DELETE_ORDER_SET_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.deleteOrderSet(req, res)
 })
 
 /**
