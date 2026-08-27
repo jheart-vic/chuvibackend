@@ -35,6 +35,7 @@ const {
 const paginate = require('../util/paginate')
 const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
+const { normalizeAddress, validateStructuredAddress } = require('../util/address')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
 const {
@@ -94,6 +95,26 @@ class IntakeUserService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: validateResult.data,
                 })
+            }
+
+            // Structured addresses (label + landmark required on staff intake).
+            if (post.isPickUp) {
+                const pv = validateStructuredAddress(post.pickupAddress, 'pickupAddress')
+                if (!pv.ok) {
+                    return BaseService.sendFailedResponse({ error: pv.error })
+                }
+                post.pickupAddress = pv.value
+            } else {
+                post.pickupAddress = normalizeAddress(post.pickupAddress)
+            }
+            if (post.isDelivery) {
+                const dv = validateStructuredAddress(post.deliveryAddress, 'deliveryAddress')
+                if (!dv.ok) {
+                    return BaseService.sendFailedResponse({ error: dv.error })
+                }
+                post.deliveryAddress = dv.value
+            } else {
+                post.deliveryAddress = normalizeAddress(post.deliveryAddress)
             }
 
             const adminOrderSetting = await AdminSettingModel.findOne({})

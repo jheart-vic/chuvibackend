@@ -61,11 +61,11 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                 type: string
  *                 example: 08151128383
  *               pickupAddress:
- *                 type: string
- *                 example: 12 Allen Avenue, Ikeja
+ *                 allOf: [ { $ref: '#/components/schemas/OrderAddress' } ]
+ *                 description: "Structured address; label + address + landmark all required when isPickUp is true."
  *               deliveryAddress:
- *                 type: string
- *                 example: 12 Allen Avenue, Ikeja
+ *                 allOf: [ { $ref: '#/components/schemas/OrderAddress' } ]
+ *                 description: "Structured address; label + address + landmark all required when isDelivery is true."
  *               pickupDate:
  *                 type: string
  *                 format: date

@@ -169,8 +169,9 @@ const bookOrderSchema = new mongoose.Schema(
         },
         fullName: { type: String, required: true },
         phoneNumber: { type: String, required: true },
-        pickupAddress: { type: String },
-        deliveryAddress: { type: String },
+        // Structured {label, address, landmark}; tolerant of legacy string orders.
+        pickupAddress: { type: mongoose.Schema.Types.Mixed },
+        deliveryAddress: { type: mongoose.Schema.Types.Mixed },
         pickupDate: { type: Date },
         deliveryDate: { type: Date },
         isVerified: { type: Boolean, default: false },

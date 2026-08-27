@@ -952,6 +952,15 @@
  *         qcStatus: { type: string, enum: [pending, passed, failed], example: pending }
  *         itemNote: { type: string, example: "small stain on collar" }
  *
+ *     OrderAddress:
+ *       type: object
+ *       description: "Structured order address. Staff intake (createBookOrder with isPickUp/isDelivery) REQUIRES label + address + landmark. Customer/app and bot bookings may send a plain string, which is stored as { label:'', address, landmark:'' }; legacy orders may still return a plain string, so consumers should accept either shape."
+ *       properties:
+ *         label: { type: string, example: "Home" }
+ *         address: { type: string, example: "12 Lagos Street, Yaba" }
+ *         landmark: { type: string, example: "Opposite GTBank" }
+ *       required: [label, address, landmark]
+ *
  *     TimelineOrder:
  *       type: object
  *       description: "Order header returned by ALL 6 station timeline endpoints (intake, sort & pretreat, wash & dry, press, qc, rider). Single shared shape (buildTimelineOrderView) — includes the full items[] plus addresses and note."
@@ -971,8 +980,8 @@
  *         qcDetails: { type: object, nullable: true }
  *         dispatchDetails: { type: object, nullable: true }
  *         items: { type: array, items: { $ref: '#/components/schemas/TimelineOrderItem' } }
- *         pickupAddress: { type: string, nullable: true, example: "12 Lagos Street, Yaba" }
- *         deliveryAddress: { type: string, nullable: true, example: "5 Ademola St, VI" }
+ *         pickupAddress: { oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ], nullable: true }
+ *         deliveryAddress: { oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ], nullable: true }
  *         extraNote: { type: string, nullable: true, example: "Handle with care" }
  *         createdAt: { type: string, format: date-time }
  *
@@ -1128,7 +1137,7 @@
  *         intent: { type: string, nullable: true, description: "The resolved intent — usually one of: greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, pricing, turnaround, service-info, policy, payment-status, reward-status, apply-payment, unknown. For a COMPOUND read-only request it is a '+'-joined string, e.g. 'wallet-balance+order-status'. Don't hard-switch on exact values.", example: order-status }
  *         replies:
  *           type: array
- *           description: "Bot messages posted in reply (empty once handed to a human). A compound request returns ONE combined message; single requests one. Render the whole array; dedupe against socket pushes by _id."
+ *           description: "Bot messages posted in reply (empty once handed to a human). A compound request returns ONE combined message; single requests one. Render the whole array; dedupe against socket pushes by _id. A reply's `text` may contain a Paystack checkout URL (card payment for a booking) — render URLs tappable/openable; the order stays PENDING until the payment webhook confirms."
  *           items:
  *             type: object
  *             properties:
@@ -1138,7 +1147,7 @@
  *               createdAt: { type: string, format: date-time }
  *         quickActions:
  *           type: array
- *           description: "Context-aware tappable chips for this turn. Tapping one sends its `message` back as the next customer message (no separate action protocol). A confirm/offer step → Yes/No; a mid-collection step → Talk To Staff; a completed answer → the main menu; a handoff → empty."
+ *           description: "Context-aware tappable chips for this turn. Tapping one sends its `message` back as the next customer message (no separate action protocol). A confirm/offer step → Yes/No; the payment step → Pay from wallet / Pay by card; the delivery-speed step → Standard / Express / Same-day; a mid-collection step → Talk To Staff; a completed answer → the main menu; a handoff → empty. Always render whatever chips arrive; don't hard-code the set."
  *           items:
  *             type: object
  *             properties:

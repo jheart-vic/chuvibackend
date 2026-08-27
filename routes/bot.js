@@ -36,11 +36,15 @@ const {
  *       It ANSWERS (order status incl. "are they ready?"/"has the rider left?",
  *       prices, turnaround, services, policy, wallet balance, payment status,
  *       offers, referral code/level and reward status) and TAKES confirmed,
- *       audited ACTIONS (place a booking, pay an order from the wallet, open a
- *       complaint, record feedback, apply a referral code, update pickup address,
- *       change phone with an SMS OTP). Every action is confirmed before it runs;
- *       multi-turn flows carry their own state server-side, so just keep sending
- *       the customer's messages. The bot NEVER approves refunds/compensation,
+ *       audited ACTIONS (place a booking, pay an order from the wallet OR by card,
+ *       open a complaint, record feedback, apply a referral code, update pickup
+ *       address, change phone with an SMS OTP). Every action is confirmed before it
+ *       runs; multi-turn flows carry their own state server-side, so just keep
+ *       sending the customer's messages. Booking → payment: after placing an order
+ *       the bot asks wallet-or-card; a CARD choice returns a Paystack checkout URL
+ *       inside a reply's `text` (render it tappable / open it) and the order stays
+ *       PENDING until the payment webhook confirms — the bot never marks a card
+ *       order paid. The bot NEVER approves refunds/compensation,
  *       edits wallet balances/credits, releases rewards, or resolves complaint
  *       cases — those, and anything it can't handle, hand off to a human (after
  *       which the bot stays silent and staff reply). Each reply also returns

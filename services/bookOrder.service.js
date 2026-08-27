@@ -1,6 +1,7 @@
 const BaseService = require('./base.service')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
+const { normalizeAddress } = require('../util/address')
 const BookOrderModel = require('../models/bookOrder.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const {
@@ -831,6 +832,22 @@ class BookOrderService extends BaseService {
             if (!validateResult.success) {
                 return BaseService.sendFailedResponse({
                     error: validateResult.data,
+                })
+            }
+
+            // Structure addresses (tolerant: accepts a plain string or object).
+            // Require an address to be PRESENT when pickup/delivery is requested;
+            // label/landmark stay optional on the customer path (back-compat).
+            post.pickupAddress = normalizeAddress(post.pickupAddress)
+            post.deliveryAddress = normalizeAddress(post.deliveryAddress)
+            if (post.isPickUp && !post.pickupAddress?.address) {
+                return BaseService.sendFailedResponse({
+                    error: 'pickupAddress is required when isPickUp is true',
+                })
+            }
+            if (post.isDelivery && !post.deliveryAddress?.address) {
+                return BaseService.sendFailedResponse({
+                    error: 'deliveryAddress is required when isDelivery is true',
                 })
             }
 

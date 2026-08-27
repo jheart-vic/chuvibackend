@@ -57,13 +57,11 @@ const {
  *                 type: string
  *                 example: "+2348151128383"
  *               pickupAddress:
- *                 type: string
- *                 example: 12 Allen Avenue, Ikeja
- *                 description: Required if isPickupAndDelivery is true
+ *                 oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ]
+ *                 description: "Structured { label, address, landmark } or a plain string (stored as { label:'', address, landmark:'' })."
  *               deliveryAddress:
- *                 type: string
- *                 example: 12 Allen Avenue, Ikeja
- *                 description: Required if isPickupAndDelivery is true
+ *                 oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ]
+ *                 description: "Structured { label, address, landmark } or a plain string."
  *               pickupDate:
  *                 type: string
  *                 format: date

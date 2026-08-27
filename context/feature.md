@@ -1,8 +1,102 @@
-# Current Feature: CHUVI V1 AI Assistant — in-app bot upgrade (Phases A–D)
+# Current Feature: CHUVI Production Split-Flow, Structured Addresses & Set Items
+
+**STATUS 2026-08-27: IN PROGRESS — Phase 1 (structured addresses) started.** Client-approved package
+of two features (+1 add-on). Full detail also in memory `chuvi-prodflow-setitems.md`. Combined
+**₦190,000 · 9 new endpoints · ~12.5 days.** Build order (low-risk → high): (1) structured addresses
+[quick], (2) Set Items [isolated catalog], (3) split production-flow engine [biggest, includes the
+recovery-order requirement]. Swagger done in full detail (new `Handoff`/`ItemSet` schemas); in-code
+comments kept LIGHT.
+
+## BUILD TODOS (tracked)
+
+### Phase 1 — Structured Addresses  ✅ DONE 2026-08-27 (scope: BOTH paths, tolerant of legacy strings)
+- [x] Shared `util/address.js` — `normalizeAddress()` (string|object→structured) + `validateStructuredAddress()` (staff-intake required check). Unit-tested.
+- [x] `bookOrder.model.js:172-173` — `pickupAddress`/`deliveryAddress` now `Mixed` (holds structured; no legacy-string hydration crash)
+- [x] `intake-user.service.js` (staff `createBookOrder`) — REQUIRE label+address+landmark when isPickUp/isDelivery, store structured (commented validateRule left as-is; explicit check added)
+- [x] `bookOrder.service.js` (customer/app/bot `postBookOrder`) — normalize `post.pickup/deliveryAddress` after validate (tolerant, string→structured, back-compat)
+- [x] `services/bot/booking.flow.js:84` — "the usual" prefill coerces stored address object → display string (fixes `${bAddress}` render); bot still sends string, normalized downstream
+- [x] Swagger: `OrderAddress` schema (44 total, parses) + `createBookOrder` (required) & customer booking (`oneOf` string|object) request bodies + TimelineOrder response shape
+- [x] Gap closed (2026-08-27): customer `postBookOrder` now REQUIRES an address be PRESENT when isPickUp/isDelivery (presence only — label/landmark stay optional; back-compat). Bot payload now sends `deliveryAddress = pickupAddress` (single-address return) so the new isDelivery guard doesn't reject bot bookings.
+- [ ] ⚠️ FE/verify note: staff intake REJECTS a bare-string address (needs label+landmark). Customer app: if it sets isDelivery:true it must now send a delivery address (was silently optional before). Live DB write-path run still pending (only unit+syntax+swagger verified).
+
+### Phase 2 — Set Items
+- [ ] `ItemSet` model `{name*, pieces:[{name*,price*,isHeavy}], active}` (no set price, ≥1 piece)
+- [ ] 5 endpoints mirroring `/admin/*-order-item` (add/get-all/get-one/update/delete); routes in `page-route.js`
+- [ ] Catalog browse (`get-order-items`) also returns sets tagged `kind:'set'`
+- [ ] Booking: extend heavy-detection (`bookOrder.service.js:889`) to consult `ItemSet` piece `isHeavy`; optional `fromSet` tag
+- [ ] Swagger: `ItemSet` schema + 5 endpoints
+
+### Phase 3 — Split-Flow Engine (+ recovery add-on)
+- [ ] Model: `Item.currentStation` (enum `STATION_STATUS`); `order.handoffs[]`; helpers `countByStation`/`isWholeAt`/`summaryStatus` (keep `stage.status` computed)
+- [ ] `POST /orders/:id/handoff` (push; hard gates S1→S2 & S4→S5 whole-order, S2→S3→S4 partial; per-item completion checks)
+- [ ] `POST /orders/:id/handoff/:hid/confirm` (exact count; `rejectedItems[]`→Hold; merge by itemIds)
+- [ ] `GET /orders/handoffs/pending` (station inbound queue)
+- [ ] `GET /orders/:id/split-state` (per-station breakdown; may fold into order-detail)
+- [ ] Recovery add-on: `createRecoveryOrder` (recovery.service:265) init every recovery item `currentStation`=intake (S1); verify CX + admin both start at S1
+- [ ] Swagger: `Handoff` schema + 4 endpoints + modified order-detail view
+
+## Feature 1 — Production Split-Flow & Structured Addresses — ₦110k · 4 new endpoints
+An order can stretch across stations (some items washing while others still pressing) under one order
+card, with a confirmed record at every handoff. **S1–S5 (client-confirmed):** S1=intake-and-tag,
+S2=sort-and-pretreat, S3=wash-and-dry, S4=press-iron, S5=qc (rider/dispatch is post-S5). **Hard
+gates:** S1→S2 and S4→S5 = whole order only; S2→S3→S4 = stretch zone (partial pushes allowed).
+- **Confirmed decisions:** per-ITEM `currentStation` (not group); `stage.status` STAYS a computed
+  summary (additive, keeps bot/CRM/dashboards working); structured address = sub-doc
+  `{label,address,landmark}`; build the address slice FIRST.
+- **Reuse (don't rebuild):** items already carry per-station status (`sortStatus`/`washStatus`/
+  `ironStatus`/`qcStatus`/`holdDetails`, bookOrder.model ItemSchema); Hold exists (qc.service ~870).
+- **New model bits:** `Item.currentStation` (enum STATION_STATUS); `order.handoffs[]`
+  `{fromStation,toStation,itemIds[],count,status:pending|confirmed|rejected,pushedBy/At,
+  confirmedBy/At,confirmedCount}`; derived helpers `countByStation`/`isWholeAt`/`summaryStatus`.
+- **Endpoints (4):** `POST /orders/:id/handoff` (push; gate + per-item completion checks) ·
+  `POST /orders/:id/handoff/:hid/confirm` (receiving confirms exact count; body `rejectedItems[]`→
+  existing Hold; repeat-delivery merge by itemIds) · `GET /orders/handoffs/pending` (station inbound
+  queue) · `GET /orders/:id/split-state` (per-station breakdown — may fold into order-detail → 3).
+- **Modified (Swagger, no new route):** `createBookOrder` structured address (intake-user.service:70
+  validateRule currently COMMENTED OUT; profile uses `AddressSchema{label*,address*,landmark*}`
+  user.model:7-11; order stores plain `pickupAddress`/`deliveryAddress` String bookOrder.model:172-173)
+  · order-detail/pipeline-progress view (intake-user.service ~1950-2025) shows split positions.
+- **Add-on (+₦10k) — recovery orders honor S1→S5 (client 2026-08-27).** Recovery orders (rewash/
+  rework/repair/replace) traverse the normal flow; NEITHER CX NOR ADMIN creation may skip it. ALREADY
+  TRUE: `createRecoveryOrder` (recovery.service:265) sets stage=QUEUE + station=INTAKE_AND_TAG (S1),
+  isRecoveryOrder; CX has no station role so can't change stages. New work = keep it true under
+  split-flow: init each recovery item's `currentStation`=intake; same gates + handoff engine; create
+  fixed to S1 (no "start at station X", no auto-confirmed handoff). Admin's global station access is
+  unchanged (not an override). No new endpoints — wiring inside the split-flow build.
+
+## Feature 2 — Set Items — ₦80k · 5 new endpoints
+A Set = named catalog group of real, individually-priced pieces; NO set-level price; order total = sum
+of ONLY the pieces selected; each selected piece recorded as its own countable order item so intake
+counts stay accurate for partial sets.
+- **Why cheap:** booking already TRUSTS payload `item.price` and records each line as one countable
+  unit (bookOrder.service:941); catalog only consulted for heavy detection (bookOrder.service:889).
+  So a Set lives entirely in the CATALOG layer — order/production layer UNCHANGED.
+- **New model:** `ItemSet {name*, pieces:[{name*,price*,isHeavy}], active}` — no price field, ≥1 piece.
+- **Endpoints (5, mirror /admin/*-order-item):** add-order-set · get-order-sets · get-order-set/{id} ·
+  update-order-set/{id} · delete-order-set/{id}. Piece mgmt folds into add/update (pieces[] payload).
+  Modified: catalog browse (`get-order-items`) also returns sets tagged `kind:'set'`.
+- **Two small booking fixes:** extend heavy-detection to consult `ItemSet` piece `isHeavy`; optional
+  `fromSet` tag on order ItemSchema for traceability (recommended).
+
+## Related decisions (not part of these features)
+- **Customer booking cart stays CLIENT-SIDE (localStorage), no backend** (client 2026-08-27). Only
+  staff-side intake "drafts" exist (`/intake-user/drafts`, `/order/draft/:id/resume` = resume partial
+  TAGGING of an already-placed QUEUE order — NOT a customer cart). `CartDraft` model (~₦25-30k) scoped
+  but not wanted; revisit only if cross-device resume is requested.
+- **Deep links (open, offered):** admin `template.page` is an unconstrained String → an admin can set
+  a page not in `PAGE_ROUTES` (util/deepLink.js) → SMS builds a literal `/<page>` (404 risk). Known
+  keys (wallet/offers/referral/complaint/order/support) route correctly (FE-confirmed 2026-08-03).
+  Hardening = enum-guard the admin page field + verify `CLIENT_URL` env set in prod + ensure senders
+  pass recordId. Not yet done.
+
+---
+
+# Previous Feature (DONE): CHUVI V1 AI Assistant — in-app bot upgrade (Phases A–D)
 
 **STATUS 2026-08-24: MERGED TO `main`.** All bot V1/V1.1 work (Phases A–D + V1.1 parts + the 3
 staging-run bug fixes: payment-step pin, OTP-step pin, styler gating) is committed and merged to
-main — no longer uncommitted. The staging gate passed 11/11 (see session.md). **Next gate is NOT
+main. Post-merge, the whole orchestrator was refactored into a router + `services/bot/*` modules
+(2455→561 lines, verified 11/11 — see session.md). The staging gate passed 11/11. **Next gate is NOT
 backend:** the frontend team builds the two FE tasks (quickActions chips + complaint photo upload),
 then INTEGRATION-TEST the live bot with REAL production data end-to-end from the app. Historical
 "UNCOMMITTED" notes below predate the merge — read them as "what was built," not current git state.

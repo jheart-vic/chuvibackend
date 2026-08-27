@@ -81,7 +81,11 @@ module.exports = {
                 if (r.priced.length) bItems = r.priced
             }
             if (!bServiceType) bServiceType = memory.lastOrder.serviceType || null
-            if (!bAddress) bAddress = memory.lastOrder.pickupAddress || null
+            if (!bAddress) {
+                const la = memory.lastOrder.pickupAddress
+                bAddress =
+                    (la && typeof la === 'object' ? la.address : la) || null
+            }
         }
 
         const persist = (nextStep) => ({
@@ -254,6 +258,8 @@ module.exports = {
                 quantity: Math.max(1, Math.round(i.quantity) || 1),
             })),
             pickupAddress: bAddress,
+            // Bot returns laundry to the pickup address (single-address flow).
+            deliveryAddress: bAddress,
         }
         if (bTime) basePayload.pickupTime = bTime
         const day = this._resolvePickupDate(bDate)
