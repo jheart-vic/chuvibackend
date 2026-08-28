@@ -111,7 +111,6 @@ exports.ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED = "/order/:id/mark-all-sorted
 exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED = "/order/:id/items/:itemId/mark-pretreated";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED = "/order/:id/items/:itemId/undo-pretreated";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED = "/order/:id/items/:itemId/flag";
-exports.ROUTE_SORT_AND_PRETREAT_NEXT_STAGE = "/order/:id/send-to-next-stage";
 exports.ROUTE_SORT_AND_PRETREAT_GET_FLAGGED = "/orders/flagged";
 exports.ROUTE_SORT_AND_PRETREAT_GET_COMPLETED = "/orders/completed";
 exports.ROUTE_SORT_AND_PRETREAT_SORTED_ORDER_DETAIL = "/orders/completed/:id";
@@ -138,7 +137,6 @@ exports.ROUTE_WASH_AND_DRY_HOLD = "/order/queue/:id/items/:itemId/hold";
 exports.ROUTE_WASH_AND_DRY_GET_ACTIVE_WASHING = "/orders/active-wash";
 exports.ROUTE_WASH_AND_DRY_MOVE_TO_DRYING = "/order/active-wash/:id/move-to-drying";
 exports.ROUTE_WASH_AND_ACTIVE_DRYING = "/orders/active-dry";
-exports.ROUTE_WASH_AND_DRY_MARK_COMPLETE = "/order/active-dry/:id/complete";
 exports.ROUTE_WASH_AND_DRY_GET_HOLD = "/orders/hold";
 exports.ROUTE_WASH_AND_DRY_RELEASE = "/order/hold/:id/release";
 exports.ROUTE_WASH_AND_DRY_HISTORY = "/orders/history";
@@ -153,7 +151,6 @@ exports.ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING   = '/order/queue/:id/items/u
 // exports.ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING = '/order/queue/:id/items/:itemId/undo-pressing'
 exports.ROUTE_PRESS_IRON_HOLD                    = '/order/queue/:id/items/:itemId/hold'
 exports.ROUTE_PRESS_IRON_GET_ACTIVE_PRESS        = '/orders/active-press'
-exports.ROUTE_PRESS_IRON_PRESS_DONE              = '/order/active-press/:id/complete'
 exports.ROUTE_PRESS_IRON_GET_HOLD                = '/orders/hold'
 exports.ROUTE_PRESS_IRON_RELEASE                 = '/order/hold/:id/release'
 exports.ROUTE_PRESS_IRON_HISTORY                 = '/orders/history'
@@ -195,6 +192,12 @@ exports.ROUTE_GET_ORDER_SET_ID = '/get-order-set/:id'
 exports.ROUTE_DELETE_ORDER_SET_ID = '/delete-order-set/:id'
 exports.ROUTE_GET_AUDIT_LOGS = '/audit-logs'
 
+// Split-flow / production handoffs (mounted under /orders)
+exports.ROUTE_HANDOFFS_PENDING = '/handoffs/pending'
+exports.ROUTE_ORDER_HANDOFF = '/:id/handoff'
+exports.ROUTE_ORDER_HANDOFF_CONFIRM = '/:id/handoff/:hid/confirm'
+exports.ROUTE_ORDER_SPLIT_STATE = '/:id/split-state'
+
 
 // book orders
 exports.ROUTE_CREATE_BOOK_ORDER = '/create-book-order'
@@ -208,7 +211,6 @@ exports.ROUTE_FLAG_ORDER_ID = '/flag-order/:id'
 exports.ROUTE_PROCEED_TO_TAG_ID = '/proceed-to-tag/:id'
 exports.ROUTE_CONFIRM_TAG_ID_ITEM_ID = '/confirm-tag/:id/item/:itemId'
 exports.ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID = '/undo-confirm-tag/:id/item/:itemId'
-exports.ROUTE_PROCEED_TO_SORT_AND_PRETREAT_ID = '/proceed-to-sort-and-pretreat/:id'
 exports.ROUTE_SEND_TOP_UP_REQUEST_ID = '/send-top-up-request/:id'
 exports.ROUTE_ADJUST_WALLET = '/adjust-wallet/:id/:userId'
 exports.ROUTE_GET_USER_WALLET_ID = '/get-user-wallet/:id'

@@ -34,21 +34,33 @@ class PressAndIronService extends BaseService {
             const [pressQueue, activePress, completedToday, recentQueueResult] =
                 await Promise.all([
                     BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.IRONING,
+                        'items.currentStation':
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
                         'items.pressConfirmedAt': { $exists: false },
                     }),
                     BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.IRONING,
+                        'items.currentStation':
+                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
                         'pressDetails.startedAt': { $exists: true },
                         'pressDetails.completedAt': { $exists: false },
                     }),
+                    // Completed press today = a confirmed press→qc handoff today
                     BookOrderModel.countDocuments({
-                        'pressDetails.completedAt': { $gte: startOfToday },
-                        'stage.status': ORDER_STATUS.QC,
+                        handoffs: {
+                            $elemMatch: {
+                                fromStation:
+                                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                                status: 'confirmed',
+                                confirmedAt: { $gte: startOfToday },
+                            },
+                        },
                     }),
                     paginate(
                         BookOrderModel,
-                        { 'stage.status': ORDER_STATUS.IRONING },
+                        {
+                            'items.currentStation':
+                                STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                        },
                         {
                             page: 1,
                             limit: 5,
@@ -84,7 +96,10 @@ class PressAndIronService extends BaseService {
 
             const { page = 1, limit = 20, search = '' } = req.query
 
-            const query = { 'stage.status': ORDER_STATUS.IRONING }
+            const query = {
+                'items.currentStation':
+                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
+            }
 
             if (search) {
                 query.$or = [
@@ -144,7 +159,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.IRONING,
+                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
             }).lean()
 
             if (!order)
@@ -190,7 +205,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.IRONING,
+                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -265,7 +280,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.IRONING,
+                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -391,7 +406,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.IRONING,
+                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -473,7 +488,8 @@ class PressAndIronService extends BaseService {
             const { page = 1, limit = 20 } = req.query
 
             const query = {
-                'stage.status': ORDER_STATUS.IRONING,
+                'items.currentStation':
+                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
                 'pressDetails.startedAt': { $exists: true },
                 'pressDetails.completedAt': { $exists: false },
             }
@@ -519,74 +535,8 @@ class PressAndIronService extends BaseService {
         }
     }
 
-    async pressDone(req) {
-        try {
-            const orderId = req.params.id
-            const userId = req.user.id
-
-            if (!orderId)
-                return BaseService.sendFailedResponse({
-                    error: 'Order ID is required',
-                })
-
-            const user = await UserModel.findById(userId)
-            if (!user)
-                return BaseService.sendFailedResponse({
-                    error: 'User not found',
-                })
-
-            const order = await BookOrderModel.findOne({
-                _id: orderId,
-                'stage.status': ORDER_STATUS.IRONING,
-                'pressDetails.startedAt': { $exists: true },
-            })
-            if (!order)
-                return BaseService.sendFailedResponse({
-                    error: 'Order not found or not currently being pressed',
-                })
-
-            const now = new Date()
-
-            await BookOrderModel.updateOne(
-                { _id: orderId },
-                {
-                    $set: {
-                        'stage.status': ORDER_STATUS.QC,
-                        'stage.note': '',
-                        'stage.updatedAt': now,
-                        stationStatus: STATION_STATUS.QC_STATION,
-                        'pressDetails.completedAt': now,
-                    },
-                    $push: {
-                        stageHistory: {
-                            status: ORDER_STATUS.QC,
-                            note: '',
-                            updatedAt: now,
-                        },
-                    },
-                },
-            )
-
-            await ActivityModel.create({
-                title: 'Pressing Completed',
-                description: `Order ${order.oscNumber} pressing has been completed and sent to QC`,
-                type: ACTIVITY_TYPE.ORDER_PRESS_COMPLETED,
-                orderId: order._id,
-                userId,
-                reference: order.oscNumber,
-            })
-            await createAuditLog({userId: getObjectId(userId), action: `Order ${order.oscNumber} pressing completed and sent to QC`, category: 'pressing', orderId: order._id})
-
-            return BaseService.sendSuccessResponse({
-                message: `Order ${order.oscNumber} has been successfully processed and sent to QC`,
-            })
-        } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({
-                error: 'Failed to complete pressing',
-            })
-        }
-    }
+    // Press → QC (S4→S5, whole-order gate) moved to the split-flow handoff
+    // engine (POST /orders/:id/handoff, confirmed by QC). Old pressDone removed.
 
     async getHoldQueue(req) {
         try {

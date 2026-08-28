@@ -43,31 +43,40 @@ class WashAndDryService extends BaseService {
                 recentQueueResult,
             ] = await Promise.all([
                 BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.WASHING,
+                    'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
                     'washDetails.startedAt': { $exists: false },
                 }),
 
                 BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.WASHING,
+                    'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
                     'washDetails.startedAt': { $exists: true },
                     'washDetails.movedToDryingAt': { $exists: false },
                 }),
 
-                // Orders currently in drying stage
+                // Orders with items in the drying sub-phase
                 BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.DRYING,
+                    'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                    'washDetails.movedToDryingAt': { $exists: true },
                 }),
 
+                // Completed wash today = a confirmed wash→press handoff today
                 BookOrderModel.countDocuments({
-                    'washDetails.dryingCompletedAt': { $gte: startOfToday },
-                    'stage.status': {
-                        $nin: [ORDER_STATUS.WASHING, ORDER_STATUS.DRYING],
+                    handoffs: {
+                        $elemMatch: {
+                            fromStation:
+                                STATION_STATUS.WASH_AND_DRY_STATION,
+                            status: 'confirmed',
+                            confirmedAt: { $gte: startOfToday },
+                        },
                     },
                 }),
 
                 paginate(
                     BookOrderModel,
-                    { 'stage.status': ORDER_STATUS.WASHING },
+                    {
+                        'items.currentStation':
+                            STATION_STATUS.WASH_AND_DRY_STATION,
+                    },
                     {
                         page: 1,
                         limit: 5,
@@ -110,7 +119,7 @@ class WashAndDryService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const query = {
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
                 'washDetails.startedAt': { $exists: false }, // ← waiting, not yet active
             }
 
@@ -176,7 +185,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
             }).lean()
 
             if (!order)
@@ -224,7 +233,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -311,7 +320,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -455,7 +464,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -549,7 +558,7 @@ class WashAndDryService extends BaseService {
             const { page = 1, limit = 20 } = req.query
 
             const query = {
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
                 'washDetails.startedAt': { $exists: true },
                 'washDetails.movedToDryingAt': { $exists: false },
             }
@@ -614,7 +623,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.WASHING,
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
                 'washDetails.startedAt': { $exists: true },
             })
             if (!order)
@@ -624,20 +633,19 @@ class WashAndDryService extends BaseService {
 
             const now = new Date()
 
+            // Drying is a WITHIN-station sub-phase now; stage.status stays
+            // engine-owned (washing while items sit at the wash station).
+            // We only flag the drying sub-phase + log a history marker.
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
-                        'stage.status': ORDER_STATUS.DRYING,
-                        'stage.note': '',
-                        'stage.updatedAt': now,
-                        stationStatus: STATION_STATUS.WASH_AND_DRY_STATION,
                         'washDetails.movedToDryingAt': now,
                     },
                     $push: {
                         stageHistory: {
                             status: ORDER_STATUS.DRYING,
-                            note: '',
+                            note: 'Moved to drying (sub-phase)',
                             updatedAt: now,
                         },
                     },
@@ -690,7 +698,10 @@ class WashAndDryService extends BaseService {
 
             const { page = 1, limit = 20 } = req.query
 
-            const query = { 'stage.status': ORDER_STATUS.DRYING }
+            const query = {
+                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'washDetails.movedToDryingAt': { $exists: true },
+            }
 
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
@@ -732,100 +743,8 @@ class WashAndDryService extends BaseService {
         }
     }
 
-    // WASH & DRY DONE — SEND TO NEXT STAGE
-    async washAndDryComplete(req) {
-        try {
-            const orderId = req.params.id
-            const userId = req.user.id
-
-            if (!orderId)
-                return BaseService.sendFailedResponse({
-                    error: 'Order ID is required',
-                })
-
-            const user = await UserModel.findById(userId)
-            if (!user)
-                return BaseService.sendFailedResponse({
-                    error: 'User not found',
-                })
-
-            const order = await BookOrderModel.findOne({
-                _id: orderId,
-                'stage.status': ORDER_STATUS.DRYING,
-            })
-            if (!order)
-                return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in drying stage',
-                })
-
-            const now = new Date()
-            const isWashOnly =
-                order.serviceType === ORDER_SERVICE_TYPE.WASHING_ONLY
-            const nextStatus = isWashOnly
-                ? ORDER_STATUS.READY
-                : ORDER_STATUS.IRONING
-            const nextStation = isWashOnly
-                ? STATION_STATUS.QC_STATION
-                : STATION_STATUS.PRESSING_AND_IRONING_STATION
-
-            await BookOrderModel.updateOne(
-                { _id: orderId },
-                {
-                    $set: {
-                        'stage.status': nextStatus,
-                        'stage.note': '',
-                        'stage.updatedAt': now,
-                        stationStatus: nextStation,
-                        'washDetails.dryingCompletedAt': now,
-                    },
-                    $push: {
-                        stageHistory: {
-                            status: nextStatus,
-                            note: '',
-                            updatedAt: now,
-                        },
-                    },
-                },
-            )
-
-            await ActivityModel.create({
-                title: 'Wash & Dry Completed',
-                description: `Order ${order.oscNumber} wash and dry completed. Sent to ${nextStatus}`,
-                type: ACTIVITY_TYPE.ORDER_WASH_DRY_COMPLETED,
-                orderId: order._id,
-                userId,
-                reference: order.oscNumber,
-            })
-            await createNotification({
-                userId,
-                title: isWashOnly
-                    ? 'Your order is getting ready'
-                    : 'Your order is being ironed',
-                body: isWashOnly
-                    ? `Order ${order.oscNumber} has been washed and is now ready for ironing.`
-                    : `Order ${order.oscNumber} has been washed and is now being ironed.`,
-                subBody: `Order ID: ${order.oscNumber}`,
-                type: isWashOnly
-                    ? NOTIFICATION_TYPE.ORDER_WASHING
-                    : NOTIFICATION_TYPE.ORDER_IRONING,
-            })
-            await createAuditLog({
-                userId: getObjectId(userId),
-                orderId,
-                category: 'wash',
-                action: `Wash & dry completed, moved to ${nextStatus}`,
-            })
-
-            return BaseService.sendSuccessResponse({
-                message: `Order ${order.oscNumber} has been successfully processed and sent to ${nextStatus}`,
-            })
-        } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({
-                error: 'Failed to complete wash & dry',
-            })
-        }
-    }
+    // Wash → Press/QC (S3→S4, or S3→S5 for wash-only) moved to the split-flow
+    // handoff engine (POST /orders/:id/handoff). Old washAndDryComplete removed.
 
     //GET HOLD QUEUE — scoped to wash & dry station only
     async getHoldQueue(req) {

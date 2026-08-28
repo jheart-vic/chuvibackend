@@ -1,6 +1,7 @@
 # Current Feature: CHUVI Production Split-Flow, Structured Addresses & Set Items
 
-**STATUS 2026-08-27: IN PROGRESS — Phase 1 (structured addresses) started.** Client-approved package
+**STATUS 2026-08-28: COMPLETE & DB-VERIFIED (Phases 1+2: 14/14, Phase 3: 18/18). Uncommitted on
+modular-branch, ready to commit.** Client-approved package
 of two features (+1 add-on). Full detail also in memory `chuvi-prodflow-setitems.md`. Combined
 **₦190,000 · 9 new endpoints · ~12.5 days.** Build order (low-risk → high): (1) structured addresses
 [quick], (2) Set Items [isolated catalog], (3) split production-flow engine [biggest, includes the
@@ -17,7 +18,7 @@ comments kept LIGHT.
 - [x] `services/bot/booking.flow.js:84` — "the usual" prefill coerces stored address object → display string (fixes `${bAddress}` render); bot still sends string, normalized downstream
 - [x] Swagger: `OrderAddress` schema (44 total, parses) + `createBookOrder` (required) & customer booking (`oneOf` string|object) request bodies + TimelineOrder response shape
 - [x] Gap closed (2026-08-27): customer `postBookOrder` now REQUIRES an address be PRESENT when isPickUp/isDelivery (presence only — label/landmark stay optional; back-compat). Bot payload now sends `deliveryAddress = pickupAddress` (single-address return) so the new isDelivery guard doesn't reject bot bookings.
-- [ ] ⚠️ FE/verify note: staff intake REJECTS a bare-string address (needs label+landmark). Customer app: if it sets isDelivery:true it must now send a delivery address (was silently optional before). Live DB write-path run still pending (only unit+syntax+swagger verified).
+- [x] DB write-path VERIFIED (phase12Staging.js, 14/14): staff intake rejects address missing landmark; customer rejects missing address when isPickUp; structured address round-trips as object; legacy string tolerated. FE note: staff intake needs label+landmark; customer app must send a delivery address when isDelivery.
 
 ### Phase 2 — Set Items  ✅ DONE 2026-08-28
 - [x] `models/itemSet.model.js` — `{name*, pieces:[{name*,price*,isHeavy}], active}` (no set price; ≥1 piece enforced in service)
@@ -26,16 +27,76 @@ comments kept LIGHT.
 - [x] Booking heavy-detection (subscription branch) also consults `ItemSet` pieces where `isHeavy` (matched by piece name vs booked item `.type`)
 - [x] Optional `fromSet` tag added to order `ItemSchema` (passes through via `...post`)
 - [x] Swagger: `ItemSet` + `ItemSetPiece` schemas (46 total, parses) + 5 endpoints (278 paths)
-- [ ] ⚠️ Verify note: `get-order-items` response now mixes items+sets with a `kind` field — FE must branch on `kind` (additive; items unchanged otherwise). Live DB run still pending.
+- [x] DB VERIFIED (phase12Staging.js, part of 14/14): add/get/update/delete set, pieces stored, get-order-items returns sets tagged kind:set + items tagged kind:item, no-pieces rejected. FE must branch on `kind`.
 
 ### Phase 3 — Split-Flow Engine (+ recovery add-on)
-- [ ] Model: `Item.currentStation` (enum `STATION_STATUS`); `order.handoffs[]`; helpers `countByStation`/`isWholeAt`/`summaryStatus` (keep `stage.status` computed)
-- [ ] `POST /orders/:id/handoff` (push; hard gates S1→S2 & S4→S5 whole-order, S2→S3→S4 partial; per-item completion checks)
-- [ ] `POST /orders/:id/handoff/:hid/confirm` (exact count; `rejectedItems[]`→Hold; merge by itemIds)
-- [ ] `GET /orders/handoffs/pending` (station inbound queue)
-- [ ] `GET /orders/:id/split-state` (per-station breakdown; may fold into order-detail)
-- [ ] Recovery add-on: `createRecoveryOrder` (recovery.service:265) init every recovery item `currentStation`=intake (S1); verify CX + admin both start at S1
-- [ ] Swagger: `Handoff` schema + 4 endpoints + modified order-detail view
+> **ARCH DECISION 2026-08-28 (client): INTEGRATED — the split-flow REPLACES the old whole-order
+> mechanism (old flow was already built; client wants this to supersede it).** Pre-launch, so no live
+> pipeline/data to protect. Per-item `currentStation` + `handoffs[]` become THE advance mechanism;
+> `stage.status` is a COMPUTED summary (`summaryStatus`). The 5 station services keep their per-item
+> work (tag/sort/wash/press/qc completion + hold + queues) which feeds the gates, but their whole-order
+> "advance to next stage" step is replaced by the handoff push/confirm flow. Build order: model+engine
+> first (isolated, verifiable), then integrate station-by-station.
+> Verified facts: S1 done = item.tagStatus==='complete' (intake:775); sort=sort+pretreatStatus;
+> wash=washStatus; press=pressStatus; qc=qcStatus==='passed'. Recovery items get S1 via schema default.
+- [x] Model: `Item.currentStation` (default S1); `order.handoffs[]` (HandoffSchema); helpers `countByStation`/`isWholeAt`/`summaryStatus` + statics STATION_SEQUENCE/STATION_TO_ORDER_STATUS. Tested.
+- [x] `services/handoff.service.js` engine (push/confirm/pendingQueue/splitState) + gates (whole-order S1→S2 & S4→S5, partial stretch zone) + completion checks + repeat-merge + reject→Hold. **In-memory logic test 16/16.**
+- [x] `POST /orders/:id/handoff` (push → pending handoff; items advance only on confirm)
+- [x] `POST /orders/:id/handoff/:hid/confirm` (accept→advance, reject→Hold+stay; recompute stage.status)
+- [x] `GET /orders/handoffs/pending` (inbound queue, ?toStation filter)
+- [x] `GET /orders/:id/split-state` (per-station breakdown + pending handoffs)
+- [x] Controller + `routes/orders.js` (stationAuth = station roles + admin) + mounted `/orders` + page-route strings
+- [x] Recovery add-on: recovery items get `currentStation`=S1 via schema default (createRecoveryOrder sets no per-item station). Verify CX+admin both start at S1 [confirm at integration].
+- [x] Swagger: `Handoff`/`PendingHandoff`/`OrderSplitState` schemas + 4 endpoints (49 schemas, 282 paths, parses)
+#### INTEGRATION — Option 2 (client-approved 2026-08-28): split-flow REPLACES the whole-order advance.
+**Design decisions (locked):**
+- **D1 stage.status = coarse computed summary** (`summaryStatus`, least-advanced station→ORDER_STATUS).
+  Faithful values: QUEUE/SORT_AND_PRETREAT/WASHING/IRONING/QC. Hooks/CRM/offer/referral/bot keep reading it.
+- **D2 sub-phases (washing↔drying, ironing) are WITHIN-station**, tracked by the EXISTING per-station
+  detail fields (`washDetails.movedToDryingAt`, `pressDetails`, item `washStatus/pressStatus`) — NOT by
+  order-level stage.status anymore. For SPLIT orders a single order-level drying/ironing is meaningless
+  by design; the truth is per-item `currentStation` + `/split-state`.
+- **D3 ONLY wash (S3) + press (S4) queues move to `items.currentStation`-based** selection. Refinement:
+  because summaryStatus = LEAST-advanced station and sort is the earliest stretch station, ANY order with
+  an item at sort has `stage.status==='sort-and-pretreat'` — so the SORT queue/guards on stage.status are
+  already correct and stay. Intake (S1) + QC (S5) queues also stay (whole-order gated). So only wash+press
+  need item-station-aware queries. Within-wash washing-vs-drying sub-lists use the detail fields (D2),
+  and moveToDrying sets a sub-phase, not stage.status.
+- **D4 the 4 between-station advances are REMOVED** (intake→sort, sort `sendToNextStage`, wash
+  `washAndDryComplete`, press `pressDone`); movement happens via `/orders/:id/handoff` push+confirm.
+  **KEEP:** all per-item completion actions, hold/release, qc pack&seal→dispatch (post-S5), moveToDrying
+  (now sets a sub-phase, not stage.status), rider.
+- **D5 notifications ported into confirm:** when the order's computed summary ENTERS a new stage, fire the
+  matching customer notification (→WASHING: ORDER_WASHING, →IRONING: ORDER_IRONING, wash-only→READY, etc.).
+- **D6 whole-order gates stay:** S1→S2 and S4→S5 whole-order; S2↔S3↔S4 partial (already in engine).
+
+**Build order (station by station, read-then-edit, verify each):**
+- [x] port stage-entry notifications into `handoff.confirm` (STAGE_ENTRY_NOTICE; fires to order.userId on entry)
+- [x] intake→sort (S1→S2): removed `proceedToSortAndPretreat` (route+ctrl+svc+page-route). Queue stays (whole-order gated). Loads ✓
+- [x] sort→wash/iron (S2→S3/S4): removed `sendToNextStage` (route+ctrl+svc+page-route). Queue stays on stage.status (sort=min-when-present). Loads ✓
+- [x] wash (S3): removed `washAndDryComplete` (route+ctrl+svc+page-route); queue/active-wash/active-dry/dashboard → currentStation===WASH; moveToDrying now sets ONLY `washDetails.movedToDryingAt` + history marker (not stage.status); item guards → currentStation; completedToday → confirmed wash→press handoff today. Loads ✓
+- [x] press (S4): removed `pressDone` (route+ctrl+svc+page-route); queue/active/dashboard/guards → currentStation===PRESS; completedToday → confirmed press→qc handoff today. Loads ✓
+- [x] qc (S5): NO change needed — queue stays on stage.status (whole-order gated), receives via press→qc handoff confirm, pack&seal→dispatch untouched.
+- [x] Swagger: removed advance route docs replaced with handoff-engine notes; engine builds (49 schemas, 278 paths). Stale sendToNextStage prose fixed.
+- [x] All 5 stations verified: load + mount + engine test 16/16 + no dangling refs to removed methods.
+- [x] DB VERIFICATION — `handoffStaging.js` ran against testing_db: **18 passed, 0 failed** (all matrix scenarios: gates, push/confirm, split queues, notification, reject→Hold, recovery-S1, concurrency, split-state). Cleaned up.
+- [x] CONCURRENCY FIX (found by the DB run): confirm now does an ATOMIC CLAIM (updateOne guarded on handoff status==='pending' → final status) so exactly one of two concurrent confirms wins; in-memory handoff mutation removed so save can't overwrite the claim. Engine re-verified 16/16.
+
+**PHASE 3 COMPLETE & DB-VERIFIED (2026-08-28).** The whole ₦190k package (Phases 1 addresses + 2 Set Items + 3 split-flow) is code-complete. Remaining: quick Phase 1/2 write-path DB checks (optional), then commit (uncommitted on modular-branch).
+
+**VERIFICATION MATRIX (DB run must pass all — "passes" = this list):**
+1. Full happy path: create→intake tag all→push S1→S2→confirm→sort items→push S2→S3 partial→confirm→…→QC. stage.status correct at each step; split-state accurate.
+2. Each station QUEUE returns the order exactly when it has ≥1 item at that station (and not before/after).
+3. Whole-order gate: S1→S2 partial rejected; S4→S5 partial rejected.
+4. Partial stretch: S2→S3 subset moves, rest stay; order shows in BOTH wash and sort views.
+5. Reject on confirm → item Hold + stays; release path still works.
+6. Notifications: customer gets being-washed / being-ironed / ready at the right transitions (no dup, no loss).
+7. wash-only + iron-only service routes (skip wash / skip … ) reach the right next station.
+8. Recovery order: CX-created + admin-created both start all items at S1; flow via handoff.
+9. Hooks/bot unaffected: order-status reply + a delivered order still fire CRM/referral correctly.
+10. Concurrency smoke: two confirms on one order don't corrupt (last-write / re-read).
+11. Dashboards count by station correctly for a split order.
+12. qc pack&seal→dispatch→rider still works end-to-end.
 
 ## Feature 1 — Production Split-Flow & Structured Addresses — ₦110k · 4 new endpoints
 An order can stretch across stations (some items washing while others still pressing) under one order

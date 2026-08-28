@@ -66,14 +66,6 @@ class IntakeUserController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
-    async proceedToSortAndPretreat(req, res) {
-        const intakeUserService = new IntakeUserService()
-        const result = await intakeUserService.proceedToSortAndPretreat(req)
-
-        return result.success
-            ? BaseController.sendSuccessResponse(res, result.data)
-            : BaseController.sendFailedResponse(res, result.data)
-    }
     async sendTopUpRequest(req, res) {
         const intakeUserService = new IntakeUserService()
         const result = await intakeUserService.sendTopUpRequest(req)

@@ -11,7 +11,6 @@ const {
     ROUTE_WASH_AND_DRY_GET_ACTIVE_WASHING,
     ROUTE_WASH_AND_DRY_MOVE_TO_DRYING,
     ROUTE_WASH_AND_ACTIVE_DRYING,
-    ROUTE_WASH_AND_DRY_MARK_COMPLETE,
     ROUTE_WASH_AND_DRY_GET_HOLD,
     ROUTE_WASH_AND_DRY_HISTORY,
     ROUTE_WASH_AND_DRY_HISTORY_TIMELINE,
@@ -443,41 +442,8 @@ router.get(ROUTE_WASH_AND_ACTIVE_DRYING, [washAndDryAuth], (req, res) => {
     return controller.getActiveDry(req, res)
 })
 
-/**
- * @swagger
- * /wash-dry/order/active-dry/{id}/complete:
- *   patch:
- *     summary: Mark wash & dry as done and send to ironing
- *     description: |
- *       Operator clicks "Wash & Dry Done" then "Send to Ironing".
- *       Records dryingCompletedAt.
- *       WASH_AND_IRON orders → IRONING stage.
- *       WASHING_ONLY orders → READY_FOR_DELIVERY stage.
- *     tags:
- *       - Wash & Dry
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *     responses:
- *       200:
- *         description: Order successfully processed and sent to next stage
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message: { type: string, example: "Order ORD-2024-001 has been successfully processed and sent to ironing" }
- *       404:
- *         description: Order not found or not in drying stage
- *       500:
- *         description: Server error
- */
-router.patch(ROUTE_WASH_AND_DRY_MARK_COMPLETE, [washAndDryAuth], (req, res) => {
-    const controller = new WashAndDryController()
-    return controller.washAndDryComplete(req, res)
-})
+// Wash → Press/QC now moves via the split-flow handoff engine:
+// POST /orders/:id/handoff. Old active-dry/:id/complete removed.
 
 // HOLD
 /**

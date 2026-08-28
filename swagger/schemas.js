@@ -976,6 +976,65 @@
  *         updatedAt: { type: string, format: date-time }
  *       required: [name, pieces]
  *
+ *     Handoff:
+ *       type: object
+ *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count."
+ *       properties:
+ *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
+ *         fromStation: { type: string, example: sort-and-pretreat-station }
+ *         toStation: { type: string, example: wash-and-dry-station }
+ *         count: { type: number, example: 3 }
+ *         status: { type: string, enum: [pending, confirmed, rejected], example: pending }
+ *         itemIds:
+ *           type: array
+ *           items: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
+ *
+ *     PendingHandoff:
+ *       type: object
+ *       description: "One pending handoff in a station's inbound queue."
+ *       properties:
+ *         orderId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
+ *         oscNumber: { type: string, example: "OSC-20260828-551210" }
+ *         fullName: { type: string, example: "Jude Victor" }
+ *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
+ *         fromStation: { type: string, example: sort-and-pretreat-station }
+ *         toStation: { type: string, example: wash-and-dry-station }
+ *         count: { type: number, example: 3 }
+ *         itemIds: { type: array, items: { type: string } }
+ *         pushedAt: { type: string, format: date-time }
+ *
+ *     OrderSplitState:
+ *       type: object
+ *       description: "Where every item in an order currently sits across the 5 stations, plus pending handoffs."
+ *       properties:
+ *         orderId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
+ *         oscNumber: { type: string, example: "OSC-20260828-551210" }
+ *         stageStatus: { type: string, example: washing }
+ *         stationStatus: { type: string, example: wash-and-dry-station }
+ *         countByStation:
+ *           type: object
+ *           additionalProperties: { type: number }
+ *           example: { "wash-and-dry-station": 2, "pressing-and-ironing-station": 1 }
+ *         stations:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               station: { type: string, example: wash-and-dry-station }
+ *               count: { type: number, example: 2 }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     itemId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
+ *                     type: { type: string, example: shirt }
+ *                     quantity: { type: number, example: 1 }
+ *                     onHold: { type: boolean, example: false }
+ *         pendingHandoffs:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/Handoff' }
+ *
  *     OrderAddress:
  *       type: object
  *       description: "Structured order address. Staff intake (createBookOrder with isPickUp/isDelivery) REQUIRES label + address + landmark. Customer/app and bot bookings may send a plain string, which is stored as { label:'', address, landmark:'' }; legacy orders may still return a plain string, so consumers should accept either shape."

@@ -747,78 +747,9 @@ class IntakeUserService extends BaseService {
             })
         }
     }
-    async proceedToSortAndPretreat(req) {
-        try {
-            const orderId = req.params.id
-            const userId = req.user.id
+    // Intake → Sort (S1→S2) moved to the split-flow handoff engine
+    // (POST /orders/:id/handoff, whole-order gate). Old method removed.
 
-            if (!orderId) {
-                return BaseService.sendFailedResponse({
-                    error: 'Order ID is required',
-                })
-            }
-            const order = await BookOrderModel.findById(orderId)
-            if (!order) {
-                return BaseService.sendFailedResponse({
-                    error: 'Order not found',
-                })
-            }
-
-            const user = await UserModel.findById(userId)
-
-            if (!user) {
-                return BaseService.sendFailedResponse({
-                    error: 'User not found',
-                })
-            }
-            const untaggedItems = order.items.filter(
-                (i) => i.tagStatus !== 'complete',
-            )
-            if (untaggedItems.length > 0) {
-                return BaseService.sendFailedResponse({
-                    error: `${untaggedItems.length} item(s) still untagged. Please tag all items before proceeding.`,
-                })
-            }
-
-            order.stage.status = ORDER_STATUS.SORT_AND_PRETREAT
-            order.stage.note = ''
-            order.stageHistory.push({
-                status: ORDER_STATUS.SORT_AND_PRETREAT,
-                note: '',
-                updatedAt: new Date(),
-            })
-            order.stationStatus = STATION_STATUS.SORT_AND_PRETREAT_STATION
-
-            await order.save()
-
-            await ActivityModel.create({
-                title: 'Order moved to sort and pretreat',
-                description: `A order ${order.oscNumber} has been moved to sort and pretreat`,
-                type: ACTIVITY_TYPE.SORT_AND_PRETREAT,
-                orderId: order._id,
-                userId,
-                reference: order.oscNumber,
-            })
-
-            await createNotification({
-                userId,
-                title: 'Order in Sort & Pretreat',
-                body: `Order ${order.oscNumber} is now in the Sort & Pretreat station.`,
-                subBody: `Please proceed to sort and pretreat the items in the order.`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATED,
-            })
-            await createAuditLog({userId: getObjectId(userId), action: `Moved order ${order.oscNumber} to sort and pretreat`, category: 'order', orderId: order._id})
-
-            return BaseService.sendSuccessResponse({
-                message: `Order ${order.oscNumber} successfully sent`,
-            })
-        } catch (error) {
-            console.log(error)
-            return BaseService.sendFailedResponse({
-                error: 'Failed to flag order',
-            })
-        }
-    }
     async sendTopUpRequest(req) {
         try {
             const orderId = req.params.id
