@@ -26,6 +26,15 @@ const ItemSchema = new mongoose.Schema(
         type: { type: String, required: true },
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
+        // Optional: name of the Set this piece was selected from (traceability).
+        fromSet: { type: String },
+        // Split-flow: the station this item is currently sitting at. Items can be
+        // at different stations at once (some washing while others still pressing).
+        currentStation: {
+            type: String,
+            enum: Object.values(STATION_STATUS),
+            default: STATION_STATUS.INTAKE_AND_TAG_STATION,
+        },
         tagId: { type: String },
         tagState: [
             {
@@ -160,6 +169,39 @@ const ItemSchema = new mongoose.Schema(
     { _id: true },
 )
 
+// Split-flow: a confirmed record of items being pushed from one station to the
+// next. The pushing station creates it (status 'pending'); the receiving station
+// confirms the exact count (accepted items advance; rejected items go to Hold).
+const HandoffSchema = new mongoose.Schema(
+    {
+        fromStation: {
+            type: String,
+            enum: Object.values(STATION_STATUS),
+            required: true,
+        },
+        toStation: {
+            type: String,
+            enum: Object.values(STATION_STATUS),
+            required: true,
+        },
+        itemIds: [{ type: mongoose.Schema.Types.ObjectId }],
+        count: { type: Number, default: 0 },
+        status: {
+            type: String,
+            enum: ['pending', 'confirmed', 'rejected'],
+            default: 'pending',
+        },
+        pushedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        pushedAt: { type: Date, default: Date.now },
+        confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        confirmedAt: { type: Date },
+        confirmedCount: { type: Number },
+        rejectedItemIds: [{ type: mongoose.Schema.Types.ObjectId }],
+        note: { type: String },
+    },
+    { _id: true, timestamps: true },
+)
+
 const bookOrderSchema = new mongoose.Schema(
     {
         userId: {
@@ -169,8 +211,9 @@ const bookOrderSchema = new mongoose.Schema(
         },
         fullName: { type: String, required: true },
         phoneNumber: { type: String, required: true },
-        pickupAddress: { type: String },
-        deliveryAddress: { type: String },
+        // Structured {label, address, landmark}; tolerant of legacy string orders.
+        pickupAddress: { type: mongoose.Schema.Types.Mixed },
+        deliveryAddress: { type: mongoose.Schema.Types.Mixed },
         pickupDate: { type: Date },
         deliveryDate: { type: Date },
         isVerified: { type: Boolean, default: false },
@@ -268,6 +311,7 @@ const bookOrderSchema = new mongoose.Schema(
         recoveryForOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
         recoveryActionType: { type: String }, // rewash | rework | repair | replace
         items: [ItemSchema],
+        handoffs: [HandoffSchema],
         extraNote: { type: String },
         stage: {
             status: {
@@ -388,6 +432,63 @@ const bookOrderSchema = new mongoose.Schema(
     },
     { timestamps: true },
 )
+
+// ── Split-flow derived helpers ────────────────────────────────────────────
+// The order-level station sequence for the summary (dispatch is post-S5).
+const STATION_SEQUENCE = [
+    STATION_STATUS.INTAKE_AND_TAG_STATION, // S1
+    STATION_STATUS.SORT_AND_PRETREAT_STATION, // S2
+    STATION_STATUS.WASH_AND_DRY_STATION, // S3
+    STATION_STATUS.PRESSING_AND_IRONING_STATION, // S4
+    STATION_STATUS.QC_STATION, // S5
+]
+const STATION_TO_ORDER_STATUS = {
+    [STATION_STATUS.INTAKE_AND_TAG_STATION]: ORDER_STATUS.QUEUE,
+    [STATION_STATUS.SORT_AND_PRETREAT_STATION]: ORDER_STATUS.SORT_AND_PRETREAT,
+    [STATION_STATUS.WASH_AND_DRY_STATION]: ORDER_STATUS.WASHING,
+    [STATION_STATUS.PRESSING_AND_IRONING_STATION]: ORDER_STATUS.IRONING,
+    [STATION_STATUS.QC_STATION]: ORDER_STATUS.QC,
+}
+
+// Count of items sitting at each station: { station: count }.
+bookOrderSchema.methods.countByStation = function () {
+    const counts = {}
+    for (const item of this.items || []) {
+        const s = item.currentStation || STATION_STATUS.INTAKE_AND_TAG_STATION
+        counts[s] = (counts[s] || 0) + 1
+    }
+    return counts
+}
+
+// True when every item is at the given station (whole-order gate helper).
+bookOrderSchema.methods.isWholeAt = function (station) {
+    const items = this.items || []
+    if (!items.length) return false
+    return items.every(
+        (i) =>
+            (i.currentStation || STATION_STATUS.INTAKE_AND_TAG_STATION) ===
+            station,
+    )
+}
+
+// Computed order summary: the LEAST-advanced station any item sits at maps to a
+// conservative ORDER_STATUS (so dashboards never show an order further along than
+// its slowest item). Returns null when there are no items.
+bookOrderSchema.methods.summaryStatus = function () {
+    const items = this.items || []
+    if (!items.length) return null
+    let minIdx = STATION_SEQUENCE.length
+    for (const item of items) {
+        const s = item.currentStation || STATION_STATUS.INTAKE_AND_TAG_STATION
+        const idx = STATION_SEQUENCE.indexOf(s)
+        if (idx !== -1 && idx < minIdx) minIdx = idx
+    }
+    if (minIdx >= STATION_SEQUENCE.length) return null
+    return STATION_TO_ORDER_STATUS[STATION_SEQUENCE[minIdx]]
+}
+
+bookOrderSchema.statics.STATION_SEQUENCE = STATION_SEQUENCE
+bookOrderSchema.statics.STATION_TO_ORDER_STATUS = STATION_TO_ORDER_STATUS
 
 const BookOrderModel = mongoose.model('BookOrder', bookOrderSchema)
 module.exports = BookOrderModel

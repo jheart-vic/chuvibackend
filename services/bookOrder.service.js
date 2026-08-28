@@ -1,7 +1,9 @@
 const BaseService = require('./base.service')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
+const { normalizeAddress } = require('../util/address')
 const BookOrderModel = require('../models/bookOrder.model')
+const ItemSetModel = require('../models/itemSet.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const {
     generateOscNumber,
@@ -834,6 +836,22 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // Structure addresses (tolerant: accepts a plain string or object).
+            // Require an address to be PRESENT when pickup/delivery is requested;
+            // label/landmark stay optional on the customer path (back-compat).
+            post.pickupAddress = normalizeAddress(post.pickupAddress)
+            post.deliveryAddress = normalizeAddress(post.deliveryAddress)
+            if (post.isPickUp && !post.pickupAddress?.address) {
+                return BaseService.sendFailedResponse({
+                    error: 'pickupAddress is required when isPickUp is true',
+                })
+            }
+            if (post.isDelivery && !post.deliveryAddress?.address) {
+                return BaseService.sendFailedResponse({
+                    error: 'deliveryAddress is required when isDelivery is true',
+                })
+            }
+
             let finalMessage = 'Order booked successfully'
             const adminOrderDetails = await AdminOrderDetailsModel.findOne({})
             const adminOrderSetting = await AdminSettingModel.findOne({})
@@ -885,13 +903,19 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                // ← fetch all heavy items from DB
-                const heavyItems = await OrderItemModel.find({
-                    isHeavy: true,
-                }).lean()
+                // ← fetch all heavy items from DB (single items + set pieces)
+                const [heavyItems, sets] = await Promise.all([
+                    OrderItemModel.find({ isHeavy: true }).lean(),
+                    ItemSetModel.find({ 'pieces.isHeavy': true }).lean(),
+                ])
                 const heavyItemNames = heavyItems.map((i) =>
                     i.name.toLowerCase(),
                 )
+                for (const s of sets) {
+                    for (const p of s.pieces || []) {
+                        if (p.isHeavy) heavyItemNames.push(p.name.toLowerCase())
+                    }
+                }
 
                 // ← block if any submitted item is heavy
                 const heavyItemFound = post.items.find((item) =>

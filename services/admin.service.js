@@ -5,6 +5,7 @@ const AuditLogModel = require('../models/audit.log.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const NotificationModel = require('../models/notification.model')
 const OrderItemModel = require('../models/orderItem.model')
+const ItemSetModel = require('../models/itemSet.model')
 const PaymentModel = require('../models/payment.model')
 const SubscriptionModel = require('../models/subscription.model')
 const UpdateFundModel = require('../models/updateFund.model')
@@ -2388,9 +2389,18 @@ class AdminService extends BaseService {
     }
     async getItems(req) {
         try {
-            const orderItems = await OrderItemModel.find({})
+            // Catalog browse: single items plus active sets, each tagged `kind`
+            // so the client can render sets (pick pieces) vs individual items.
+            const [orderItems, sets] = await Promise.all([
+                OrderItemModel.find({}).lean(),
+                ItemSetModel.find({ active: true }).lean(),
+            ])
+            const items = orderItems.map((i) => ({ ...i, kind: 'item' }))
+            const setEntries = sets.map((s) => ({ ...s, kind: 'set' }))
 
-            return BaseService.sendSuccessResponse({ message: orderItems })
+            return BaseService.sendSuccessResponse({
+                message: [...items, ...setEntries],
+            })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
@@ -2453,6 +2463,158 @@ class AdminService extends BaseService {
                 error: 'Something went wrong. Please try again later',
             })
         }
+    }
+
+    // ── Item Sets ──────────────────────────────────────────────
+    async addOrderSet(req) {
+        try {
+            const { name, pieces, active = true } = req.body
+            const check = this._validateSetPayload({ name, pieces })
+            if (!check.ok) {
+                return BaseService.sendFailedResponse({ error: check.error })
+            }
+
+            await ItemSetModel.create({ name, pieces: check.pieces, active })
+
+            return BaseService.sendSuccessResponse({
+                message: 'Set added successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    async updateOrderSet(req) {
+        try {
+            const setId = req.params.id
+            if (!setId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter a set ID',
+                })
+            }
+
+            const set = await ItemSetModel.findById(setId)
+            if (!set) {
+                return BaseService.sendFailedResponse({ error: 'Set not found' })
+            }
+
+            const update = { ...req.body }
+            // If pieces are being updated, validate the same rules.
+            if (update.pieces !== undefined) {
+                const check = this._validateSetPayload({
+                    name: update.name ?? set.name,
+                    pieces: update.pieces,
+                })
+                if (!check.ok) {
+                    return BaseService.sendFailedResponse({ error: check.error })
+                }
+                update.pieces = check.pieces
+            }
+
+            await ItemSetModel.findOneAndUpdate(
+                { _id: setId },
+                { $set: update },
+                { new: true },
+            )
+            return BaseService.sendSuccessResponse({
+                message: 'Set updated successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    async getOrderSets(req) {
+        try {
+            const sets = await ItemSetModel.find({})
+            return BaseService.sendSuccessResponse({ message: sets })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    async getOrderSet(req) {
+        try {
+            const setId = req.params.id
+            if (!setId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter a set ID',
+                })
+            }
+
+            const set = await ItemSetModel.findById(setId)
+            if (!set) {
+                return BaseService.sendFailedResponse({ error: 'Set not found' })
+            }
+
+            return BaseService.sendSuccessResponse({ message: set })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    async deleteOrderSet(req) {
+        try {
+            const setId = req.params.id
+            if (!setId) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please enter a set ID',
+                })
+            }
+
+            const set = await ItemSetModel.findById(setId)
+            if (!set) {
+                return BaseService.sendFailedResponse({ error: 'Set not found' })
+            }
+
+            await ItemSetModel.findOneAndDelete({ _id: setId })
+            return BaseService.sendSuccessResponse({
+                message: 'Set deleted successfully',
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Something went wrong. Please try again later',
+            })
+        }
+    }
+
+    // Shared validation: a Set needs a name and ≥1 priced piece (no set price).
+    _validateSetPayload({ name, pieces }) {
+        if (!name) return { ok: false, error: 'Please enter a name for the set' }
+        if (!Array.isArray(pieces) || pieces.length === 0) {
+            return { ok: false, error: 'A set must have at least one piece' }
+        }
+        const clean = []
+        for (const p of pieces) {
+            if (!p || !p.name) {
+                return { ok: false, error: 'Each piece must have a name' }
+            }
+            if (p.price === undefined || p.price === null || Number(p.price) <= 0) {
+                return {
+                    ok: false,
+                    error: `Each piece must have a price ("${p.name}")`,
+                }
+            }
+            clean.push({
+                name: p.name,
+                price: Number(p.price),
+                isHeavy: !!p.isHeavy,
+            })
+        }
+        return { ok: true, pieces: clean }
     }
 
     async adminSendToHold(req) {

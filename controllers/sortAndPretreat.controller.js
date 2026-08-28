@@ -76,14 +76,6 @@ class SortAndPretreatController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
-    // ── Send to Next Stage ─────────────────────────────────────────────────────
-    async sendToNextStage(req, res) {
-        const result = await SortAndPretreatService.sendToNextStage(req)
-        return result.success
-            ? BaseController.sendSuccessResponse(res, result.data)
-            : BaseController.sendFailedResponse(res, result.data)
-    }
-
     // ── Flagged Orders ─────────────────────────────────────────────────────────
     async getFlaggedOrders(req, res) {
         const result = await SortAndPretreatService.getFlaggedOrders(req)

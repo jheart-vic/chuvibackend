@@ -51,13 +51,6 @@ class PressAndIronController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
-    async pressDone(req, res) {
-        const result = await PressAndIronService.pressDone(req)
-        return result.success
-            ? BaseController.sendSuccessResponse(res, result.data)
-            : BaseController.sendFailedResponse(res, result.data)
-    }
-
     async getHoldQueue(req, res) {
         const result = await PressAndIronService.getHoldQueue(req)
         return result.success

@@ -952,6 +952,98 @@
  *         qcStatus: { type: string, enum: [pending, passed, failed], example: pending }
  *         itemNote: { type: string, example: "small stain on collar" }
  *
+ *     ItemSetPiece:
+ *       type: object
+ *       description: "One individually-priced piece inside a Set."
+ *       properties:
+ *         _id: { type: string, example: 64c1f9a2e3c3b4a1d2f1c1a5 }
+ *         name: { type: string, example: "Agbada (outer)" }
+ *         price: { type: number, example: 3500 }
+ *         isHeavy: { type: boolean, example: true }
+ *       required: [name, price]
+ *
+ *     ItemSet:
+ *       type: object
+ *       description: "A named catalog group of individually-priced pieces. No set-level price — an order total is the sum of ONLY the selected pieces, and each selected piece is booked as its own countable order item. When returned inside the catalog browse (get-order-items) each set also carries kind:'set'."
+ *       properties:
+ *         _id: { type: string, example: 64c1f9a2e3c3b4a1d2f1c1a0 }
+ *         name: { type: string, example: "Agbada Set" }
+ *         active: { type: boolean, example: true }
+ *         pieces:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/ItemSetPiece' }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *       required: [name, pieces]
+ *
+ *     Handoff:
+ *       type: object
+ *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count."
+ *       properties:
+ *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
+ *         fromStation: { type: string, example: sort-and-pretreat-station }
+ *         toStation: { type: string, example: wash-and-dry-station }
+ *         count: { type: number, example: 3 }
+ *         status: { type: string, enum: [pending, confirmed, rejected], example: pending }
+ *         itemIds:
+ *           type: array
+ *           items: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
+ *
+ *     PendingHandoff:
+ *       type: object
+ *       description: "One pending handoff in a station's inbound queue."
+ *       properties:
+ *         orderId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
+ *         oscNumber: { type: string, example: "OSC-20260828-551210" }
+ *         fullName: { type: string, example: "Jude Victor" }
+ *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
+ *         fromStation: { type: string, example: sort-and-pretreat-station }
+ *         toStation: { type: string, example: wash-and-dry-station }
+ *         count: { type: number, example: 3 }
+ *         itemIds: { type: array, items: { type: string } }
+ *         pushedAt: { type: string, format: date-time }
+ *
+ *     OrderSplitState:
+ *       type: object
+ *       description: "Where every item in an order currently sits across the 5 stations, plus pending handoffs."
+ *       properties:
+ *         orderId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
+ *         oscNumber: { type: string, example: "OSC-20260828-551210" }
+ *         stageStatus: { type: string, example: washing }
+ *         stationStatus: { type: string, example: wash-and-dry-station }
+ *         countByStation:
+ *           type: object
+ *           additionalProperties: { type: number }
+ *           example: { "wash-and-dry-station": 2, "pressing-and-ironing-station": 1 }
+ *         stations:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               station: { type: string, example: wash-and-dry-station }
+ *               count: { type: number, example: 2 }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     itemId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
+ *                     type: { type: string, example: shirt }
+ *                     quantity: { type: number, example: 1 }
+ *                     onHold: { type: boolean, example: false }
+ *         pendingHandoffs:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/Handoff' }
+ *
+ *     OrderAddress:
+ *       type: object
+ *       description: "Structured order address. Staff intake (createBookOrder with isPickUp/isDelivery) REQUIRES label + address + landmark. Customer/app and bot bookings may send a plain string, which is stored as { label:'', address, landmark:'' }; legacy orders may still return a plain string, so consumers should accept either shape."
+ *       properties:
+ *         label: { type: string, example: "Home" }
+ *         address: { type: string, example: "12 Lagos Street, Yaba" }
+ *         landmark: { type: string, example: "Opposite GTBank" }
+ *       required: [label, address, landmark]
+ *
  *     TimelineOrder:
  *       type: object
  *       description: "Order header returned by ALL 6 station timeline endpoints (intake, sort & pretreat, wash & dry, press, qc, rider). Single shared shape (buildTimelineOrderView) — includes the full items[] plus addresses and note."
@@ -971,8 +1063,8 @@
  *         qcDetails: { type: object, nullable: true }
  *         dispatchDetails: { type: object, nullable: true }
  *         items: { type: array, items: { $ref: '#/components/schemas/TimelineOrderItem' } }
- *         pickupAddress: { type: string, nullable: true, example: "12 Lagos Street, Yaba" }
- *         deliveryAddress: { type: string, nullable: true, example: "5 Ademola St, VI" }
+ *         pickupAddress: { oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ], nullable: true }
+ *         deliveryAddress: { oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ], nullable: true }
  *         extraNote: { type: string, nullable: true, example: "Handle with care" }
  *         createdAt: { type: string, format: date-time }
  *
@@ -1128,7 +1220,7 @@
  *         intent: { type: string, nullable: true, description: "The resolved intent — usually one of: greeting, about, order-status, wallet-balance, view-offers, referral-info, apply-referral-code, update-details, booking-guide, submit-feedback, file-complaint, talk-to-human, pricing, turnaround, service-info, policy, payment-status, reward-status, apply-payment, unknown. For a COMPOUND read-only request it is a '+'-joined string, e.g. 'wallet-balance+order-status'. Don't hard-switch on exact values.", example: order-status }
  *         replies:
  *           type: array
- *           description: "Bot messages posted in reply (empty once handed to a human). A compound request returns ONE combined message; single requests one. Render the whole array; dedupe against socket pushes by _id."
+ *           description: "Bot messages posted in reply (empty once handed to a human). A compound request returns ONE combined message; single requests one. Render the whole array; dedupe against socket pushes by _id. A reply's `text` may contain a Paystack checkout URL (card payment for a booking) — render URLs tappable/openable; the order stays PENDING until the payment webhook confirms."
  *           items:
  *             type: object
  *             properties:
@@ -1138,7 +1230,7 @@
  *               createdAt: { type: string, format: date-time }
  *         quickActions:
  *           type: array
- *           description: "Context-aware tappable chips for this turn. Tapping one sends its `message` back as the next customer message (no separate action protocol). A confirm/offer step → Yes/No; a mid-collection step → Talk To Staff; a completed answer → the main menu; a handoff → empty."
+ *           description: "Context-aware tappable chips for this turn. Tapping one sends its `message` back as the next customer message (no separate action protocol). A confirm/offer step → Yes/No; the payment step → Pay from wallet / Pay by card; the delivery-speed step → Standard / Express / Same-day; a mid-collection step → Talk To Staff; a completed answer → the main menu; a handoff → empty. Always render whatever chips arrive; don't hard-code the set."
  *           items:
  *             type: object
  *             properties:

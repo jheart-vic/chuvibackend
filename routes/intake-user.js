@@ -6,7 +6,6 @@ const {
   ROUTE_PROCEED_TO_TAG_ID,
   ROUTE_CONFIRM_TAG_ID_ITEM_ID,
   ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID,
-  ROUTE_PROCEED_TO_SORT_AND_PRETREAT_ID,
   ROUTE_SEND_TOP_UP_REQUEST_ID,
   ROUTE_ADJUST_WALLET,
   ROUTE_GET_USER_WALLET_ID,
@@ -61,11 +60,11 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                 type: string
  *                 example: 08151128383
  *               pickupAddress:
- *                 type: string
- *                 example: 12 Allen Avenue, Ikeja
+ *                 allOf: [ { $ref: '#/components/schemas/OrderAddress' } ]
+ *                 description: "Structured address; label + address + landmark all required when isPickUp is true."
  *               deliveryAddress:
- *                 type: string
- *                 example: 12 Allen Avenue, Ikeja
+ *                 allOf: [ { $ref: '#/components/schemas/OrderAddress' } ]
+ *                 description: "Structured address; label + address + landmark all required when isDelivery is true."
  *               pickupDate:
  *                 type: string
  *                 format: date
@@ -691,59 +690,10 @@ router.put(ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
   return bookOrderController.undoConfirmTagItem(req, res);
 });
 
-/**
- * @swagger
- * /intake-user/proceed-to-sort-and-pretreat/{id}:
- *   post:
- *     summary: Move order to sort and pretreat stage
- *     tags:
- *       - Intake User
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         description: Order ID
- *         schema:
- *           type: string
- *           example: "64d3c9c0f1b2a8e9d0f12345"
- *     responses:
- *       200:
- *         description: Order successfully moved to sort and pretreat stage
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order OSC123456 successfully sent"
- *       400:
- *         description: Validation error or missing order ID
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Order ID is required"
- *       404:
- *         description: Order or user not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Order not found"
- *       500:
- *         description: Server error
- */
-router.post(ROUTE_PROCEED_TO_SORT_AND_PRETREAT_ID, [intakeUserAuth], (req, res) => {
-  const bookOrderController = new IntakeUserController();
-  return bookOrderController.proceedToSortAndPretreat(req, res);
-});
+// Intake → Sort (S1→S2) now moves via the split-flow handoff engine:
+// POST /orders/:id/handoff { fromStation: intake-and-tag-station, toStation:
+// sort-and-pretreat-station } then the sort station confirms. The old
+// proceed-to-sort-and-pretreat endpoint was removed.
 
 /**
  * @swagger

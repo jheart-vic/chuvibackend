@@ -9,7 +9,6 @@ const {
     ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING,
     ROUTE_PRESS_IRON_HOLD,
     ROUTE_PRESS_IRON_GET_ACTIVE_PRESS,
-    ROUTE_PRESS_IRON_PRESS_DONE,
     ROUTE_PRESS_IRON_GET_HOLD,
     ROUTE_PRESS_IRON_RELEASE,
     ROUTE_PRESS_IRON_HISTORY,
@@ -346,40 +345,8 @@ router.get(ROUTE_PRESS_IRON_GET_ACTIVE_PRESS, [pressAndIronAuth], (req, res) => 
     return controller.getActivePress(req, res)
 })
 
-/**
- * @swagger
- * /press-iron/order/active-press/{id}/complete:
- *   patch:
- *     summary: Mark pressing as done and send to QC
- *     description: |
- *       Operator clicks "Press done" then "Send to QC".
- *       Records pressDetails.completedAt.
- *       stage → QC, stationStatus → QC_STATION.
- *     tags:
- *       - Press & Iron
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *     responses:
- *       200:
- *         description: Order successfully processed and sent to QC
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message: { type: string, example: "Order ORD-2024-001 has been successfully processed and sent to QC" }
- *       404:
- *         description: Order not found or not currently being pressed
- *       500:
- *         description: Server error
- */
-router.patch(ROUTE_PRESS_IRON_PRESS_DONE, [pressAndIronAuth], (req, res) => {
-    const controller = new PressAndIronController()
-    return controller.pressDone(req, res)
-})
+// Press → QC now moves via the split-flow handoff engine:
+// POST /orders/:id/handoff (whole-order gate). Old active-press/:id/complete removed.
 
 /**
  * @swagger

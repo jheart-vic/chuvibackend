@@ -68,13 +68,6 @@ class WashAndDryController extends BaseController {
       : BaseController.sendFailedResponse(res, result.data);
   }
 
-  async washAndDryComplete(req, res) {
-    const result = await WashAndDryService.washAndDryComplete(req);
-    return result.success
-      ? BaseController.sendSuccessResponse(res, result.data)
-      : BaseController.sendFailedResponse(res, result.data);
-  }
-
   // Hold
   async getHoldQueue(req, res) {
     const result = await WashAndDryService.getHoldQueue(req);

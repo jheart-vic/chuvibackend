@@ -11,7 +11,6 @@ const {
     ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED,
     ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED,
     ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED,
-    ROUTE_SORT_AND_PRETREAT_NEXT_STAGE,
     ROUTE_SORT_AND_PRETREAT_GET_FLAGGED,
     ROUTE_SORT_AND_PRETREAT_GET_COMPLETED,
     ROUTE_SORT_AND_PRETREAT_WASHING,
@@ -505,48 +504,8 @@ router.patch(
     },
 )
 
-// SEND TO NEXT STAGE
-
-/**
- * @swagger
- * /sort-pretreat/{id}/send-to-next-stage:
- *   patch:
- *     summary: Send order to washing or ironing stage
- *     description: |
- *       Only active when ALL items have both sortStatus and pretreatStatus = complete.
- *       Routes to WASHING for WASHING_ONLY and WASH_AND_IRON orders.
- *       Routes to IRONING for IRONING_ONLY orders.
- *     tags:
- *       - Sort & Pretreat
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *     responses:
- *       200:
- *         description: Order successfully sent to next stage
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message: { type: string, example: "Order OSC-2024-001 successfully sent to washing" }
- *       400:
- *         description: Not all items sorted and pretreated
- *       404:
- *         description: Order not found or not in sort & pretreat stage
- *       500:
- *         description: Server error
- */
-router.patch(
-    ROUTE_SORT_AND_PRETREAT_NEXT_STAGE,
-    [sortAndPretreatAuth],
-    (req, res) => {
-        const controller = new SortAndPretreatController()
-        return controller.sendToNextStage(req, res)
-    },
-)
+// Sort → Wash/Iron (S2→S3, or S2→S4 iron-only) now moves via the split-flow
+// handoff engine: POST /orders/:id/handoff. Old send-to-next-stage removed.
 
 // FLAGGED ORDERS
 
@@ -1252,7 +1211,8 @@ router.get(
  *       the order back to `sort-and-pretreat` status so it re-enters S&P's
  *       main queue for re-processing. Stamps `releasedAt` and
  *       `releasedByOperatorId` on all held items for audit trail. Once S&P
- *       completes re-processing, `sendToNextStage` routes it back to W&D.
+ *       completes re-processing, push it onward via the split-flow handoff
+ *       engine (POST /orders/:id/handoff → wash-and-dry-station).
  *     tags:
  *       - Sort & Pretreat
  *     parameters:
