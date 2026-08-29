@@ -7,22 +7,55 @@ const sendSms = require('../util/sendSms')
 const sendEmail = require('../util/emailService')
 const CrmMessageLogModel = require('../models/crmMessageLog.model')
 const CrmSettingModel = require('../models/crmSetting.model')
-const { CRM_WORKFLOW, CRM_MESSAGE_TYPE } = require('../util/constants')
-const { registerLink, supportLink } = require('../util/deepLink')
+const { CRM_MESSAGE_TYPE } = require('../util/constants')
+const { registerLink, deepLink } = require('../util/deepLink')
 
-// Re-engagement nudges that should deep-link the customer into the in-app
-// assistant, tagged with the `crmContext` the bot's `_crmFrameToIntent` maps to
-// (reactivation → book/human, reorder → book, feedback/post-delivery → feedback).
-// Only these message types open the assistant; offer/wallet/complaint nudges keep
-// their own specific deep links, and account-less leads keep the registration link.
-const SUPPORT_CONTEXT_BY_MESSAGE_TYPE = {
-    [CRM_MESSAGE_TYPE.REACTIVATION_1]: 'reactivation',
-    [CRM_MESSAGE_TYPE.REACTIVATION_2]: 'reactivation',
-    [CRM_MESSAGE_TYPE.REACTIVATION_3]: 'reactivation',
-    [CRM_MESSAGE_TYPE.CHURN_BROADCAST]: 'reactivation',
-    [CRM_MESSAGE_TYPE.DELIVERY_CONFIRMATION]: 'post-delivery',
-    [CRM_MESSAGE_TYPE.FEEDBACK_REQUEST]: 'feedback',
-    [CRM_MESSAGE_TYPE.REORDER_PROMPT]: 'reorder',
+// Per-message-type link policy (client spec, 2026-08-28). The CRM is one-way, so
+// the correct link for each message is appended automatically here — the admin
+// edits only the copy. Categories:
+//   'register' → app registration link (pre-account audiences: leads + prospects)
+//   'offers'   → Offers page (re-engagement: reactivation + churn)
+//   'order'    → that specific order's feedback screen (needs recordId)
+//   (absent)   → no link (order-ready, delivery-confirmation)
+const LINK_POLICY = {
+    // lead workflow → registration
+    [CRM_MESSAGE_TYPE.LEAD_WELCOME]: 'register',
+    [CRM_MESSAGE_TYPE.LEAD_OFFER]: 'register',
+    [CRM_MESSAGE_TYPE.LEAD_CLOSE]: 'register',
+    [CRM_MESSAGE_TYPE.LEAD_QUALIFY]: 'register',
+    [CRM_MESSAGE_TYPE.LEAD_REMINDER_1]: 'register',
+    [CRM_MESSAGE_TYPE.LEAD_REMINDER_2]: 'register',
+    // prospect broadcast → registration
+    [CRM_MESSAGE_TYPE.PROSPECT_BROADCAST]: 'register',
+    // reactivation → Offers page
+    [CRM_MESSAGE_TYPE.REACTIVATION_1]: 'offers',
+    [CRM_MESSAGE_TYPE.REACTIVATION_2]: 'offers',
+    [CRM_MESSAGE_TYPE.REACTIVATION_3]: 'offers',
+    // churn broadcast → Offers page
+    [CRM_MESSAGE_TYPE.CHURN_BROADCAST]: 'offers',
+    // feedback request → that order's feedback screen
+    [CRM_MESSAGE_TYPE.FEEDBACK_REQUEST]: 'order',
+    // order-ready + delivery-confirmation → intentionally no link
+}
+
+// Resolve the link line for a message (or '' for none). Registration links are
+// only meaningful for account-less profiles; offers/order links need an account.
+const linkLineFor = (messageType, profile, recordId) => {
+    const policy = LINK_POLICY[messageType]
+    if (!policy) return ''
+    if (policy === 'register') {
+        if (profile.userId) return '' // already registered — nothing to sign up for
+        return `\nSign up: ${registerLink({ phone: profile.phoneNumber })}`
+    }
+    if (policy === 'offers') {
+        if (!profile.userId) return '' // login-gated page — no account yet
+        return `\nSee your offers: ${deepLink('offers')}`
+    }
+    if (policy === 'order') {
+        if (!profile.userId || !recordId) return ''
+        return `\nRate your order: ${deepLink('feedback', recordId)}`
+    }
+    return ''
 }
 
 const renderTemplate = (template, profile) => {
@@ -97,31 +130,27 @@ const sendViaEmail = async (profile, message) => {
 
 // Sends one CRM message to a profile and logs the outcome.
 // Returns { success, channel, content }.
-const sendCrmMessage = async (profile, { workflow, messageType }) => {
+const sendCrmMessage = async (
+    profile,
+    { workflow, messageType, recordId, templateKey },
+) => {
     const settings = await getCrmSettings()
-    const template = settings.templates.get(messageType)
+    // templateKey lets broadcast rotation pick a variant (e.g. prospect-broadcast-b)
+    // while the message stays logged/linked as its base type. Falls back to the
+    // base template if the chosen variant is blank.
+    const template =
+        (templateKey && settings.templates.get(templateKey)) ||
+        settings.templates.get(messageType)
     let content = renderTemplate(template, profile)
 
     if (!content) {
         return { success: false, channel: null, content: '' }
     }
 
-    // §3: lead-nurture messages carry a personalised registration link (leads
-    // have no account yet, so this is how they sign up). Only for account-less
-    // leads — a profile that already has a userId is registered.
-    if (workflow === CRM_WORKFLOW.LEAD && !profile.userId) {
-        content = `${content}\nSign up: ${registerLink({ phone: profile.phoneNumber })}`
-    }
-
-    // Re-engagement nudges (reactivation/reorder/post-delivery) deep-link a
-    // REGISTERED customer into the in-app assistant, framed by crmContext so the
-    // bot understands why they arrived. Guarded by userId — /user/support is
-    // login-gated, so account-less profiles (still on the registration link) are
-    // never sent here. Additive: this is a separate line, existing links untouched.
-    const supportCtx = SUPPORT_CONTEXT_BY_MESSAGE_TYPE[messageType]
-    if (supportCtx && profile.userId) {
-        content = `${content}\nContinue in the app: ${supportLink(supportCtx)}`
-    }
+    // Append the message's designated clickable link (client spec 2026-08-28):
+    // leads/prospects → registration, reactivation/churn → Offers page,
+    // feedback → that order's screen, order-ready/delivery → no link.
+    content = `${content}${linkLineFor(messageType, profile, recordId)}`
 
     let channel = null
     if (await sendViaBot(profile, messageType, content)) {

@@ -27,6 +27,9 @@ const crmScheduledMessageSchema = new mongoose.Schema(
             required: true,
         },
         dueAt: { type: Date, required: true },
+        // optional related record (e.g. the order a feedback-request links to),
+        // used to build a message-specific deep link at send time
+        recordId: { type: mongoose.Schema.Types.ObjectId },
         status: {
             type: String,
             enum: Object.values(CRM_MESSAGE_STATUS),

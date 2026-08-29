@@ -386,9 +386,12 @@ const CRM_MESSAGE_TYPE = {
     LEAD_REMINDER_1: 'lead-reminder-1',
     LEAD_REMINDER_2: 'lead-reminder-2',
     LEAD_MARK_PROSPECT: 'lead-mark-prospect', // internal action, no message sent
-    // post-delivery workflow
+    // order lifecycle: order-ready (pre-delivery trigger) → delivery-confirmation → feedback-request
+    ORDER_READY: 'order-ready',
     DELIVERY_CONFIRMATION: 'delivery-confirmation',
     FEEDBACK_REQUEST: 'feedback-request',
+    // DEPRECATED (client 2026-08-28: 14-day reorder nudge removed). Kept in the
+    // enum so pre-existing queue/log rows stay valid; no longer scheduled.
     REORDER_PROMPT: 'reorder-prompt',
     // reactivation workflow
     REACTIVATION_1: 'reactivation-1',

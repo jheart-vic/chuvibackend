@@ -25,6 +25,13 @@ const subscriptionSchema = new mongoose.Schema({
   //   default: null,
   // },
   remainingItems: { type: Number, required: true, default: 0 },
+  // Subscriber loyalty (client 2026-08-28): consecutive months the plan has been
+  // renewed (1 on first charge, +1 each successful renewal, reset to 0 on a
+  // failed payment). Rewards at 3/6/12 months, scaled to plan size.
+  consecutiveMonths: { type: Number, default: 0 },
+  // milestone months already rewarded (e.g. [3, 6]) — guards against a webhook
+  // being delivered twice applying the same reward twice.
+  loyaltyRewardsApplied: { type: [Number], default: [] },
   // expiresAt: Date,
   paystackCustomerCode: String,
   paystackEmailToken: String,

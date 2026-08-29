@@ -36,6 +36,7 @@ const paginate = require('../util/paginate')
 const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const { normalizeAddress, validateStructuredAddress } = require('../util/address')
+const { explodeItemsToPieces } = require('../util/explodeItems')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
 const {
@@ -213,6 +214,9 @@ class IntakeUserService extends BaseService {
                 deliveryDate,
             }
             const newOrder = new BookOrderModel(newOrderItem)
+            // per-piece: store each physical item individually (pricing above was
+            // computed on the original booking lines)
+            newOrder.items = explodeItemsToPieces(post.items)
             // Walk-in orders have no offer/credit — capture a plain receipt so the
             // customer still sees the full breakdown (reuses BookOrderService).
             newOrder.pricing = new BookOrderService()._buildPricing({

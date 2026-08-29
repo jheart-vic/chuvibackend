@@ -68,6 +68,39 @@ const STATION_TO_ROLE = {
     [STATION_STATUS.QC_STATION]: ROLE.QC,
 }
 
+// Readable item helpers (items are per-piece: one physical item = one record).
+// Works for both Mongoose subdoc arrays and lean plain arrays.
+function itemBrief(items, id) {
+    const it = (items || []).find((i) => String(i._id) === String(id))
+    if (!it) return { itemId: String(id), name: 'Item', quantity: 1 }
+    return {
+        itemId: String(it._id),
+        tagId: it.tagId || '',
+        name: it.type,
+        quantity: it.quantity || 1,
+    }
+}
+
+function briefsForIds(items, ids) {
+    return (ids || []).map((id) => itemBrief(items, id))
+}
+
+// "5 Shirts, 3 Trousers" — groups briefs by name, sums the piece counts, and
+// capitalises each name for display (types are often stored lower-case).
+function summarize(briefs) {
+    const counts = {}
+    for (const b of briefs || []) {
+        const name = b.name || 'Item'
+        counts[name] = (counts[name] || 0) + (b.quantity || 1)
+    }
+    return Object.entries(counts)
+        .map(([name, c]) => {
+            const label = name.charAt(0).toUpperCase() + name.slice(1)
+            return `${c} ${c > 1 && !/s$/i.test(label) ? `${label}s` : label}`
+        })
+        .join(', ')
+}
+
 // Hard gates: S1→S2 and S4→S5 move the WHOLE order; the stretch zone
 // (S2↔S3↔S4) allows partial pushes.
 function isWholeOrderGate(fromIdx, toIdx) {
@@ -204,6 +237,7 @@ class HandoffService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            const pushedBriefs = briefsForIds(order.items, handoff.itemIds)
             return BaseService.sendSuccessResponse({
                 message: {
                     handoffId: handoff._id,
@@ -212,6 +246,8 @@ class HandoffService extends BaseService {
                     count: handoff.count,
                     status: handoff.status,
                     itemIds: handoff.itemIds,
+                    items: pushedBriefs,
+                    summary: summarize(pushedBriefs),
                 },
             })
         } catch (error) {
@@ -369,12 +405,17 @@ class HandoffService extends BaseService {
                 reference: order.oscNumber,
             })
 
+            const acceptedBriefs = briefsForIds(order.items, accepted)
+            const rejectedBriefs = briefsForIds(order.items, rejected)
             return BaseService.sendSuccessResponse({
                 message: {
                     handoffId: handoff._id,
                     status: finalStatus,
                     confirmedCount: accepted.length,
                     rejectedItemIds: rejected,
+                    accepted: acceptedBriefs,
+                    rejected: rejectedBriefs,
+                    summary: summarize(acceptedBriefs),
                     stageStatus: order.stage.status,
                     stationStatus: order.stationStatus,
                 },
@@ -403,6 +444,7 @@ class HandoffService extends BaseService {
                 for (const h of o.handoffs || []) {
                     if (h.status !== 'pending') continue
                     if (toStation && h.toStation !== toStation) continue
+                    const briefs = briefsForIds(o.items, h.itemIds)
                     queue.push({
                         orderId: o._id,
                         oscNumber: o.oscNumber,
@@ -412,6 +454,8 @@ class HandoffService extends BaseService {
                         toStation: h.toStation,
                         count: h.count,
                         itemIds: h.itemIds,
+                        items: briefs,
+                        summary: summarize(briefs),
                         pushedAt: h.pushedAt,
                     })
                 }
@@ -436,28 +480,39 @@ class HandoffService extends BaseService {
                 return BaseService.sendFailedResponse({ error: 'Order not found' })
             }
 
-            const stations = SEQ.map((station) => ({
-                station,
-                items: order.items
+            const stations = SEQ.map((station) => {
+                const items = order.items
                     .filter((i) => (i.currentStation || SEQ[0]) === station)
                     .map((i) => ({
                         itemId: i._id,
-                        type: i.type,
-                        quantity: i.quantity,
+                        tagId: i.tagId || '',
+                        name: i.type,
+                        quantity: i.quantity || 1,
                         onHold: !!i.flaggedForReview,
-                    })),
-            })).map((s) => ({ ...s, count: s.items.length }))
+                    }))
+                return {
+                    station,
+                    items,
+                    count: items.length,
+                    summary: summarize(items),
+                }
+            })
 
             const pendingHandoffs = (order.handoffs || [])
                 .filter((h) => h.status === 'pending')
-                .map((h) => ({
-                    handoffId: h._id,
-                    fromStation: h.fromStation,
-                    toStation: h.toStation,
-                    count: h.count,
-                    itemIds: h.itemIds,
-                    pushedAt: h.pushedAt,
-                }))
+                .map((h) => {
+                    const briefs = briefsForIds(order.items, h.itemIds)
+                    return {
+                        handoffId: h._id,
+                        fromStation: h.fromStation,
+                        toStation: h.toStation,
+                        count: h.count,
+                        itemIds: h.itemIds,
+                        items: briefs,
+                        summary: summarize(briefs),
+                        pushedAt: h.pushedAt,
+                    }
+                })
 
             return BaseService.sendSuccessResponse({
                 message: {
