@@ -48,12 +48,33 @@ const createCrmSettings = async () => {
   try {
     const crmSetting = await CrmSettingModel.findOne({});
     if (crmSetting) {
+      let dirty = false;
       // §3 backfill: give pre-existing settings docs the default lead schedule
       // so admins can see/edit the sequence + delivery times.
       if (!crmSetting.leadSchedule || crmSetting.leadSchedule.length === 0) {
         crmSetting.leadSchedule = CrmSettingModel.DEFAULT_LEAD_SCHEDULE;
-        await crmSetting.save();
+        dirty = true;
       }
+      // 2026-08-28 backfill: post-delivery + reactivation schedules are now
+      // configurable — seed defaults onto existing docs so the dashboard shows them.
+      if (!crmSetting.postDeliverySchedule || crmSetting.postDeliverySchedule.length === 0) {
+        crmSetting.postDeliverySchedule = CrmSettingModel.DEFAULT_POST_DELIVERY_SCHEDULE;
+        dirty = true;
+      }
+      if (!crmSetting.reactivationSchedule || crmSetting.reactivationSchedule.length === 0) {
+        crmSetting.reactivationSchedule = CrmSettingModel.DEFAULT_REACTIVATION_SCHEDULE;
+        dirty = true;
+      }
+      // Backfill any new default template keys (order-ready, broadcast variants,
+      // reduced lead copy) WITHOUT overwriting admin-edited existing keys.
+      const defaults = CrmSettingModel.DEFAULT_TEMPLATES || {};
+      for (const [key, value] of Object.entries(defaults)) {
+        if (!crmSetting.templates.get(key)) {
+          crmSetting.templates.set(key, value);
+          dirty = true;
+        }
+      }
+      if (dirty) await crmSetting.save();
       return;
     }
     await CrmSettingModel.create({});

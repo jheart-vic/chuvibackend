@@ -257,8 +257,8 @@
  *           example: post-delivery
  *         messageType:
  *           type: string
- *           enum: [lead-welcome, lead-qualify, lead-offer, lead-close, lead-reminder-1, lead-reminder-2, lead-mark-prospect, delivery-confirmation, feedback-request, reorder-prompt, reactivation-1, reactivation-2, reactivation-3, reactivation-mark-churned, prospect-broadcast, churn-broadcast]
- *           example: reorder-prompt
+ *           enum: [lead-welcome, lead-qualify, lead-offer, lead-close, lead-reminder-1, lead-reminder-2, lead-mark-prospect, order-ready, delivery-confirmation, feedback-request, reorder-prompt, reactivation-1, reactivation-2, reactivation-3, reactivation-mark-churned, prospect-broadcast, churn-broadcast]
+ *           example: feedback-request
  *         dueAt:
  *           type: string
  *           format: date-time
@@ -319,7 +319,7 @@
  *             type: string
  *           example:
  *             lead-welcome: "Hi {{firstName}}! 👋 Welcome to Chuvi Laundry."
- *             reorder-prompt: "Hi {{firstName}}, laundry basket filling up again?"
+ *             order-ready: "Hi {{firstName}}, your order is clean, pressed and ready."
  *         thresholds:
  *           type: object
  *           properties:
@@ -331,22 +331,44 @@
  *             churnBroadcastDays: { type: number, example: 30 }
  *         leadSchedule:
  *           type: array
- *           description: "Admin-configurable lead-nurture sequence + delivery timing (§3). Enabled steps are staggered — each has a distinct delayMinutes so messages never all fire in the same minute."
+ *           description: "Admin-configurable lead-nurture sequence + delivery timing. Reduced to 3 messages (2026-08-28): Welcome Offer → Offer 2 → Offer 3, then mark-prospect. Enabled steps are staggered — each has a distinct delayMinutes so messages never all fire in the same minute."
  *           items:
- *             type: object
- *             properties:
- *               messageType: { type: string, enum: [lead-welcome, lead-qualify, lead-offer, lead-close, lead-reminder-1, lead-reminder-2, lead-mark-prospect], example: lead-reminder-1 }
- *               enabled: { type: boolean, example: true }
- *               delayMinutes: { type: number, description: Minutes after lead creation this step fires, example: 1440 }
- *               cancelIfOrdered: { type: boolean, description: Drop this step if the lead books before it fires, example: true }
+ *             $ref: '#/components/schemas/CrmScheduleStep'
  *           example:
  *             - { messageType: lead-welcome, enabled: true, delayMinutes: 0, cancelIfOrdered: true }
- *             - { messageType: lead-qualify, enabled: true, delayMinutes: 2, cancelIfOrdered: true }
- *             - { messageType: lead-offer, enabled: true, delayMinutes: 5, cancelIfOrdered: true }
- *             - { messageType: lead-close, enabled: true, delayMinutes: 10, cancelIfOrdered: true }
- *             - { messageType: lead-reminder-1, enabled: true, delayMinutes: 1440, cancelIfOrdered: true }
- *             - { messageType: lead-reminder-2, enabled: true, delayMinutes: 4320, cancelIfOrdered: true }
- *             - { messageType: lead-mark-prospect, enabled: true, delayMinutes: 8640, cancelIfOrdered: true }
+ *             - { messageType: lead-offer, enabled: true, delayMinutes: 2880, cancelIfOrdered: true }
+ *             - { messageType: lead-close, enabled: true, delayMinutes: 7200, cancelIfOrdered: true }
+ *             - { messageType: lead-mark-prospect, enabled: true, delayMinutes: 11520, cancelIfOrdered: true }
+ *         postDeliverySchedule:
+ *           type: array
+ *           description: "Admin-configurable post-delivery timing (2026-08-28). Anchor = order delivered. Order Ready → Delivery Confirmed → Feedback Request (Order Ready has its own trigger; see orderReadyDelayMinutes). The feedback message deep-links to that order's feedback screen."
+ *           items:
+ *             $ref: '#/components/schemas/CrmScheduleStep'
+ *           example:
+ *             - { messageType: delivery-confirmation, enabled: true, delayMinutes: 60, cancelIfOrdered: false }
+ *             - { messageType: feedback-request, enabled: true, delayMinutes: 1440, cancelIfOrdered: false }
+ *         reactivationSchedule:
+ *           type: array
+ *           description: "Admin-configurable reactivation timing (2026-08-28). Anchor = customer went dormant."
+ *           items:
+ *             $ref: '#/components/schemas/CrmScheduleStep'
+ *           example:
+ *             - { messageType: reactivation-1, enabled: true, delayMinutes: 0, cancelIfOrdered: true }
+ *             - { messageType: reactivation-2, enabled: true, delayMinutes: 20160, cancelIfOrdered: true }
+ *             - { messageType: reactivation-3, enabled: true, delayMinutes: 60480, cancelIfOrdered: true }
+ *             - { messageType: reactivation-mark-churned, enabled: true, delayMinutes: 80640, cancelIfOrdered: true }
+ *         orderReadyDelayMinutes:
+ *           type: number
+ *           description: "Minutes after an order becomes ready before the Order Ready message sends (0 = immediately)."
+ *           example: 0
+ *
+ *     CrmScheduleStep:
+ *       type: object
+ *       properties:
+ *         messageType: { type: string, example: feedback-request }
+ *         enabled: { type: boolean, example: true }
+ *         delayMinutes: { type: number, description: Minutes after the workflow's anchor event this step fires, example: 1440 }
+ *         cancelIfOrdered: { type: boolean, description: Drop this step if the customer books before it fires, example: true }
  *
  *     CrmError:
  *       type: object
@@ -976,6 +998,15 @@
  *         updatedAt: { type: string, format: date-time }
  *       required: [name, pieces]
  *
+ *     HandoffItem:
+ *       type: object
+ *       description: "A readable per-piece item reference. Items are tracked one physical piece per record, so 5 shirts are 5 HandoffItems each with quantity 1 and its own tag. itemId is still sent back to push/confirm; name + quantity are for display."
+ *       properties:
+ *         itemId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
+ *         tagId: { type: string, example: "TAG-03" }
+ *         name: { type: string, example: Shirt }
+ *         quantity: { type: number, example: 1 }
+ *
  *     Handoff:
  *       type: object
  *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count."
@@ -983,10 +1014,15 @@
  *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
  *         fromStation: { type: string, example: sort-and-pretreat-station }
  *         toStation: { type: string, example: wash-and-dry-station }
- *         count: { type: number, example: 3 }
+ *         count: { type: number, description: "Number of physical pieces in the handoff.", example: 3 }
  *         status: { type: string, enum: [pending, confirmed, rejected], example: pending }
+ *         summary: { type: string, description: "Readable roll-up by item name.", example: "2 Shirts, 1 Trouser" }
+ *         items:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/HandoffItem' }
  *         itemIds:
  *           type: array
+ *           description: "Raw piece ids (kept for machine use; prefer items[])."
  *           items: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
  *
  *     PendingHandoff:
@@ -1000,12 +1036,16 @@
  *         fromStation: { type: string, example: sort-and-pretreat-station }
  *         toStation: { type: string, example: wash-and-dry-station }
  *         count: { type: number, example: 3 }
+ *         summary: { type: string, example: "2 Shirts, 1 Trouser" }
+ *         items:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/HandoffItem' }
  *         itemIds: { type: array, items: { type: string } }
  *         pushedAt: { type: string, format: date-time }
  *
  *     OrderSplitState:
  *       type: object
- *       description: "Where every item in an order currently sits across the 5 stations, plus pending handoffs."
+ *       description: "Where every physical piece in an order currently sits across the 5 stations, plus pending handoffs. Counts are per piece."
  *       properties:
  *         orderId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
  *         oscNumber: { type: string, example: "OSC-20260828-551210" }
@@ -1022,13 +1062,15 @@
  *             properties:
  *               station: { type: string, example: wash-and-dry-station }
  *               count: { type: number, example: 2 }
+ *               summary: { type: string, example: "2 Shirts" }
  *               items:
  *                 type: array
  *                 items:
  *                   type: object
  *                   properties:
  *                     itemId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
- *                     type: { type: string, example: shirt }
+ *                     tagId: { type: string, example: "TAG-03" }
+ *                     name: { type: string, example: Shirt }
  *                     quantity: { type: number, example: 1 }
  *                     onHold: { type: boolean, example: false }
  *         pendingHandoffs:

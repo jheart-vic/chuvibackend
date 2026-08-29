@@ -10,6 +10,43 @@ const WalletTransactionModel = require('../models/walletTransaction.model')
 const createNotification = require('./createNotification')
 const notifyBot = require('./notifyBot')
 
+// Subscriber loyalty rewards (client confirmed 2026-08-29): payment NEVER changes
+// (same price, same monthly schedule) — only that month's ITEM BUNDLE grows, scaled
+// to plan size and ALWAYS rounded down:
+//   month 3  → +25% of the monthly item bundle
+//   month 6  → +50% of the monthly item bundle
+//   month 12 → +100% of the monthly item bundle (double)
+// (The earlier "free month by moving the billing period" idea was dropped — no
+// Paystack interaction; this is purely extra items for that cycle.)
+// Mutates `subscription` (caller saves). loyaltyRewardsApplied guards double-apply.
+const LOYALTY_BONUS_PCT = { 3: 0.25, 6: 0.5, 12: 1.0 }
+
+async function applySubscriberLoyalty(subscription, plan, month) {
+    if (!plan || !Number.isFinite(plan.monthlyLimits)) return
+    const pct = LOYALTY_BONUS_PCT[month]
+    if (!pct) return
+    const already = subscription.loyaltyRewardsApplied || []
+    if (already.includes(month)) return
+
+    const bonus = Math.floor(plan.monthlyLimits * pct)
+    subscription.remainingItems = (subscription.remainingItems || 0) + bonus
+    subscription.loyaltyRewardsApplied = [...already, month]
+
+    if (subscription.userId && bonus > 0) {
+        try {
+            await createNotification({
+                userId: subscription.userId,
+                title: 'Loyalty reward unlocked 🎉',
+                body: `Thanks for ${month} months with Chuvi Laundry! We've added ${bonus} extra item(s) to this month's plan — same price.`,
+                subBody: `${month}-month subscriber reward`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+        } catch (e) {
+            console.warn('subscriber-loyalty notify failed:', e.message)
+        }
+    }
+}
+
 // async function handleChargeSuccess(data) {
 //     try {
 //         // console.log({ data }, "handleChargeSuccess");
@@ -178,6 +215,14 @@ async function handleChargeSuccess(data) {
                 // fresh month, fresh item allowance
                 subscription.remainingItems = plan.monthlyLimits
             }
+            // Subscriber loyalty: this renewal is one more consecutive month.
+            subscription.consecutiveMonths =
+                (subscription.consecutiveMonths || 0) + 1
+            await applySubscriberLoyalty(
+                subscription,
+                plan,
+                subscription.consecutiveMonths,
+            )
             await subscription.save()
 
             // 🔔 Tell the customer their renewal went through
@@ -230,9 +275,10 @@ async function handlePaymentFailed(data) {
     try {
         if (!data.subscription) return
 
+        // A missed payment breaks the consecutive-month loyalty streak.
         await SubscriptionModel.findOneAndUpdate(
             { subscriptionCode: data.subscription.subscription_code },
-            { status: 'failed' },
+            { status: 'failed', consecutiveMonths: 0, loyaltyRewardsApplied: [] },
         )
     } catch (error) {
         console.error('Error in handlePaymentFailed:', error)
@@ -404,6 +450,9 @@ async function handleNormalSubscription(data) {
                 currentPeriodEnd: nextPaymentDate,
                 nextPaymentDate: nextPaymentDate,
                 remainingItems: plan.monthlyLimits,
+                // first paid month starts the loyalty streak
+                consecutiveMonths: 1,
+                loyaltyRewardsApplied: [],
             })
 
             return
@@ -416,6 +465,9 @@ async function handleNormalSubscription(data) {
                 (subscription.monthlyLimits = plan.monthlyLimits),
                 (subscription.userId = user._id),
                 (subscription.lastPaymentAt = new Date(data.paid_at)))
+            // (re)subscribing restarts the consecutive-month loyalty streak
+            subscription.consecutiveMonths = 1
+            subscription.loyaltyRewardsApplied = []
             await subscription.save()
         }
 

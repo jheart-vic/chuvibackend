@@ -26,6 +26,19 @@ const crmOnOrderDelivered = (order) => {
     )
 }
 
+// Order ready (clean, pressed, ready to leave) → send the "Order Ready" message.
+// NOTE (client 2026-08-28): the exact trigger stage is still being confirmed, so
+// this hook is defined but NOT yet called from any station flow. Wire it at the
+// confirmed "ready" transition (likely QC-passed / ready-for-dispatch).
+const crmOnOrderReady = (order) => {
+    if (!order) return
+    if (order.isRecoveryOrder) return // §6: don't message on recovery orders
+    if (typeof CrmService.handleOrderReady !== 'function') return
+    CrmService.handleOrderReady(order).catch((err) =>
+        console.warn('CRM order-ready hook failed (non-fatal):', err.message),
+    )
+}
+
 // Order cancelled → let the CRM react (e.g. reactivation/nurture). The handler
 // is optional for now (Phase 2), so this no-ops safely until CRM implements it.
 const crmOnOrderCancelled = (order) => {
@@ -40,5 +53,6 @@ module.exports = {
     crmOnUserRegistered,
     crmOnOrderCreated,
     crmOnOrderDelivered,
+    crmOnOrderReady,
     crmOnOrderCancelled,
 }

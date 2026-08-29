@@ -27,6 +27,7 @@ const {
     DELIVERY_SPEED,
     AUDIT_LOG_CATEGORIES,
     OFFER_TRIGGER,
+    BILLING_TYPE,
 } = require('../util/constants')
 const { offerOnTrigger } = require('../util/offerHooks')
 
@@ -219,6 +220,7 @@ class CrmService {
                 messageType: e.messageType,
                 dueAt: e.dueAt,
                 cancelIfOrdered: !!e.cancelIfOrdered,
+                ...(e.recordId ? { recordId: e.recordId } : {}),
             })),
         )
     }
@@ -293,16 +295,36 @@ class CrmService {
 
     // 1h confirmation → 24h quality-check/feedback → 14d reorder prompt.
     // Restarted from scratch on every delivered order.
-    async startPostDeliveryWorkflow(profile) {
+    // Post-delivery lifecycle (client 2026-08-28): Delivery Confirmed → Feedback
+    // Request. The 14-day reorder nudge was removed. The feedback message carries
+    // the order id so its deep link opens that specific order's feedback screen.
+    async startPostDeliveryWorkflow(profile, order) {
         const now = Date.now()
+        const settings = await getCrmSettings()
+        const schedule =
+            settings.postDeliverySchedule && settings.postDeliverySchedule.length
+                ? settings.postDeliverySchedule
+                : CrmSettingModel.DEFAULT_POST_DELIVERY_SCHEDULE
         await this.cancelPendingMessages(profile._id, [
             CRM_WORKFLOW.POST_DELIVERY,
         ])
-        await this.scheduleMessages(profile._id, CRM_WORKFLOW.POST_DELIVERY, [
-            { messageType: CRM_MESSAGE_TYPE.DELIVERY_CONFIRMATION, dueAt: new Date(now + HOUR) },
-            { messageType: CRM_MESSAGE_TYPE.FEEDBACK_REQUEST, dueAt: new Date(now + DAY) },
-            { messageType: CRM_MESSAGE_TYPE.REORDER_PROMPT, dueAt: new Date(now + 14 * DAY), cancelIfOrdered: true },
-        ])
+        const entries = schedule
+            .filter((s) => s.enabled !== false)
+            .map((s) => ({
+                messageType: s.messageType,
+                dueAt: new Date(now + (s.delayMinutes || 0) * 60 * 1000),
+                cancelIfOrdered: s.cancelIfOrdered !== false,
+                // the feedback message deep-links to this specific order
+                ...(s.messageType === CRM_MESSAGE_TYPE.FEEDBACK_REQUEST &&
+                order?._id
+                    ? { recordId: order._id }
+                    : {}),
+            }))
+        await this.scheduleMessages(
+            profile._id,
+            CRM_WORKFLOW.POST_DELIVERY,
+            entries,
+        )
     }
 
     // ─── Reactivation workflow ───────────────────────────────────────────────
@@ -311,15 +333,26 @@ class CrmService {
     // after another 28d → tagged Churned 14d later if still no order.
     async startReactivationWorkflow(profile) {
         const now = Date.now()
+        const settings = await getCrmSettings()
+        const schedule =
+            settings.reactivationSchedule && settings.reactivationSchedule.length
+                ? settings.reactivationSchedule
+                : CrmSettingModel.DEFAULT_REACTIVATION_SCHEDULE
         await this.cancelPendingMessages(profile._id, [
             CRM_WORKFLOW.REACTIVATION,
         ])
-        await this.scheduleMessages(profile._id, CRM_WORKFLOW.REACTIVATION, [
-            { messageType: CRM_MESSAGE_TYPE.REACTIVATION_1, dueAt: new Date(now), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.REACTIVATION_2, dueAt: new Date(now + 14 * DAY), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.REACTIVATION_3, dueAt: new Date(now + 42 * DAY), cancelIfOrdered: true },
-            { messageType: CRM_MESSAGE_TYPE.REACTIVATION_MARK_CHURNED, dueAt: new Date(now + 56 * DAY), cancelIfOrdered: true },
-        ])
+        const entries = schedule
+            .filter((s) => s.enabled !== false)
+            .map((s) => ({
+                messageType: s.messageType,
+                dueAt: new Date(now + (s.delayMinutes || 0) * 60 * 1000),
+                cancelIfOrdered: s.cancelIfOrdered !== false,
+            }))
+        await this.scheduleMessages(
+            profile._id,
+            CRM_WORKFLOW.REACTIVATION,
+            entries,
+        )
         await this.refreshNextFollowUp(profile._id)
     }
 
@@ -385,7 +418,14 @@ class CrmService {
         const settings = await getCrmSettings()
 
         const now = new Date()
+        const isSubscriptionOrder =
+            order.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION
         profile.totalOrders += 1
+        // subscription bundle draws don't count toward the every-5 loyalty offer
+        if (!isSubscriptionOrder) {
+            profile.nonSubscriptionOrders =
+                (profile.nonSubscriptionOrders || 0) + 1
+        }
         profile.totalSpent += order.amount || 0
         if (isExpressSpeed(order.deliverySpeed)) profile.expressOrders += 1
         if (!profile.firstOrderAt) profile.firstOrderAt = now
@@ -421,17 +461,59 @@ class CrmService {
             CRM_WORKFLOW.LEAD,
             CRM_WORKFLOW.REACTIVATION,
         ])
-        await this.startPostDeliveryWorkflow(profile)
+        await this.startPostDeliveryWorkflow(profile, order)
         await this.refreshNextFollowUp(profile._id)
 
         // Offer System triggers (fire-and-forget; no-ops without an account)
         if (profile.totalOrders === 1) {
             offerOnTrigger(OFFER_TRIGGER.SECOND_ORDER, { userId: profile.userId })
         }
-        if (profile.totalOrders >= 5 && profile.totalOrders % 5 === 0) {
+        // Loyalty offer every 5 NON-subscription delivered orders (subscribers
+        // earn loyalty via renewed months instead — handled in the billing webhook).
+        if (
+            !isSubscriptionOrder &&
+            profile.nonSubscriptionOrders >= 5 &&
+            profile.nonSubscriptionOrders % 5 === 0
+        ) {
             offerOnTrigger(OFFER_TRIGGER.LOYALTY, {
                 userId: profile.userId,
-                milestoneKey: `loyalty-${profile.totalOrders}`,
+                milestoneKey: `loyalty-${profile.nonSubscriptionOrders}`,
+            })
+        }
+    }
+
+    // Order ready (clean, pressed, ready to leave the facility). Sends the
+    // "Order Ready" lifecycle message. Sent directly (no delay) for now; when the
+    // configurable timing work (pkg B) lands this becomes a schedulable slot.
+    // Called via crmOnOrderReady — NOT yet wired to a station stage (client to
+    // confirm the exact "ready" trigger point).
+    async handleOrderReady(order) {
+        const { profile } = await this.findOrCreateProfile({
+            userId: order.userId,
+            fullName: order.fullName,
+            phoneNumber: order.phoneNumber,
+            email: undefined,
+            channel: order.channel,
+        })
+        const settings = await getCrmSettings()
+        const delay = settings.orderReadyDelayMinutes || 0
+        if (delay > 0) {
+            await this.scheduleMessages(
+                profile._id,
+                CRM_WORKFLOW.POST_DELIVERY,
+                [
+                    {
+                        messageType: CRM_MESSAGE_TYPE.ORDER_READY,
+                        dueAt: new Date(Date.now() + delay * 60 * 1000),
+                        cancelIfOrdered: false,
+                    },
+                ],
+            )
+            await this.refreshNextFollowUp(profile._id)
+        } else {
+            await sendCrmMessage(profile, {
+                workflow: CRM_WORKFLOW.POST_DELIVERY,
+                messageType: CRM_MESSAGE_TYPE.ORDER_READY,
             })
         }
     }
@@ -511,6 +593,7 @@ class CrmService {
                     const result = await sendCrmMessage(profile, {
                         workflow: msg.workflow,
                         messageType: msg.messageType,
+                        recordId: msg.recordId,
                     })
                     msg.status = result.success
                         ? CRM_MESSAGE_STATUS.SENT
@@ -610,12 +693,17 @@ class CrmService {
 
             for (const profile of profiles) {
                 try {
+                    // Rotate the 3 variants A→B→C→A per profile.
+                    const idx = profile.broadcastLists[list].cycleIndex || 0
+                    const variant = ['a', 'b', 'c'][idx % 3]
                     const result = await sendCrmMessage(profile, {
                         workflow: CRM_WORKFLOW.BROADCAST,
                         messageType,
+                        templateKey: `${messageType}-${variant}`,
                     })
                     if (result.success) {
                         profile.broadcastLists[list].lastSentAt = new Date()
+                        profile.broadcastLists[list].cycleIndex = idx + 1
                         await profile.save()
                         sent += 1
                     }
@@ -1071,13 +1159,30 @@ class CrmService {
 
     async updateSettings(req) {
         try {
-            const { templates, thresholds, leadSchedule } = req.body
+            const {
+                templates,
+                thresholds,
+                leadSchedule,
+                postDeliverySchedule,
+                reactivationSchedule,
+                orderReadyDelayMinutes,
+            } = req.body
             const settings = await getCrmSettings()
 
+            // Broadcast variant template keys (a/b/c) aren't CRM_MESSAGE_TYPE enum
+            // values but ARE editable template slots.
+            const variantKeys = [
+                CRM_MESSAGE_TYPE.PROSPECT_BROADCAST,
+                CRM_MESSAGE_TYPE.CHURN_BROADCAST,
+            ].flatMap((base) => [`${base}-a`, `${base}-b`, `${base}-c`])
+            const templateKeys = new Set([
+                ...Object.values(CRM_MESSAGE_TYPE),
+                ...variantKeys,
+            ])
+
             if (templates && typeof templates === 'object') {
-                const validTypes = Object.values(CRM_MESSAGE_TYPE)
                 for (const [key, value] of Object.entries(templates)) {
-                    if (!validTypes.includes(key)) {
+                    if (!templateKeys.has(key)) {
                         return BaseService.sendFailedResponse({
                             error: `Unknown message type: ${key}`,
                         })
@@ -1106,37 +1211,35 @@ class CrmService {
                 }
             }
 
-            // §3: admin sets the lead-message sequence + delivery times. Validate
-            // every step and enforce staggering (no two enabled steps in the same
-            // minute) so messages never all fire at once.
-            if (leadSchedule !== undefined) {
-                if (!Array.isArray(leadSchedule)) {
-                    return BaseService.sendFailedResponse({
-                        error: 'leadSchedule must be an array',
-                    })
+            // Admin sets each workflow's message sequence + delivery times.
+            // Validate every step and enforce staggering (no two enabled steps in
+            // the same minute) so messages never all fire at once. Returns either
+            // { normalized } or { error }.
+            const validTypes = Object.values(CRM_MESSAGE_TYPE)
+            const normalizeSchedule = (schedule, label) => {
+                if (!Array.isArray(schedule)) {
+                    return { error: `${label} must be an array` }
                 }
-                const validTypes = Object.values(CRM_MESSAGE_TYPE)
                 const seenMinutes = new Set()
                 const normalized = []
-                for (const step of leadSchedule) {
+                for (const step of schedule) {
                     if (!step || !validTypes.includes(step.messageType)) {
-                        return BaseService.sendFailedResponse({
-                            error: `Invalid schedule step message type: ${step?.messageType}`,
-                        })
+                        return {
+                            error: `Invalid ${label} step message type: ${step?.messageType}`,
+                        }
                     }
                     const delayMinutes = Number(step.delayMinutes)
                     if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
-                        return BaseService.sendFailedResponse({
+                        return {
                             error: `Invalid delayMinutes for ${step.messageType}`,
-                        })
+                        }
                     }
                     const enabled = step.enabled !== false
-                    // stagger rule applies only to steps that will actually fire
                     if (enabled) {
                         if (seenMinutes.has(delayMinutes)) {
-                            return BaseService.sendFailedResponse({
-                                error: `Two lead messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
-                            })
+                            return {
+                                error: `Two ${label} messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
+                            }
                         }
                         seenMinutes.add(delayMinutes)
                     }
@@ -1147,7 +1250,29 @@ class CrmService {
                         cancelIfOrdered: step.cancelIfOrdered !== false,
                     })
                 }
-                settings.leadSchedule = normalized
+                return { normalized }
+            }
+
+            const scheduleUpdates = [
+                ['leadSchedule', leadSchedule],
+                ['postDeliverySchedule', postDeliverySchedule],
+                ['reactivationSchedule', reactivationSchedule],
+            ]
+            for (const [field, value] of scheduleUpdates) {
+                if (value === undefined) continue
+                const { normalized, error } = normalizeSchedule(value, field)
+                if (error) return BaseService.sendFailedResponse({ error })
+                settings[field] = normalized
+            }
+
+            if (orderReadyDelayMinutes !== undefined) {
+                const n = Number(orderReadyDelayMinutes)
+                if (!Number.isFinite(n) || n < 0) {
+                    return BaseService.sendFailedResponse({
+                        error: 'orderReadyDelayMinutes must be a non-negative number',
+                    })
+                }
+                settings.orderReadyDelayMinutes = n
             }
 
             await settings.save()

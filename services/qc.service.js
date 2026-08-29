@@ -20,6 +20,7 @@ const NotificationModel = require('../models/notification.model')
 const createNotification = require('../util/createNotification')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
+const { crmOnOrderReady } = require('../util/crmHooks')
 
 class QCService extends BaseService {
     // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -731,6 +732,10 @@ class QCService extends BaseService {
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_READY,
             })
+
+            // CRM "Order Ready" message (client 2026-08-28: trigger = QC done /
+            // ready for dispatch, NOT rider assignment). Fire-and-forget.
+            crmOnOrderReady(order)
 
             return BaseService.sendSuccessResponse({
                 message: 'Order packed and sealed. Now ready for delivery.',

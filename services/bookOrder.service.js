@@ -2,6 +2,7 @@ const BaseService = require('./base.service')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
 const { normalizeAddress } = require('../util/address')
+const { explodeItemsToPieces } = require('../util/explodeItems')
 const BookOrderModel = require('../models/bookOrder.model')
 const ItemSetModel = require('../models/itemSet.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
@@ -996,6 +997,9 @@ class BookOrderService extends BaseService {
                 }
 
                 newOrder = new BookOrderModel(newOrderItem)
+                // per-piece: store each physical item individually (pricing/limits
+                // above were computed on the original booking lines)
+                newOrder.items = explodeItemsToPieces(post.items)
                 newOrder.pricing = this._buildPricing({
                     serviceTier: post.serviceTier,
                     itemsBase: totalPrice,
@@ -1109,6 +1113,8 @@ class BookOrderService extends BaseService {
                     deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
+                // per-piece: store each physical item individually
+                newOrder.items = explodeItemsToPieces(post.items)
                 await newOrder.save()
 
                 // Credit is opt-in: reward credits can offset a per-item order
@@ -1279,6 +1285,8 @@ class BookOrderService extends BaseService {
                     deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
+                // per-piece: store each physical item individually
+                newOrder.items = explodeItemsToPieces(post.items)
                 await newOrder.save()
 
                 // Charge the wallet (credits first if opted in, then cash),

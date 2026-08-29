@@ -5,6 +5,7 @@ const UserModel = require('../models/user.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const ChatMessageModel = require('../models/chatMessage.model')
 const { generateOscNumber } = require('../util/helper')
+const { explodeItemsToPieces } = require('../util/explodeItems')
 const CrmService = require('./crm.service')
 const ConversationService = require('./conversation.service')
 const CommunicationService = require('./communication.service')
@@ -305,6 +306,8 @@ class RecoveryService {
         if (!orderItems.length) {
             throw new Error('No items to include in the recovery order')
         }
+        // per-piece: recovery items are tagged/tracked individually too
+        orderItems = explodeItemsToPieces(orderItems)
 
         const recoveryOrder = await BookOrderModel.create({
             userId: complaint.userId,

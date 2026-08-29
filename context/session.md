@@ -3,6 +3,119 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-28 — CRM Communication Restructure: packages A–D done (load-verified, UNCOMMITTED on modular-branch)
+
+Client brief "CHUVI Communication & CRM Restructure" (tune the CRM to what it is — a one-way messenger).
+Five parts; client-approved to build 4 now (A–D), E (subscriber loyalty) deferred pending client answers.
+Decision locked by user: subscriber orders EXCLUDED from every-5 loyalty count (that gate is part of E, NOT built yet).
+
+- **A — Order lifecycle + per-message link routing.**
+  - Added `CRM_MESSAGE_TYPE.ORDER_READY`; kept `REORDER_PROMPT` in enum but REMOVED from schedule/templates
+    (14-day reorder nudge gone). New post-delivery chain: (Order Ready →) Delivery Confirmed → Feedback Request.
+  - Rewrote crmMessenger link logic into an explicit per-message-type `LINK_POLICY` (`linkLineFor`):
+    order-ready/delivery-confirmation→NO link; feedback-request→that order's screen (`deepLink('feedback',recordId)`);
+    lead-*/prospect→registration; reactivation-*/churn→Offers page. Removed the old `SUPPORT_CONTEXT_BY_MESSAGE_TYPE`
+    support-link map. **BEHAVIOR CHANGE (per spec):** reactivation/churn/feedback/delivery no longer deep-link the
+    in-app assistant with `?crmContext=` → the bot's crmContext framing (2026-08-18 wiring) is dormant again. Fine per client.
+  - Threaded `recordId` onto `CrmScheduledMessage` (new field) → scheduleMessages → dispatcher → sendCrmMessage, so
+    the feedback link targets the specific order. `startPostDeliveryWorkflow(profile, order)` now sets it.
+  - **Order Ready trigger NOT wired** (client to confirm the exact "ready" stage). Built the send path:
+    `CrmService.handleOrderReady` + `crmOnOrderReady` hook (in util/crmHooks, exported) — but NOT called from any
+    station flow yet. Wire at the confirmed transition (likely QC-passed / ready-for-dispatch).
+- **B — All workflow timings configurable (like leads).** New CrmSetting fields `postDeliverySchedule`,
+  `reactivationSchedule` (shared `scheduleStepSchema`) + `orderReadyDelayMinutes`; defaults exported
+  (DEFAULT_POST_DELIVERY_SCHEDULE / DEFAULT_REACTIVATION_SCHEDULE). start*Workflow methods read settings (fall back
+  to defaults). `handleOrderReady` uses `orderReadyDelayMinutes` (0=immediate send, else scheduled).
+  `updateSettings` refactored: shared `normalizeSchedule` validator (stagger rule) applied to all three schedules +
+  delay validation. Removed hardcoded HOUR/DAY literals from the two workflows.
+- **C — Broadcast variant rotation A→B→C→A.** Per-profile `broadcastLists.<list>.cycleIndex`; `runBroadcasts` picks
+  variant `['a','b','c'][idx%3]` then ++. 6 variant templates seeded (prospect-broadcast-a/b/c, churn-broadcast-a/b/c
+  — literal keys, NOT enum types). `sendCrmMessage` gained `templateKey` override (base key = fallback). Template-key
+  validation in updateSettings widened to allow the 6 variant keys.
+- **D — Lead 5→3.** DEFAULT_LEAD_SCHEDULE reduced to lead-welcome(Welcome Offer)→lead-offer(Offer 2)→lead-close(Offer 3)
+  →lead-mark-prospect; qualify/reminder-1/reminder-2 retired from defaults (enum kept). Copy updated to offer framing.
+- **Back-compat:** `config/setup.js createCrmSettings` now backfills existing docs with the new schedules + any missing
+  default template keys (never overwrites admin-edited keys).
+- **Swagger:** CrmSettings schema updated (postDeliverySchedule/reactivationSchedule/orderReadyDelayMinutes + shared
+  CrmScheduleStep); message-type enum gained order-ready. Spec builds.
+- **Verified:** node -c clean on all touched files; full CRM chain + crons load; deepLink builders produce correct URLs
+  (offers/feedback/register). NOT DB-tested end-to-end yet (no staging run this session).
+- **FE impact:** NO customer-facing FE. Admin dashboard: B needs new timing editors (post-delivery + reactivation);
+  C needs 6 broadcast template slots; A needs order-ready slot / drop reorder; D shows 3 lead steps. All auto if their
+  editors are data-driven off the settings API (which is generic).
+- **OPEN / TODO:** (1) `{{link}}` token decision (admin-placed link vs auto-append at end) — currently auto-append.
+  (2) DB/staging verify. (3) commit.
+
+### Follow-up same day — client answered both questions → Order Ready wired + package E (partial) built
+- **Order Ready trigger WIRED (client: QC done / ready for dispatch, NOT rider assignment).** Fired `crmOnOrderReady(order)`
+  in `qc.service.packAndSealComplete` (the QC→READY transition, right after the existing ORDER_READY in-app notification).
+  So A is now COMPLETE. `handleOrderReady` sends immediately (orderReadyDelayMinutes=0 default) or schedules if a delay is set.
+- **Package E — subscriber loyalty (client mechanics: scale to plan size, ALWAYS round down):**
+  - **Model:** subscription.model gained `consecutiveMonths` + `loyaltyRewardsApplied[]` (double-apply guard).
+    crmProfile.model gained `nonSubscriptionOrders`.
+  - **Streak tracking (util/webhook.handler.js):** first charge (handleNormalSubscription create + reactivate) sets
+    consecutiveMonths=1; each recurring renewal (charge.success w/ subscription) +1 AFTER the fresh-allowance reset;
+    handlePaymentFailed resets to 0 + clears applied. New `applySubscriberLoyalty(sub, plan, month)` helper.
+  - **Rewards:** month 3 → remainingItems += floor(monthlyLimits*0.25); month 6 → += floor(*0.50) (verified 25→6 / 25→12,
+    matches client examples); each fires a customer notification. **Month 12 = whole month free via PERIOD EXTENSION —
+    NOT built.** The webhook is POST-charge, so suppressing that cycle's Paystack charge needs a Paystack-side mechanism
+    that isn't decided. Month 12 is DETECTED + recorded (loyaltyRewardsApplied) + warn-logged, but the free month is NOT
+    applied. **DECISION NEEDED from client/us: how to move the period without charging (Paystack has no clean "skip one
+    cycle"; options: disable+re-enable around the cycle, or manage next_payment_date).**
+  - **Loyalty-count exclusion (client-locked):** handleOrderDelivered now increments `nonSubscriptionOrders` only when
+    order.billingType !== pay-from-subscription, and the every-5 LOYALTY offer fires on nonSubscriptionOrders%5 (was
+    totalOrders%5). totalOrders still increments for stage/tags. So subscriber bundle-draws no longer earn the walk-in
+    loyalty offer; they earn via renewed months instead.
+  - Verified: node -c clean + full load on webhook.handler/qc/crm; reward floor math matches client examples.
+  - **E STILL OPEN:** month-12 period-extension billing mechanism (above). Everything else in E is done.
+- **2026-08-29 — E COMPLETE.** Client REVERSED month 12: payment never changes (same price/schedule), the reward is
+  purely a bigger item bundle that month — month 3 +25%, month 6 +50%, **month 12 +100% (double), floor**. No Paystack
+  interaction at all (the whole period-extension blocker is gone). `applySubscriberLoyalty` now uses one
+  `LOYALTY_BONUS_PCT={3:.25,6:.5,12:1.0}` table. Verified 25-item plan → +6/+12/+25. E done.
+- **2026-08-29 — CLIENT CLARIFIED PER-PIECE (production flow) — NOT YET BUILT, needs plan+go-ahead.** Client wants:
+  (1) COUNT BY PIECE at every station + handoff (5 shirts = 5, not 1 bundle) — today countByStation/handoff count LINES.
+  (2) PER-PIECE TAGGING ALWAYS — every physical item gets its own tag; tagging never grouped (today tagId is per LINE,
+  one tag for a qty-N line). (3) "bundle" = a Set/container of DIFFERENT priced pieces (suit=jacket+trousers+…, = Phase 2
+  ItemSet, already built); customer can book the whole container or pick individual pieces (price adjusts — already
+  supported since booking records each selected piece as its own line). This is a REWORK of the DB-verified Phase 3
+  item model — likely EXPLODE each qty-N line into N piece records (qty 1 each, own tagId, own currentStation) at intake,
+  so all existing per-item machinery (tag/station/handoff/QC/count) works per piece. Pricing must stay identical.
+  DECISION PENDING: explode-into-piece-records vs keep-lines-with-per-piece-tag-array. Re-verification of Phase 3 needed.
+- **2026-08-29 — PER-PIECE (Option 1 = explode at creation) BUILT + handoff name/count/summary BUILT (load-verified, UNCOMMITTED).**
+  - **Explosion:** new `util/explodeItems.js` `explodeItemsToPieces(items)` — a qty-N line → N records of qty1, _id
+    stripped (Mongoose assigns fresh), all other fields (type/price/fromSet) preserved. Applied to the STORED
+    `newOrder.items` at ALL creation sites, AFTER pricing/limit/capacity checks (which use `post.items.length` on the
+    ORIGINAL lines — so money/subscription/capacity accounting is UNCHANGED, only physical items become per-piece):
+    bookOrder.service 3 branches (sub/pay-per-item/wallet), intake-user staff createBookOrder, recovery.service
+    createRecoveryOrder. generateAllTags already tags per index → now tags per PIECE (TAG-01..0N unique per piece,
+    no change needed). Verified 5 shirts+3 trousers → 8 qty1 pieces.
+  - **Why creation not booking-checks:** capacity/monthlyLimits/`remainingItems-=post.items.length` all count LINES;
+    exploding those would wrongly balloon subscription/capacity — client scoped per-piece to STATIONS+HANDOFFS +
+    tagging, said pricing is separate. So explode STORED items only.
+  - **Handoff readable payloads (name+count+summary):** handoff.service helpers `itemBrief`/`briefsForIds`/`summarize`.
+    All 4 endpoints now return per-piece `items:[{itemId,tagId,name,quantity}]` + a grouped `summary` string
+    ("5 Shirts, 3 Trousers"): push, confirm (accepted[]+rejected[]+summary), pendingQueue (per entry), split-state
+    (per station + per pending handoff). `itemId` kept for push/confirm inputs; counts are now per PIECE. Swagger:
+    new `HandoffItem` schema + Handoff/PendingHandoff/OrderSplitState updated; spec builds.
+  - **Bundle = Set (Phase 2, already built);** partial-piece selection already works (booking records each selected
+    piece as its own line). Set pieces arrive as separate qty1 lines → naturally per-piece.
+  - **STILL TODO:** re-run handoffStaging.js against DB via the REAL booking path (explosion is in the service, so a
+    harness that creates orders directly via the model stays line-based — must book through postBookOrder to see
+    per-piece). Then commit. All A–E + Order-Ready + per-piece + handoff-readable are UNCOMMITTED on modular-branch.
+- **2026-08-29 — handoffStaging.js UPDATED for per-piece (syntax-verified, NOT run).** Added `bookReal(items)` (books
+  through the REAL `BookOrderService.createOrder`→postBookOrder so explosion runs; self-skips if AdminOrderDetails/
+  AdminSetting unseeded) + scenario 13 (qty 3+2 → asserts 5 qty1 piece records, 3 shirt+2 trouser, all at S1) +
+  scenario 14 (tags all pieces, whole S1→S2 push → asserts push/confirm/split-state return 5 readable items +
+  summary "3 Shirts, 2 Trousers"). Cleanup now also removes the CRM profile the real booking creates. Existing 1–11
+  matrix unchanged (still uses direct model create — fine for engine mechanics). RUN: `STAGING_OK=1 node handoffStaging.js`
+  against a staging DB. Harness now self-seeds AdminSetting/AdminOrderDetails (create-only) if missing.
+- **2026-08-29 — handoffStaging.js RAN GREEN against testing_db: 29 passed, 0 failed.** Per-piece explosion via the
+  REAL postBookOrder path verified (qty 3+2 → 5 qty1 piece records, 3 shirt+2 trouser, all S1) + readable handoff
+  payloads (push/confirm/split-state return 5 items + summary "3 Shirts, 2 Trousers"). One fix during the run:
+  `summarize` now capitalises the item name (types stored lower-case) so the summary matches the client's format.
+  Cleanup removed all throwaway data (settings singletons left, as the app seeds them anyway).
+  **ALL WORK (A–E + Order-Ready + per-piece + handoff-readable) IS NOW DB-VERIFIED + LOAD-VERIFIED, ready to commit.**
+
 ## Session: 2026-08-25 (cont.) — Refactor Tier 2: extracted the FLOWS; router now 561 lines (verified 11/11)
 
 Continued the split (user said continue; FE hasn't started so it's a safe window). Same mechanism —

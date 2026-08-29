@@ -2,8 +2,14 @@
  * Split-flow (Phase 3) DB verification harness.
  *
  * Drives the REAL HandoffService + the REAL station queue services against a
- * throwaway order, covering the 12-scenario matrix in context/feature.md, then
+ * throwaway order, covering the scenario matrix in context/feature.md, then
  * deletes everything it created.
+ *
+ * Scenarios 13–14 book through the REAL customer path (postBookOrder) to verify
+ * PER-PIECE explosion (a qty-N line → N tagged piece records) and the readable
+ * handoff payloads (name + count + "5 Shirts, 3 Trousers" summary). Those two
+ * need AdminOrderDetails + AdminSetting seeded (boot the app once against this
+ * DB first); they self-skip if the settings are missing.
  *
  * SAFETY: refuses unless STAGING_OK=1; refuses on NODE_ENV=production unless
  * STAGING_FORCE=1. Prints the target DB host (masked) up front — confirm it is
@@ -16,13 +22,18 @@ const mongoose = require('mongoose')
 const BookOrderModel = require('./models/bookOrder.model')
 const UserModel = require('./models/user.model')
 const NotificationModel = require('./models/notification.model')
+const AdminSettingModel = require('./models/adminSetting.model')
+const AdminOrderDetailsModel = require('./models/adminOrderDetails.model')
+const CrmProfileModel = require('./models/crmProfile.model')
 const { STATION_STATUS: S, ROLE } = require('./util/constants')
 const HandoffService = require('./services/handoff.service')
 const SortService = require('./services/sortAndPretreat.service')
 const WashService = require('./services/washAndDry.service')
 const PressService = require('./services/pressAndIron.service')
+const BookOrderService = require('./services/bookOrder.service')
 
 const svc = new HandoffService()
+const bookSvc = new BookOrderService()
 let PASS = 0,
     FAIL = 0
 const ok = (c, m) => {
@@ -96,6 +107,59 @@ async function main() {
         })
         created.orderIds.push(o._id)
         return o
+    }
+    // Book through the REAL customer path (postBookOrder) so per-piece explosion
+    // runs. Returns the created order doc, or null if settings are missing / the
+    // booking failed (the caller then skips the per-piece scenarios gracefully).
+    async function bookReal(items) {
+        // Seed the two singleton settings docs if this DB has none (create-only,
+        // never overwrites) — same defaults the app seeds on boot.
+        let details = await AdminOrderDetailsModel.findOne({})
+        if (!details) {
+            details = await AdminOrderDetailsModel.create({})
+            console.log('  (seeded AdminOrderDetails)')
+        }
+        let setting = await AdminSettingModel.findOne({})
+        if (!setting) {
+            setting = await AdminSettingModel.create({
+                washAndIronPerKg: 3000,
+                washOnlyPerKg: 1500,
+                ironOnlyPerPiece: 1300,
+                dryCleanPerPiece: 8000,
+                sameDayCharge: 500,
+                expressCharge: 200,
+                premiumServiceTierCharge: 2,
+                vipServiceTierCharge: 1.5,
+            })
+            console.log('  (seeded AdminSetting)')
+        }
+        const serviceType =
+            (setting.serviceTypes && setting.serviceTypes[0]?.name) ||
+            'wash-and-iron'
+        const payload = {
+            fullName: 'Staging Customer',
+            phoneNumber: '08000000000',
+            serviceType,
+            serviceTier: 'classic',
+            billingType: 'pay-per-item',
+            deliverySpeed: 'standard',
+            isPickUp: false,
+            isDelivery: false,
+            items,
+        }
+        const res = await bookSvc.createOrder({
+            userId: customer._id.toString(),
+            payload,
+        })
+        if (!res.success) {
+            console.log('  ⚠ SKIP: real booking failed →', JSON.stringify(res.data))
+            return null
+        }
+        const order = await BookOrderModel.findOne({ userId: customer._id }).sort({
+            createdAt: -1,
+        })
+        if (order) created.orderIds.push(order._id)
+        return order
     }
     const reload = (id) => BookOrderModel.findById(id)
     // simulate a station's per-item completion marking
@@ -270,13 +334,86 @@ async function main() {
         console.log('\n[11] split-state breakdown')
         const ss = await svc.splitState(req(o._id))
         ok(ss.success && ss.data.message.countByStation, 'split-state returns per-station counts')
+
+        // ── 13: PER-PIECE explosion via the REAL booking path ──────────
+        console.log('\n[13] per-piece explosion (real postBookOrder path)')
+        const pp = await bookReal([
+            { type: 'shirt', price: 1, quantity: 3 },
+            { type: 'trouser', price: 1, quantity: 2 },
+        ])
+        if (pp) {
+            ok(pp.items.length === 5, `qty 3+2 exploded into 5 piece records (got ${pp.items.length})`)
+            ok(
+                pp.items.every((i) => (i.quantity || 1) === 1),
+                'every stored piece has quantity 1',
+            )
+            ok(
+                pp.items.filter((i) => i.type === 'shirt').length === 3 &&
+                    pp.items.filter((i) => i.type === 'trouser').length === 2,
+                '3 shirt pieces + 2 trouser pieces',
+            )
+            ok(
+                pp.items.every((i) => i.currentStation === S.INTAKE_AND_TAG_STATION),
+                'all pieces start at intake (S1)',
+            )
+
+            // ── 14: readable handoff payload (name + count + summary) ───
+            console.log('\n[14] handoff readable payload (name + count + summary)')
+            // tag every piece so the S1→S2 whole-order gate passes
+            const setTags = {}
+            pp.items.forEach((i, idx) => {
+                setTags[`items.${idx}.tagStatus`] = 'complete'
+                setTags[`items.${idx}.tagId`] = `TAG-${String(idx + 1).padStart(2, '0')}`
+            })
+            await mark(pp._id, setTags)
+            let rr = await svc.push(
+                req(pp._id, {
+                    fromStation: S.INTAKE_AND_TAG_STATION,
+                    toStation: S.SORT_AND_PRETREAT_STATION,
+                }),
+            )
+            ok(rr.success, 'per-piece whole S1→S2 push accepted')
+            ok(
+                rr.data.message.items && rr.data.message.items.length === 5,
+                `push returns 5 readable items (got ${rr.data.message.items?.length})`,
+            )
+            ok(
+                rr.data.message.summary === '3 Shirts, 2 Trousers',
+                `push summary = "3 Shirts, 2 Trousers" (got "${rr.data.message.summary}")`,
+            )
+            ok(
+                (rr.data.message.items[0].name && rr.data.message.items[0].tagId) !== undefined,
+                'each item carries name + tagId + itemId',
+            )
+            const cc = await svc.confirm(req(pp._id, {}, { hid: rr.data.message.handoffId }))
+            ok(
+                cc.success && cc.data.message.accepted?.length === 5,
+                'confirm returns 5 accepted readable items',
+            )
+            ok(
+                cc.data.message.summary === '3 Shirts, 2 Trousers',
+                'confirm summary reads by piece name + count',
+            )
+            const ss2 = await svc.splitState(req(pp._id))
+            const sortStation = ss2.data.message.stations.find(
+                (s) => s.station === S.SORT_AND_PRETREAT_STATION,
+            )
+            ok(
+                sortStation && sortStation.count === 5 && sortStation.summary === '3 Shirts, 2 Trousers',
+                'split-state counts pieces (5) + summary per station',
+            )
+        }
     } finally {
         // ── cleanup ────────────────────────────────────────────────────
         console.log('\n[cleanup]')
         const delOrders = await BookOrderModel.deleteMany({ _id: { $in: created.orderIds } })
         const delNotifs = await NotificationModel.deleteMany({ userId: customer._id })
+        // the real booking path creates a CRM profile (fire-and-forget hook)
+        const delCrm = await CrmProfileModel.deleteMany({
+            $or: [{ userId: customer._id }, { phoneNumber: '08000000000' }],
+        })
         const delUsers = await UserModel.deleteMany({ _id: { $in: created.userIds } })
-        console.log(`  removed ${delOrders.deletedCount} orders, ${delNotifs.deletedCount} notifications, ${delUsers.deletedCount} users`)
+        console.log(`  removed ${delOrders.deletedCount} orders, ${delNotifs.deletedCount} notifications, ${delCrm.deletedCount} crm profiles, ${delUsers.deletedCount} users`)
         await mongoose.disconnect()
     }
 

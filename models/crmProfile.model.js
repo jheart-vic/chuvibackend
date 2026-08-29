@@ -42,6 +42,10 @@ const crmProfileSchema = new mongoose.Schema(
         },
 
         totalOrders: { type: Number, default: 0 },
+        // delivered orders NOT covered by a subscription — drives the every-5
+        // loyalty offer (client 2026-08-28: subscribers earn loyalty by renewed
+        // months, not order count, so their bundle draws don't count here).
+        nonSubscriptionOrders: { type: Number, default: 0 },
         expressOrders: { type: Number, default: 0 },
         totalSpent: { type: Number, default: 0 },
         firstOrderAt: { type: Date },
@@ -60,11 +64,14 @@ const crmProfileSchema = new mongoose.Schema(
                 active: { type: Boolean, default: false },
                 joinedAt: { type: Date },
                 lastSentAt: { type: Date },
+                // rotates the 3 broadcast variants (A→B→C→A); ++ after each send
+                cycleIndex: { type: Number, default: 0 },
             },
             churn: {
                 active: { type: Boolean, default: false },
                 joinedAt: { type: Date },
                 lastSentAt: { type: Date },
+                cycleIndex: { type: Number, default: 0 },
             },
         },
 
