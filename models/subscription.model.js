@@ -25,6 +25,10 @@ const subscriptionSchema = new mongoose.Schema({
   //   default: null,
   // },
   remainingItems: { type: Number, required: true, default: 0 },
+  // Free pickup/delivery allowance — resets on a rolling 7-day window anchored
+  // to the subscription start (lazy reset at booking; see util/logisticsAllowance).
+  remainingPickupDeliveries: { type: Number, default: 0 },
+  logisticsWeekStart: { type: Date },
   // Subscriber loyalty (client 2026-08-28): consecutive months the plan has been
   // renewed (1 on first charge, +1 each successful renewal, reset to 0 on a
   // failed payment). Rewards at 3/6/12 months, scaled to plan size.

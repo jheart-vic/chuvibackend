@@ -1,4 +1,51 @@
-# Current Feature: CHUVI Production Split-Flow, Structured Addresses & Set Items
+# Current Feature: Subscriber Per-Plan Free Pickup/Delivery Allowance (Feature 1)
+
+**STATUS 2026-08-31: PLANNED, client-approved to start, NO CODE YET.** ₦65,000. Part of a 2-feature package
+(Feature 2 = Recurring Offers ₦145k, DEFERRED — see summary.md). This doc = Feature 1 only.
+
+## What it does
+Each subscription plan gets its own editable **weekly** free pickup/delivery allowance. Pickup and delivery
+count SEPARATELY (an order with both uses 2 units). Speed surcharge stays free for subscribers ALWAYS. Once the
+weekly allowance is exhausted, the normal pickup/delivery fee applies per remaining leg. Replaces the current
+"subscribers get everything free" behaviour (`extraDeliveryCost = 0`, bookOrder.service ~line 972).
+
+## Locked client decisions (2026-08-31)
+- **Per WEEK**, not per month. Editable **per plan** (admin panel).
+- Pickup + delivery counted **separately** → both on one order = **2 units**.
+- **Speed stays free always** (only pickup/delivery fee is gated by the allowance).
+- Allowance exhausted → charge `AdminSetting.pickupFee` / `deliveryFee` per uncovered leg.
+- Admin re-sets existing plans' numbers themselves (not our task).
+
+## Key design point — WEEKLY reset (not monthly)
+Paystack renews MONTHLY and resets `remainingItems` on renewal; the logistics allowance is WEEKLY, so it can't ride
+the renewal. Plan: **lazy weekly reset at booking** — store `logisticsWeekStart` on the subscription; on each
+subscription booking, if `now` is a new week vs `logisticsWeekStart`, reset `remainingPickupDeliveries =
+plan.freePickupDeliveryPerWeek` and advance `logisticsWeekStart` BEFORE consuming. No cron needed.
+- **Week boundary DECIDED (2026-08-31): rolling 7-day window anchored to the subscription START.** The week is NOT a
+  calendar week. `logisticsWeekStart` is initialised to the subscription start (first-charge date). Lazy reset: on a
+  subscription booking, while `now >= logisticsWeekStart + 7 days`, advance `logisticsWeekStart` by 7 days (in steps,
+  so a gap of several weeks lands on the correct current window) and reset the counter; then consume. So each
+  customer's "week" runs from their own signup anchor, e.g. a Wed-signup customer's weeks are Wed→Tue.
+
+## BUILD TODOS (not started)
+- [ ] `plan.model.js` — `freePickupDeliveryPerWeek` (Number, default 0)
+- [ ] `subscription.model.js` — `remainingPickupDeliveries` (Number) + `logisticsWeekStart` (Date)
+- [ ] Seed on first charge/subscribe: `remainingPickupDeliveries = plan.freePickupDeliveryPerWeek`, `logisticsWeekStart = now`
+      (subscription.service subscribe + webhook.handler handleNormalSubscription create + reactivate branches)
+- [ ] `bookOrder.service.js` subscription branch (~972): lazy weekly reset → legs = (isPickUp?1:0)+(isDelivery?1:0) →
+      free = min(needed, remaining), decrement → charge pickupFee/deliveryFee for uncovered legs → **speed stays ₦0**.
+      Deterministic tie-break when 1 unit left + both legs (free the pickup first, charge delivery) — documented.
+- [ ] `admin.service.js` — expose `freePickupDeliveryPerWeek` on plan create/update (+ validate ≥ 0)
+- [ ] Swagger — `Plan` schema + plan create/update request bodies
+- [ ] DB verify: N/week → orders free + decremented; both-legs = 2 units; exhausted → fee charged; new week → reset;
+      speed still free after exhaustion; non-subscriber unaffected.
+
+## Files (no new endpoints)
+plan.model, subscription.model, subscription.service, webhook.handler, bookOrder.service, admin.service, swagger.
+
+---
+
+# PREVIOUS Feature (COMPLETE): CHUVI Production Split-Flow, Structured Addresses & Set Items
 
 **STATUS 2026-08-28: COMPLETE & DB-VERIFIED (Phases 1+2: 14/14, Phase 3: 18/18). Uncommitted on
 modular-branch, ready to commit.** Client-approved package

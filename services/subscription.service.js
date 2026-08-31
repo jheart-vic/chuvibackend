@@ -21,6 +21,7 @@ class SubscriptionService extends BaseService {
                 price: 'integer|required',
                 monthlyLimits: 'integer|required',
                 features: 'array|required',
+                freePickupDeliveryPerWeek: 'integer',
             }
 
             const validateMessage = {
@@ -190,6 +191,8 @@ class SubscriptionService extends BaseService {
             planId: planId,
             email: user.email,
             remainingItems: plan.monthlyLimits,
+            remainingPickupDeliveries: plan.freePickupDeliveryPerWeek || 0,
+            logisticsWeekStart: new Date(),
 
             startDate: new Date(),
             // expiresAt: addMonths(new Date(), 1),

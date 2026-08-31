@@ -3,6 +3,58 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-08-31 — Quoted + locked 2-feature package; Feature 1 planned (NO CODE YET)
+
+Client approved a new package (₦210k): Feature 1 = per-plan free pickup/delivery allowance (₦65k), Feature 2 =
+recurring offers (₦145k, DEFERRED). Client answered all scoping questions (see summary.md "NEW PACKAGE").
+**Only Feature 1 to be built now; NO CODE YET this session.** Plans locked in:
+- `context/summary.md` → new section with both features' confirmed decisions + cost + build order.
+- `context/feature.md` → rewritten as CURRENT feature = Feature 1 (weekly allowance) with full TODOs; the completed
+  split-flow/addresses/set-items feature moved below as PREVIOUS.
+- **Change from the quote:** allowance is **PER WEEK**, not per month → needs a lazy weekly reset at booking
+  (`logisticsWeekStart` on the subscription), since Paystack renewal is monthly. Pickup+delivery counted separately
+  (both = 2 units); speed stays free always; charge pickupFee/deliveryFee once the weekly allowance is exhausted.
+- Feature 1 files (no new endpoints): plan.model, subscription.model, subscription.service, webhook.handler,
+  bookOrder.service, admin.service, swagger. Build starts on go-ahead.
+
+### Feature 1 BUILD STARTED — non-payment parts DONE + verified; billing branch HELD pending client
+- **Week boundary: rolling 7-day from subscription start** (client-confirmed). DONE (all load + unit verified):
+  - `plan.model` `freePickupDeliveryPerWeek` (Number, default 0, min 0).
+  - `subscription.model` `remainingPickupDeliveries` + `logisticsWeekStart`.
+  - `util/logisticsAllowance.js` (NEW helper, keeps billing branch lean): `applyWeeklyReset` (lazy 7-day-step reset
+    anchored to logisticsWeekStart) + `computeLogisticsCharge` (legs pickup+delivery separate, **pickup freed first**,
+    returns {freeUsed, fee, chargedPickup, chargedDelivery}). Unit-verified: rem0→fee1000 both charged, rem1→pickup
+    free+delivery charged, rem2→free; reset 20d→advanced to 6d-ago, counter→grant.
+  - Seed on subscribe (`subscription.service.subscribePlan`) + webhook first-charge create & reactivate branches
+    (`webhook.handler.handleNormalSubscription`): remainingPickupDeliveries = plan.freePickupDeliveryPerWeek,
+    logisticsWeekStart anchor. Monthly RENEWAL branch NOT touched for logistics (weekly lazy reset handles it).
+  - `subscription.service` createPlan validateRule: `freePickupDeliveryPerWeek: 'integer'` (create/update already
+    spread `post`, so the field flows through — no admin.service change needed).
+  - Swagger `Plan` schema: added freePickupDeliveryPerWeek (+ monthlyLimits which was missing).
+- **BILLING BRANCH + BOT DONE (client: fee = configured pickupFee/deliveryFee; customer picks WALLET or CARD; include bot).**
+  Load-verified; DB-verify + commit still pending.
+  - `bookOrder.model`: `logisticsFee` (Number) + `logisticsPaymentMethod` (wallet|card|null).
+  - `bookOrder.service` subscription branch: `applyWeeklyReset` → `computeLogisticsCharge` (fees from
+    `adminOrderSetting.pickupFee/deliveryFee`) → consume free legs + monthly items. **fee=0 → covered as today
+    (amount=item sum, SUCCESS).** **fee>0 → amount=fee, deliveryAmount=fee, logisticsFee=fee, paymentStatus PENDING**;
+    requires `post.overflowPaymentMethod` (else fails with `needsLogisticsPayment:true`+`logisticsFee`).
+    wallet → `chargeWalletForOrder(amount:fee)`; fail → rollback allowance+delete order+`needsLogisticsPayment`.
+    card → `initializePayment(order)` (charges order.amount=fee) → `logisticsPaymentUrl` in the response, order stays
+    PENDING until the existing webhook. **Speed surcharge stays ₦0.** _buildPricing keeps the item value in the breakdown.
+  - BOT (`services/bot/booking.flow.js`): subscriber overflow no longer falls back to pay-per-item — new
+    `collect-logistics-fee` step (`_bookingLogisticsFeeStep`) asks wallet/card, re-calls createOrder with
+    `overflowPaymentMethod`; wallet→confirm, card→returns the Paystack link; wallet-insufficient→offer card.
+    Step pinned in `isPinnedStep` (like collect-payment) so a typed "card"/"wallet" can't hijack it.
+  - Swagger: booking request body documents `overflowPaymentMethod` + the `logisticsFee`/`logisticsPaymentUrl` behaviour;
+    Plan schema has `freePickupDeliveryPerWeek`.
+  - **DB-VERIFIED 2026-08-31: `subLogisticsStaging.js` ran GREEN against testing_db — 20 passed, 0 failed.**
+    A) both legs within allowance → free, allowance 2→0 (separate counting); B) used up + no method → needsLogisticsPayment
+    + fee ₦1000; C) wallet → charged, order SUCCESS, wallet debited; D) card → order PENDING (Paystack link soft-skipped,
+    no key in run — behaviour correct); E) wallet insufficient → rollback (no order, allowance intact); F) rolling 7-day
+    reset → legs free again, anchor advanced. Cleanup removed all throwaway data. NEW harness `subLogisticsStaging.js`
+    (safety-gated, self-seeds settings). **FEATURE 1 COMPLETE + DB-VERIFIED.** Only the card `logisticsPaymentUrl` link
+    is untested (needs PAYSTACK key loaded). Ready to commit. All uncommitted on modular-branch.
+
 ## Session: 2026-08-28 — CRM Communication Restructure: packages A–D done (load-verified, UNCOMMITTED on modular-branch)
 
 Client brief "CHUVI Communication & CRM Restructure" (tune the CRM to what it is — a one-way messenger).
