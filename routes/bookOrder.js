@@ -88,6 +88,18 @@ const {
  *                 type: string
  *                 enum: [pay-per-item, pay-from-subscription, pay-from-wallet]
  *                 example: pay-per-item
+ *               overflowPaymentMethod:
+ *                 type: string
+ *                 enum: [wallet, card]
+ *                 description: >
+ *                   Required ONLY for pay-from-subscription when the customer has used
+ *                   up their weekly free pickup/delivery allowance. Pickup and delivery
+ *                   are counted separately; the fee is the configured pickupFee/deliveryFee.
+ *                   'wallet' charges the fee at booking; 'card' leaves the order PENDING
+ *                   and the response returns `logisticsPaymentUrl` (Paystack) to pay it.
+ *                   If a fee is due and this is omitted, the request fails with
+ *                   needsLogisticsPayment:true and logisticsFee. Speed surcharge stays free.
+ *                 example: wallet
  *               deliverySpeed:
  *                 type: string
  *                 enum: [same-day, express, standard]

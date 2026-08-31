@@ -3,6 +3,10 @@ const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
 const { normalizeAddress } = require('../util/address')
 const { explodeItemsToPieces } = require('../util/explodeItems')
+const {
+    applyWeeklyReset,
+    computeLogisticsCharge,
+} = require('../util/logisticsAllowance')
 const BookOrderModel = require('../models/bookOrder.model')
 const ItemSetModel = require('../models/itemSet.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
@@ -49,6 +53,7 @@ const { offerOnOrderDelivered, offerOnOrderCancelled } = require('../util/offerH
 const WalletCreditService = require('./walletCredit.service')
 const OfferService = require('./offer.service')
 const WalletService = require('./wallet.service')
+const PaystackService = require('./paystack.service')
 const {
     referralOnOrderCreated,
     referralOnOrderDelivered,
@@ -887,6 +892,7 @@ class BookOrderService extends BaseService {
             const oscNumber = generateOscNumber()
             let newOrder = null
             let offerBreakdown = null // set by the offer-eligible billing branches
+            let logisticsPaymentUrl = null // set when a subscriber pays an overflow fee by card
 
             if (post.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
                 const subscription = await SubscriptionModel.findOne({
@@ -962,20 +968,34 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                let totalPrice = post.items.reduce((sum, item) => {
+                const totalPrice = post.items.reduce((sum, item) => {
                     const price = Number(item.price)
                     const quantity = Number(item.quantity)
-
                     return sum + price * quantity
                 }, 0)
 
-                let extraDeliveryCost = 0
-
-                totalPrice += extraDeliveryCost
-                const stage = {
-                    status: ORDER_STATUS.PENDING,
-                    updatedAt: new Date(),
+                // Weekly free pickup/delivery allowance (rolling 7-day window).
+                // Speed surcharge stays free for subscribers regardless.
+                applyWeeklyReset(subscription, subscription.planId, new Date())
+                const logistics = computeLogisticsCharge({
+                    isPickUp: post.isPickUp,
+                    isDelivery: post.isDelivery,
+                    remaining: subscription.remainingPickupDeliveries,
+                    pickupFee: adminOrderSetting.pickupFee || 0,
+                    deliveryFee: adminOrderSetting.deliveryFee || 0,
+                })
+                const logisticsFee = logistics.fee
+                const feeDue = logisticsFee > 0
+                const method = post.overflowPaymentMethod
+                if (feeDue && !['wallet', 'card'].includes(method)) {
+                    return BaseService.sendFailedResponse({
+                        error: `Your free pickup/delivery is used up for this week. A ₦${logisticsFee.toLocaleString('en-NG')} fee applies — set overflowPaymentMethod to "wallet" or "card".`,
+                        needsLogisticsPayment: true,
+                        logisticsFee,
+                    })
                 }
+
+                const stage = { status: ORDER_STATUS.PENDING, updatedAt: new Date() }
                 const stageHistory = {
                     status: ORDER_STATUS.PENDING,
                     note: 'Order created',
@@ -985,30 +1005,84 @@ class BookOrderService extends BaseService {
                 const newOrderItem = {
                     userId,
                     oscNumber,
-                    amount: totalPrice,
-                    deliveryAmount: extraDeliveryCost,
+                    // covered order (no fee) keeps the item value as amount; an
+                    // overflow order's payable amount IS the fee (items covered).
+                    amount: feeDue ? logisticsFee : totalPrice,
+                    deliveryAmount: logisticsFee,
+                    logisticsFee,
+                    logisticsPaymentMethod: feeDue ? method : null,
                     stage,
                     stageHistory: [stageHistory],
                     stationStatus: STATION_STATUS.PENDING,
-                    paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+                    paymentStatus: feeDue
+                        ? PAYMENT_ORDER_STATUS.PENDING
+                        : PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
                     ...post,
                     deliveryDate,
                 }
 
                 newOrder = new BookOrderModel(newOrderItem)
-                // per-piece: store each physical item individually (pricing/limits
-                // above were computed on the original booking lines)
                 newOrder.items = explodeItemsToPieces(post.items)
                 newOrder.pricing = this._buildPricing({
                     serviceTier: post.serviceTier,
                     itemsBase: totalPrice,
                     tierMultiplier: 1,
                     itemsSubtotal: totalPrice,
-                    orderTotal: totalPrice,
+                    pickupFee: logistics.chargedPickup ? adminOrderSetting.pickupFee : 0,
+                    deliveryFee: logistics.chargedDelivery ? adminOrderSetting.deliveryFee : 0,
+                    orderTotal: feeDue ? logisticsFee : totalPrice,
                     coveredBySubscription: true,
                 })
                 await newOrder.save()
+
+                // consume this week's free legs + the monthly item allowance
+                subscription.remainingPickupDeliveries = Math.max(
+                    0,
+                    (subscription.remainingPickupDeliveries || 0) - logistics.freeUsed,
+                )
+                subscription.remainingItems -= post.items.length
+                await subscription.save()
+
+                if (feeDue && method === 'wallet') {
+                    const charge = await WalletService.chargeWalletForOrder({
+                        userId,
+                        orderId: newOrder._id,
+                        amount: logisticsFee,
+                        description: 'Pickup/Delivery fee',
+                    })
+                    if (!charge.success) {
+                        // roll back allowance + order — the fee was not collected
+                        subscription.remainingPickupDeliveries += logistics.freeUsed
+                        subscription.remainingItems += post.items.length
+                        await subscription.save()
+                        await BookOrderModel.deleteOne({ _id: newOrder._id })
+                        newOrder = null
+                        return BaseService.sendFailedResponse({
+                            error: `Your wallet can't cover the ₦${logisticsFee.toLocaleString('en-NG')} pickup/delivery fee. Top up or pay by card.`,
+                            needsLogisticsPayment: true,
+                            logisticsFee,
+                        })
+                    }
+                    newOrder.paymentStatus = PAYMENT_ORDER_STATUS.SUCCESS
+                    await newOrder.save()
+                } else if (feeDue && method === 'card') {
+                    // order stays PENDING until the Paystack webhook confirms the fee
+                    const pay = await new PaystackService().initializePayment({
+                        body: { transactionType: 'order', orderId: String(newOrder._id) },
+                        user: { id: userId },
+                    })
+                    logisticsPaymentUrl =
+                        (pay?.success &&
+                            pay.data?.message?.data?.authorization_url) ||
+                        null
+                }
+
+                finalMessage = feeDue
+                    ? method === 'wallet'
+                        ? `Order placed. ₦${logisticsFee.toLocaleString('en-NG')} pickup/delivery fee paid from your wallet.`
+                        : `Order placed — please complete the ₦${logisticsFee.toLocaleString('en-NG')} pickup/delivery fee payment to confirm.`
+                    : finalMessage
 
                 await createNotification({
                     userId: userId,
@@ -1017,10 +1091,6 @@ class BookOrderService extends BaseService {
                     subBody: `Order ID: ${oscNumber}.`,
                     type: NOTIFICATION_TYPE.ORDER_CREATED,
                 })
-
-                // update the subscription usage
-                subscription.remainingItems -= post.items.length
-                await subscription.save()
             } else if (post.billingType === BILLING_TYPE.PAY_PER_ITEM) {
                 let serviceTypeMultiplier = 1
                 const matchedService = adminOrderSetting.serviceTypes.find(
@@ -1407,6 +1477,7 @@ class BookOrderService extends BaseService {
                 message: finalMessage,
                 order: newOrder,
                 offer,
+                ...(logisticsPaymentUrl && { logisticsPaymentUrl }),
             })
         } catch (error) {
             console.log(error)

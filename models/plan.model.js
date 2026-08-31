@@ -10,6 +10,9 @@ const planSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     features: { type: [String], required: true },
     monthlyLimits: { type: Number, required: true },
+    // free pickup/delivery legs granted per rolling week (pickup & delivery
+    // counted separately); editable per plan
+    freePickupDeliveryPerWeek: { type: Number, default: 0, min: 0 },
     paystackPlanCode: {
       type: String,
       required: true,

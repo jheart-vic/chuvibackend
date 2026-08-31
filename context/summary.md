@@ -177,3 +177,34 @@ logs, retry-failed).
 - Post-delivery T3 retention message (+7d) and subscription-intro message (3–4 orders, no complaint tags).
 - Reactivation cadence + dormancy: client must still pick manual (7/7d, 21/35d) vs spec (14/28d, 30d).
 - Termii `dnd` channel consideration in `util/sendSms.js`.
+
+## NEW PACKAGE (quoted to client 2026-08-31): Subscriber Logistics Allowance + Recurring Offers — ₦210,000
+
+Two client-approved features. **BUILD ORDER: Feature 1 FIRST (approved to start); Feature 2 DEFERRED.** Full
+deliverables/TODOs live in `context/feature.md`. No code yet as of 2026-08-31.
+
+### Feature 1 — Per-plan free pickup/delivery allowance — ₦65,000 (current feature)
+Confirmed client decisions (2026-08-31):
+- Allowance is **PER WEEK** (changed from per-month), editable **per plan** in the admin panel.
+- **Pickup and delivery counted SEPARATELY** — an order with both consumes **2** units.
+- **Speed surcharge stays FREE always** for subscribers (even after the allowance is exhausted).
+- Once the weekly allowance is used up, the normal `pickupFee`/`deliveryFee` applies per remaining leg.
+- Admin will re-set existing plans' numbers themselves (not our task).
+- **Weekly reset ⇒ can't piggyback on the monthly Paystack renewal** (that resets `remainingItems`). Use a
+  **lazy weekly reset** at booking (store `logisticsWeekStart`; if a new week, reset the counter first) — avoids a
+  cron. **Week boundary DECIDED (2026-08-31): rolling 7-day window anchored to the subscription START** (not a
+  calendar week) — each customer's week runs from their own signup date; lazy reset advances `logisticsWeekStart` by
+  7-day steps.
+- Replaces the hardcoded `extraDeliveryCost = 0` in the subscription billing branch (bookOrder.service ~line 972).
+- No new endpoints. Files: plan.model, subscription.model, subscription.service, webhook.handler, bookOrder.service,
+  admin.service, swagger.
+
+### Feature 2 — Recurring offers (schedule + cadenced notification) — ₦145,000 (DEFERRED, not started)
+Confirmed client decisions (2026-08-31): General/Promo offers only (personal stay event-triggered); **A** = auto
+on/off on scheduled day(s)+time window (extend `isWithinWindow`, no cron); **B** = notify eligible group every
+per-offer `notifyIntervalDays` (NOT every occurrence) via **all 4 channels** (WhatsApp+SMS+in-app+email); **no send
+cap** (cadence controls cost). New daily notification cron. Fields: `recurrence{daysOfWeek,startTime,endTime}`,
+`notifyIntervalDays`, `lastNotifiedAt`. Timezone (Africa/Lagos) to confirm. Files: offer.model, offer.service,
+admin.service, new cron, server.js, swagger.
+
+Timeline for both ≈ 2 weeks + testing. FE (admin-panel fields) handled by the frontend team, not in the quote.

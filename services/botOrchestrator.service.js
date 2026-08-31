@@ -226,7 +226,9 @@ class BotOrchestratorService {
             // were handled earlier. Chip taps send the bare word and mostly dodge
             // this — a customer who types the phrase must not be punished for it.)
             const isPinnedStep =
-                (pendingIntent === BOT_INTENT.BOOKING_GUIDE && pendingStep === 'collect-payment') ||
+                (pendingIntent === BOT_INTENT.BOOKING_GUIDE &&
+                    (pendingStep === 'collect-payment' ||
+                        pendingStep === 'collect-logistics-fee')) ||
                 (pendingIntent === BOT_INTENT.UPDATE_DETAILS && pendingStep === 'verify-phone-otp')
             const continuesFlow =
                 pendingIntent &&

@@ -249,6 +249,10 @@ const bookOrderSchema = new mongoose.Schema(
         // noOfItems: { type: Number, required: true },
         amount: { type: Number, required: true },
         deliveryAmount: { type: Number, default: 0 },
+        // Subscriber overflow: pickup/delivery fee charged once the weekly free
+        // allowance is used up (0 = covered). Collected via wallet or card.
+        logisticsFee: { type: Number, default: 0 },
+        logisticsPaymentMethod: { type: String, enum: ['wallet', 'card', null], default: null },
         // Frozen price receipt captured at booking: every line that raised
         // (tier, fees) or lowered (offer, waived fees, wallet credit) the price,
         // so the customer can see the full breakdown of what they paid / gained.

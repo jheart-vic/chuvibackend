@@ -18,6 +18,13 @@
  *           type: integer
  *         price:
  *           type: integer
+ *         monthlyLimits:
+ *           type: integer
+ *           description: Items covered per month.
+ *         freePickupDeliveryPerWeek:
+ *           type: integer
+ *           description: Free pickup/delivery legs per rolling week (pickup & delivery counted separately). Editable per plan.
+ *           example: 4
  *         features:
  *           type: array
  *           items:

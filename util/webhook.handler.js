@@ -453,6 +453,9 @@ async function handleNormalSubscription(data) {
                 // first paid month starts the loyalty streak
                 consecutiveMonths: 1,
                 loyaltyRewardsApplied: [],
+                // seed the weekly pickup/delivery allowance + week anchor
+                remainingPickupDeliveries: plan.freePickupDeliveryPerWeek || 0,
+                logisticsWeekStart: new Date(data.paid_at),
             })
 
             return
@@ -468,6 +471,10 @@ async function handleNormalSubscription(data) {
             // (re)subscribing restarts the consecutive-month loyalty streak
             subscription.consecutiveMonths = 1
             subscription.loyaltyRewardsApplied = []
+            // re-anchor the weekly logistics allowance
+            subscription.remainingPickupDeliveries =
+                plan.freePickupDeliveryPerWeek || 0
+            subscription.logisticsWeekStart = new Date(data.paid_at)
             await subscription.save()
         }
 

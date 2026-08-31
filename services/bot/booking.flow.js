@@ -25,6 +25,9 @@ module.exports = {
         if (step === 'confirm-credit') {
             return await this._bookingCreditOptinStep({ userId, text, slots })
         }
+        if (step === 'collect-logistics-fee') {
+            return await this._bookingLogisticsFeeStep({ userId, text, slots })
+        }
 
         const setting = await AdminSettingModel.findOne({}).lean()
         const catalog = await OrderItemModel.find({}).lean()
@@ -281,6 +284,27 @@ module.exports = {
                     ],
                 }
             }
+            // Plan covers the laundry but the weekly free pickup/delivery is used
+            // up → collect the fee (wallet/card), NOT a pay-per-item fallback.
+            if (subRes?.data?.needsLogisticsPayment) {
+                const fee = Number(subRes.data.logisticsFee) || 0
+                return {
+                    replies: [
+                        `Your plan covers the laundry, but your free pickup/delivery is used up this week — a ${naira(fee)} pickup/delivery fee applies. Pay from your wallet, or by card?`,
+                    ],
+                    state: {
+                        intent: BOT_INTENT.BOOKING_GUIDE,
+                        step: 'collect-logistics-fee',
+                        slots: {
+                            subPayload: {
+                                ...basePayload,
+                                billingType: BILLING_TYPE.PAY_FROM_SUBSCRIPTION,
+                            },
+                            logisticsFee: fee,
+                        },
+                    },
+                }
+            }
             // Plan can't cover it (over monthly limit / heavy items / etc.) → fall
             // back to pay-per-item, telling the customer why in plain language.
             subLead = this._subFallbackLead(subRes?.data?.error)
@@ -359,6 +383,55 @@ module.exports = {
             return await new BookOrderService().createOrder({ userId, payload })
         } catch (e) {
             return { success: false, data: { error: e.message } }
+        }
+    },
+
+    // Subscriber overflow pickup/delivery fee — collect via wallet or card, then
+    // re-place the (plan-covered) order with the chosen method.
+    async _bookingLogisticsFeeStep({ userId, text, slots }) {
+        const choice = this._parsePaymentChoice(text)
+        const fee = Number(slots.logisticsFee) || 0
+        if (!choice) {
+            return {
+                replies: [
+                    `Please choose: pay the ${naira(fee)} pickup/delivery fee from your wallet, or by card?`,
+                ],
+                state: { intent: BOT_INTENT.BOOKING_GUIDE, step: 'collect-logistics-fee', slots },
+            }
+        }
+        const res = await this._createOrderSafe(userId, {
+            ...slots.subPayload,
+            overflowPaymentMethod: choice,
+        })
+        if (!res?.success) {
+            const msg = res?.data?.error || 'something went wrong on our side'
+            // wallet couldn't cover it → offer card instead of dead-ending
+            if (choice === 'wallet' && res?.data?.needsLogisticsPayment) {
+                return {
+                    replies: [`${msg} Would you like to pay by card instead?`],
+                    state: { intent: BOT_INTENT.BOOKING_GUIDE, step: 'collect-logistics-fee', slots },
+                }
+            }
+            return {
+                replies: [`I couldn't place the order — ${msg}. Would you like me to connect you to a person?`],
+                state: { intent: BOT_INTENT.BOOKING_GUIDE, step: 'offered-handoff', slots: {} },
+            }
+        }
+        const osc = res.data?.order?.oscNumber || ''
+        if (choice === 'wallet') {
+            return {
+                replies: [
+                    `Done! Order ${osc} is placed and covered by your plan. The ${naira(fee)} pickup/delivery fee was paid from your wallet ✅.`,
+                ],
+            }
+        }
+        const url = res.data?.logisticsPaymentUrl
+        return {
+            replies: [
+                url
+                    ? `Order ${osc} is placed and covered by your plan. To confirm, please pay the ${naira(fee)} pickup/delivery fee here: ${url}`
+                    : `Order ${osc} is placed, but I couldn't start the card payment for the ${naira(fee)} fee. Please try again or use your wallet.`,
+            ],
         }
     },
 
