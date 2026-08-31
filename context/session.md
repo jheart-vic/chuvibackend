@@ -47,8 +47,13 @@ recurring offers (₦145k, DEFERRED). Client answered all scoping questions (see
     Step pinned in `isPinnedStep` (like collect-payment) so a typed "card"/"wallet" can't hijack it.
   - Swagger: booking request body documents `overflowPaymentMethod` + the `logisticsFee`/`logisticsPaymentUrl` behaviour;
     Plan schema has `freePickupDeliveryPerWeek`.
-  - **STILL TODO:** DB-verify (subscriber over allowance → wallet charged / card link + PENDING; rollback on
-    insufficient wallet; new rolling week resets) then commit. All uncommitted on modular-branch.
+  - **DB-VERIFIED 2026-08-31: `subLogisticsStaging.js` ran GREEN against testing_db — 20 passed, 0 failed.**
+    A) both legs within allowance → free, allowance 2→0 (separate counting); B) used up + no method → needsLogisticsPayment
+    + fee ₦1000; C) wallet → charged, order SUCCESS, wallet debited; D) card → order PENDING (Paystack link soft-skipped,
+    no key in run — behaviour correct); E) wallet insufficient → rollback (no order, allowance intact); F) rolling 7-day
+    reset → legs free again, anchor advanced. Cleanup removed all throwaway data. NEW harness `subLogisticsStaging.js`
+    (safety-gated, self-seeds settings). **FEATURE 1 COMPLETE + DB-VERIFIED.** Only the card `logisticsPaymentUrl` link
+    is untested (needs PAYSTACK key loaded). Ready to commit. All uncommitted on modular-branch.
 
 ## Session: 2026-08-28 — CRM Communication Restructure: packages A–D done (load-verified, UNCOMMITTED on modular-branch)
 
