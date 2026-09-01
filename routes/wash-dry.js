@@ -46,7 +46,7 @@ const {
  *                         completedToday: { type: integer, example: 0 }
  *                     recentQueue:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *       500:
  *         description: Server error
  */
@@ -79,7 +79,7 @@ router.get(
  *         schema: { type: string, example: "ORD-2024-001" }
  *     responses:
  *       200:
- *         description: Paginated list of orders pending wash start, with flaggedItemCount per order
+ *         description: "Paginated list of orders pending wash start. Each order is STATION-SCOPED — `items` holds only the pieces currently at wash & dry — and carries allItemsConfirmed / confirmedItemCount / flaggedItemCount computed over those pieces only."
  *         content:
  *           application/json:
  *             schema:
@@ -88,9 +88,9 @@ router.get(
  *                 message:
  *                   type: object
  *                   properties:
- *                     orders:
+ *                     data:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
@@ -124,7 +124,7 @@ router.get(ROUTE_WASH_AND_DRY_QUEUE, [washAndDryAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     order: { $ref: '#/components/schemas/StationScopedOrder' }
  *       404:
  *         description: Order not found or not in washing stage
  *       500:
@@ -352,7 +352,7 @@ router.patch(ROUTE_WASH_AND_DRY_HOLD, [washAndDryAuth], (req, res) => {
  *                   properties:
  *                     orders:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
@@ -431,7 +431,7 @@ router.patch(
  *                   properties:
  *                     orders:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:

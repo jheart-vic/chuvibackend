@@ -17,6 +17,16 @@ const paginate = require('../util/paginate')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
+const {
+    scopeOrderToStation,
+    itemsAtStation,
+    allAtStation,
+    countAtStation,
+    stationOf,
+} = require('../util/stationScope')
+
+// Split-flow: this station only ever sees/acts on the items sitting at it.
+const HERE = STATION_STATUS.PRESSING_AND_IRONING_STATION
 
 class PressAndIronService extends BaseService {
     async getDashboard(req) {
@@ -33,14 +43,20 @@ class PressAndIronService extends BaseService {
 
             const [pressQueue, activePress, completedToday, recentQueueResult] =
                 await Promise.all([
+                    // $elemMatch: both conditions are item-level, so ONE item has
+                    // to satisfy both. Listed separately they could be met by two
+                    // DIFFERENT items — an item here, plus an unrelated item
+                    // upstream that simply has no pressConfirmedAt yet.
                     BookOrderModel.countDocuments({
-                        'items.currentStation':
-                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                        'items.pressConfirmedAt': { $exists: false },
+                        items: {
+                            $elemMatch: {
+                                currentStation: HERE,
+                                pressConfirmedAt: { $exists: false },
+                            },
+                        },
                     }),
                     BookOrderModel.countDocuments({
-                        'items.currentStation':
-                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                        'items.currentStation': HERE,
                         'pressDetails.startedAt': { $exists: true },
                         'pressDetails.completedAt': { $exists: false },
                     }),
@@ -58,8 +74,7 @@ class PressAndIronService extends BaseService {
                     paginate(
                         BookOrderModel,
                         {
-                            'items.currentStation':
-                                STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                            'items.currentStation': HERE,
                         },
                         {
                             page: 1,
@@ -74,7 +89,9 @@ class PressAndIronService extends BaseService {
             return BaseService.sendSuccessResponse({
                 message: {
                     data: { pressQueue, activePress, completedToday },
-                    recentQueue: recentQueueResult.data,
+                    recentQueue: recentQueueResult.data.map((o) =>
+                        scopeOrderToStation(o, HERE),
+                    ),
                 },
             })
         } catch (error) {
@@ -97,8 +114,7 @@ class PressAndIronService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const query = {
-                'items.currentStation':
-                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'items.currentStation': HERE,
             }
 
             if (search) {
@@ -117,17 +133,18 @@ class PressAndIronService extends BaseService {
                 lean: true,
             })
 
+            // Counts scoped to THIS station — "all confirmed" must mean all the
+            // items press actually holds, not the whole order.
+            const isPressed = (i) => i.pressStatus === 'complete'
             const ordersWithMeta = data.map((o) => ({
-                ...o,
-                flaggedItemCount: (o.items || []).filter(
+                ...scopeOrderToStation(o, HERE),
+                flaggedItemCount: countAtStation(
+                    o,
+                    HERE,
                     (i) => i.flaggedForReview,
-                ).length,
-                allItemsConfirmed: (o.items || []).every(
-                    (i) => i.pressStatus === 'complete',
                 ),
-                confirmedItemCount: (o.items || []).filter(
-                    (i) => i.pressStatus === 'complete',
-                ).length,
+                allItemsConfirmed: allAtStation(o, HERE, isPressed),
+                confirmedItemCount: countAtStation(o, HERE, isPressed),
             }))
 
             return BaseService.sendSuccessResponse({
@@ -159,7 +176,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'items.currentStation': HERE,
             }).lean()
 
             if (!order)
@@ -167,12 +184,17 @@ class PressAndIronService extends BaseService {
                     error: 'Order not found or not in ironing stage',
                 })
 
-            const allItemsConfirmed = order.items.every(
+            const allItemsConfirmed = allAtStation(
+                order,
+                HERE,
                 (i) => i.pressStatus === 'complete',
             )
 
             return BaseService.sendSuccessResponse({
-                message: { order, allItemsConfirmed },
+                message: {
+                    order: scopeOrderToStation(order, HERE),
+                    allItemsConfirmed,
+                },
             })
         } catch (error) {
             console.log(error)
@@ -205,11 +227,21 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'items.currentStation': HERE,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not in ironing stage',
+                })
+
+            // Never confirm an item that hasn't physically reached this station.
+            const strayIds = (itemIds || []).filter((id) => {
+                const item = order.items.id(id)
+                return !item || stationOf(item) !== HERE
+            })
+            if (strayIds.length)
+                return BaseService.sendFailedResponse({
+                    error: `${strayIds.length} item(s) are not currently at the pressing & ironing station`,
                 })
 
             const { updatedCount, allItemsCompleted } =
@@ -219,6 +251,7 @@ class PressAndIronService extends BaseService {
                     userId,
                     itemIds,
                     allItems,
+                    station: HERE,
                     statusField: 'pressStatus',
                     completedValue: 'complete',
                     timestampField: 'pressConfirmedAt',
@@ -280,7 +313,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'items.currentStation': HERE,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -289,9 +322,11 @@ class PressAndIronService extends BaseService {
 
             const now = new Date()
 
+            // Scoped to this station, same as the confirm it undoes.
+            const mine = itemsAtStation(order, HERE)
             const targetItems = allItems
-                ? order.items.filter((item) => item.pressStatus === 'complete')
-                : order.items.filter(
+                ? mine.filter((item) => item.pressStatus === 'complete')
+                : mine.filter(
                       (item) =>
                           itemIds.includes(item._id.toString()) &&
                           item.pressStatus === 'complete',
@@ -320,9 +355,9 @@ class PressAndIronService extends BaseService {
                 })),
             )
 
-            // Only clear pressDetails if no items remain confirmed
+            // Only clear pressDetails if no item HERE stays confirmed.
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const anyStillConfirmed = updatedOrder.items.some(
+            const anyStillConfirmed = itemsAtStation(updatedOrder, HERE).some(
                 (i) => i.pressStatus === 'complete',
             )
 
@@ -406,7 +441,7 @@ class PressAndIronService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'items.currentStation': HERE,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -417,6 +452,10 @@ class PressAndIronService extends BaseService {
             if (!item)
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
+                })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the pressing & ironing station',
                 })
 
             const holdNote = note ? `${reason}: ${note}` : reason
@@ -488,8 +527,7 @@ class PressAndIronService extends BaseService {
             const { page = 1, limit = 20 } = req.query
 
             const query = {
-                'items.currentStation':
-                    STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                'items.currentStation': HERE,
                 'pressDetails.startedAt': { $exists: true },
                 'pressDetails.completedAt': { $exists: false },
             }
@@ -514,8 +552,8 @@ class PressAndIronService extends BaseService {
                     : null
 
                 return {
-                    ...order,
-                    itemCount: (order.items || []).length,
+                    ...scopeOrderToStation(order, HERE),
+                    itemCount: itemsAtStation(order, HERE).length,
                     pressDetails: {
                         ...order.pressDetails,
                         estimatedFinish,

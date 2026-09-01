@@ -294,6 +294,25 @@ class HandoffService extends BaseService {
             }
             const accepted = handoffIds.filter((id) => !rejected.includes(id))
 
+            // Hard gates (S1→S2, S4→S5) move the WHOLE order. The push already
+            // enforced that; enforce it HERE too, or a partial CONFIRM would
+            // still split the order — e.g. QC accepting 8 of 10 items, which is
+            // exactly what "nothing partial reaches S5" forbids.
+            const fromIdx = SEQ.indexOf(handoff.fromStation)
+            const toIdx = SEQ.indexOf(handoff.toStation)
+            if (isWholeOrderGate(fromIdx, toIdx)) {
+                if (rejected.length && accepted.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `${handoff.fromStation} → ${handoff.toStation} moves the whole order — accept every item or reject every item`,
+                    })
+                }
+                if (!order.isWholeAt(handoff.fromStation)) {
+                    return BaseService.sendFailedResponse({
+                        error: `${handoff.fromStation} → ${handoff.toStation} must move the whole order — all items must still be at ${handoff.fromStation}`,
+                    })
+                }
+            }
+
             const now = new Date()
             const finalStatus = accepted.length ? 'confirmed' : 'rejected'
 

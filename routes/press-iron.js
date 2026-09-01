@@ -42,7 +42,7 @@ const {
  *                         completedToday: { type: integer, example: 0 }
  *                     recentQueue:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *       500:
  *         description: Server error
  */
@@ -81,7 +81,7 @@ router.get(ROUTE_PRESS_IRON_DASHBOARD, [pressAndIronAuth], (req, res) => {
  *                   properties:
  *                     data:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
@@ -116,7 +116,7 @@ router.get(ROUTE_PRESS_IRON_QUEUE, [pressAndIronAuth], (req, res) => {
  *                 message:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     order: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     allItemsConfirmed: { type: boolean, example: false }
  *       404:
  *         description: Order not found or not in ironing stage
@@ -334,7 +334,7 @@ router.patch(ROUTE_PRESS_IRON_HOLD, [pressAndIronAuth], (req, res) => {
  *                   properties:
  *                     data:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:

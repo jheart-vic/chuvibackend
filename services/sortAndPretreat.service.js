@@ -22,6 +22,19 @@ const createNotification = require('../util/createNotification')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
+const {
+    scopeOrderToStation,
+    itemsAtStation,
+    allAtStation,
+    stationOf,
+} = require('../util/stationScope')
+
+// Split-flow: this station only ever sees/acts on the items sitting at it.
+// The ORDER-level query stays on stage.status (decision D3): sort is the
+// earliest stretch station and summaryStatus is the least-advanced station, so
+// any order holding an item here reads 'sort-and-pretreat'. Only the ITEMS need
+// scoping — otherwise a piece already handed to wash still renders here too.
+const HERE = STATION_STATUS.SORT_AND_PRETREAT_STATION
 
 class SortAndPretreatService extends BaseService {
     async getDashboard(req) {
@@ -190,7 +203,7 @@ class SortAndPretreatService extends BaseService {
 
             return BaseService.sendSuccessResponse({
                 message: {
-                    data,
+                    data: data.map((o) => scopeOrderToStation(o, HERE)),
                     pagination,
                 },
             })
@@ -229,17 +242,23 @@ class SortAndPretreatService extends BaseService {
                     error: 'Order not found or not in sort & pretreat stage',
                 })
 
-            const allItemsSorted = order.items.every(
+            // Scoped to this station: items already handed on to wash are done
+            // here and must not hold the "ready to send" gate open.
+            const allItemsSorted = allAtStation(
+                order,
+                HERE,
                 (i) => i.sortStatus === 'complete',
             )
-            const allItemsPretreated = order.items.every(
+            const allItemsPretreated = allAtStation(
+                order,
+                HERE,
                 (i) => i.pretreatStatus === 'complete',
             )
             const readyToSend = allItemsSorted && allItemsPretreated
 
             return BaseService.sendSuccessResponse({
                 message: {
-                    order,
+                    order: scopeOrderToStation(order, HERE),
                     allItemsSorted,
                     allItemsPretreated,
                     readyToSend,
@@ -289,6 +308,10 @@ class SortAndPretreatService extends BaseService {
             if (!item)
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
+                })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
                 })
 
             const allowedColorGroups = Object.values(COLOR_GROUP)
@@ -482,6 +505,10 @@ class SortAndPretreatService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
                 })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
+                })
             if (item.sortStatus === 'complete')
                 return BaseService.sendFailedResponse({
                     error: 'Item is already marked as sorted',
@@ -575,6 +602,10 @@ class SortAndPretreatService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
                 })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
+                })
 
             if (item.sortStatus === 'pending') {
                 return BaseService.sendFailedResponse({
@@ -655,15 +686,28 @@ class SortAndPretreatService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not in sort & pretreat stage',
                 })
+            // "All" means all items AT THIS STATION — pieces already handed on to
+            // wash must not be re-stamped here.
             const now = new Date()
-            const updatedItems = order.items.map((item) => ({
-                ...item.toObject(),
-                sortStatus: 'complete',
-                actionLog: [
-                    ...(item.actionLog || []),
-                    { action: 'sorted', note: 'bulk', timestamp: now },
-                ],
-            }))
+            const mine = itemsAtStation(order, HERE)
+            if (!mine.length)
+                return BaseService.sendFailedResponse({
+                    error: 'No items are currently at the sort & pretreat station',
+                })
+
+            const mineIds = new Set(mine.map((i) => String(i._id)))
+            const updatedItems = order.items.map((item) => {
+                const plain = item.toObject()
+                if (!mineIds.has(String(item._id))) return plain
+                return {
+                    ...plain,
+                    sortStatus: 'complete',
+                    actionLog: [
+                        ...(item.actionLog || []),
+                        { action: 'sorted', note: 'bulk', timestamp: now },
+                    ],
+                }
+            })
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
@@ -742,6 +786,10 @@ class SortAndPretreatService extends BaseService {
             if (!item)
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
+                })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
                 })
             if (item.pretreatStatus === 'complete')
                 return BaseService.sendFailedResponse({
@@ -844,6 +892,10 @@ class SortAndPretreatService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
                 })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
+                })
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -933,6 +985,10 @@ class SortAndPretreatService extends BaseService {
             if (!item)
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
+                })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
                 })
 
             await BookOrderModel.updateOne(
@@ -1678,6 +1734,10 @@ class SortAndPretreatService extends BaseService {
             if (!item)
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
+                })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the sort & pretreat station',
                 })
 
             const holdNote = note ? `${reason}: ${note}` : reason
