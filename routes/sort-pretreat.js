@@ -90,7 +90,7 @@ router.get(
  *                   properties:
  *                     orders:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *       500:
@@ -128,7 +128,7 @@ router.get(
  *                 message:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     order: { $ref: '#/components/schemas/StationScopedOrder' }
  *                     allItemsSorted: { type: boolean, example: false }
  *                     allItemsPretreated: { type: boolean, example: false }
  *                     readyToSend: { type: boolean, example: false }

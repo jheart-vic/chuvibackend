@@ -1084,6 +1084,26 @@
  *           type: array
  *           items: { $ref: '#/components/schemas/Handoff' }
  *
+ *     StationScopedOrder:
+ *       description: "An order as ONE station sees it. Under split-flow an order's pieces can sit at several stations at once, so `items` here contains ONLY the pieces currently at the station serving the request — not the whole order. A station that was handed 3 of 10 pieces sees exactly those 3. Use `totalItemCount` and `itemsElsewhere` for whole-order context, or GET /orders/{id}/split-state for the full per-station breakdown. Derived flags on these endpoints (allItemsConfirmed, allItemsSorted, allItemsPretreated, readyToSend, confirmedItemCount, flaggedItemCount, itemCount) are scoped the same way — `allItemsConfirmed: true` means every piece AT THIS STATION is confirmed, which is the gate for pushing them on."
+ *       allOf:
+ *         - $ref: '#/components/schemas/BookOrder'
+ *         - type: object
+ *           properties:
+ *             itemsAtStationCount:
+ *               type: integer
+ *               description: "How many pieces this station currently holds (equals items.length)."
+ *               example: 3
+ *             totalItemCount:
+ *               type: integer
+ *               description: "Total pieces in the whole order, across every station."
+ *               example: 10
+ *             itemsElsewhere:
+ *               type: object
+ *               description: "Piece counts at every OTHER station, keyed by station."
+ *               additionalProperties: { type: integer }
+ *               example: { "sort-and-pretreat-station": 7 }
+ *
  *     OrderAddress:
  *       type: object
  *       description: "Structured order address. Staff intake (createBookOrder with isPickUp/isDelivery) REQUIRES label + address + landmark. Customer/app and bot bookings may send a plain string, which is stored as { label:'', address, landmark:'' }; legacy orders may still return a plain string, so consumers should accept either shape."

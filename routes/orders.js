@@ -120,7 +120,7 @@ router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
  *   post:
  *     summary: Confirm a received handoff
  *     tags: [Split-Flow]
- *     description: "The receiving station confirms a pending handoff. Accepted items advance to the toStation; any rejectedItems[] are placed on Hold (assigned back to the source station) and stay put. The order's stage.status is recomputed as the least-advanced station any item now sits at."
+ *     description: "The receiving station confirms a pending handoff. Accepted items advance to the toStation; any rejectedItems[] are placed on Hold (assigned back to the source station) and stay put. The order's stage.status is recomputed as the least-advanced station any item now sits at. HARD GATES: on the whole-order transitions (S1 intake→sort and S4 press→QC) a PARTIAL confirm is refused — rejectedItems must be empty (accept every item) or list every item in the handoff (send the whole order back). Nothing partial may reach QC. Partial confirms are allowed only in the stretch zone (S2↔S3↔S4)."
  *     parameters:
  *       - in: path
  *         name: id
@@ -141,7 +141,7 @@ router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
  *             properties:
  *               rejectedItems:
  *                 type: array
- *                 description: Subset of the handoff's item ids to reject to Hold.
+ *                 description: "Subset of the handoff's item ids to reject to Hold. On a whole-order gate (intake→sort, press→QC) only two values are accepted: omitted/empty, or every item id in the handoff — a partial rejection is refused with 400."
  *                 items: { type: string }
  *               note: { type: string, example: "2 items still wet" }
  *     responses:

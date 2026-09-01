@@ -20,6 +20,16 @@ const paginate = require('../util/paginate')
 const createNotification = require('../util/createNotification')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
+const {
+    scopeOrderToStation,
+    itemsAtStation,
+    allAtStation,
+    countAtStation,
+    stationOf,
+} = require('../util/stationScope')
+
+// Split-flow: this station only ever sees/act on the items sitting at it.
+const HERE = STATION_STATUS.WASH_AND_DRY_STATION
 
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
@@ -43,19 +53,19 @@ class WashAndDryService extends BaseService {
                 recentQueueResult,
             ] = await Promise.all([
                 BookOrderModel.countDocuments({
-                    'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                    'items.currentStation': HERE,
                     'washDetails.startedAt': { $exists: false },
                 }),
 
                 BookOrderModel.countDocuments({
-                    'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                    'items.currentStation': HERE,
                     'washDetails.startedAt': { $exists: true },
                     'washDetails.movedToDryingAt': { $exists: false },
                 }),
 
                 // Orders with items in the drying sub-phase
                 BookOrderModel.countDocuments({
-                    'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                    'items.currentStation': HERE,
                     'washDetails.movedToDryingAt': { $exists: true },
                 }),
 
@@ -74,8 +84,7 @@ class WashAndDryService extends BaseService {
                 paginate(
                     BookOrderModel,
                     {
-                        'items.currentStation':
-                            STATION_STATUS.WASH_AND_DRY_STATION,
+                        'items.currentStation': HERE,
                     },
                     {
                         page: 1,
@@ -95,7 +104,9 @@ class WashAndDryService extends BaseService {
                         activeDry,
                         completedToday,
                     },
-                    recentQueue: recentQueueResult.data,
+                    recentQueue: recentQueueResult.data.map((o) =>
+                        scopeOrderToStation(o, HERE),
+                    ),
                 },
             })
         } catch (error) {
@@ -119,7 +130,7 @@ class WashAndDryService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const query = {
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
                 'washDetails.startedAt': { $exists: false }, // ← waiting, not yet active
             }
 
@@ -139,17 +150,19 @@ class WashAndDryService extends BaseService {
                 lean: true,
             })
 
+            // Counts are scoped to THIS station: an order can have 3 items here
+            // and 7 still at sort, and "all confirmed" must mean all 3 — that's
+            // the gate the S3→S4 push button reads.
+            const isWashed = (i) => i.washStatus === 'complete'
             const ordersWithMeta = data.map((o) => ({
-                ...o,
-                flaggedItemCount: (o.items || []).filter(
+                ...scopeOrderToStation(o, HERE),
+                flaggedItemCount: countAtStation(
+                    o,
+                    HERE,
                     (i) => i.flaggedForReview,
-                ).length,
-                allItemsConfirmed: (o.items || []).every(
-                    (i) => i.washStatus === 'complete',
                 ),
-                confirmedItemCount: (o.items || []).filter(
-                    (i) => i.washStatus === 'complete',
-                ).length,
+                allItemsConfirmed: allAtStation(o, HERE, isWashed),
+                confirmedItemCount: countAtStation(o, HERE, isWashed),
             }))
 
             return BaseService.sendSuccessResponse({
@@ -185,7 +198,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
             }).lean()
 
             if (!order)
@@ -193,12 +206,17 @@ class WashAndDryService extends BaseService {
                     error: 'Order not found or not in washing stage',
                 })
 
-            const allItemsConfirmed = order.items.every(
+            const allItemsConfirmed = allAtStation(
+                order,
+                HERE,
                 (i) => i.washStatus === 'complete',
             )
 
             return BaseService.sendSuccessResponse({
-                message: { order, allItemsConfirmed },
+                message: {
+                    order: scopeOrderToStation(order, HERE),
+                    allItemsConfirmed,
+                },
             })
         } catch (error) {
             console.log(error)
@@ -233,11 +251,21 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not in washing stage',
+                })
+
+            // Never confirm an item that hasn't physically reached this station.
+            const strayIds = (itemIds || []).filter((id) => {
+                const item = order.items.id(id)
+                return !item || stationOf(item) !== HERE
+            })
+            if (strayIds.length)
+                return BaseService.sendFailedResponse({
+                    error: `${strayIds.length} item(s) are not currently at the wash & dry station`,
                 })
 
             const { updatedCount, allItemsCompleted } =
@@ -247,6 +275,7 @@ class WashAndDryService extends BaseService {
                     userId,
                     itemIds,
                     allItems,
+                    station: HERE,
                     statusField: 'washStatus',
                     completedValue: 'complete',
                     timestampField: 'washConfirmedAt',
@@ -320,7 +349,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -329,9 +358,11 @@ class WashAndDryService extends BaseService {
 
             const now = new Date()
 
+            // Scoped to this station, same as the confirm it undoes.
+            const mine = itemsAtStation(order, HERE)
             const targetItems = allItems
-                ? order.items.filter((item) => item.washStatus === 'complete')
-                : order.items.filter(
+                ? mine.filter((item) => item.washStatus === 'complete')
+                : mine.filter(
                       (item) =>
                           itemIds.includes(item._id.toString()) &&
                           item.washStatus === 'complete',
@@ -364,9 +395,13 @@ class WashAndDryService extends BaseService {
                 })),
             )
 
-            // Only clear order-level wash fields if no items remain confirmed
+            // Only clear order-level wash fields if no item HERE stays confirmed.
+            // $unset, not null: the queue selects on `startedAt: {$exists:false}`,
+            // so a null would leave the order stuck out of the wash queue.
+            // stationStatus is left alone — undoing a confirmation doesn't move
+            // items, so the order's station is still whatever the handoffs made it.
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const anyStillConfirmed = updatedOrder.items.some(
+            const anyStillConfirmed = itemsAtStation(updatedOrder, HERE).some(
                 (i) => i.washStatus === 'complete',
             )
 
@@ -374,11 +409,9 @@ class WashAndDryService extends BaseService {
                 await BookOrderModel.updateOne(
                     { _id: orderId },
                     {
-                        $set: {
-                            'washDetails.startedAt': null,
-                            'washDetails.operatorId': null,
-                            stationStatus:
-                                STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                        $unset: {
+                            'washDetails.startedAt': '',
+                            'washDetails.operatorId': '',
                         },
                     },
                 )
@@ -464,7 +497,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -475,6 +508,10 @@ class WashAndDryService extends BaseService {
             if (!item)
                 return BaseService.sendFailedResponse({
                     error: 'Item not found in order',
+                })
+            if (stationOf(item) !== HERE)
+                return BaseService.sendFailedResponse({
+                    error: 'Item is not currently at the wash & dry station',
                 })
 
             const holdNote = note ? `${reason}: ${note}` : reason
@@ -558,7 +595,7 @@ class WashAndDryService extends BaseService {
             const { page = 1, limit = 20 } = req.query
 
             const query = {
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
                 'washDetails.startedAt': { $exists: true },
                 'washDetails.movedToDryingAt': { $exists: false },
             }
@@ -583,8 +620,8 @@ class WashAndDryService extends BaseService {
                     : null
 
                 return {
-                    ...order,
-                    itemCount: (order.items || []).length,
+                    ...scopeOrderToStation(order, HERE),
+                    itemCount: itemsAtStation(order, HERE).length,
                     washDetails: {
                         ...order.washDetails,
                         estimatedFinish,
@@ -623,7 +660,7 @@ class WashAndDryService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
                 'washDetails.startedAt': { $exists: true },
             })
             if (!order)
@@ -699,7 +736,7 @@ class WashAndDryService extends BaseService {
             const { page = 1, limit = 20 } = req.query
 
             const query = {
-                'items.currentStation': STATION_STATUS.WASH_AND_DRY_STATION,
+                'items.currentStation': HERE,
                 'washDetails.movedToDryingAt': { $exists: true },
             }
 
@@ -707,7 +744,7 @@ class WashAndDryService extends BaseService {
                 page,
                 limit,
                 sort: { 'washDetails.movedToDryingAt': 1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount items stage stationStatus stageHistory washDetails createdAt updatedAt',
                 lean: true,
             })
             const ordersWithMeta = data.map((order) => {
@@ -722,8 +759,8 @@ class WashAndDryService extends BaseService {
                     : null
 
                 return {
-                    ...order,
-                    itemCount: (order.items || []).length,
+                    ...scopeOrderToStation(order, HERE),
+                    itemCount: itemsAtStation(order, HERE).length,
                     washDetails: {
                         ...order.washDetails,
                         estimatedFinish,

@@ -3,6 +3,79 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-09-01 — FE bug diagnosed: split-flow station scoping. PLANNED, NO CODE YET.
+
+FE reported: moving ONE item S2→S3 makes the WHOLE order appear at wash after confirmation. Confirmed in
+code; also confirmed it happens S3→S4 identically. `context/feature.md` rewritten as the CURRENT feature
+(the allowance feature demoted to PREVIOUS/COMPLETE). Full plan + 8 TODOs there. Summary:
+- **Root cause:** engine stores station membership PER ITEM (`items[].currentStation`) but every station
+  read filters at ORDER level and returns the full `items[]`. `{'items.currentStation':X}` = "order has ≥1
+  item here", it does NOT project the matching items. DB data is correct; reads/writes on top are not.
+- **3 symptoms:** (1) whole order rendered at the receiving station; (2) `allItemsConfirmed` computed over
+  ALL items → never true → next push button never enables; (3) **data corruption** —
+  `util/updateOrderItemsStage.js` filters by STATUS ONLY, never `currentStation`, so `allItems:true` at
+  wash stamps `washStatus:'complete'` on items still at S2, which then pass the wash gate for a station
+  they never reached.
+- **Gate hole found:** client re-confirmed S1→S2 and S4→S5 are HARD gates (complete order only; nothing
+  partial may reach QC). Code enforces this on `handoff.push` (:106-108, :181-192) but NOT on
+  `handoff.confirm` — `rejectedItems` accepts any subset (:268) so QC can partially accept a whole-order
+  handoff. Must be closed (Part 1). An earlier suggestion to instead station-scope QC's reads was WRONG
+  and is scrapped.
+- **Existing orders: NOT at risk.** `currentStation` landed 2026-08-28 (`98425af`), no backfill exists, and
+  Mongo does not match a missing field — but the Phase-3 arch decision records "Pre-launch, so no live
+  pipeline/data to protect". Part 0 backfill is a cheap idempotent safety net for dev/test DBs, not a
+  production migration. Confirm pre-launch still holds before deploying.
+- **Scope narrowed by two prior decisions:** Part 1 proves S1+S5 need no change (whole-order gated), and
+  decision D3 means S2 KEEPS its `stage.status` query (only its `items[]` needs scoping). So station-aware
+  reads are needed in the stretch zone ONLY — S2/S3/S4.
+### BUILD DONE same session — Parts 0-6 complete, offline-verified 24/24. Part 7 (DB run) BLOCKED.
+User said ship Parts 0-7, breaking FE contract is fine (scoped subset stays under `items`).
+- **Part 1 gate** (`handoff.service.js` confirm): recomputes `isWholeOrderGate` from the stored handoff and
+  refuses a partial confirm on S1→S2 / S4→S5 — `rejectedItems` must be empty or the complete set. Plus a
+  defensive `isWholeAt(fromStation)` re-check.
+- **Part 2** NEW `util/stationScope.js`: `stationOf` (missing field → S1, the handoff.service convention),
+  `itemsAtStation`, `itemsElsewhere`, `scopeOrderToStation`, `allAtStation` (empty is NEVER all-done),
+  `countAtStation`.
+- **Part 3 writes** `util/updateOrderItemsStage.js`: new `station` param; `allItems:true` now means "all
+  items at MY station"; `allItemsCompleted` station-scoped (so `washDetails.startedAt`/`pressDetails.startedAt`
+  finally stamp on a partial batch). Callers pass `station` + reject stray explicit itemIds up front.
+- **Part 4 reads** S2/S3/S4 only (S1/S5 proved out of scope by Part 1): wash + press queue/details/dashboard/
+  active-wash/active-dry/active-press all scoped; sort keeps its `stage.status` query per D3 and scopes only
+  items + `allItemsSorted`/`allItemsPretreated`/`readyToSend`; `markAllItemsAsSorted` no longer bulk-stamps
+  items already handed to wash; per-item S2/S3/S4 guards (sort/pretreat/flag/hold) reject items not at the
+  calling station.
+- **Part 5** `$elemMatch` on the press dashboard's two item-level conditions. (Wash's mixed queries pair an
+  item-level with an ORDER-level `washDetails.*` condition, so they were already correct — no change.)
+- **Part 0** NEW `stationBackfill.js` — idempotent, `--dry` mode, stamps missing `currentStation` from
+  `stage.status`; HOLD resolves via `stationStatus` then last non-hold history entry.
+- **Part 6 Swagger** NEW `StationScopedOrder` schema (allOf BookOrder + `itemsAtStationCount`/`totalItemCount`/
+  `itemsElsewhere`), wired into the 11 scoped station endpoints; handoff-confirm documents the gate refusal.
+  52 schemas, 278 paths, parses.
+- **TWO PRE-EXISTING BUGS FIXED in passing** (wash undo-confirm): it set `washDetails.startedAt = null`, but
+  the queue selects on `{$exists:false}` — a null left the order stuck OUT of the wash queue and showing in
+  Active Wash; now `$unset`. It also reset `stationStatus` to the SORT station, which under split-flow is
+  simply wrong (undoing a confirmation moves no items); now left alone.
+- **VERIFIED OFFLINE 24/24** (scratchpad `scopeTest.js`, stubs the two BookOrderModel calls): hard-gate
+  matrix incl. wash-only S3→S5; confirm-side refusal accept-all/reject-all/partial; no item at two stations;
+  `allAtStation` opening the push gate; `allItems:true` touching only the 2 wash items not all 4. All 5
+  services + swagger load clean.
+- **Part 7 DB-VERIFIED (user supplied the testing_db URI; `.env` still points at `laundrydb` — always pass
+  MONGODB_URL inline for these harnesses, never edit .env):**
+  - `handoffStaging.js` extended with scenarios 15-20 → **54 passed, 0 failed** (was 18). New coverage:
+    wash queue shows 1 item not 4 + `totalItemCount`/`itemsElsewhere`; sort shows the remaining 3; NO item at
+    two stations; scoped order-details both sides; sort `readyToSend` no longer blocked by the item at wash;
+    `allItems:true` at wash stamps only the wash item; `washDetails.startedAt` finally stamps on a partial
+    batch; cross-station itemIds refused BOTH ways; **S4→S5 partial confirm REFUSED, moved nothing, handoff
+    left pending**; reject-all and accept-all both still work; S2→S3 partial confirm still allowed;
+    legacy order proven invisible to the wash queue until backfilled.
+  - `stationBackfill.js` verified end-to-end (scratchpad `backfillCheck.js`) → **15 passed, 0 failed**: dry
+    run writes nothing; all 9 stage→station mappings correct incl. HOLD-via-`stationStatus` and
+    HOLD-via-`stageHistory` fallback; an already-stamped item is NOT overwritten; second run is a no-op.
+  - All probe/staging data cleaned up — verified 0 leftover orders, 0 leftover users in testing_db.
+  - testing_db held NO real legacy orders (the backfill found only the 10 seeded probes), consistent with
+    the recorded "pre-launch" decision.
+- **STATUS: Parts 0-7 COMPLETE + DB-VERIFIED. Uncommitted on `sub-offer-recurring-feature`.**
+
 ## Session: 2026-08-31 — Quoted + locked 2-feature package; Feature 1 planned (NO CODE YET)
 
 Client approved a new package (₦210k): Feature 1 = per-plan free pickup/delivery allowance (₦65k), Feature 2 =

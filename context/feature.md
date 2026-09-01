@@ -1,7 +1,145 @@
-# Current Feature: Subscriber Per-Plan Free Pickup/Delivery Allowance (Feature 1)
+# Current Feature: Split-Flow Station Scoping Fix (FE bug: whole order appears at the receiving station)
 
-**STATUS 2026-08-31: PLANNED, client-approved to start, NO CODE YET.** ₦65,000. Part of a 2-feature package
-(Feature 2 = Recurring Offers ₦145k, DEFERRED — see summary.md). This doc = Feature 1 only.
+**STATUS 2026-09-01: COMPLETE & DB-VERIFIED (Parts 0-7). handoffStaging 54/54, backfillCheck 15/15, offline 24/24. UNCOMMITTED on `sub-offer-recurring-feature`.** Bug fix on top of the completed Phase-3
+split-flow engine (see PREVIOUS FEATURE below). Reported by FE; confirmed in code.
+Client: "ship Parts 0-7, don't worry about breaking [the FE contract] for now" → scoped items stay under `items`.
+
+## The report
+> "When a single item in an order is moved from sort-and-pretreat (S2) to wash-and-dry (S3), the whole
+> order appears after confirmation instead of one." — also happens S3→S4.
+
+## Root cause (one gap, three symptoms)
+The engine stores station membership **per item** (`items[].currentStation`), but every station's read
+endpoint filters at **ORDER** level and then returns the full `items[]` array.
+`{ 'items.currentStation': X }` means *"this order has ≥1 item here"* — it does NOT project the matching
+items. The DB data is correct; the reads and writes layered on top are not station-aware.
+
+1. **Display** — the receiving station renders all 10 items instead of the 3 that arrived. (The report.)
+2. **Blocked workflow** — `allItemsConfirmed` is computed over ALL items, so it never turns true and the
+   next-station push button never enables.
+3. **Data corruption (worst, invisible)** — `confirmItemForWashing` with `allItems:true` delegates to
+   `util/updateOrderItemsStage.js`, which filters by STATUS ONLY, never by `currentStation`. It stamps
+   `washStatus:'complete'` on items still sitting at S2. Those items then pass `itemCompleteAt()` at the
+   wash gate for a station they never physically reached.
+
+## Client rule on the gates (re-confirmed 2026-09-01 — matches D6)
+- **S1→S2: hard gate.** Complete order only. S1 is where the order is defined (count, price, condition);
+  nothing after it should have to question what's real.
+- **S2→S3→S4: stretch zone.** Partial releases allowed.
+- **S4→S5: hard gate.** Complete order only. S5 is the final release point before the customer; nothing
+  partial may reach it.
+
+**Gap found:** the gate is enforced on **push** (`handoff.service.js:106-108` + `:181-192`) but NOT on
+**confirm**. `confirm` accepts `rejectedItems` as any subset (`:268`) and advances only the accepted ones
+(`:331-359`) — so QC partially accepting a whole-order handoff puts 8 of 10 items at S5. That violates the
+rule. Must be closed. (Earlier suggestion to instead station-scope QC's reads was WRONG — client says
+everything must reach QC together. Scrapped.)
+
+## Does this break existing orders? — NO (per locked decision), with one safety net
+- `items[].currentStation` was added 2026-08-28 in `98425af` ("order split done"), only on
+  `modular-branch` / `sub-offer-recurring-feature`. `main` is still at 2026-06-20. No backfill exists.
+- Orders written BEFORE that commit have NO `currentStation` field, and Mongo does not match a missing
+  field — so `{ 'items.currentStation': X }` silently skips them. S3/S4 queues ALREADY query that way,
+  so legacy in-flight orders are already invisible there today (pre-existing, not caused by this fix).
+- **But the Phase-3 arch decision records "Pre-launch, so no live pipeline/data to protect"** — so there
+  should be no legacy orders at all. Part 0 below is therefore a cheap idempotent safety net for dev/test
+  DBs, not a production migration. **Confirm pre-launch still holds before deploying.**
+- New orders are safe: `new BookOrderModel(...)` (bookOrder.service:1025) applies the schema default at
+  bookOrder.model:33-37.
+- Unaffected either way: completed/delivered/cancelled orders, all history + timeline endpoints (they read
+  `stageHistory`/`stage.status`), everything customer-facing, bot, wallet, CRM.
+
+## BUILD RESULTS (2026-09-01)
+Parts 0-6 done, offline-verified **24/24** (scratchpad `scopeTest.js` — stubs the two `BookOrderModel` calls
+in `updateOrderItemsStage` so the target SELECTION is what's tested): hard-gate matrix incl. wash-only S3→S5;
+confirm-side accept-all / reject-all / partial-refused; no item at two stations; `allAtStation` opening the
+push gate; `allItems:true` touching only the 2 wash items, not all 4. All 5 station services + swagger load
+clean (52 schemas, 278 paths).
+
+**Two PRE-EXISTING bugs fixed in passing** (wash `undoConfirmItemForWashing`): it set
+`washDetails.startedAt = null`, but the queue selects on `{$exists:false}` — a null left the order stuck OUT
+of the wash queue while showing in Active Wash; now `$unset`. It also reset `stationStatus` to the SORT
+station, which under split-flow is wrong (undoing a confirmation moves no items); now left alone.
+
+**Part 5 refinement:** only the PRESS dashboard actually needed `$elemMatch`. Wash's mixed queries pair an
+item-level condition with an ORDER-level `washDetails.*` one, so they were already correct — left as-is.
+
+## BUILD TODOS
+- [x] **Part 0 — `stationBackfill.js` (safety net, idempotent, dry-run).** Sets `items[].currentStation`
+      where missing, derived from `stage.status` via the inverse of `STATION_TO_ORDER_STATUS`. Lossless
+      because legacy orders were whole-order-moved (every item sits at exactly one station).
+      Map: queue/pending/received/picked-up→S1 · sort-and-pretreat→S2 · washing,drying→S3 · ironing→S4 ·
+      qc→S5 · hold→use `stationStatus`, else last non-hold `stageHistory` entry ·
+      ready/out-for-delivery/delivered/cancelled→S5 (keeps them out of every station queue).
+      Writes ONLY `items[].currentStation` — never `stage.status`. Same safety-gated pattern as
+      `subLogisticsStaging.js` / `crmBackfill.js`.
+- [x] **Part 1 — close the hard gate on `confirm`** (`handoff.service.js`, small + standalone, DO FIRST).
+      Recompute `isWholeOrderGate` from the stored `handoff.fromStation`/`toStation`; on a gated handoff
+      `rejectedItems` must be EMPTY (accept all) or the COMPLETE set (send all back) — never in between.
+      Refuse before any write. Re-check `isWholeAt(fromStation)` defensively (push and confirm are separate
+      requests). The existing `finalStatus = accepted.length ? 'confirmed' : 'rejected'` branch already
+      handles reject-all correctly (all items → holdDetails, stay at fromStation).
+      **Doing this first PROVES S1 and S5 out of scope for Parts 3-4** — under the gate they only ever hold
+      whole orders, so their existing `stage.status` scoping is correct as written.
+- [x] **Part 2 — NEW `util/stationScope.js`** (foundation for Parts 3+4):
+      `itemsAtStation(order, station)` and `scopeOrderToStation(order, station)` → order with `items`
+      replaced by the subset, plus `itemsAtStationCount`, `totalItemCount`, `itemsElsewhere` ({station:count}).
+      Treats a missing `currentStation` as `SEQ[0]` in memory — the convention handoff.service already uses
+      at :143, :159, :485, :540.
+      **CONTRACT DECISION (confirm with FE):** the scoped subset goes under the existing `items` key
+      (breaking for any FE assuming it's the whole order), whole-order context moves to the new sibling
+      fields. Rationale: `items` is what the station screen renders, so it should mean "items I have".
+- [x] **Part 3 — scope the WRITES** (highest severity; stops the corruption).
+      `util/updateOrderItemsStage.js` + callers `washAndDry.service.js:213`, `pressAndIron.service.js:206`.
+      Add a `station` param; filter targets by `currentStation === station`. Redefine `allItems:true` as
+      **"all items at MY station"**. Reject explicit `itemIds` not at the caller's station (same guard
+      handoff.push has at :159-165). Make `allItemsCompleted` station-scoped — which as a side effect fixes
+      `washDetails.startedAt`/`pressDetails.startedAt` never firing on a partial batch (:71-74).
+      Apply the same scoping to the `undo*` handlers and `sendToHold`.
+- [x] **Part 4 — scope the READS, stretch zone ONLY (S2/S3/S4).**
+      - **S2 `sortAndPretreat.service.js`** — KEEP the `stage.status` query (decision D3 below: sort is the
+        earliest stretch station, so summaryStatus makes it correct for MEMBERSHIP). Scope only the returned
+        `items[]` + recompute `allItemsSorted`/`allItemsPretreated`/`readyToSend` over the subset
+        (`getOrderQueue`, `getOrderDetails`, dashboard). This also avoids any legacy-order regression.
+      - **S3 `washAndDry.service.js`** — queue (:121-153), queue-details (:186-201), dashboard,
+        active-wash, active-dry, hold queue.
+      - **S4 `pressAndIron.service.js`** — same set (:96-131, :160-176, dashboard, hold).
+      - **S5 `qc` + S1 `intake`: NO CHANGE** (whole-order gated by Part 1).
+      Every derived boolean recomputed over the scoped subset — this is what re-enables the push button.
+- [x] **Part 5 — `$elemMatch` on the mixed queries.** `pressAndIron.service.js:36-42` and the `washDetails`
+      equivalents `washAndDry.service.js:45-72`, :560-564, :701-704. Today
+      `{ 'items.currentStation':X, 'items.pressConfirmedAt':{$exists:false} }` can be satisfied by two
+      DIFFERENT items. Wrap so ONE item must satisfy both.
+- [x] **Part 6 — Swagger** (CLAUDE.md rule). Response contracts change (scoped `items`, new count fields,
+      the new gate error on confirm) → update the `@swagger` blocks in the affected `routes/*.js` and any
+      shared schema in `swagger/schemas.js`.
+- [x] **Part 7 — DB verify. DONE: 54/54 in handoffStaging (scenarios 15-20 added) + 15/15 backfillCheck against testing_db. NOTE: .env still points at Atlas laundrydb — pass MONGODB_URL inline, never edit .env.** Extend the existing `handoffStaging.js` harness (already exercises split
+      states). New cases: partial S2→S3 shows 3 at wash / 7 at sort with NO overlap; `allItems:true` at wash
+      touches only wash items; the S3→S4 equivalent; partial confirm on a gated S4→S5 REFUSED; reject-all on
+      S4→S5 returns the whole order to press; legacy order with no `currentStation` behaves after Part 0.
+
+## Files
+NEW: `util/stationScope.js`, `stationBackfill.js`. MODIFIED: `services/handoff.service.js`,
+`util/updateOrderItemsStage.js`, `services/sortAndPretreat.service.js`, `services/washAndDry.service.js`,
+`services/pressAndIron.service.js`, the affected `routes/*.js` + `swagger/schemas.js`, `handoffStaging.js`.
+NO new endpoints. NO schema change.
+
+## Open decision (not blocking)
+`washDetails`/`pressDetails` hold a SINGLE order-level `startedAt`/`movedToDryingAt`. Under split flow two
+batches of the same order can sit at S3 at different times and share one timer, so the ETA on the second
+batch drifts. Options: (a) leave it, accept the drift; (b) move the timings per-item and keep `washDetails`
+as a derived mirror. Recommend doing Parts 0-7 first (that's what FE is blocked on) and treating this as a
+separate follow-up. Note this is the flip side of decision D2 below, which deliberately declared
+order-level sub-phases "meaningless by design" for split orders.
+
+---
+
+# PREVIOUS Feature (COMPLETE + DB-VERIFIED): Subscriber Per-Plan Free Pickup/Delivery Allowance (Feature 1)
+
+**STATUS 2026-08-31: COMPLETE & DB-VERIFIED (`subLogisticsStaging.js` 20/20 green against testing_db).**
+₦65,000. Part of a 2-feature package (Feature 2 = Recurring Offers ₦145k, DEFERRED — see summary.md).
+Only the card `logisticsPaymentUrl` link is untested (needs a PAYSTACK key loaded). See session.md for the
+blow-by-blow. The TODO list below is the ORIGINAL plan, retained for reference.
 
 ## What it does
 Each subscription plan gets its own editable **weekly** free pickup/delivery allowance. Pickup and delivery
