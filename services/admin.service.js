@@ -23,6 +23,7 @@ const {
     ROLE,
     ACTIVITY_TYPE,
 } = require('../util/constants')
+const { presentOrder } = require('../util/orderView')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const { getObjectId } = require('../util/helper')
@@ -988,6 +989,9 @@ class AdminService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found',
                 })
+
+            // Backfill pricing + normalise addresses so older orders render.
+            presentOrder(order)
 
             const payments = await PaymentModel.find({ order: id })
                 .populate('verifiedBy', 'fullName')

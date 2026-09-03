@@ -6,6 +6,8 @@
 // The full order is already loaded (findById(...).lean()) at every call site,
 // so including items/addresses/notes here costs no extra query. `trackingStatus`
 // stays computed at the call site (per-station) and is passed in.
+const { normalizeAddress } = require('./address')
+
 function buildTimelineOrderView(order, trackingStatus) {
     return {
         _id: order._id,
@@ -23,8 +25,8 @@ function buildTimelineOrderView(order, trackingStatus) {
         // tagStatus/washStatus/ironStatus/qcStatus, itemNote), matching
         // /admin/orders/:id, plus pickup/delivery address and the order note.
         items: order.items || [],
-        pickupAddress: order.pickupAddress,
-        deliveryAddress: order.deliveryAddress,
+        pickupAddress: normalizeAddress(order.pickupAddress) || null,
+        deliveryAddress: normalizeAddress(order.deliveryAddress) || null,
         extraNote: order.extraNote,
         createdAt: order.createdAt,
     }

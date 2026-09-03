@@ -106,6 +106,16 @@ router.post(ROUTE_BOT_MESSAGE, [auth], (req, res) =>
  *       `conversationId` from GET /bot/conversations to open a specific thread —
  *       e.g. the handed-off human one. Only the caller's own support threads are
  *       accessible.
+ *       IMPORTANT: omitting `conversationId` resolves to the BOT thread only, and
+ *       creates a fresh empty one if none is open — it will never return a
+ *       handed-off (human) thread. After a handoff, always pass the
+ *       `conversationId` returned by POST /bot/handoff or listed by
+ *       GET /bot/conversations, or the human thread's messages will appear to
+ *       vanish on refetch.
+ *       Messages come back NEWEST-first-window, ordered oldest→newest within the
+ *       page. To load older messages pass `before` = the `_id` of the oldest
+ *       message you already hold (or `pagination.nextBefore`); cursor paging is
+ *       stable while new messages arrive, `page`/`skip` is not.
  *     tags: [Bot]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -115,11 +125,17 @@ router.post(ROUTE_BOT_MESSAGE, [auth], (req, res) =>
  *         schema: { type: string }
  *         description: A support thread id owned by the caller. Omit for the bot thread.
  *       - in: query
+ *         name: before
+ *         schema: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
+ *         description: Message _id cursor — returns the page of messages older than it.
+ *       - in: query
  *         name: page
  *         schema: { type: integer, example: 1 }
+ *         description: Legacy offset paging; page 1 is now the NEWEST window. Prefer `before`.
  *       - in: query
  *         name: limit
  *         schema: { type: integer, example: 50 }
+ *         description: Max 200.
  *     responses:
  *       200:
  *         description: Conversation and paginated messages

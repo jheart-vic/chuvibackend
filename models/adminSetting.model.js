@@ -60,6 +60,11 @@ const adminSettingSchema = new mongoose.Schema(
         // Minutes after order creation during which a customer may cancel freely
         // (Green), even if a pickup was auto-scheduled. Client decision: 10–15.
         orderCancellationGraceMinutes: { type: Number, default: 15 },
+
+        // Dispatch legs left without a rider: notify staff after the first
+        // threshold, escalate by email after the second.
+        unassignedDispatchAlertMinutes: { type: Number, default: 30 },
+        unassignedDispatchEscalateMinutes: { type: Number, default: 60 },
     },
     { timestamps: true },
 )

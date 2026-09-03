@@ -905,21 +905,49 @@ router.get(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
  * @swagger
  * /intake-user/pickable-orders:
  *   get:
- *     summary: Get all orders available for pickup (pending stage)
+ *     summary: Pickup work queue — orders awaiting a pickup rider
+ *     description: "Paginated queue of pickup orders in the pending stage. `needsRider` marks the rows nobody has assigned a rider to yet — that is the actionable set. BREAKING (2026-09-03): the response was a bare array, it is now a {data, pagination} envelope like the other station queues."
  *     tags:
  *       - Intake User
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         description: Match on oscNumber, fullName or phoneNumber
+ *         schema: { type: string, example: "OSC-20260902-876706" }
+ *       - in: query
+ *         name: needsRider
+ *         description: "`true` = only orders with no rider assigned; `false` = only assigned ones; omit for both."
+ *         schema: { type: string, enum: ['true', 'false'] }
+ *       - in: query
+ *         name: paymentStatus
+ *         description: Optional filter; unpaid orders are NOT hidden by default, they carry `paid:false`.
+ *         schema: { type: string, enum: [success, pending, failed] }
  *     responses:
  *       200:
- *         description: List of pickable orders
+ *         description: Paginated pickup queue
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 success: { type: boolean, example: true }
  *                 message:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/BookOrder'
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/DispatchQueueOrder' }
+ *                     pagination: { $ref: '#/components/schemas/PaginationMeta' }
+ *                     needsRiderCount:
+ *                       type: integer
+ *                       description: Total across the whole queue with no rider assigned (not just this page).
+ *                       example: 12
  *       500:
  *         description: Server error
  */
@@ -932,21 +960,44 @@ router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  * @swagger
  * /intake-user/deliverable-orders:
  *   get:
- *     summary: Get all orders ready for delivery
+ *     summary: Delivery work queue — orders awaiting a delivery rider
+ *     description: "Paginated queue of ready orders with delivery. `needsRider` is computed from the rider field, NOT the status: `dispatchDetails.delivery.status` defaults to `ready` whether or not a rider is assigned, so it cannot signal assignment. BREAKING (2026-09-03): the response was a bare array, it is now a {data, pagination} envelope."
  *     tags:
  *       - Intake User
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         description: Match on oscNumber, fullName or phoneNumber
+ *         schema: { type: string, example: "OSC-20260902-876706" }
+ *       - in: query
+ *         name: needsRider
+ *         schema: { type: string, enum: ['true', 'false'] }
+ *       - in: query
+ *         name: paymentStatus
+ *         schema: { type: string, enum: [success, pending, failed] }
  *     responses:
  *       200:
- *         description: List of deliverable orders
+ *         description: Paginated delivery queue
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 success: { type: boolean, example: true }
  *                 message:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/BookOrder'
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/DispatchQueueOrder' }
+ *                     pagination: { $ref: '#/components/schemas/PaginationMeta' }
+ *                     needsRiderCount: { type: integer, example: 3 }
  *       500:
  *         description: Server error
  */

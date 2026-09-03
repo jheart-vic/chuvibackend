@@ -86,7 +86,7 @@ class BotApiService extends BaseService {
     async getConversation(req) {
         try {
             let convo
-            const { conversationId, page, limit } = req.query
+            const { conversationId, page, limit, before } = req.query
             if (conversationId) {
                 convo = await ConversationModel.findOne({
                     _id: conversationId,
@@ -105,6 +105,7 @@ class BotApiService extends BaseService {
                 conversationId: convo._id,
                 page,
                 limit,
+                before,
             })
             await ConversationService.markRead({ conversationId: convo._id, side: 'customer' })
             return BaseService.sendSuccessResponse({
@@ -305,11 +306,12 @@ class BotApiService extends BaseService {
             if (!convo || convo.type !== CONVERSATION_TYPE.SUPPORT) {
                 return BaseService.sendFailedResponse({ error: 'Support conversation not found' })
             }
-            const { page, limit } = req.query
+            const { page, limit, before } = req.query
             const messages = await ConversationService.listMessages({
                 conversationId: convo._id,
                 page,
                 limit,
+                before,
             })
             await ConversationService.markRead({ conversationId: convo._id, side: 'staff' })
             return BaseService.sendSuccessResponse({
