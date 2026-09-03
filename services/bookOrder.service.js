@@ -2,6 +2,7 @@ const BaseService = require('./base.service')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
 const { normalizeAddress } = require('../util/address')
+const { buildPricingFallback, presentOrder, presentOrders } = require('../util/orderView')
 const { explodeItemsToPieces } = require('../util/explodeItems')
 const {
     applyWeeklyReset,
@@ -727,40 +728,9 @@ class BookOrderService extends BaseService {
         }
     }
 
-    // Best-effort receipt for orders placed before `pricing` was captured.
-    // Only the figures the stored order can still prove are filled; the rest
-    // are null and `reconstructed:true` tells the client it's approximate.
+    // Delegates to util/orderView.js — kept for existing call sites.
     _buildPricingFallback(order) {
-        const itemsBase = (order.items || []).reduce(
-            (sum, item) =>
-                sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
-            0,
-        )
-        const feesTotal = Number(order.deliveryAmount) || 0
-        const orderTotal = Number(order.amount) || 0
-        return {
-            itemsBase,
-            serviceTier: order.serviceTier,
-            tierMultiplier: null,
-            tierUplift: null,
-            itemsSubtotal: Math.max(orderTotal - feesTotal, 0),
-            speedCharge: null,
-            pickupFee: null,
-            deliveryFee: null,
-            feesTotal,
-            grossTotal: null,
-            offerDiscount: null,
-            freePickupWaived: null,
-            freeDeliveryWaived: null,
-            appliedOffers: [],
-            creditApplied: null,
-            orderTotal,
-            youSaved: null,
-            coveredBySubscription:
-                order.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION,
-            reconstructed: true,
-            note: 'Approximate — this order predates itemized pricing capture.',
-        }
+        return buildPricingFallback(order)
     }
 
     // After the order is saved, attach the validated offer linkage(s) so they
@@ -1688,12 +1658,7 @@ class BookOrderService extends BaseService {
             // 4️⃣ Count total for pagination meta
             const total = await BookOrderModel.countDocuments(filter)
 
-            // Ensure every row carries a `pricing` receipt (fallback for older orders).
-            for (const order of orders) {
-                if (!order.pricing) {
-                    order.pricing = this._buildPricingFallback(order)
-                }
-            }
+            presentOrders(orders)
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({
@@ -1727,11 +1692,7 @@ class BookOrderService extends BaseService {
                 })
             }
 
-            // Older orders have no stored receipt — reconstruct a best-effort one
-            // so the client always gets a `pricing` block.
-            if (!bookOrder.pricing) {
-                bookOrder.pricing = this._buildPricingFallback(bookOrder)
-            }
+            presentOrder(bookOrder)
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({

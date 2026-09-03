@@ -420,6 +420,9 @@ const bookOrderSchema = new mongoose.Schema(
                 isVerified: { type: Boolean, default: false },
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
+                // Unassigned-dispatch sweep guards (fire once per stage).
+                alertedAt: { type: Date },
+                escalatedAt: { type: Date },
             },
             delivery: {
                 status: {
@@ -431,6 +434,8 @@ const bookOrderSchema = new mongoose.Schema(
                 note: { type: String },
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
+                alertedAt: { type: Date },
+                escalatedAt: { type: Date },
             },
         },
     },

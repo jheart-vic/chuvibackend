@@ -33,6 +33,7 @@ const {
     getObjectId,
 } = require('../util/helper')
 const paginate = require('../util/paginate')
+const { presentOrder } = require('../util/orderView')
 const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const { normalizeAddress, validateStructuredAddress } = require('../util/address')
@@ -274,8 +275,14 @@ class IntakeUserService extends BaseService {
     }
     async intakeDashboard(req, res) {
         try {
-            const [pendingOrders, taggingQueue, drafts, holdOrders] =
-                await Promise.all([
+            const [
+                pendingOrders,
+                taggingQueue,
+                drafts,
+                holdOrders,
+                pickupsAwaitingRider,
+                deliveriesAwaitingRider,
+            ] = await Promise.all([
                     // pending orders — unchanged
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.PENDING,
@@ -331,6 +338,18 @@ class IntakeUserService extends BaseService {
                     BookOrderModel.countDocuments({
                         'stage.status': ORDER_STATUS.HOLD,
                     }),
+
+                    // dispatch legs still waiting on a rider
+                    BookOrderModel.countDocuments({
+                        isPickUp: true,
+                        'stage.status': ORDER_STATUS.PENDING,
+                        'dispatchDetails.pickup.rider': null,
+                    }),
+                    BookOrderModel.countDocuments({
+                        isDelivery: true,
+                        'stage.status': ORDER_STATUS.READY,
+                        'dispatchDetails.delivery.rider': null,
+                    }),
                 ])
 
             return BaseService.sendSuccessResponse({
@@ -339,6 +358,8 @@ class IntakeUserService extends BaseService {
                     taggingQueueOrders: taggingQueue,
                     draftOrders: drafts,
                     holdOrders,
+                    pickupsAwaitingRider,
+                    deliveriesAwaitingRider,
                 },
             })
         } catch (error) {
@@ -974,33 +995,98 @@ class IntakeUserService extends BaseService {
             })
         }
     }
+    // Shared dispatch work queue. `leg` is 'pickup' or 'delivery'; a row is
+    // actionable when it has no rider yet (delivery.status defaults to 'ready'
+    // whether or not one is assigned, so the rider field is the only signal).
+    async _dispatchQueue(req, { leg, stage, flag }) {
+        const {
+            page = 1,
+            limit = 20,
+            search = '',
+            needsRider,
+            paymentStatus,
+        } = req.query
+
+        const query = { [flag]: true, 'stage.status': stage }
+        if (needsRider === 'true') query[`dispatchDetails.${leg}.rider`] = null
+        if (needsRider === 'false')
+            query[`dispatchDetails.${leg}.rider`] = { $ne: null }
+        if (paymentStatus) query.paymentStatus = paymentStatus
+        if (search) {
+            query.$or = [
+                { oscNumber: { $regex: search, $options: 'i' } },
+                { fullName: { $regex: search, $options: 'i' } },
+                { phoneNumber: { $regex: search, $options: 'i' } },
+            ]
+        }
+
+        const { data, pagination } = await paginate(BookOrderModel, query, {
+            page,
+            limit,
+            sort: { createdAt: 1 },
+            select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items channel stage stationStatus paymentStatus billingType isPickUp isDelivery pickupAddress deliveryAddress dispatchDetails createdAt updatedAt',
+            populate: {
+                path: `dispatchDetails.${leg}.rider`,
+                select: 'fullName phoneNumber',
+            },
+            lean: true,
+        })
+
+        const now = Date.now()
+        const rows = data.map((o) => {
+            const since = new Date(o.createdAt).getTime()
+            const waitingMinutes = Math.max(
+                0,
+                Math.floor((now - since) / 60000),
+            )
+            return {
+                ...presentOrder(o),
+                itemCount: (o.items || []).length,
+                needsRider: !o.dispatchDetails?.[leg]?.rider,
+                rider: o.dispatchDetails?.[leg]?.rider || null,
+                paid: o.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS,
+                waitingMinutes,
+                waitingDays: Math.floor(waitingMinutes / 1440),
+            }
+        })
+
+        return BaseService.sendSuccessResponse({
+            message: {
+                data: rows,
+                pagination,
+                needsRiderCount: await BookOrderModel.countDocuments({
+                    [flag]: true,
+                    'stage.status': stage,
+                    [`dispatchDetails.${leg}.rider`]: null,
+                }),
+            },
+        })
+    }
+
     async getPickableOrders(req) {
         try {
-            const orders = await BookOrderModel.find({
-                isPickUp: true,
-                'stage.status': ORDER_STATUS.PENDING,
-            })
-
-            return BaseService.sendSuccessResponse({
-                message: orders,
+            return await this._dispatchQueue(req, {
+                leg: 'pickup',
+                stage: ORDER_STATUS.PENDING,
+                flag: 'isPickUp',
             })
         } catch (error) {
+            console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to get pickable orders',
             })
         }
     }
+
     async getDeliverableOrders(req) {
         try {
-            const orders = await BookOrderModel.find({
-                isDelivery: true,
-                'stage.status': ORDER_STATUS.READY,
-            })
-
-            return BaseService.sendSuccessResponse({
-                message: orders,
+            return await this._dispatchQueue(req, {
+                leg: 'delivery',
+                stage: ORDER_STATUS.READY,
+                flag: 'isDelivery',
             })
         } catch (error) {
+            console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to get deliverable orders',
             })
@@ -1041,6 +1127,10 @@ class IntakeUserService extends BaseService {
                         'dispatchDetails.pickup.status':
                             PICKUP_STATUS.SCHEDULED,
                         'dispatchDetails.pickup.updatedAt': new Date(),
+                    },
+                    $unset: {
+                        'dispatchDetails.pickup.alertedAt': '',
+                        'dispatchDetails.pickup.escalatedAt': '',
                     },
                 },
                 { runValidators: false },
@@ -1109,6 +1199,10 @@ class IntakeUserService extends BaseService {
                         'dispatchDetails.delivery.status':
                             DELIVERY_STATUS.READY,
                         'dispatchDetails.delivery.updatedAt': new Date(),
+                    },
+                    $unset: {
+                        'dispatchDetails.delivery.alertedAt': '',
+                        'dispatchDetails.delivery.escalatedAt': '',
                     },
                 },
                 { runValidators: false },

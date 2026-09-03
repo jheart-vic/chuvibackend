@@ -13,6 +13,7 @@ const {
     ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const paginate = require('../util/paginate')
+const { normalizeOrderAddresses } = require('../util/orderView')
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
@@ -72,6 +73,7 @@ class RiderService extends BaseService {
             })
 
             const ordersWithMeta = data.map((order) => {
+                normalizeOrderAddresses(order)
                 const startedAt = order.dispatchDetails?.delivery?.startedAt
                 const estimatedDelivery = startedAt
                     ? new Date(
@@ -336,6 +338,7 @@ class RiderService extends BaseService {
             })
 
             const ordersWithMeta = data.map((order) => {
+                normalizeOrderAddresses(order)
                 const startedAt = order.dispatchDetails?.pickup?.updatedAt
                 const estimatedArrival = startedAt
                     ? new Date(
@@ -813,6 +816,7 @@ class RiderService extends BaseService {
             const earlier = []
 
             for (const order of data) {
+                normalizeOrderAddresses(order)
                 // use the most recent dispatch action as anchor
                 const deliveryUpdatedAt =
                     order.dispatchDetails?.delivery?.updatedAt

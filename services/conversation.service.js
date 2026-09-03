@@ -126,18 +126,41 @@ class ConversationService {
         }
     }
 
-    async listMessages({ conversationId, page = 1, limit = 50 }) {
+    // Newest-first window returned in chronological order. `before` (a message
+    // _id) pages backwards without skip-drift as new messages arrive; `page` is
+    // still honoured for older clients.
+    async listMessages({ conversationId, page = 1, limit = 50, before }) {
         page = parseInt(page) || 1
-        limit = parseInt(limit) || 50
-        const data = await ChatMessageModel.find({ conversationId })
-            .sort({ createdAt: 1 })
-            .skip((page - 1) * limit)
-            .limit(limit)
+        limit = Math.min(parseInt(limit) || 50, 200)
+
+        const query = { conversationId }
+        if (before) {
+            const anchor = await ChatMessageModel.findById(before)
+                .select('createdAt')
+                .lean()
+            if (anchor) query.createdAt = { $lt: anchor.createdAt }
+        }
+
+        const rows = await ChatMessageModel.find(query)
+            .sort({ createdAt: -1 })
+            .skip(before ? 0 : (page - 1) * limit)
+            .limit(limit + 1)
             .lean()
+
+        const hasMore = rows.length > limit
+        const data = rows.slice(0, limit).reverse()
         const total = await ChatMessageModel.countDocuments({ conversationId })
+
         return {
             data,
-            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit),
+                hasMore,
+                nextBefore: hasMore && data.length ? String(data[0]._id) : null,
+            },
         }
     }
 

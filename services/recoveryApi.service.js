@@ -414,6 +414,7 @@ class RecoveryApiService extends BaseService {
                 conversationId: complaint.conversationId,
                 page: req.query.page,
                 limit: req.query.limit,
+                before: req.query.before,
             })
             // reading marks the requester's side read
             await ConversationService.markRead({

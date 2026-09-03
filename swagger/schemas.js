@@ -1084,6 +1084,32 @@
  *           type: array
  *           items: { $ref: '#/components/schemas/Handoff' }
  *
+ *     DispatchQueueOrder:
+ *       description: "A row in the pickup or delivery work queue. `needsRider` is the actionable flag — intake-and-tag assigns the rider, so an order sits here with no rider until they do. `waitingMinutes` counts from order creation; an unassigned paid leg raises a staff notification at 30 minutes and an email escalation at 60 (both tunable in AdminSetting)."
+ *       allOf:
+ *         - $ref: '#/components/schemas/BookOrder'
+ *         - type: object
+ *           properties:
+ *             needsRider:
+ *               type: boolean
+ *               description: True when no rider is assigned to this leg yet.
+ *               example: true
+ *             rider:
+ *               type: object
+ *               nullable: true
+ *               description: Assigned rider, or null.
+ *               properties:
+ *                 _id: { type: string, example: 64d1f9a2e3c3b4a1d2f1c000 }
+ *                 fullName: { type: string, example: "Chidi Okafor" }
+ *                 phoneNumber: { type: string, example: "08012345678" }
+ *             paid:
+ *               type: boolean
+ *               description: paymentStatus === success. Unpaid rows are shown, not hidden.
+ *               example: true
+ *             itemCount: { type: integer, example: 3 }
+ *             waitingMinutes: { type: integer, example: 95 }
+ *             waitingDays: { type: integer, example: 0 }
+ *
  *     StationScopedOrder:
  *       description: "An order as ONE station sees it. Under split-flow an order's pieces can sit at several stations at once, so `items` here contains ONLY the pieces currently at the station serving the request — not the whole order. A station that was handed 3 of 10 pieces sees exactly those 3. Use `totalItemCount` and `itemsElsewhere` for whole-order context, or GET /orders/{id}/split-state for the full per-station breakdown. Derived flags on these endpoints (allItemsConfirmed, allItemsSorted, allItemsPretreated, readyToSend, confirmedItemCount, flaggedItemCount, itemCount) are scoped the same way — `allItemsConfirmed: true` means every piece AT THIS STATION is confirmed, which is the gate for pushing them on."
  *       allOf:
