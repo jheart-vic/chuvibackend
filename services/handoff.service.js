@@ -3,6 +3,8 @@ const BookOrderModel = require('../models/bookOrder.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
 const { getObjectId } = require('../util/helper')
+// Readable item helpers (per-piece briefs + "5 Shirts, 3 Trousers" summaries).
+const { briefsForIds, summarize } = require('../util/itemSummary')
 const {
     STATION_STATUS,
     ORDER_STATUS,
@@ -66,39 +68,6 @@ const STATION_TO_ROLE = {
     [STATION_STATUS.WASH_AND_DRY_STATION]: ROLE.WASH_AND_DRY,
     [STATION_STATUS.PRESSING_AND_IRONING_STATION]: ROLE.PRESS,
     [STATION_STATUS.QC_STATION]: ROLE.QC,
-}
-
-// Readable item helpers (items are per-piece: one physical item = one record).
-// Works for both Mongoose subdoc arrays and lean plain arrays.
-function itemBrief(items, id) {
-    const it = (items || []).find((i) => String(i._id) === String(id))
-    if (!it) return { itemId: String(id), name: 'Item', quantity: 1 }
-    return {
-        itemId: String(it._id),
-        tagId: it.tagId || '',
-        name: it.type,
-        quantity: it.quantity || 1,
-    }
-}
-
-function briefsForIds(items, ids) {
-    return (ids || []).map((id) => itemBrief(items, id))
-}
-
-// "5 Shirts, 3 Trousers" — groups briefs by name, sums the piece counts, and
-// capitalises each name for display (types are often stored lower-case).
-function summarize(briefs) {
-    const counts = {}
-    for (const b of briefs || []) {
-        const name = b.name || 'Item'
-        counts[name] = (counts[name] || 0) + (b.quantity || 1)
-    }
-    return Object.entries(counts)
-        .map(([name, c]) => {
-            const label = name.charAt(0).toUpperCase() + name.slice(1)
-            return `${c} ${c > 1 && !/s$/i.test(label) ? `${label}s` : label}`
-        })
-        .join(', ')
 }
 
 // Hard gates: S1→S2 and S4→S5 move the WHOLE order; the stretch zone

@@ -172,7 +172,7 @@
  *           type: array
  *           items:
  *             type: string
- *             enum: [whatsapp, website, walk-in, express-user, standard-user, high-volume, low-volume, high-frequency, low-frequency, new-customer, repeat-customer, loyal-customer, reactivated-customer, fresh-lead, prospect, complaint, recovery-required, churned]
+ *             enum: [whatsapp, website, walk-in, express-user, standard-user, high-volume, low-volume, high-frequency, low-frequency, new-customer, repeat-customer, loyal-customer, reactivated-customer, fresh-lead, prospect, cold-lead, complaint, recovery-required, churned]
  *           example: [website, repeat-customer, standard-user, low-volume, high-frequency]
  *         channel:
  *           type: string
@@ -1109,6 +1109,109 @@
  *             itemCount: { type: integer, example: 3 }
  *             waitingMinutes: { type: integer, example: 95 }
  *             waitingDays: { type: integer, example: 0 }
+ *             tagPrinted:
+ *               type: boolean
+ *               description: "DELIVERY queue only. Whether the dispatch tag has been printed. Absent on the pickup queue — pickups are never tagged."
+ *               example: false
+ *             needsTag:
+ *               type: boolean
+ *               description: "DELIVERY queue only. The actionable flag: true means a rider CANNOT be assigned yet because no tag has been printed."
+ *               example: true
+ *             printCount:
+ *               type: integer
+ *               description: "DELIVERY queue only. Times the tag has been printed; reprints are allowed but counted."
+ *               example: 0
+ *             reprintFlagged:
+ *               type: boolean
+ *               description: "DELIVERY queue only. True past the reprint review threshold (3), so repeated reprints get looked at."
+ *               example: false
+ *
+ *     MonthlyLeadReport:
+ *       type: object
+ *       description: >
+ *         One month of lead performance, as plain counts and naira totals. No
+ *         percentages — every rate the founder wants is worked out by hand from these
+ *         numbers. `leadsEntered` counts GENUINE leads only (not cards auto-created by
+ *         an order, not backfilled cards). `booked` counts LEADS who placed an order
+ *         this month (deduplicated — a lead who booked twice is one), and `revenue`
+ *         sums every qualifying order; both exclude cancelled and recovery orders.
+ *
+ *         Subscriptions: a lead who converts by buying a PLAN is credited with that
+ *         plan's FIRST payment, and their draw-down orders count ₦0 so the same money
+ *         is never counted twice. Renewals are deliberately NOT counted — this report
+ *         measures the sales reps' conversion for the effort spent in that window, so
+ *         each month's figure stays stable and comparable instead of creeping upward
+ *         for as long as a customer stays subscribed. Ongoing customer value belongs in
+ *         a customer/CRM revenue view, not here.
+ *       properties:
+ *         month: { type: string, example: "2026-09" }
+ *         timezone:
+ *           type: string
+ *           example: "Africa/Lagos"
+ *           description: Month boundaries are Lagos time, not UTC.
+ *         leadsEntered:
+ *           type: integer
+ *           example: 12
+ *           description: Genuine leads that entered this month.
+ *         coldLeads:
+ *           type: integer
+ *           example: 3
+ *           description: Of this month's leads, how many staff have marked `cold-lead`.
+ *         leadsStillBeingWorked:
+ *           type: integer
+ *           example: 4
+ *           description: Of this month's leads, how many are still open — not cold, not yet booked.
+ *         fromThisMonthsLeads:
+ *           type: object
+ *           description: This month's leads who booked in this same month.
+ *           properties:
+ *             booked: { type: integer, example: 5 }
+ *             revenue: { type: integer, example: 42500 }
+ *         fromEarlierLeads:
+ *           type: object
+ *           description: Leads that entered in OTHER months but booked in this one.
+ *           properties:
+ *             booked: { type: integer, example: 3 }
+ *             revenue: { type: integer, example: 18900 }
+ *             byCohort:
+ *               type: array
+ *               description: Which earlier month each of those leads came from, newest first.
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   month: { type: string, example: "2026-08" }
+ *                   booked: { type: integer, example: 2 }
+ *                   revenue: { type: integer, example: 12400 }
+ *         subscriptionConversions:
+ *           type: integer
+ *           description: >
+ *             Leads who converted this month by buying a subscription, and whose first
+ *             payment is included in the revenue above. First charges only — renewals
+ *             are never counted.
+ *           example: 1
+ *         subscriptionDrawDownOrders:
+ *           type: integer
+ *           description: >
+ *             Orders in this month that a subscription paid for, and which therefore
+ *             contributed ₦0. Shown so the revenue figures can be read without
+ *             wondering what was excluded — a ₦0 order would otherwise be
+ *             indistinguishable from a genuinely free one.
+ *           example: 4
+ *       example:
+ *         month: "2026-09"
+ *         timezone: "Africa/Lagos"
+ *         leadsEntered: 12
+ *         coldLeads: 3
+ *         leadsStillBeingWorked: 4
+ *         fromThisMonthsLeads: { booked: 5, revenue: 42500 }
+ *         fromEarlierLeads:
+ *           booked: 3
+ *           revenue: 18900
+ *           byCohort:
+ *             - { month: "2026-08", booked: 2, revenue: 12400 }
+ *             - { month: "2026-07", booked: 1, revenue: 6500 }
+ *         subscriptionConversions: 1
+ *         subscriptionDrawDownOrders: 4
  *
  *     StationScopedOrder:
  *       description: "An order as ONE station sees it. Under split-flow an order's pieces can sit at several stations at once, so `items` here contains ONLY the pieces currently at the station serving the request — not the whole order. A station that was handed 3 of 10 pieces sees exactly those 3. Use `totalItemCount` and `itemsElsewhere` for whole-order context, or GET /orders/{id}/split-state for the full per-station breakdown. Derived flags on these endpoints (allItemsConfirmed, allItemsSorted, allItemsPretreated, readyToSend, confirmedItemCount, flaggedItemCount, itemCount) are scoped the same way — `allItemsConfirmed: true` means every piece AT THIS STATION is confirmed, which is the gate for pushing them on."
@@ -1129,6 +1232,82 @@
  *               description: "Piece counts at every OTHER station, keyed by station."
  *               additionalProperties: { type: integer }
  *               example: { "sort-and-pretreat-station": 7 }
+ *
+ *     DispatchTag:
+ *       type: object
+ *       description: >
+ *         The ORDER-LEVEL dispatch tag a rider carries to the customer's door. One per
+ *         order, and only for an order leaving the office by rider delivery — a customer
+ *         collecting in person needs none. This is NOT the per-piece intake item tag
+ *         (items[].tagId); it exists so the rider can positively identify the order to
+ *         someone they have never met, somewhere they don't control.
+ *       properties:
+ *         orderId: { type: string, example: 68cf1a2b4d5e6f7a8b9c0d1e }
+ *         ref:
+ *           type: string
+ *           description: "Tag reference — the order's own OSC number, so there is no second numbering scheme to reconcile."
+ *           example: "OSC-20260428-321782"
+ *         orderReference: { type: string, example: "OSC-20260428-321782" }
+ *         customerName: { type: string, example: "Jude Victor" }
+ *         customerPhone: { type: string, example: "08012345678" }
+ *         deliveryAddress:
+ *           allOf:
+ *             - $ref: '#/components/schemas/OrderAddress'
+ *           nullable: true
+ *           description: "Normalised to the structured shape even for legacy string orders. null only if the order carries no delivery address."
+ *         contents:
+ *           type: string
+ *           description: "Readable roll-up of what is in the order, by item name."
+ *           example: "5 Shirts, 3 Trousers"
+ *         itemCount:
+ *           type: number
+ *           description: "Total physical pieces (items are stored one piece per record)."
+ *           example: 8
+ *         items:
+ *           type: array
+ *           description: "Per-piece breakdown, same shape the handoff payloads use."
+ *           items: { $ref: '#/components/schemas/HandoffItem' }
+ *         paymentState:
+ *           type: string
+ *           enum: [paid, unpaid]
+ *           description: "Normally 'paid' — laundry is prepaid by card, wallet or subscription."
+ *           example: paid
+ *         amountDue:
+ *           type: number
+ *           nullable: true
+ *           description: >
+ *             The outstanding figure, or null when there is nothing owed. null rather
+ *             than 0 on purpose, so the tag prints no figure at all and a rider can
+ *             never read a "₦0" as an instruction to collect zero. Derived from
+ *             paymentStatus, never from amount alone — a subscription order has an
+ *             amount but is already paid.
+ *           example: null
+ *         paymentNotice:
+ *           type: string
+ *           description: >
+ *             The payment situation in words the rider can act on. There is no
+ *             cash-on-delivery workflow: an outstanding amount means "ask the customer
+ *             to settle it in the app", never "collect cash". Print this next to
+ *             amountDue so a bare figure cannot be misread as a collection instruction.
+ *           example: "Paid in full — nothing to collect."
+ *         deliveryNote:
+ *           type: string
+ *           description: "Special delivery instruction, e.g. call on arrival / leave with the gateman."
+ *           example: "Call on arrival, gate is usually locked"
+ *         printedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: "null until the tag has been printed at least once."
+ *           example: "2026-09-24T14:22:10.000Z"
+ *         printCount:
+ *           type: number
+ *           description: "Increments on every print, so repeated reprints are visible."
+ *           example: 1
+ *         reprintFlagged:
+ *           type: boolean
+ *           description: "true once printCount passes the review threshold (3) — surface it so repeated reprints get looked at."
+ *           example: false
  *
  *     OrderAddress:
  *       type: object

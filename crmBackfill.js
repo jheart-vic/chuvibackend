@@ -18,6 +18,7 @@ const {
     ROLE,
     ORDER_STATUS,
     CRM_STAGE,
+    CRM_LEAD_SOURCE,
     DELIVERY_SPEED,
     ORDER_CHANNEL,
 } = require('./util/constants')
@@ -39,6 +40,8 @@ async function backfill() {
     const settings = await getCrmSettings()
 
     // 1. profiles for every registered customer (leads until proven otherwise)
+    // leadSource BACKFILL: these cards are built from old history, so lead
+    // reporting must not count them as leads generated on the day this ran.
     const users = await UserModel.find({ userType: ROLE.USER }).lean()
     for (const user of users) {
         await CrmService.findOrCreateProfile({
@@ -47,6 +50,7 @@ async function backfill() {
             phoneNumber: user.phoneNumber,
             email: user.email,
             channel: ORDER_CHANNEL.WEBSITE,
+            leadSource: CRM_LEAD_SOURCE.BACKFILL,
         })
     }
     console.log(`Profiles ensured for ${users.length} registered user(s)`)
@@ -65,6 +69,7 @@ async function backfill() {
             fullName: order.fullName,
             phoneNumber: order.phoneNumber,
             channel: order.channel,
+            leadSource: CRM_LEAD_SOURCE.BACKFILL,
         })
         const key = String(profile._id)
         const s = stats.get(key) || {

@@ -13,6 +13,7 @@ const {
     ROUTE_CRM_CREATE_WALKIN_LEAD,
     ROUTE_CRM_UPDATE_FOLLOWUP,
     ROUTE_CRM_METRICS,
+    ROUTE_CRM_REPORT_MONTHLY_LEADS,
     ROUTE_CRM_BROADCAST_LIST,
     ROUTE_CRM_SETTINGS,
     ROUTE_CRM_INTERNAL_LEAD,
@@ -246,8 +247,15 @@ router.get(ROUTE_CRM_CUSTOMER_CARD, [customerExperienceAuth], (req, res) => {
  * @swagger
  * /crm/customers/{id}/tags:
  *   post:
- *     summary: Apply a manual tag (complaint / recovery-required)
- *     description: Only manual retention tags can be applied by staff. Automatic tags are managed by the CRM engine.
+ *     summary: Apply a manual tag (complaint / recovery-required / cold-lead)
+ *     description: >
+ *       Only manual tags can be applied by staff. Automatic tags are managed by the CRM engine.
+ *       `cold-lead` marks a lead the team has given up on. It is a TAG, not a stage, so it never
+ *       affects the customer metrics — use it instead of moving a lead to `dormant`, which is a
+ *       customer stage and corrupts the dormant rate. Applying it also REPLACES any other
+ *       lead-status tag (`fresh-lead` / `prospect`), cancels the pending lead-nurture messages and
+ *       drops the profile off the prospect broadcast list, so outreach actually stops. If the lead
+ *       later books an order the tag clears automatically.
  *     tags: [CRM]
  *     security:
  *       - bearerAuth: []
@@ -266,7 +274,7 @@ router.get(ROUTE_CRM_CUSTOMER_CARD, [customerExperienceAuth], (req, res) => {
  *             properties:
  *               tag:
  *                 type: string
- *                 enum: [complaint, recovery-required]
+ *                 enum: [complaint, recovery-required, cold-lead]
  *           example:
  *             tag: complaint
  *     responses:
@@ -298,7 +306,7 @@ router.get(ROUTE_CRM_CUSTOMER_CARD, [customerExperienceAuth], (req, res) => {
  *             schema: { $ref: '#/components/schemas/CrmError' }
  *             example:
  *               success: false
- *               data: { error: "Only manual tags can be applied by staff: complaint, recovery-required" }
+ *               data: { error: "Only manual tags can be applied by staff: complaint, recovery-required, cold-lead" }
  *       404:
  *         description: Profile not found
  *         content:
@@ -314,7 +322,7 @@ router.post(ROUTE_CRM_ADD_TAG, [customerExperienceAuth], (req, res) => {
  * @swagger
  * /crm/customers/{id}/tags/{tag}:
  *   delete:
- *     summary: Remove a manual tag (complaint / recovery-required)
+ *     summary: Remove a manual tag (complaint / recovery-required / cold-lead)
  *     tags: [CRM]
  *     security:
  *       - bearerAuth: []
@@ -326,7 +334,7 @@ router.post(ROUTE_CRM_ADD_TAG, [customerExperienceAuth], (req, res) => {
  *       - in: path
  *         name: tag
  *         required: true
- *         schema: { type: string, enum: [complaint, recovery-required] }
+ *         schema: { type: string, enum: [complaint, recovery-required, cold-lead] }
  *     responses:
  *       200:
  *         description: Updated profile (tag removed)
@@ -355,7 +363,7 @@ router.post(ROUTE_CRM_ADD_TAG, [customerExperienceAuth], (req, res) => {
  *             schema: { $ref: '#/components/schemas/CrmError' }
  *             example:
  *               success: false
- *               data: { error: "Only manual tags can be removed by staff: complaint, recovery-required" }
+ *               data: { error: "Only manual tags can be removed by staff: complaint, recovery-required, cold-lead" }
  *       404:
  *         description: Profile not found
  *         content:
@@ -652,6 +660,70 @@ router.patch(ROUTE_CRM_UPDATE_FOLLOWUP, [customerExperienceAuth], (req, res) => 
 router.get(ROUTE_CRM_METRICS, [adminAuth], (req, res) => {
     const controller = new CrmController()
     return controller.getMetrics(req, res)
+})
+
+/**
+ * @swagger
+ * /crm/reports/monthly-leads:
+ *   get:
+ *     summary: Monthly lead report — plain counts and naira, no percentages
+ *     description: >
+ *       Lead performance for one month. Deliberately returns RAW NUMBERS ONLY —
+ *       no percentages and no computed rates; the founder does the math by hand.
+ *       Months run on **Lagos time (WAT)**, not UTC, so an order placed at 00:30
+ *       on the 1st belongs to the new month.
+ *       **"Leads entered" counts genuine leads only** — cards created by their own
+ *       incoming order, and cards built by the CRM backfill script, are excluded
+ *       because nobody generated them. Exact from 2026-09-24 (when leadSource
+ *       shipped); earlier months are reconstructed and approximate.
+ *       **"Booked" means the order was PLACED**, not delivered, and revenue is the
+ *       BOOKED value, so the count and the money describe the same set of leads.
+ *       This will NOT match `customers` on /crm/metrics, which counts delivered
+ *       customers — label it "Leads Booked", not "Leads Ordered".
+ *       Cancelled and recovery orders are excluded. A subscription draw-down order
+ *       counts ₦0 (the subscription purchase is credited instead, so the same
+ *       money is never counted twice).
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         required: false
+ *         schema: { type: string, example: "2026-09" }
+ *         description: YYYY-MM. Defaults to the current month in Lagos time.
+ *     responses:
+ *       200:
+ *         description: The month's lead numbers
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/MonthlyLeadReport' }
+ *       400:
+ *         description: Bad month format
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/CrmError' }
+ *             example:
+ *               success: false
+ *               data: { error: "month must be in YYYY-MM format, e.g. 2026-09" }
+ *       403:
+ *         description: Admin only
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/CrmError' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/CrmError' }
+ */
+router.get(ROUTE_CRM_REPORT_MONTHLY_LEADS, [adminAuth], (req, res) => {
+    const controller = new CrmController()
+    return controller.getMonthlyLeadReport(req, res)
 })
 
 /**

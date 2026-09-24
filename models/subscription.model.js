@@ -17,6 +17,9 @@ const subscriptionSchema = new mongoose.Schema({
   paystackSubscriptionId: { type: String },
   currentPeriodEnd: { type: Date },
   cancelledAt: { type: Date },
+  // Set the first time the "your plan expired" reminder goes out, so the daily
+  // cron emails each expired subscriber ONCE instead of every day forever.
+  expiryReminderSentAt: { type: Date },
   lastPaymentAt: { type: Date },
   lastPaymentReference: String,
   // pendingPlan: {

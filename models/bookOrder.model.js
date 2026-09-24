@@ -409,6 +409,19 @@ const bookOrderSchema = new mongoose.Schema(
                 ref: 'User',
             },
         },
+        // Dispatch tag: ONE per order, printed only for an order leaving the
+        // office by rider delivery (isDelivery). Not the intake item tag
+        // (items[].tagId, per piece) and not a reprint of it — this is the
+        // rider's positive identification at the customer's door. The tag's
+        // CONTENT is read live off the order; only the print record lives here.
+        // Stays ABSENT until the first print, so `printedAt` is the test for
+        // "has this order been tagged for dispatch".
+        dispatchTag: {
+            ref: { type: String },
+            printedAt: { type: Date },
+            printedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            printCount: { type: Number, default: 0 },
+        },
         dispatchDetails: {
             pickup: {
                 status: {

@@ -12,6 +12,8 @@ const {
   ROUTE_DELIVERABLE_ORDERS,
   ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID,
   ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID,
+  ROUTE_DISPATCH_TAG,
+  ROUTE_DISPATCH_TAG_PRINT,
   ROUTE_PICKABLE_ORDERS,
   ROUTE_GET_BOOK_ORDER_ID,
   ROUTE_GET_PENDING_ORDERS,
@@ -961,7 +963,20 @@ router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  * /intake-user/deliverable-orders:
  *   get:
  *     summary: Delivery work queue — orders awaiting a delivery rider
- *     description: "Paginated queue of ready orders with delivery. `needsRider` is computed from the rider field, NOT the status: `dispatchDetails.delivery.status` defaults to `ready` whether or not a rider is assigned, so it cannot signal assignment. BREAKING (2026-09-03): the response was a bare array, it is now a {data, pagination} envelope."
+ *     description: >
+ *       Paginated queue of ready orders with delivery. `needsRider` is computed from
+ *       the rider field, NOT the status: `dispatchDetails.delivery.status` defaults to
+ *       `ready` whether or not a rider is assigned, so it cannot signal assignment.
+ *
+ *       Rows on THIS (delivery) queue also carry the dispatch-tag state —
+ *       `tagPrinted`, `needsTag`, `printCount`, `reprintFlagged` — plus a
+ *       `needsTagCount` beside `needsRiderCount`. A rider cannot be assigned until the
+ *       tag is printed, so surface `needsTag` on the row: without it, staff hit "print
+ *       the dispatch tag first" with nothing on screen showing which orders those are.
+ *       The pickup queue omits these fields (pickups are never tagged).
+ *
+ *       BREAKING (2026-09-03): the response was a bare array, it is now a
+ *       {data, pagination} envelope.
  *     tags:
  *       - Intake User
  *     parameters:
@@ -998,6 +1013,10 @@ router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *                       items: { $ref: '#/components/schemas/DispatchQueueOrder' }
  *                     pagination: { $ref: '#/components/schemas/PaginationMeta' }
  *                     needsRiderCount: { type: integer, example: 3 }
+ *                     needsTagCount:
+ *                       type: integer
+ *                       description: "Ready delivery orders whose dispatch tag has not been printed — each one is blocked from rider assignment."
+ *                       example: 2
  *       500:
  *         description: Server error
  */
@@ -1072,6 +1091,13 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
  * /intake-user/assign-rider/{riderId}/delivery-order/{id}:
  *   post:
  *     summary: Assign a rider to a delivery order
+ *     description: >
+ *       **Requires a printed dispatch tag.** For an order with `isDelivery: true` this
+ *       refuses with 400 and `needsDispatchTag: true` until
+ *       `POST /intake-user/order/{id}/dispatch-tag/print` has been called — nothing
+ *       leaves the building without a tag. Nothing is written when it refuses.
+ *       The delivery queue exposes `needsTag` per row so blocked orders are visible
+ *       before anyone tries.
  *     tags:
  *       - Intake User
  *     parameters:
@@ -1101,7 +1127,9 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
  *                   type: string
  *                   example: "Rider successfully assigned to order"
  *       400:
- *         description: Validation error or missing parameters
+ *         description: >
+ *           Missing parameters, or the dispatch tag has not been printed yet
+ *           (`needsDispatchTag: true`). Nothing is written in either case.
  *         content:
  *           application/json:
  *             schema:
@@ -1109,7 +1137,11 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
  *               properties:
  *                 error:
  *                   type: string
- *                   example: "Rider ID is required"
+ *                   example: "Print the dispatch tag for order OSC-20260428-321782 before assigning a rider."
+ *                 needsDispatchTag:
+ *                   type: boolean
+ *                   description: Present and true only for the untagged-order refusal.
+ *                   example: true
  *       404:
  *         description: Order not found
  *         content:
@@ -1126,6 +1158,134 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
 router.post(ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.assignRiderTopDeliveryOrder(req, res);
+});
+
+// ── Dispatch Tag ──────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /intake-user/order/{id}/dispatch-tag:
+ *   get:
+ *     summary: Build an order's dispatch tag (rider deliveries only)
+ *     description: >
+ *       Returns everything printed on the ORDER-LEVEL dispatch tag the rider carries
+ *       to the customer's door: name, phone, delivery address, order reference,
+ *       contents, the payment situation and the delivery note. This is NOT the
+ *       per-piece intake item tag (`items[].tagId`) and not a reprint of it — it
+ *       exists so the rider can positively identify the order to someone they have
+ *       never met.
+ *
+ *       Two gates apply. The order must be going out by rider (`isDelivery: true`)
+ *       — a customer collecting from the office identifies themselves in person, so
+ *       there is nothing for a tag to prove — and it must have completed Pack & Seal.
+ *       Either failure returns 400 with the reason.
+ *
+ *       Laundry is always prepaid, so `paymentState` is normally `paid` and
+ *       `amountDue` is `null`. When a payment did not go through, `amountDue` carries
+ *       the outstanding figure and `paymentNotice` says to have the customer settle it
+ *       in the app — riders never collect cash. Writes nothing; safe to call repeatedly.
+ *     tags: [Intake User]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Order ID
+ *         example: "68cf1a2b4d5e6f7a8b9c0d1e"
+ *     responses:
+ *       200:
+ *         description: The dispatch tag payload, ready to render and print
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { $ref: '#/components/schemas/DispatchTag' }
+ *       400:
+ *         description: Order is not going out for delivery, or has not completed Pack & Seal
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Order not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_DISPATCH_TAG, [intakeUserAuth], (req, res) => {
+  const controller = new IntakeUserController();
+  return controller.getDispatchTag(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/order/{id}/dispatch-tag/print:
+ *   post:
+ *     summary: Record that an order's dispatch tag was printed
+ *     description: >
+ *       Stamps the print record (`dispatchTag.printedAt`, `printedBy`, `printCount`),
+ *       writes an activity entry plus an audit log, and returns the same payload as
+ *       the GET with the print record included.
+ *
+ *       **This is what makes the order assignable to a rider.** Printing does NOT
+ *       change the order's stage — `ready` still fires at Pack & Seal so the customer
+ *       is notified immediately — but
+ *       `POST /intake-user/assign-rider/{riderId}/delivery-order/{id}` refuses until a
+ *       tag has been printed.
+ *
+ *       Reprints are allowed (tags get lost, torn and printed badly) but every print
+ *       increments `printCount` and is audited, and `reprintFlagged` turns true past a
+ *       small threshold so repeated reprints are visible for review. `reprint: true`
+ *       marks any print after the first.
+ *     tags: [Intake User]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Order ID
+ *         example: "68cf1a2b4d5e6f7a8b9c0d1e"
+ *     responses:
+ *       200:
+ *         description: Print recorded; the order is now assignable to a rider
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message:
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/DispatchTag'
+ *                     - type: object
+ *                       properties:
+ *                         reprint:
+ *                           type: boolean
+ *                           description: true when this was not the first print
+ *                           example: false
+ *       400:
+ *         description: Order is not going out for delivery, or has not completed Pack & Seal
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Order not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ */
+router.post(ROUTE_DISPATCH_TAG_PRINT, [intakeUserAuth], (req, res) => {
+  const controller = new IntakeUserController();
+  return controller.printDispatchTag(req, res);
 });
 
 /**
