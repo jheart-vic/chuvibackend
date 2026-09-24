@@ -1,4 +1,474 @@
-# Current Feature: Split-Flow Station Scoping Fix (FE bug: whole order appears at the receiving station)
+# Current Feature: CHUVI Dispatch Tag (+ 2 carried-over debts)
+
+**STATUS 2026-09-24: ALL THREE PARTS CODE-COMPLETE. Offline-verified 119/119 across three harnesses
+(`tzCheck` 14 · `dispatchTagCheck` 88 · `subRevenueCheck` 17). Swagger 55 schemas / 281 paths, all
+routes load. Only DB verification (A8 / C5-live) is outstanding. UNCOMMITTED on `mesage-and-alert-fix`,
+on top of the still-uncommitted Monthly Lead Reporting.**
+
+Client answered Q1-Q6 (locked below); Part B1 was ours to decide (a deploy/config call, deliberately
+kept out of the client questions) and is now done in code.
+
+Three things in this package: **Part A** the new
+client brief "CHUVI Dispatch Tag — Simple Explanation", plus the two items deliberately left open by
+the Monthly Lead Reporting feature — **Part B** the Lagos/UTC timezone split-brain and **Part C**
+subscription-purchase revenue. B and C are now IN PLAN rather than merely flagged.
+
+---
+
+## Part A — Dispatch Tag (new client brief)
+
+One tag **per order**, printed **only** when an order is leaving the office by **rider delivery**.
+It is NOT the intake item tag (per-piece, `items[].tagId`) and NOT a reprint of it. Its job is
+positive identification at the customer's door: the rider is handing goods to someone they have never
+met, somewhere they don't control.
+
+### The brief's required fields — ALL already exist on the order (verified)
+| Brief field | Source | Note |
+|---|---|---|
+| Customer full name | `bookOrder.fullName` | required on the model |
+| Customer phone | `bookOrder.phoneNumber` | required |
+| Delivery address | `bookOrder.deliveryAddress` | `Mixed` — structured `{label,address,landmark}`, tolerant of legacy strings → render via `util/address.js` |
+| Order reference | `bookOrder.oscNumber` | required + unique + indexed |
+| What's in the order | `bookOrder.items[]` | **per-piece since the explosion work** → `items.length` IS the true piece count; reuse `handoff.service`'s `summarize()` for "5 Shirts, 3 Trousers" |
+| Amount due, if collecting | `paymentStatus` + `amount` + `logisticsFee` | see the amount-due rule below |
+| Special delivery note | `dispatchDetails.delivery.note` | already on the model |
+
+**No schema change is needed for the tag's CONTENT.** Only the print record itself is new.
+
+### Where it hooks in
+`qc.service.packAndSealComplete` ([qc.service.js:665](../services/qc.service.js#L665)) is today's
+"packed, confirmed, ready to leave" moment — it sets `ORDER_STATUS.READY`, fires the customer
+"ready for delivery" notification, and fires `crmOnOrderReady(order)`. The dispatch tag belongs at
+exactly this transition. **See Q1 — whether printing GATES that transition is the one decision that
+changes the shape of this build.**
+
+### Amount-due rule (needs care)
+`PAYMENT_METHOD.PAY_ON_DELIVERY` is **commented out** in `util/constants.js:114` — there is no
+cash-on-delivery machinery in this backend at all. So today "amount due" resolves to:
+- `paymentStatus === success` → **nothing to collect** (print no amount, not "₦0", so the rider never
+  reads a zero as "collect ₦0")
+- otherwise → outstanding = `amount` (+ any unpaid `logisticsFee`). The realistic live case is a
+  **card booking whose Paystack webhook never confirmed** — the bot deliberately leaves those PENDING.
+- Subscription draw-downs have `amount > 0` but `paymentStatus: success` → nothing to collect. Branch
+  on `paymentStatus`/billing path, **never on `amount > 0`**.
+
+### Design
+- **New subdoc `bookOrder.dispatchTag`** — `{ ref, printedAt, printedBy, printCount }`. `ref` derives
+  from `oscNumber` (no second numbering scheme to reconcile); `printCount` makes reprints visible.
+- **Gate the tag on `order.isDelivery === true`.** Careful with the vocabulary clash: in this codebase
+  `isPickUp` = *we collect from the customer*, `isDelivery` = *we deliver to the customer*. The brief's
+  "a pickup doesn't need it" = the customer collects from the office = `isDelivery === false`.
+  A non-delivery order must be **refused with a clear reason**, not returned empty.
+- **Two endpoints**, beside the existing pack-and-seal routes (`ROUTE_QC_PACK_AND_SEAL_*`):
+  - `GET /qc/order/:id/dispatch-tag` — build + return the payload (safe, repeatable, no writes)
+  - `POST /qc/order/:id/dispatch-tag/print` — record the print (`printedAt`/`printedBy`/`printCount++`),
+    `ActivityModel` entry + `createAuditLog`, idempotent-friendly
+- **Rendering stays FE-side.** This repo is an API with no PDF/barcode dependency (only `ejs`, for
+  email). Backend returns a structured, fully-resolved payload; the FE/label printer renders it. Going
+  server-rendered would mean a new dependency and a print-layout owner — not in the brief.
+- **Swagger** `DispatchTag` schema in `swagger/schemas.js` + both routes, example-filled per the repo rule.
+
+### LOCKED CLIENT ANSWERS (2026-09-24) — all six in
+- **Q1 → tie the gate to RIDER ASSIGNMENT, not to READY.** Client took the recommendation: `READY`
+  keeps firing at pack & seal (customer message goes out immediately, no delay), but **an order cannot
+  be assigned to a specific rider until its tag is printed.** Client's reasoning: nothing leaves the
+  building without a tag, customer communication isn't held up, and nothing sits invisibly stuck —
+  because it simply won't be assignable until someone notices and prints it.
+  **⇒ `packAndSealComplete` is NOT touched at all.** The gate goes in `assignRiderTopDeliveryOrder`.
+- **Q2 → option (a): the amount line is a FLAG, not a collection instruction.** Laundry is always
+  prepaid (card / wallet / subscription); there is no cash-on-delivery workflow and none is being
+  built. The line exists only for the occasional order whose payment didn't go through, so the rider
+  knows to **prompt the customer to settle in the app**. No reconciliation work needed.
+  **⇒ the printed wording must say that**, or a rider will read a figure as "collect this".
+- **Q3 → reprints allowed, every one logged with timestamp + count**, and "if an order shows five
+  reprints that should be visible and flaggable on our side" ⇒ `printCount` must surface on the S1
+  screen, not just sit in the audit log.
+- **Q4 → S1 (intake-and-tag) prints, never the rider.** Client's reasoning: S1 physically handles the
+  ready, bagged order and hands it to the rider, so the tag is generated at that same handover step by
+  the same person. **VERIFIED CORRECT against the code** — S1 already owns delivery rider assignment
+  (`assignRiderTopDeliveryOrder`) and in-person collection (`intake-user.service.js:2148`), so S1 is
+  genuinely front-of-house order RELEASE. **⇒ auth is `intakeUserAuth`, NOT `qcAuth`.**
+- **Q5 → no barcode/QR now** (no scanners at any station yet); likely in V2 when operators move onto
+  scanners. Client asks only that the **tag layout leave room** for one later. ⇒ nothing to build
+  server-side; the payload already carries `ref` for a future barcode, and this is an FE layout note.
+- **Q6 → first payment ONLY, never renewals.** See Part C.
+
+### REWORK — DONE 2026-09-24. All four items applied; verified 88/88.
+A1-A5 + A7 were built BEFORE the answers came back, assuming QC would print. Q4 says S1. So:
+- [x] **R1 — the endpoints move from QC to S1.** `getDispatchTag`/`printDispatchTag` come out of
+  `qc.service.js` and the two routes come out of `routes/qc.js` (`qcAuth`), and land in
+  `intake-user.service.js` / `routes/intake-user.js` under **`intakeUserAuth`**. Leaving them on QC
+  would give the tag to a role the client says does not do the handover.
+- [x] **R2 — the payload builder goes to a shared `util/dispatchTag.js`.** It is a pure function over an
+  order; putting it in a util keeps it out of whichever service happens to expose it, and lets the
+  rider-assignment gate reuse the same "is this tagged" definition. Move `_dispatchTagOrder`,
+  `_amountDue`, `_buildDispatchTagPayload` there, and drop the three `util/address` /
+  `util/itemSummary` / `PAYMENT_ORDER_STATUS` imports added to `qc.service.js`.
+- [x] **R3 — the amount line must be re-worded for Q2.** `amountDue: 4500` alone invites a rider to collect
+  ₦4,500 in cash, which is exactly what the client says never happens. Add an explicit
+  `paymentState: 'paid' | 'unpaid'` and a `paymentNotice` string (e.g. *"Not paid — ask the customer to
+  settle in the app"*), so the printed tag can never read as a cash instruction. Keep `amountDue` as
+  the number/null for display.
+- [x] **R4 — page-route keys renamed.** `ROUTE_QC_DISPATCH_TAG*` → `ROUTE_DISPATCH_TAG*` (they are no
+  longer QC routes), and the paths move under the intake-user mount.
+      **Live paths: `GET|POST /api/intake-user/order/:id/dispatch-tag[/print]`** under `intakeUserAuth`.
+- **Unchanged and still correct:** the model field, the two gates' logic, the amount-due rule
+  (`amount` alone — see the note below), the per-piece contents line, `util/itemSummary.js`,
+  `util/lagosDay.js`, `ACTIVITY_TYPE.DISPATCH_TAG_PRINTED`, and the 48/48 harness (it drives the
+  builder, so it survives the move with an import change).
+
+### BUILD TODOS (Part A) — A1-A5 + A7 built 2026-09-24 (offline 48/48) but SEE REWORK ABOVE
+- [x] A1 — `bookOrder.model.js`: `dispatchTag { ref, printedAt, printedBy, printCount }`. Stays ABSENT
+      until the first print, so `printedAt` is the test for "tagged for dispatch".
+- [x] A2 — payload builder in `qc.service.js` (`_buildDispatchTagPayload`): all 7 fields, address via
+      `normalizeAddress`, contents via the shared `summarize()`, amount-due per the rule above.
+- [x] A3 — `_dispatchTagOrder` holds BOTH gates in one place (shared by the read and the print) so
+      "may this order have a tag" has a single definition. Refuses with the reason, never an empty tag.
+- [x] A4 — `GET` payload (writes nothing, repeatable) + `POST` print (print record + activity + audit +
+      `printCount`, returns `reprint: true` after the first).
+- [x] A5 — controller + routes + `ROUTE_QC_DISPATCH_TAG`/`_PRINT` + `ACTIVITY_TYPE.DISPATCH_TAG_PRINTED`.
+      **NOTE the mount prefix is `/qc-user`, NOT `/qc`** (routes/index.js:46) — live paths are
+      `GET|POST /api/qc-user/order/:id/dispatch-tag[/print]`.
+- [x] A6 — **DONE. The rider-assignment gate.** In `assignRiderTopDeliveryOrder`
+      (`intake-user.service.js:1167` — **verified the ONLY write path that sets
+      `dispatchDetails.delivery.rider`**, so one guard closes it completely): refuse when
+      `order.isDelivery && !order.dispatchTag?.printedAt`, with a message that tells the user what to do
+      ("Print the dispatch tag for this order before assigning a rider"). Refuse BEFORE any write.
+      `packAndSealComplete` stays untouched — READY, the customer notification and `crmOnOrderReady` all
+      keep firing exactly as today.
+      Returns `needsDispatchTag: true` on the refusal so the FE can route straight to the print action.
+      - [x] **A6b — the gate needs a matching SIGNAL or it's a dead end.** `getDeliverableOrders` /
+        `_dispatchQueue` (`intake-user.service.js:1081` / `:1010`) is the S1 screen where staff pick an
+        order and assign a rider. Add `tagPrinted` (bool), `printCount` and `needsTag` to each row
+        beside the existing `needsRider`/`paid` flags, plus a `needsTagCount` beside `needsRiderCount`.
+        Without this, S1 hits "you must print the tag first" with nothing on the list showing which
+        orders those are — the gate would read as a bug. `select` must gain `dispatchTag`.
+        These fields are added ONLY on the delivery leg — pickups are never tagged, so the pickup queue
+        is unchanged.
+      - [x] **A6c — Q3's "flaggable".** `reprintFlagged` on the same rows + on the tag payload, once
+        `printCount` exceeds `REPRINT_REVIEW_THRESHOLD` (3, a named constant in `util/dispatchTag.js`),
+        so repeated reprints are visible on the screen and not only in the audit log. The audit line
+        itself distinguishes a reprint and carries its number ("REPRINTED (print #2)").
+- [x] A7 — Swagger `DispatchTag` schema + both routes. **55 schemas / 281 paths, spec builds.**
+      REWORK: paths move to the intake-user mount, and the schema gains `paymentState`/`paymentNotice`
+      (R3) + the new `tagPrinted`/`needsTag`/`printCount`/`reprintFlagged` fields on the deliverable-
+      orders rows. Note in the description that `ref` is what a future barcode would encode (Q5).
+- [ ] A8 — DB verify (needs `testing_db`): print + reprint write the record and audit; both gates refuse
+      against real orders; **rider assignment REFUSED on an unprinted delivery order and ALLOWED right
+      after printing**; a pickup-only order is assignable without a tag; a real subscription order shows
+      `paid`; a real unpaid card order shows the outstanding figure + the unpaid notice; per-piece count
+      matches a really-booked order's `items.length`; the deliverable-orders list shows `needsTag`
+      before and after printing.
+
+**Two things the build found that the plan didn't have:**
+- **`amount` is ALREADY the full billed total** (`bookOrder.service.js:664` = items + pickup/delivery/
+  speed − discount), and on a subscriber-overflow order `amount` IS the logistics fee (`:980`). A first
+  cut added `logisticsFee` on top; that could only ever double-count what the rider collects, so
+  amount-due is now `amount` alone. Worth remembering — `deliveryAmount`/`logisticsFee` are breakdown
+  lines, NOT extra charges.
+- **`itemBrief`/`briefsForIds`/`summarize` were private to `handoff.service.js`.** Extracted to NEW
+  `util/itemSummary.js` (+ `briefsForAll`/`countPieces`) so the tag's contents line is the exact same
+  wording the handoff payloads use, rather than a second implementation that could drift.
+
+---
+
+## Part B — Lagos/UTC timezone split-brain (carried over, now in plan)
+
+`crm.service.monthlyLeadReport` buckets on `Africa/Lagos`; **25 other places** bucket "today"/"this
+month" with `setHours(0,0,0,0)` = **server-local**, which is **UTC on Render**. Nothing in the repo
+sets `process.env.TZ` (verified — no matches), so the zone is whatever the host says.
+
+**Failure mode:** the two schemes disagree for exactly one hour a day, **00:00–00:59 Lagos**. An order
+at Lagos Oct-1 00:30 is UTC Sep-30 23:30 → the lead report says October, every other dashboard says
+September. Small, silent, and it lands precisely on month-end reconciliation.
+
+**Two aggravating factors:**
+1. **Not reproducible locally.** On a dev machine in WAT, `setHours(0,0,0,0)` *is* Lagos midnight and
+   everything agrees. The bug exists only in production; a harness for it passes locally.
+2. **It hides inside an accepted caveat.** The founder has already been told "Leads Booked won't match
+   `customers`" (booked vs delivered) — that explanation will absorb a genuine timezone delta and
+   nobody will investigate.
+
+### Options
+- **(a) Leave it, document it.** Cheapest. The delta stays, and it stays invisible in dev.
+- **(b) Pin `TZ=Africa/Lagos` on Render.** One env var, zero code, and all 26 surfaces agree
+  immediately because the report is *already* Lagos. **But it is not free:** node-cron schedules run
+  on server-local time, so all 12 crons shift an hour — `crmBroadcasts` and `sendPaymentsReminder`
+  (`0 9 * * *`, customer-facing) move from 10am to 9am Lagos; `resetMonthlyLimits` (`0 0 1 * *`,
+  subscription limits) moves from 01:00 to 00:00 Lagos; `expireSubscriptions` likewise. Most of those
+  shifts move *toward* the obviously-intended behaviour, but they are behaviour changes and must be
+  stated, not discovered.
+- **(c) Rewrite all 25 call sites** onto a shared Lagos helper. Correct and explicit, but it is 25
+  touch points across 9 services for a one-hour edge, with no way to verify the fix locally.
+
+**Recommendation: (b) + a shared `util/lagosDay.js` for all new code**, with the cron shift written
+down and the customer-facing two (`crmBroadcasts`, `sendPaymentsReminder`) re-pinned to their current
+wall-clock intent if the client wants 10am kept.
+
+### BUILD TODOS (Part B) — DONE 2026-09-24, verified 14/14 under a simulated UTC host
+- [x] B1 — **chose (b), but pinned IN CODE, not in the Render dashboard.** `server.js` first statement:
+      `process.env.TZ = process.env.TZ_OVERRIDE || "Africa/Lagos"`. Verified on Node 22 that a runtime
+      assignment really does move `getTimezoneOffset`/`getMonth`/`setHours`, so **all ~25 legacy call
+      sites become Lagos-correct without being touched.** Chosen over the env var because it is
+      version-controlled, needs no dashboard access or plan, can't be lost when a service is recreated,
+      and — the real reason — it makes **dev match production**, so the bug is finally reproducible
+      locally instead of existing only on Render.
+      - **DESIGN FLAW THE HARNESS CAUGHT:** the first cut was `process.env.TZ || "Africa/Lagos"`, which a
+        host exporting `TZ=UTC` silently defeats — the exact invisible failure this is meant to prevent.
+        The override is now the distinct **`TZ_OVERRIDE`**, which no platform sets by default, so the pin
+        is unconditional in practice but still escapable on purpose.
+- [x] B2 — audited all 11 LOADED crons under the pin. Only one needed changing: **`crmBroadcasts`
+      `0 9` → `0 10`** — it read 9 and relied on the process being UTC to land at the intended 10:00
+      Lagos (user-confirmed "the actual time is 10am Nigeria time"), so under the pin it would have sent
+      an hour early. Everything else is overnight housekeeping or interval-based, and shifts an hour
+      earlier with no customer impact: cleanUpCancelledSubs/expireSubscriptions 01:00→00:00,
+      crmDormancyScan 02:30→01:30, creditExpiry 03:15→02:15, offerExpiry 03:45→02:45, reconcilePaystack
+      04:00→03:00; complaintSla + crmDispatcher + unassignedDispatchScan are interval-based, unaffected.
+      **`resetMonthlyLimits` 01:00→00:00 on the 1st is an improvement** — it now resets exactly at the
+      Lagos month boundary the report uses.
+      - **FOUND IN PASSING (not fixed, flagged):** `crons/sendPaymentsReminder.js` is DEAD — not required
+        in `server.js`, and it would crash if it were (ESM `import` in a CommonJS file, pointing at a
+        `utils/` directory that does not exist). Left alone deliberately: changing its schedule would
+        imply it runs. Decide separately whether to fix-and-wire it or delete it.
+- [x] B3 — NEW `util/lagosDay.js` — `startOfDay`/`endOfDay`/`startOfMonth`/`endOfMonth`/`daysAgo`/
+      `monthRange`/`monthKey` on `Africa/Lagos`, so new code stops adding to the 25. Upper bounds are
+      EXCLUSIVE (`$lt` next-day/next-month start) rather than `23:59:59.999`, which drops the final
+      millisecond. `monthRange` is strict + regex-guarded (the "April 2027" bug). Verified 13/13,
+      including the exact split-brain case: 23:30 UTC on Sep 30 → `monthKey` says **2026-10** while a
+      naive UTC read says 2026-09.
+      **The 25 existing call sites were NOT migrated and no longer need to be** — B1's pin makes
+      `setHours(0,0,0,0)` mean Lagos midnight process-wide. The harness asserts the legacy pattern and
+      `lagosDay` now return the IDENTICAL instant for the edge case. `lagosDay` remains the preferred
+      entry point for new code (explicit, exclusive bounds, strict month parsing).
+- [x] B4 — documented in CLAUDE.md: new "Time zone (all dates are Lagos time)" section — the pin and why
+      it must stay first, `TZ_OVERRIDE` not `TZ`, **cron expressions are now Lagos wall-clock**, and
+      `util/lagosDay.js` for new code.
+
+---
+
+## Part C — Subscription-purchase revenue (carried over, now in plan)
+
+**The actual bug today, not a missing nicety:** `monthlyLeadReport`
+([crm.service.js:1250-1253](../services/crm.service.js#L1250-L1253)) zeroes a subscription draw-down's
+revenue, **but line 1260 still adds that lead to `booked`**. So a subscriber lead sits in the numerator
+and contributes ₦0 to the money.
+
+Why it matters more than the timezone item:
+- The whole report is designed as "plain numbers, the founder does the math by hand" — and the math
+  they will do is **revenue ÷ booked**. Every subscriber lead silently deflates it.
+- **The error points the wrong way and grows.** Subscribers are the higher-LTV recurring customers, so
+  as subscription adoption rises the report will show lead generation becoming *less* valuable exactly
+  as it starts converting leads onto the better product.
+- **Nothing in the payload reveals it** — no "n draw-downs excluded" field, so a ₦0 subscriber is
+  indistinguishable from a genuinely free order.
+- **The trigger is a sale, not a date.** It is safe only because zero subscriptions exist. The day the
+  first plan sells, under-reporting starts silently with nothing failing.
+
+**Good news on cost:** `Subscription.userId` ([subscription.model.js:5](../models/subscription.model.js#L5))
+and `Payment.userId` ([payment.model.js:5](../models/payment.model.js#L5)) are both **required**, and a
+subscription cannot exist without an account — so a `userId` join covers **100%** of subscription
+purchases. Unlike the `leadSource` work this needs **no schema change**, just an additive query.
+
+### LOCKED ANSWER (Q6, 2026-09-24) — FIRST PAYMENT ONLY, never renewals
+Client's reasoning, which sharpens what this whole report is: **it measures the SALES REPS' conversion
+rate** — how many of the leads a rep worked on in a given month turned into paying customers, for the
+effort they put in during that window. Once someone converts they stop being a lead: whatever they keep
+spending reflects the service they're enjoying, not the rep's lead-generation work. That ongoing value
+is real but belongs in a separate customer/CRM revenue view, **not folded back into the lead number
+every month.**
+
+**Consequence worth noting:** this makes each lead's contribution a ONE-TIME figure, which means a
+month's revenue number stops changing once its leads have converted — so the report becomes stable and
+comparable month-to-month. Counting renewals would have made every past month's number creep upward
+forever, which would have made rep-to-rep comparison meaningless.
+
+### BUILD TODOS (Part C)
+- [x] C1 — Q6 answered: first payment only.
+- [x] C2 — credit the **first** successful subscription payment per subscription to the lead: query
+      subscription purchases inside the report's Lagos month, join to the lead cohort by `userId`
+      (100% coverage — `userId` is required on both `Subscription` and `Payment`), and bucket by the
+      lead's cohort month exactly as orders are. **Must identify the FIRST charge specifically** — a
+      renewal is also a successful payment against the same subscription, so the query has to
+      distinguish them (by the subscription's first payment / earliest payment per `subscriptionId`),
+      not just take every successful subscription payment in the month.
+      **Implemented as `$sort: {createdAt: 1}` → `$group` by `subscription` taking `$first`** — sorting
+      then taking the first is what makes a renewal structurally unreachable, then a second `$match`
+      keeps only conversions whose FIRST payment lands in the report month. A payment with no
+      `subscription` ref is excluded: without it there is no way to tell a first charge from a renewal,
+      so including it would risk crediting a renewal (same conservative logic as `leadSource`
+      defaulting to `order`).
+- [x] C3 — a converting lead is counted in `booked` **once**: the subscription pass adds to the SAME
+      `leads` Sets as the order pass, so a lead who both subscribed and paid per item appears once with
+      both revenues summed. Draw-down orders still resolve to ₦0, which is now correct rather than lossy.
+- [x] C4 — two plain integers added: `subscriptionConversions` (leads credited with a first payment
+      this month) and `subscriptionDrawDownOrders` (orders a plan paid for, hence ₦0). No rates — the
+      no-percentages rule still holds and the test still asserts it.
+      **`subscriptionConversions` counts only purchases actually CREDITED to a genuine lead** — a
+      walk-in's subscription is not this report's business, and counting it beside the revenue would
+      imply money that isn't in the totals.
+- [x] C5 — offline-verified 17/17 (`scratchpad/subRevenueCheck.js`, replays the aggregation in memory):
+      subscription revenue counted at all (was ₦0); a Sep RENEWAL of an Aug subscription adds nothing;
+      a lead who subscribed AND ordered is counted once with both revenues; a walk-in's subscription
+      ignored; failed payments, payments with no subscription ref, and non-subscription payment types
+      all ignored; draw-downs surfaced; no `rate|percent|%` anywhere; bad month still rejected.
+      **DB verification against `testing_db` still outstanding** (no subscriptions exist live yet).
+
+---
+
+# PREVIOUS Feature (DONE 2026-09-24): CHUVI Admin Reporting — Monthly Lead Reporting + Cold-Lead Tag
+
+**STATUS 2026-09-24: PARTS 1-6 COMPLETE & DB-VERIFIED (48/48 across 3 harnesses). Migration APPLIED to laundrydb. UNCOMMITTED on `mesage-and-alert-fix`.** Client brief: "CHUVI
+Reporting — Simple Explanation". Give the founder eyes on lead performance as **plain numbers only** —
+no formulas, no percentage fields, nothing calculated server-side. The founder reads the numbers and
+does the math by hand.
+
+## What the client asked for (verbatim intent)
+Per month: (1) total leads entered that month; (2) of that month's leads, how many placed an order —
+count, own box; (3) revenue from those same leads — own box; (4) a separate line for leads entered in
+OTHER months that placed an order THIS month (count + revenue), with the originating month as a
+nice-to-have.
+
+## LOCKED CLIENT DECISIONS (2026-09-23)
+- **Q1 cold leads → a TAG, not a stage.** Stages feed the customer metrics, tags don't. This is what
+  stops the next staff member improvising with "dormant" again because there is nowhere else to put a
+  dead lead. Client also wants the resulting number — **leads gone cold vs leads still being worked** —
+  shown right beside the conversion numbers.
+- **Q2 "placed an order" = BOOKED, not delivered.** The report answers whether the lead responded that
+  month; that's lead generation, not fulfilment. **Label it "Leads Booked", NOT "Leads Ordered"** — it
+  will NOT match `customers` on the existing CRM metrics screen (which is delivered-based, per the
+  earlier client ruling), and the label must make it read as its own metric rather than a broken
+  version of that one.
+- **Q3 revenue = BOOKED value (`order.amount`).** Not delivered value, not collected-payment value —
+  if the count is booking-based and the money is delivery-based they stop describing the same set of
+  leads. Cancelled orders EXCLUDED. Recovery orders EXCLUDED (already excluded everywhere else in CRM
+  accounting — it's a correction, not new business).
+  **NEW POLICY, set now, not inherited:** a subscription **draw-down order counts ₦0**; the
+  **subscription purchase itself** is credited to the lead, in the month the money changed hands.
+  Crediting both would double-count the same revenue. No subscriptions exist yet, so this is new ground.
+- **Q4 month bucket = the PLACED date**, matching Q2. Otherwise one order lands in different months
+  depending on which part of the report you read.
+- **Q5 months run on LAGOS TIME (WAT).** `moment-timezone` is already a dependency; WAT is UTC+1
+  year-round, no DST, so no edge cases.
+- **Q6 "leads entered" = GENUINE LEADS ONLY.** A backfilled record is not a lead anyone generated, and
+  a profile created by its own order means nobody sourced that customer — they showed up and bought.
+  Counting either inflates the number without reflecting real outreach, and would wreck conversion
+  (walk-in-and-order profiles would read as instant 100% converts).
+
+## Why Q6 needs a schema change — what the live data actually is (verified 2026-09-23)
+`CrmProfile` has ONLY `createdAt`; there is NO record of how a profile came into existence. Of the 28
+profiles in `laundrydb`:
+- **15 backfilled** — created by `crmBackfill.js` in a single-day batch on **2026-07-15**. Their
+  `createdAt` is the day the script ran.
+- **3 created BY their own order** — no CRM card existed, one was auto-created the moment the order
+  arrived (`crm.service.js` `handleOrderCreated` → `findOrCreateProfile`).
+- **10 genuine leads** — existed as a lead before any order (7 have still never ordered).
+
+A month report built on `createdAt` today would print **July 2026 = 17 leads entered** when the true
+answer is **2**. The founder would read that as the best lead month of the year, off a script run.
+**Historical months cannot be fully reconstructed**: July is correctable (the backfill batch is
+unambiguous by date), Aug/Sep are approximate, and the number is exact only from the day the origin
+field ships.
+
+## BUILD TODOS (not started)
+- [x] **Part 1 — cold-lead tag (Q1).** Add `CRM_TAG.COLD_LEAD='cold-lead'` to `util/constants.js` and
+      put it in the EXISTING `CRM_TAG_GROUPS.LEAD_STATUS` group (currently `[FRESH_LEAD, PROSPECT]`),
+      so `replaceGroupTags` swaps it correctly and `handleOrderCreated` (crm.service.js ~:391) already
+      CLEARS the whole LEAD_STATUS group on booking — a cold lead who books loses the tag for free, no
+      new machinery. Add it to `CRM_MANUAL_TAGS` (currently `[COMPLAINT, RECOVERY_REQUIRED]`) so staff
+      may set/remove it via the existing add/remove-tag endpoints. NO new endpoint.
+- [x] **Part 2 — profile origin (Q6).** `CrmProfile.leadSource` (`lead` | `order` | `backfill`) +
+      `leadEnteredAt` (Date). Set at creation: `createLead` → 'lead', `findOrCreateProfile` called from
+      the order hooks → 'order', `crmBackfill.js` → 'backfill'. One-off migration tags the existing 28
+      (the 2026-07-15 batch → 'backfill'; profile created within ~5 min of its own first order →
+      'order'; else 'lead'). Idempotent, `--dry` mode, same pattern as `stationBackfill.js`.
+- [x] **Part 3 — the report endpoint.** `GET /api/crm/reports/monthly-leads?month=YYYY-MM`, `adminAuth`,
+      beside the existing `/crm/metrics` (`ROUTE_CRM_METRICS`). Add `ROUTE_CRM_REPORT_MONTHLY_LEADS` to
+      `util/page-route.js`. **Plain integers + naira only — NO percentages, NO computed rates.**
+      Draft shape:
+      `{ month, leadsEntered, coldLeads, leadsStillBeingWorked,
+         fromThisMonthsLeads: { booked, revenue },
+         fromEarlierLeads:    { booked, revenue, byCohort:[{month,booked,revenue}] } }`
+      `byCohort` is the client's nice-to-have — cheap here because the join already groups by cohort.
+- [x] **Part 4 — aggregation.** Join orders→profiles by `userId`, falling back to `normalizedPhone`
+      (**verified: covers 100% of the 66 live orders — 62 via userId, 4 via phone, 0 orphans**).
+      Bucket the profile's lead month against the order's PLACED month. Filters: exclude cancelled,
+      exclude `isRecoveryOrder`, exclude `leadSource != 'lead'`, subscription draw-downs → ₦0.
+      Month boundaries via `moment-timezone` on `Africa/Lagos`.
+- [x] **Part 5 — Swagger.** `MonthlyLeadReport` schema in `swagger/schemas.js`, `$ref`'d from the route,
+      with real example-filled values per the repo convention.
+- [x] **Part 6 — DB verify** against `testing_db`: seeded cohorts spanning month boundaries, the
+      WAT/UTC month-edge case, cancelled + recovery exclusions, a subscription draw-down at ₦0, and a
+      cold-lead that books (tag must clear).
+
+## BUILD RESULTS (2026-09-24) — 48/48 across 3 harnesses on testing_db
+`coldLeadCheck` 19/19 · `leadSourceCheck` 12/12 · `leadReportCheck` 17/17. Swagger 54 schemas /
+279 paths. Server boots clean. All probe data removed after every run.
+
+**Design conflicts found + resolved during the build (NOT in the original plan):**
+- **`markProspect` would have clobbered the cold-lead tag.** It does
+  `replaceGroupTags(tags, LEAD_STATUS, PROSPECT)`, so the nurture cron would have silently promoted a
+  dead lead back into the rotation. Now returns early on a cold lead. Part 1 also had to STOP the
+  outreach on tagging (cancel pending LEAD messages, drop the prospect broadcast, clear
+  nextFollowUpAt) — otherwise "cold" was cosmetic and the customer kept getting messages.
+- **`leadSource` default is ORDER, not LEAD** (conservative): any future path that creates a profile
+  without declaring itself is excluded from the lead count rather than inflating it.
+
+**Bugs the harnesses caught before shipping:**
+1. `crmLeadSourceBackfill` keyed orders by `userId` only — an order carrying a userId whose profile
+   matched by PHONE was missed and misclassified as a genuine lead. Now indexes orders under BOTH
+   keys, mirroring `findOrCreateProfile`.
+2. Report `booked` counted ORDERS, not LEADS. Client asked "how many placed an order" = a count of
+   leads. Now deduplicated by profile; revenue still sums every qualifying order.
+3. `leadsStillBeingWorked` was derived from `stage === 'lead'` — only correct because a hook advances
+   the stage on booking. Now derived from whether the lead has actually ever ordered, so it can't drift.
+4. `_profilesWithAnyOrder` had `{ phoneNumber: { $exists: true } }` in its `$or` — it matched EVERY
+   order with a phone, which would have zeroed "still being worked" in production. Now an `$in` on the
+   cohort's phones.
+5. `moment` accepts "April 2027" for 'YYYY-MM' without the strict flag. Now strict + a regex guard.
+
+**Migration APPLIED to laundrydb (2026-09-24):** 28 profiles stamped → backfill 15, lead 10, order 3;
+0 missing. Integrity checks clean (no `leadEnteredAt` on non-lead rows; no genuine lead without one).
+**Live report now reads:** 2026-07 leads 2 (was 17 on raw createdAt) · 2026-08 leads 5 · 2026-09 leads 3.
+
+**Caveat to hand the founder:** Aug/Sep origins were INFERRED by the migration's 5-minute heuristic, so
+those months are approximate. Numbers are exact from 2026-09-24 onward, when `leadSource` shipped.
+
+## OPEN / FLAGGED (not blocking the build)
+- **Timezone inconsistency.** 25 other places bucket "today" with `setHours(0,0,0,0)` = SERVER local
+  time (UTC on Render). This report will be the only Lagos-time surface, so around month-end it can
+  disagree with the other dashboards. Flagged deliberately rather than quietly rewriting 25 call sites.
+- **Subscription revenue plumbing.** Crediting the subscription PURCHASE to the lead (Q3) needs a link
+  from a `Subscription`/payment back to the CRM profile. Not yet designed — no subscriptions exist, so
+  it can ship after the order-based numbers.
+
+## Files (expected)
+`util/constants.js` (CRM_TAG + groups + manual tags), `models/crmProfile.model.js` (leadSource,
+leadEnteredAt), `services/crm.service.js` (createLead/findOrCreateProfile origin + the report method),
+`controllers/crm.controller.js`, `routes/crm.js`, `util/page-route.js`, `swagger/schemas.js`,
+NEW `crmLeadSourceBackfill.js`.
+
+---
+
+# PREVIOUS Feature (DONE 2026-09-23): CRM dormant-rate fix
+Dashboard showed **DORMANT RATE 125%**. Cause: `dormantRate: pct(dormant, converted)` counted DIFFERENT
+populations — numerator was every profile at stage `dormant` (no order filter), denominator only
+profiles with `totalOrders >= 1`. Live: dormant 5 / converted 4 = 125%.
+- **Fix 1 (done):** numerator scoped to `{ stage: 'dormant', totalOrders: { $gte: 1 } }`
+  (`crm.service.js` ~:1072) → now reads 100%, and can no longer exceed 100%. Raw `stages` breakdown
+  deliberately left unscoped — it is the true stage distribution.
+- **Fix 2 (done):** `correctStage` (`crm.service.js` ~:920) now BLOCKS `active`/`loyal`/`dormant`/
+  `reactivated` on a profile with 0 delivered orders. `lead` + `first-order` stay allowed at 0 —
+  `first-order` is the legitimate booked-but-not-delivered state set at booking time (~:397).
+  Verified 7/7 cases.
+- **Fix 3 (client ruling):** "converted = ordered AND we delivered to them" — the existing
+  `totalOrders >= 1` denominator was already correct, NO change needed.
+- **Data cleanup (done):** "Rebecca Houston" (a LEAD manually set to `dormant` by staff — the record
+  that caused the 125%) restored to `lead` with a stageHistory note. Live now: dormant=4, lead=20,
+  first-order=4; dormantRate 100%.
+
+---
+
+# PREVIOUS Feature: Split-Flow Station Scoping Fix (FE bug: whole order appears at the receiving station)
 
 **STATUS 2026-09-01: COMPLETE & DB-VERIFIED (Parts 0-7). handoffStaging 54/54, backfillCheck 15/15, offline 24/24. UNCOMMITTED on `sub-offer-recurring-feature`.** Bug fix on top of the completed Phase-3
 split-flow engine (see PREVIOUS FEATURE below). Reported by FE; confirmed in code.

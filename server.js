@@ -1,3 +1,21 @@
+// Pin the process to Lagos time. MUST stay the first statement in the file:
+// the crons below schedule themselves at require-time, and any module that
+// builds a date at load time would otherwise capture the host's zone.
+//
+// Chuvi operates only in Lagos, but the host doesn't know that — Render runs in
+// UTC while a dev machine here runs WAT. That split made the ~25 places that
+// bucket "today" with `setHours(0,0,0,0)` disagree with the Lagos-based reports
+// for the first hour of each Lagos day (00:00-00:59 WAT = the previous day in
+// UTC), and made the bug impossible to reproduce locally. Pinning here fixes
+// every one of those call sites at once AND makes dev and production behave
+// identically.
+//
+// Deliberately NOT `process.env.TZ || "Africa/Lagos"`: a host that already
+// exports TZ=UTC would silently defeat that, which is the exact invisible
+// failure this is meant to prevent. The override is a distinct name that no
+// platform sets by default, so it can only be used on purpose.
+process.env.TZ = process.env.TZ_OVERRIDE || "Africa/Lagos";
+
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -21,6 +39,7 @@ require('./crons/reconcilePaystack.js')
 require('./crons/resetMonthlyLimits.js')
 require('./crons/crmDispatcher.js')
 require('./crons/crmDormancyScan.js')
+require('./crons/sendPaymentsReminder.js')
 require('./crons/crmBroadcasts.js')
 require('./crons/creditExpiry.js')
 require('./crons/offerExpiry.js')

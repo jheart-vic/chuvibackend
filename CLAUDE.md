@@ -47,6 +47,26 @@ intake-and-tag → sort-and-pretreat → wash-and-dry → press-iron → qc → 
 - Webhook is mounted at `POST /webhook` in `server.js` **before** `express.json()` using `express.raw()` so the HMAC signature over the raw body can be verified (`util/webhook.js` → `util/webhook.handler.js`). Don't move it after body parsing.
 - API-side Paystack calls live in `services/paystack.service.js` / `services/paystack.client.service.js`. Wallet and subscription billing are separate models/services (`wallet`, `walletTransaction`, `subscription`, `plan`).
 
+### Time zone (all dates are Lagos time)
+
+`server.js` pins the whole process to `Africa/Lagos` in its **first statement**
+(`process.env.TZ = process.env.TZ_OVERRIDE || "Africa/Lagos"`) — it must stay first, because the crons
+schedule themselves at require-time. Chuvi operates only in Lagos, but hosts don't know that: Render runs
+UTC while a dev machine here runs WAT, and that split made the ~25 places that bucket "today" with
+`setHours(0, 0, 0, 0)` disagree with the Lagos-based reports for the first hour of each Lagos day
+(00:00–00:59 WAT is the previous day in UTC) — a discrepancy that was impossible to reproduce locally.
+With the pin, `setHours(0,0,0,0)` IS Lagos midnight everywhere and dev matches production.
+
+- Override only via **`TZ_OVERRIDE`**, never by setting `TZ`. The pin deliberately ignores `TZ` so a host
+  that exports `TZ=UTC` can't silently defeat it.
+- **node-cron fires on process-local time, so every cron expression is now Lagos wall-clock.** Write the
+  intended Lagos hour directly (`crmBroadcasts` is `0 10 * * *` = 10:00 WAT, the client-confirmed send
+  time; it previously read `0 9` and relied on the process being UTC).
+- New code should bucket dates through **`util/lagosDay.js`** (`startOfDay`/`endOfDay`/`startOfMonth`/
+  `endOfMonth`/`daysAgo`/`monthRange`/`monthKey`) rather than hand-rolling `setHours`. Upper bounds there
+  are EXCLUSIVE (`$lt` the next period's start) instead of `23:59:59.999`, which drops the final
+  millisecond. `monthRange` is strict — plain `moment(m, 'YYYY-MM')` accepts "April 2027".
+
 ### Background jobs
 
 `crons/*.js` are node-cron jobs loaded by `require()` side effects at the top of `server.js` (expire subscriptions, reconcile Paystack, reset monthly limits, clean up cancelled subs). A new cron only runs if it is required in `server.js`.

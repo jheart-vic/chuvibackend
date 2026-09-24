@@ -38,6 +38,12 @@ const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const { normalizeAddress, validateStructuredAddress } = require('../util/address')
 const { explodeItemsToPieces } = require('../util/explodeItems')
+const {
+    dispatchTagGate,
+    isTagPrinted,
+    buildDispatchTagPayload,
+    REPRINT_REVIEW_THRESHOLD,
+} = require('../util/dispatchTag')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
 const {
@@ -1024,13 +1030,20 @@ class IntakeUserService extends BaseService {
             page,
             limit,
             sort: { createdAt: 1 },
-            select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items channel stage stationStatus paymentStatus billingType isPickUp isDelivery pickupAddress deliveryAddress dispatchDetails createdAt updatedAt',
+            select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items channel stage stationStatus paymentStatus billingType isPickUp isDelivery pickupAddress deliveryAddress dispatchDetails dispatchTag qcDetails createdAt updatedAt',
             populate: {
                 path: `dispatchDetails.${leg}.rider`,
                 select: 'fullName phoneNumber',
             },
             lean: true,
         })
+
+        // On the DELIVERY leg a rider can't be assigned until the dispatch tag is
+        // printed, so the list has to say which orders still need one — otherwise
+        // staff hit "print the tag first" with nothing on screen explaining why,
+        // and the gate reads as a bug. printCount is surfaced too: the client
+        // asked that repeated reprints be visible here, not just in the audit log.
+        const isDeliveryLeg = leg === 'delivery'
 
         const now = Date.now()
         const rows = data.map((o) => {
@@ -1039,6 +1052,8 @@ class IntakeUserService extends BaseService {
                 0,
                 Math.floor((now - since) / 60000),
             )
+            const printCount = o.dispatchTag?.printCount || 0
+            const tagPrinted = isTagPrinted(o)
             return {
                 ...presentOrder(o),
                 itemCount: (o.items || []).length,
@@ -1047,6 +1062,13 @@ class IntakeUserService extends BaseService {
                 paid: o.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS,
                 waitingMinutes,
                 waitingDays: Math.floor(waitingMinutes / 1440),
+                ...(isDeliveryLeg && {
+                    tagPrinted,
+                    // What blocks assignment right now.
+                    needsTag: !tagPrinted,
+                    printCount,
+                    reprintFlagged: printCount > REPRINT_REVIEW_THRESHOLD,
+                }),
             }
         })
 
@@ -1059,8 +1081,125 @@ class IntakeUserService extends BaseService {
                     'stage.status': stage,
                     [`dispatchDetails.${leg}.rider`]: null,
                 }),
+                ...(isDeliveryLeg && {
+                    needsTagCount: await BookOrderModel.countDocuments({
+                        [flag]: true,
+                        'stage.status': stage,
+                        'dispatchTag.printedAt': { $exists: false },
+                    }),
+                }),
             },
         })
+    }
+
+    // ── Dispatch Tag ───────────────────────────────────────────────────────────
+    // ONE tag per order, printed by S1 at the moment they hand the bagged order
+    // to the rider (client: S1 does the physical handover, never the rider).
+    // Gates + payload live in util/dispatchTag.js so the read, the print and the
+    // rider-assignment guard all share one definition.
+
+    // GET — build the tag. Writes nothing, so it is safe to call repeatedly for
+    // previewing or re-rendering.
+    async getDispatchTag(req) {
+        try {
+            const orderId = req.params.id
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const order = await BookOrderModel.findById(orderId).lean()
+            const gate = dispatchTagGate(order)
+            if (!gate.ok)
+                return BaseService.sendFailedResponse({ error: gate.error })
+
+            return BaseService.sendSuccessResponse({
+                message: buildDispatchTagPayload(order),
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to build the dispatch tag',
+            })
+        }
+    }
+
+    // POST — record that the tag was printed, which is what makes the order
+    // assignable to a rider. Reprints are allowed (tags get lost and torn) but
+    // every one is counted and audited.
+    async printDispatchTag(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findById(orderId).lean()
+            const gate = dispatchTagGate(order)
+            if (!gate.ok)
+                return BaseService.sendFailedResponse({ error: gate.error })
+
+            const now = new Date()
+            const reprint = isTagPrinted(order)
+            const printCount = (order.dispatchTag?.printCount || 0) + 1
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: {
+                        'dispatchTag.ref':
+                            order.dispatchTag?.ref || order.oscNumber,
+                        'dispatchTag.printedAt': now,
+                        'dispatchTag.printedBy': userId,
+                        'dispatchTag.printCount': printCount,
+                    },
+                },
+            )
+
+            const what = reprint
+                ? `Dispatch tag REPRINTED (print #${printCount})`
+                : 'Dispatch tag printed'
+
+            await ActivityModel.create({
+                title: reprint
+                    ? 'Dispatch Tag Reprinted'
+                    : 'Dispatch Tag Printed',
+                description: `${what} for order ${order.oscNumber} by ${user.fullName}`,
+                type: ACTIVITY_TYPE.DISPATCH_TAG_PRINTED,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
+            await createAuditLog({
+                userId: getObjectId(userId),
+                action: `${what} for order ${order.oscNumber}`,
+                category: 'dispatch',
+                orderId: order._id,
+            })
+
+            // Re-read so the returned tag carries the print record just written.
+            const updated = await BookOrderModel.findById(orderId).lean()
+            return BaseService.sendSuccessResponse({
+                message: {
+                    ...buildDispatchTagPayload(updated),
+                    reprint,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to record the dispatch tag print',
+            })
+        }
     }
 
     async getPickableOrders(req) {
@@ -1186,10 +1325,20 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            // order.dispatchDetails.delivery.rider = riderId
-            // order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
-            // order.dispatchDetails.delivery.updatedAt = new Date()
-            // order.save()
+            // Client decision (2026-09-24): the dispatch tag is what lets an order
+            // leave the building, so it gates RIDER ASSIGNMENT — not the READY
+            // transition (that stays at pack & seal, so the customer's "ready"
+            // message is never delayed). An untagged order simply isn't
+            // assignable, which is also what stops one sitting invisibly stuck.
+            //
+            // This is the only write path that sets dispatchDetails.delivery.rider,
+            // so this one guard closes it. Refused BEFORE any write.
+            if (order.isDelivery && !isTagPrinted(order)) {
+                return BaseService.sendFailedResponse({
+                    error: `Print the dispatch tag for order ${order.oscNumber} before assigning a rider.`,
+                    needsDispatchTag: true,
+                })
+            }
 
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
