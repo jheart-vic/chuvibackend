@@ -68,6 +68,7 @@ const ACTIVITY_TYPE = {
     ORDER_PRESS_COMPLETED: 'order_press_completed',
     ORDER_QC_PASSED: 'order_qc_passed',
     ORDER_PACKED_AND_SEALED: 'order_packed_and_sealed',
+    DISPATCH_TAG_PRINTED: 'dispatch_tag_printed',
 }
 
 const STATION_STATUS = {
@@ -346,6 +347,9 @@ const CRM_TAG = {
     // lead status
     FRESH_LEAD: 'fresh-lead',
     PROSPECT: 'prospect',
+    // a lead staff have given up on — a TAG, not a stage, so it never reaches
+    // the customer metrics the way a misused `dormant` stage did.
+    COLD_LEAD: 'cold-lead',
     // retention
     COMPLAINT: 'complaint',
     RECOVERY_REQUIRED: 'recovery-required',
@@ -365,10 +369,23 @@ const CRM_TAG_GROUPS = {
         CRM_TAG.LOYAL_CUSTOMER,
         CRM_TAG.REACTIVATED_CUSTOMER,
     ],
-    LEAD_STATUS: [CRM_TAG.FRESH_LEAD, CRM_TAG.PROSPECT],
+    LEAD_STATUS: [CRM_TAG.FRESH_LEAD, CRM_TAG.PROSPECT, CRM_TAG.COLD_LEAD],
 }
 
-const CRM_MANUAL_TAGS = [CRM_TAG.COMPLAINT, CRM_TAG.RECOVERY_REQUIRED]
+const CRM_MANUAL_TAGS = [
+    CRM_TAG.COMPLAINT,
+    CRM_TAG.RECOVERY_REQUIRED,
+    CRM_TAG.COLD_LEAD,
+]
+
+// How a CRM profile came to exist. Only LEAD counts as a lead anyone generated:
+// ORDER means they showed up and bought with no card, BACKFILL means a script
+// built the card from old history. Lead reporting counts LEAD only.
+const CRM_LEAD_SOURCE = {
+    LEAD: 'lead',
+    ORDER: 'order',
+    BACKFILL: 'backfill',
+}
 
 const CRM_WORKFLOW = {
     LEAD: 'lead',
@@ -749,6 +766,7 @@ module.exports = {
     CRM_TAG,
     CRM_TAG_GROUPS,
     CRM_MANUAL_TAGS,
+    CRM_LEAD_SOURCE,
     CRM_WORKFLOW,
     CRM_MESSAGE_TYPE,
     CRM_INTERNAL_ACTIONS,

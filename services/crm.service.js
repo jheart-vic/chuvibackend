@@ -9,6 +9,11 @@ const CrmScheduledMessageModel = require('../models/crmScheduledMessage.model')
 const CrmMessageLogModel = require('../models/crmMessageLog.model')
 const CrmSettingModel = require('../models/crmSetting.model')
 const BookOrderModel = require('../models/bookOrder.model')
+const PaymentModel = require('../models/payment.model')
+const moment = require('moment-timezone')
+
+// Client decision: reporting months run on Lagos time, not UTC.
+const LAGOS = 'Africa/Lagos'
 const { sendCrmMessage, getCrmSettings } = require('./crmMessenger.service')
 const createAuditLog = require('../util/createAuditLog')
 const paginate = require('../util/paginate')
@@ -18,12 +23,14 @@ const {
     CRM_TAG,
     CRM_TAG_GROUPS,
     CRM_MANUAL_TAGS,
+    CRM_LEAD_SOURCE,
     CRM_WORKFLOW,
     CRM_MESSAGE_TYPE,
     CRM_INTERNAL_ACTIONS,
     CRM_MESSAGE_STATUS,
     CRM_BROADCAST_LIST,
     ORDER_CHANNEL,
+    ORDER_STATUS,
     DELIVERY_SPEED,
     AUDIT_LOG_CATEGORIES,
     OFFER_TRIGGER,
@@ -67,7 +74,16 @@ class CrmService {
     // Find a profile by phone first, then userId. Creates one when missing.
     // Always back-fills identity fields (userId link, name, email) so a
     // WhatsApp lead who later registers keeps one card.
-    async findOrCreateProfile({ userId, fullName, phoneNumber, email, channel }) {
+    async findOrCreateProfile({
+        userId,
+        fullName,
+        phoneNumber,
+        email,
+        channel,
+        // Only createLead passes LEAD; the order hooks leave the default, so a
+        // card auto-created by an incoming order is never counted as a lead.
+        leadSource = CRM_LEAD_SOURCE.ORDER,
+    }) {
         const normalized = phoneNumber ? normalizePhone(phoneNumber) : null
 
         let profile = null
@@ -89,6 +105,8 @@ class CrmService {
                 email,
                 channel,
                 stage: CRM_STAGE.LEAD,
+                leadSource,
+                leadEnteredAt: new Date(),
                 tags: [
                     ...(channelToTag(channel) ? [channelToTag(channel)] : []),
                     CRM_TAG.FRESH_LEAD,
@@ -279,6 +297,7 @@ class CrmService {
             phoneNumber,
             email,
             channel,
+            leadSource: CRM_LEAD_SOURCE.LEAD,
         })
         if (created) {
             await this.startLeadWorkflow(profile)
@@ -521,6 +540,10 @@ class CrmService {
     // ─── Internal actions (executed by the dispatcher) ───────────────────────
 
     async markProspect(profile) {
+        // A lead staff marked cold stays cold — don't let the nurture ladder
+        // promote it back into the prospect rotation and resume outreach.
+        if (profile.tags.includes(CRM_TAG.COLD_LEAD)) return
+
         profile.tags = replaceGroupTags(
             profile.tags,
             CRM_TAG_GROUPS.LEAD_STATUS,
@@ -846,7 +869,30 @@ class CrmService {
                 )
             }
 
-            if (!profile.tags.includes(tag)) {
+            if (tag === CRM_TAG.COLD_LEAD) {
+                // Cold means we stop working the lead, so it replaces whatever
+                // lead-status tag is there AND ends the outreach — otherwise the
+                // customer keeps getting nurture messages and "cold" is cosmetic.
+                profile.tags = replaceGroupTags(
+                    profile.tags,
+                    CRM_TAG_GROUPS.LEAD_STATUS,
+                    CRM_TAG.COLD_LEAD,
+                )
+                if (profile.broadcastLists?.prospect?.active) {
+                    profile.broadcastLists.prospect.active = false
+                }
+                await profile.save()
+                await this.cancelPendingMessages(profile._id, [
+                    CRM_WORKFLOW.LEAD,
+                ])
+                await this.refreshNextFollowUp(profile._id)
+                // refreshNextFollowUp writes directly, so re-read for the reply
+                profile.nextFollowUpAt = (
+                    await CrmProfileModel.findById(profile._id)
+                        .select('nextFollowUpAt')
+                        .lean()
+                )?.nextFollowUpAt
+            } else if (!profile.tags.includes(tag)) {
                 profile.tags.push(tag)
                 await profile.save()
             }
@@ -916,6 +962,24 @@ class CrmService {
                     { error: 'Customer profile not found' },
                     404,
                 )
+            }
+
+            // These stages all mean "has ordered before", so the metrics divide
+            // them by the delivered-customer count. Allowing one on a 0-order
+            // profile puts it in a numerator with no matching denominator.
+            const NEEDS_ORDER_HISTORY = [
+                CRM_STAGE.ACTIVE,
+                CRM_STAGE.LOYAL,
+                CRM_STAGE.DORMANT,
+                CRM_STAGE.REACTIVATED,
+            ]
+            if (
+                NEEDS_ORDER_HISTORY.includes(stage) &&
+                !(profile.totalOrders >= 1)
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: `This customer has no delivered orders, so they cannot be set to "${stage}". Use "${CRM_STAGE.LEAD}" or "${CRM_STAGE.FIRST_ORDER}" instead.`,
+                })
             }
 
             const from = profile.stage
@@ -1054,6 +1118,307 @@ class CrmService {
 
     // ─── API: admin tier ─────────────────────────────────────────────────────
 
+    // Which of these profiles have ever placed a real order (any month).
+    // Matches the CRM's own resolution: phone first, then userId.
+    async _profilesWithAnyOrder(profiles) {
+        const found = new Set()
+        if (!profiles.length) return found
+
+        const userIds = profiles.filter((p) => p.userId).map((p) => p.userId)
+        const rawPhones = profiles.filter((p) => p.phoneNumber).map((p) => p.phoneNumber)
+        if (!userIds.length && !rawPhones.length) return found
+
+        const orders = await BookOrderModel.find({
+            'stage.status': { $ne: ORDER_STATUS.CANCELLED },
+            isRecoveryOrder: { $ne: true },
+            $or: [
+                ...(userIds.length ? [{ userId: { $in: userIds } }] : []),
+                ...(rawPhones.length
+                    ? [{ phoneNumber: { $in: rawPhones } }]
+                    : []),
+            ],
+        })
+            .select('userId phoneNumber')
+            .lean()
+
+        const orderUsers = new Set(
+            orders.filter((o) => o.userId).map((o) => String(o.userId)),
+        )
+        const orderPhones = new Set(
+            orders
+                .filter((o) => o.phoneNumber)
+                .map((o) => normalizePhone(o.phoneNumber)),
+        )
+        for (const p of profiles) {
+            if (
+                (p.userId && orderUsers.has(String(p.userId))) ||
+                (p.normalizedPhone && orderPhones.has(p.normalizedPhone))
+            ) {
+                found.add(String(p._id))
+            }
+        }
+        return found
+    }
+
+    // Monthly lead reporting. PLAIN NUMBERS ONLY — no percentages, no computed
+    // rates (client instruction: the founder does the math by hand).
+    // Counts a lead as "booked" when the order was PLACED, and credits the
+    // BOOKED value, so the count and the money describe the same set of leads.
+    async monthlyLeadReport(req) {
+        try {
+            const raw = (req.query?.month || '').trim()
+            const month = raw || moment().tz(LAGOS).format('YYYY-MM')
+            // strict: moment would happily accept "April 2027" otherwise
+            const start = moment.tz(month, 'YYYY-MM', true, LAGOS)
+            if (!/^\d{4}-\d{2}$/.test(month) || !start.isValid()) {
+                return BaseService.sendFailedResponse({
+                    error: 'month must be in YYYY-MM format, e.g. 2026-09',
+                })
+            }
+            const from = start.toDate()
+            const to = start.clone().add(1, 'month').toDate()
+
+            // Only genuine leads count — a backfilled card or one created by its
+            // own order was never a lead anyone generated.
+            const cohort = { leadSource: CRM_LEAD_SOURCE.LEAD }
+
+            // This month's lead cohort, loaded once — the "still being worked"
+            // count needs to know which of them have ever ordered.
+            const thisCohort = await CrmProfileModel.find({
+                ...cohort,
+                leadEnteredAt: { $gte: from, $lt: to },
+            })
+                .select('userId normalizedPhone phoneNumber tags')
+                .lean()
+
+            const leadsEntered = thisCohort.length
+            const coldLeads = thisCohort.filter((p) =>
+                (p.tags || []).includes(CRM_TAG.COLD_LEAD),
+            ).length
+
+            // Orders PLACED this month, excluding cancellations (not revenue)
+            // and recovery orders (a correction, not new business).
+            const orders = await BookOrderModel.find({
+                createdAt: { $gte: from, $lt: to },
+                'stage.status': { $ne: ORDER_STATUS.CANCELLED },
+                isRecoveryOrder: { $ne: true },
+            })
+                .select('userId phoneNumber amount billingType')
+                .lean()
+
+            // Resolve each order to its CRM card the same way the CRM does:
+            // phone first, then userId.
+            const userIds = [...new Set(orders.filter((o) => o.userId).map((o) => String(o.userId)))]
+            const phones = [
+                ...new Set(
+                    orders
+                        .filter((o) => o.phoneNumber)
+                        .map((o) => normalizePhone(o.phoneNumber)),
+                ),
+            ]
+            const profiles = await CrmProfileModel.find({
+                ...cohort,
+                $or: [
+                    { userId: { $in: userIds } },
+                    { normalizedPhone: { $in: phones } },
+                ],
+            })
+                .select('userId normalizedPhone leadEnteredAt')
+                .lean()
+
+            const byUser = new Map()
+            const byPhone = new Map()
+            for (const p of profiles) {
+                if (p.userId) byUser.set(String(p.userId), p)
+                if (p.normalizedPhone) byPhone.set(p.normalizedPhone, p)
+            }
+
+            // "how many placed an order" counts LEADS, not orders — a lead who
+            // booked twice is still one lead. Revenue sums every qualifying order.
+            const thisMonth = { leads: new Set(), revenue: 0 }
+            const earlier = new Map() // 'YYYY-MM' -> {leads:Set, revenue}
+            // Draw-down orders contribute ₦0 (their plan already paid). Counted so
+            // the figure is visible rather than a silent subtraction — otherwise a
+            // ₦0 order is indistinguishable from a genuinely free one.
+            let subscriptionDrawDownOrders = 0
+
+            for (const o of orders) {
+                const profile =
+                    (o.phoneNumber &&
+                        byPhone.get(normalizePhone(o.phoneNumber))) ||
+                    (o.userId && byUser.get(String(o.userId))) ||
+                    null
+                if (!profile || !profile.leadEnteredAt) continue
+
+                // A subscription draw-down is ₦0 here — the subscription's FIRST
+                // payment is what gets credited (below), or the same money counts
+                // twice.
+                const isDrawDown =
+                    o.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION
+                if (isDrawDown) subscriptionDrawDownOrders++
+                const revenue = isDrawDown ? 0 : Number(o.amount) || 0
+
+                const cohortMonth = moment(profile.leadEnteredAt)
+                    .tz(LAGOS)
+                    .format('YYYY-MM')
+
+                if (cohortMonth === month) {
+                    thisMonth.leads.add(String(profile._id))
+                    thisMonth.revenue += revenue
+                } else {
+                    const bucket = earlier.get(cohortMonth) || {
+                        leads: new Set(),
+                        revenue: 0,
+                    }
+                    bucket.leads.add(String(profile._id))
+                    bucket.revenue += revenue
+                    earlier.set(cohortMonth, bucket)
+                }
+            }
+
+            // ── Subscription conversions ───────────────────────────────────────
+            // A lead can convert by buying a PLAN rather than a one-off order, and
+            // their draw-down orders are deliberately ₦0 above (the plan already
+            // paid for them). Without this pass those leads counted as booked with
+            // zero revenue, which quietly deflated exactly the revenue-per-lead
+            // figure this report exists to support — and the error would have grown
+            // as subscriptions took off, since subscribers are the better customers.
+            //
+            // Client decision (2026-09-24): credit the FIRST payment only, never
+            // renewals. This report measures the sales reps' conversion rate for the
+            // effort spent in that window; once someone converts, their ongoing
+            // spend reflects the service, not the rep's lead-generation, and belongs
+            // in a customer/CRM revenue view. It also keeps each month's number
+            // STABLE — counting renewals would make every past month creep upward
+            // forever and destroy rep-to-rep comparison.
+            const firstSubPayments = await PaymentModel.aggregate([
+                {
+                    $match: {
+                        type: 'subscription',
+                        status: 'success',
+                        // Without a subscription ref we cannot tell a first charge
+                        // from a renewal, so we leave it out rather than risk
+                        // crediting a renewal.
+                        subscription: { $ne: null },
+                    },
+                },
+                // Earliest successful payment per subscription = the conversion.
+                // Sorting then taking $first is what makes a renewal unreachable.
+                { $sort: { createdAt: 1 } },
+                {
+                    $group: {
+                        _id: '$subscription',
+                        userId: { $first: '$userId' },
+                        amount: { $first: '$amount' },
+                        paidAt: { $first: '$createdAt' },
+                    },
+                },
+                // Only conversions that happened inside the report month.
+                { $match: { paidAt: { $gte: from, $lt: to } } },
+            ])
+
+            // Resolve to the lead cohort by userId. A subscription cannot exist
+            // without an account (`userId` is required on both Subscription and
+            // Payment), so userId alone covers 100% of them — no phone fallback
+            // needed, unlike orders.
+            // Counts only the purchases actually CREDITED to a genuine lead — a
+            // subscription bought by a walk-in customer who was never a lead is not
+            // this report's business, and counting it here beside the revenue would
+            // imply money that isn't in the totals.
+            let subscriptionConversions = 0
+
+            if (firstSubPayments.length) {
+                const subUserIds = [
+                    ...new Set(firstSubPayments.map((p) => String(p.userId))),
+                ]
+                const subProfiles = await CrmProfileModel.find({
+                    ...cohort,
+                    userId: { $in: subUserIds },
+                })
+                    .select('userId leadEnteredAt')
+                    .lean()
+
+                const subByUser = new Map(
+                    subProfiles
+                        .filter((p) => p.userId && p.leadEnteredAt)
+                        .map((p) => [String(p.userId), p]),
+                )
+
+                for (const pay of firstSubPayments) {
+                    const profile = subByUser.get(String(pay.userId))
+                    if (!profile) continue
+
+                    subscriptionConversions++
+                    const revenue = Number(pay.amount) || 0
+                    const cohortMonth = moment(profile.leadEnteredAt)
+                        .tz(LAGOS)
+                        .format('YYYY-MM')
+
+                    // Same Sets as the order pass, so a lead who both subscribed
+                    // AND paid per item is counted ONCE in `booked` with both
+                    // revenues summed.
+                    if (cohortMonth === month) {
+                        thisMonth.leads.add(String(profile._id))
+                        thisMonth.revenue += revenue
+                    } else {
+                        const bucket = earlier.get(cohortMonth) || {
+                            leads: new Set(),
+                            revenue: 0,
+                        }
+                        bucket.leads.add(String(profile._id))
+                        bucket.revenue += revenue
+                        earlier.set(cohortMonth, bucket)
+                    }
+                }
+            }
+
+            const byCohort = [...earlier.entries()]
+                .map(([m, v]) => ({
+                    month: m,
+                    booked: v.leads.size,
+                    revenue: v.revenue,
+                }))
+                .sort((a, b) => b.month.localeCompare(a.month))
+
+            // Still being worked = not cold and has never ordered. Derived from
+            // the orders themselves rather than `stage`, so it can't drift.
+            const everOrdered = await this._profilesWithAnyOrder(thisCohort)
+            const stillBeingWorked = thisCohort.filter(
+                (p) =>
+                    !(p.tags || []).includes(CRM_TAG.COLD_LEAD) &&
+                    !everOrdered.has(String(p._id)),
+            ).length
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    month,
+                    timezone: LAGOS,
+                    leadsEntered,
+                    coldLeads,
+                    leadsStillBeingWorked: stillBeingWorked,
+                    fromThisMonthsLeads: {
+                        booked: thisMonth.leads.size,
+                        revenue: thisMonth.revenue,
+                    },
+                    fromEarlierLeads: {
+                        booked: byCohort.reduce((s, c) => s + c.booked, 0),
+                        revenue: byCohort.reduce((s, c) => s + c.revenue, 0),
+                        byCohort,
+                    },
+                    // Plain counts, no rates — so the revenue figures above can be
+                    // read without wondering what was left out.
+                    subscriptionConversions,
+                    subscriptionDrawDownOrders,
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to build the monthly lead report',
+            })
+        }
+    }
+
     async getMetrics(req) {
         try {
             const [
@@ -1069,7 +1434,12 @@ class CrmService {
                 CrmProfileModel.countDocuments({}),
                 CrmProfileModel.countDocuments({ totalOrders: { $gte: 1 } }),
                 CrmProfileModel.countDocuments({ totalOrders: { $gte: 2 } }),
-                CrmProfileModel.countDocuments({ stage: CRM_STAGE.DORMANT }),
+                // Same population as `converted` below — otherwise a dormant
+                // lead lands in the numerator only and the rate exceeds 100%.
+                CrmProfileModel.countDocuments({
+                    stage: CRM_STAGE.DORMANT,
+                    totalOrders: { $gte: 1 },
+                }),
                 CrmProfileModel.countDocuments({ wasDormant: true }),
                 CrmProfileModel.countDocuments({
                     wasDormant: true,

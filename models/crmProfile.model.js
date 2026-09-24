@@ -2,6 +2,7 @@ const mongoose = require('mongoose')
 const {
     CRM_STAGE,
     CRM_TAG,
+    CRM_LEAD_SOURCE,
     ORDER_CHANNEL,
 } = require('../util/constants')
 
@@ -40,6 +41,17 @@ const crmProfileSchema = new mongoose.Schema(
             type: String,
             enum: Object.values(ORDER_CHANNEL),
         },
+
+        // How this card came to exist, and when the lead actually entered.
+        // `createdAt` can't answer either: a card is also auto-created by an
+        // incoming order, and crmBackfill.js dated a whole batch to its run day.
+        leadSource: {
+            type: String,
+            enum: Object.values(CRM_LEAD_SOURCE),
+            default: CRM_LEAD_SOURCE.LEAD,
+            index: true,
+        },
+        leadEnteredAt: { type: Date },
 
         totalOrders: { type: Number, default: 0 },
         // delivered orders NOT covered by a subscription — drives the every-5

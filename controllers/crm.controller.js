@@ -60,6 +60,13 @@ class CrmController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    async getMonthlyLeadReport(req, res) {
+        const result = await CrmService.monthlyLeadReport(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
     async getBroadcastList(req, res) {
         const result = await CrmService.getBroadcastList(req)
         return result.success
