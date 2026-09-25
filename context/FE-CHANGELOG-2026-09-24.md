@@ -185,9 +185,51 @@ worth of records around midnight and month boundaries; that is the correction, n
 a regression.
 
 ═══════════════════════════════════════════════════════════════════════════════
+8. FIXED — Swagger documented the success envelope one level too shallow
+═══════════════════════════════════════════════════════════════════════════════
+
+Found by the FE during integration, via a network capture. No API behaviour
+changed — this is a DOCS-ONLY correction, and no frontend change is required.
+
+The wire shape has always been, and still is:
+
+    { "success": true, "data": { "message": <payload> } }
+
+The docs said:
+
+    { "success": true, "message": <payload> }          ← one level too shallow
+
+So the payload is at `data.message`, not `message`. Anyone who trusted the docs
+had to discover this by inspecting traffic — which is exactly what happened.
+
+## Scale and cause
+112 response blocks across 27 route files were wrong, in two variants:
+  • 104 declared `success` + `message` as siblings
+  • 8 declared `success` + `message` + `data` as siblings (services that return
+    an extra key, e.g. addAddress returns {message, data} — so BOTH belong
+    under the outer `data`)
+
+Root cause: the required pattern in CLAUDE.md itself omitted the `data` wrapper,
+so every endpoint written to the house style inherited the same error. Fixed
+there first, with a verification snippet, so it cannot regrow.
+
+Why it went unnoticed: `ErrorResponse` was always documented CORRECTLY
+(`{success, data:{error}}`). Failures nested, successes didn't — and nobody
+compares the two side by side.
+
+Now: 141 correct envelopes, 0 wrong, asserted by a check over the built spec.
+
+### FE action
+NONE. Your code already targets the real shape. This only means the docs now
+agree with it, and the next person won't have to reverse-engineer it.
+
+═══════════════════════════════════════════════════════════════════════════════
 SWAGGER (updated)
 ═══════════════════════════════════════════════════════════════════════════════
 55 schemas, 281 paths, parses clean. Served at /api-docs.
+
+⚠️ Every 200 response in these docs is now nested `data.message`. If a previous
+version of this changelog showed a shallower example, this is the correct one.
 
 New:      DispatchTag
 Updated:  DispatchQueueOrder (+ tagPrinted / needsTag / printCount / reprintFlagged)

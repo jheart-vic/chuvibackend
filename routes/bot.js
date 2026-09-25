@@ -85,7 +85,10 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/BotReply' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/BotReply' }
  *       400:
  *         description: Missing text
  *         content:
@@ -145,20 +148,23 @@ router.post(ROUTE_BOT_MESSAGE, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     conversation: { $ref: '#/components/schemas/Conversation' }
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/ChatMessage' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 12 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 50 }
- *                         pages: { type: integer, example: 1 }
+ *                         conversation: { $ref: '#/components/schemas/Conversation' }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/ChatMessage' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 12 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 50 }
+ *                             pages: { type: integer, example: 1 }
  */
 router.get(ROUTE_BOT_CONVERSATION, [auth], (req, res) =>
     new BotController().getConversation(req, res),
@@ -187,16 +193,19 @@ router.get(ROUTE_BOT_CONVERSATION, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
- *                       mode: { type: string, enum: [bot, human], example: human }
- *                       open: { type: boolean, example: true }
- *                       unreadForCustomer: { type: integer, example: 1 }
- *                       lastMessageAt: { type: string, format: date-time, nullable: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                           mode: { type: string, enum: [bot, human], example: human }
+ *                           open: { type: boolean, example: true }
+ *                           unreadForCustomer: { type: integer, example: 1 }
+ *                           lastMessageAt: { type: string, format: date-time, nullable: true }
  */
 router.get(ROUTE_BOT_CONVERSATIONS, [auth], (req, res) =>
     new BotController().listConversations(req, res),
@@ -246,7 +255,10 @@ router.get(ROUTE_BOT_CONVERSATIONS, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/BotReply' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/BotReply' }
  *       400:
  *         description: Missing text / conversation not found / conversation closed
  *         content:
@@ -273,11 +285,14 @@ router.post(ROUTE_BOT_CUSTOMER_REPLY, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
- *                     mode: { type: string, example: human }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                         mode: { type: string, example: human }
  */
 router.post(ROUTE_BOT_HANDOFF, [auth], (req, res) =>
     new BotController().requestHandoff(req, res),
@@ -299,25 +314,28 @@ router.post(ROUTE_BOT_HANDOFF, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
- *                       customer: { type: string, example: Ada Obi }
- *                       phoneNumber: { type: string, example: "+2348012345678" }
- *                       unreadForStaff: { type: integer, example: 2 }
- *                       lastMessageAt: { type: string, format: date-time }
- *                       lastMessage:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
  *                         type: object
- *                         nullable: true
- *                         description: Preview of the most recent message (null if the thread has none). Text is truncated to ~140 chars.
  *                         properties:
- *                           senderType: { type: string, enum: [customer, staff, bot, system], example: customer }
- *                           text: { type: string, example: "Hi, my order still hasn't arrived — can someone check?" }
- *                           attachments: { type: array, items: { type: string }, example: [] }
- *                           createdAt: { type: string, format: date-time }
+ *                           _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                           customer: { type: string, example: Ada Obi }
+ *                           phoneNumber: { type: string, example: "+2348012345678" }
+ *                           unreadForStaff: { type: integer, example: 2 }
+ *                           lastMessageAt: { type: string, format: date-time }
+ *                           lastMessage:
+ *                             type: object
+ *                             nullable: true
+ *                             description: Preview of the most recent message (null if the thread has none). Text is truncated to ~140 chars.
+ *                             properties:
+ *                               senderType: { type: string, enum: [customer, staff, bot, system], example: customer }
+ *                               text: { type: string, example: "Hi, my order still hasn't arrived — can someone check?" }
+ *                               attachments: { type: array, items: { type: string }, example: [] }
+ *                               createdAt: { type: string, format: date-time }
  */
 router.get(ROUTE_BOT_QUEUE, [customerExperienceAuth], (req, res) =>
     new BotController().queue(req, res),
@@ -354,29 +372,32 @@ router.get(ROUTE_BOT_QUEUE, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     conversation:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
- *                         mode: { type: string, example: human }
- *                         open: { type: boolean, example: true }
- *                         customer: { type: string, example: Ada Obi }
- *                         phoneNumber: { type: string, example: "+2348012345678" }
- *                         unreadForStaff: { type: integer, example: 0 }
- *                         lastMessageAt: { type: string, format: date-time }
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/ChatMessage' }
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         total: { type: integer, example: 12 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 50 }
- *                         pages: { type: integer, example: 1 }
+ *                         conversation:
+ *                           type: object
+ *                           properties:
+ *                             _id: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                             mode: { type: string, example: human }
+ *                             open: { type: boolean, example: true }
+ *                             customer: { type: string, example: Ada Obi }
+ *                             phoneNumber: { type: string, example: "+2348012345678" }
+ *                             unreadForStaff: { type: integer, example: 0 }
+ *                             lastMessageAt: { type: string, format: date-time }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/ChatMessage' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 12 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 50 }
+ *                             pages: { type: integer, example: 1 }
  *       400:
  *         description: Support conversation not found
  *         content:
@@ -423,7 +444,10 @@ router.get(ROUTE_BOT_STAFF_CONVERSATION, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ChatMessage' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ChatMessage' }
  *       400:
  *         description: Conversation not found / missing text
  *         content:
@@ -473,13 +497,16 @@ router.post(ROUTE_BOT_STAFF_REPLY, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     closed: { type: boolean, example: true }
- *                     alreadyClosed: { type: boolean, example: false }
- *                     conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
- *                     closedAt: { type: string, format: date-time }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         closed: { type: boolean, example: true }
+ *                         alreadyClosed: { type: boolean, example: false }
+ *                         conversationId: { type: string, example: 665f1c2ab9e77a0012d4e900 }
+ *                         closedAt: { type: string, format: date-time }
  *       400:
  *         description: Support conversation not found
  *         content:
@@ -528,14 +555,17 @@ router.post(ROUTE_BOT_CLOSE, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     escalated: { type: boolean, example: true }
- *                     conversationId: { type: string }
- *                     urgency: { type: string, example: high }
- *                     reason: { type: string }
- *                     escalatedAt: { type: string, format: date-time }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         escalated: { type: boolean, example: true }
+ *                         conversationId: { type: string }
+ *                         urgency: { type: string, example: high }
+ *                         reason: { type: string }
+ *                         escalatedAt: { type: string, format: date-time }
  *       400:
  *         description: Missing reason or conversation not found/closed
  *         content:
@@ -573,14 +603,17 @@ router.post(ROUTE_BOT_ESCALATE, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     conversationId: { type: string }
- *                     assignedRole: { type: string, example: admin }
- *                     assignedTo: { type: string }
- *                     adminJoinedAt: { type: string, format: date-time }
- *                     alreadyOwnedByAdmin: { type: boolean, example: false }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         conversationId: { type: string }
+ *                         assignedRole: { type: string, example: admin }
+ *                         assignedTo: { type: string }
+ *                         adminJoinedAt: { type: string, format: date-time }
+ *                         alreadyOwnedByAdmin: { type: boolean, example: false }
  *       400:
  *         description: Conversation not found
  *         content:
@@ -632,31 +665,34 @@ router.post(ROUTE_BOT_ADMIN_JOIN, [adminAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         allOf:
- *                           - $ref: '#/components/schemas/Conversation'
- *                           - type: object
- *                             properties:
- *                               customer:
- *                                 type: string
- *                                 description: Customer full name (flat, same as /queue). Falls back to "Customer".
- *                                 example: Ada Obi
- *                               phoneNumber:
- *                                 type: string
- *                                 nullable: true
- *                                 example: "+2348012345678"
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 12 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             allOf:
+ *                               - $ref: '#/components/schemas/Conversation'
+ *                               - type: object
+ *                                 properties:
+ *                                   customer:
+ *                                     type: string
+ *                                     description: Customer full name (flat, same as /queue). Falls back to "Customer".
+ *                                     example: Ada Obi
+ *                                   phoneNumber:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "+2348012345678"
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 12 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
  */
 router.get(ROUTE_BOT_ADMIN_CONVERSATIONS, [adminAuth], (req, res) =>
     new BotController().adminListConversations(req, res),

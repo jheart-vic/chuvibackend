@@ -90,6 +90,14 @@ Swagger UI is set up in `swagger/swagger.js` (served at `/api-docs`); endpoint d
 **Swagger response pattern (required for every route).** The frontend reads these docs to know the exact shape of what the backend returns — so every response must show a real, example-filled shape, never a bare `{ description: ... }` or a placeholder `type: object`.
 
 - **Model shapes live once, in `swagger/schemas.js`** as reusable `components.schemas` entries (`Offer`, `CustomerOffer`, `Referral`, `ReferralPage`, `Feedback`, `ComplaintCase`, `ComplaintType`, `RecoveryAction`/`RecoveryCredit`, `Conversation`, `ChatMessage`, `CommunicationTemplate`, `CommunicationLog`, `WalletCredit`, `WalletTransaction`, plus composites like `OfferPage`/`OfferQuote`). Each field carries a realistic `example` and enums are spelled out. Add a new schema here when you add a model; never inline a full model shape in a route.
+- **The envelope has TWO levels — `success` and `message` are NEVER siblings.** A service returns
+  `BaseService.sendSuccessResponse({ message: payload })` → `{ success, data: { message } }`, and the
+  controller puts `result.data` under its own `data` key. So the payload is at **`data.message`**:
+  ```json
+  { "success": true, "data": { "message": { ... } } }
+  ```
+  This was wrong in this file (and in 112 route blocks) until 2026-09-25, and the frontend had to find
+  the real shape with a network capture. If you ever write `success` and `message` as siblings, it is a bug.
 - **Routes reference schemas, never redefine them.** Every controller replies through `base.controller.js`, so wrap the payload in the standard success envelope and `$ref` the schema:
   ```yaml
   responses:
@@ -101,12 +109,29 @@ Swagger UI is set up in `swagger/swagger.js` (served at `/api-docs`); endpoint d
             type: object
             properties:
               success: { type: boolean, example: true }
-              message: { $ref: '#/components/schemas/<Schema>' }   # or type: array of $ref, or a {data,pagination} wrapper
+              data:
+                type: object
+                properties:
+                  message: { $ref: '#/components/schemas/<Schema>' }   # or array of $ref, or a {data,pagination} wrapper
     400:
       description: <when>
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
   ```
-  Lists use `message: { type: array, items: { $ref: ... } }`; paginated endpoints use `message: { data: [ $ref ], pagination: {total,page,limit,pages} }`.
-- **Examples must match reality.** Confirm the actual response key names and shape from the service/controller (`sendSuccessResponse({ message: ... })`) before documenting — don't assume. `ErrorResponse` is the shared failure envelope (`{ success:false, data:{ error } }`).
+  Lists use `message: { type: array, items: { $ref: ... } }`; paginated endpoints use `message: { data: [ $ref ], pagination: {total,page,limit,pages} }` — both still nested under the outer `data`.
+  A service that returns extra top-level keys (e.g. `sendSuccessResponse({ message, resetToken })`) puts
+  ALL of them under `data`, beside `message`, never above it.
+- **Examples must match reality.** Confirm the actual response key names and shape from the service/controller (`sendSuccessResponse({ message: ... })`) before documenting — don't assume. `ErrorResponse` is the shared failure envelope (`{ success:false, data:{ error } }`) and was always correct, which is exactly why the success-side error went unnoticed for so long: failures nested, successes didn't.
+- **Verify before claiming the docs are right.** Build the spec and assert the shape rather than eyeballing it:
+  ```bash
+  node -e "const s=require('swagger-jsdoc')({definition:{openapi:'3.0.0',info:{title:'t',version:'1'},components:{}},apis:['./routes/**/*.js','./swagger/**/*.js']});
+  let bad=[];const walk=(n,w)=>{if(!n||typeof n!=='object')return;
+   if(n.properties&&n.properties.success&&n.properties.message)bad.push(w);
+   for(const k of Object.keys(n))walk(n[k],w)};
+  for(const[p,o]of Object.entries(s.paths))for(const[m,op]of Object.entries(o))walk(op.responses,m+' '+p);
+  console.log('wrong envelopes:',bad.length,bad.slice(0,5))"
+  ```
+- **`swagger/swagger.js` hardcodes `servers` to the deployed Render URL**, so "Try it out" from ANY
+  environment — including a local `/api-docs` — sends the request to production. Keep that in mind before
+  telling anyone an endpoint is broken locally.

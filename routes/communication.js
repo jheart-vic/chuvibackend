@@ -35,9 +35,12 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/CommunicationTemplate' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/CommunicationTemplate' }
  *       500:
  *         description: Server error
  *   post:
@@ -73,7 +76,10 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CommunicationTemplate' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CommunicationTemplate' }
  *       400:
  *         description: Validation error or duplicate key
  *         content:
@@ -130,7 +136,10 @@ router.post(ROUTE_COMM_TEMPLATES, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CommunicationTemplate' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CommunicationTemplate' }
  *       400:
  *         description: Template not found or invalid channels
  *         content:
@@ -187,19 +196,22 @@ router.put(ROUTE_COMM_TEMPLATE_BY_ID, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/CommunicationLog' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 240 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 12 }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/CommunicationLog' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 240 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 12 }
  *       500:
  *         description: Server error
  */
@@ -226,11 +238,14 @@ router.get(ROUTE_COMM_LOGS, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     attempted: { type: integer, example: 4 }
- *                     succeeded: { type: integer, example: 3 }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         attempted: { type: integer, example: 4 }
+ *                         succeeded: { type: integer, example: 3 }
  *       500:
  *         description: Server error
  */

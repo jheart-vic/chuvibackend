@@ -43,7 +43,10 @@ const controller = new OfferController()
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/OfferPage' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/OfferPage' }
  *       500:
  *         description: Server error
  */
@@ -70,9 +73,12 @@ router.get(ROUTE_OFFER_MY_OFFERS, [auth], controller.myOffers)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/CustomerOffer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/CustomerOffer' }
  *       500:
  *         description: Server error
  */
@@ -101,7 +107,10 @@ router.get(ROUTE_OFFER_MY_USAGE, [auth], controller.myUsage)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CustomerOffer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Offer not found
  *         content:
@@ -157,7 +166,10 @@ router.post(ROUTE_OFFER_VIEW, [auth], controller.viewOffer)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/OfferQuote' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/OfferQuote' }
  *       500:
  *         description: Server error
  */
@@ -216,7 +228,10 @@ router.post(ROUTE_OFFER_VALIDATE, [auth], controller.validateOffer)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/OfferBookingOptions' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/OfferBookingOptions' }
  *       500:
  *         description: Server error
  *         content:
@@ -260,7 +275,10 @@ router.post(ROUTE_OFFER_BOOKING_OPTIONS, [auth], controller.bookingOptions)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CustomerOffer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Offer/order not found, expired, already used, or another reward already on the order
  *         content:
@@ -298,7 +316,10 @@ router.post(ROUTE_OFFER_ATTACH, [auth], controller.attachOffer)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CustomerOffer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Validation error, unknown user/offer, or customer already has this offer
  *         content:
@@ -339,7 +360,10 @@ router.post(ROUTE_OFFER_ASSIGN, [adminAuth], controller.assignOffer)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CustomerOffer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Not found, redeemed, or missing reason
  *         content:
@@ -381,9 +405,12 @@ router.post(ROUTE_OFFER_CANCEL_LINKAGE, [adminAuth], controller.cancelLinkage)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/CustomerOffer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/CustomerOffer' }
  *       400:
  *         description: Missing userId
  *         content:
@@ -422,19 +449,22 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/Offer' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 9 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/Offer' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 9 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
  *   post:
  *     summary: Create an offer (admin Offer Builder)
  *     description: >
@@ -518,7 +548,10 @@ router.get(ROUTE_OFFER_ADMIN_CUSTOMER_OFFERS, [adminAuth], controller.adminCusto
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/Offer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/Offer' }
  *       400:
  *         description: Validation error
  *         content:
@@ -550,34 +583,37 @@ router.post(ROUTE_OFFERS, [adminAuth], controller.createOffer)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     offer: { $ref: '#/components/schemas/Offer' }
- *                     performance:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         byStatus:
+ *                         offer: { $ref: '#/components/schemas/Offer' }
+ *                         performance:
  *                           type: object
  *                           properties:
- *                             assigned: { type: integer, example: 12 }
- *                             viewed: { type: integer, example: 8 }
- *                             attached: { type: integer, example: 5 }
- *                             redeemed: { type: integer, example: 4 }
- *                             expired: { type: integer, example: 2 }
- *                             cancelled: { type: integer, example: 1 }
- *                         reached:
- *                           type: object
- *                           description: "Cumulative funnel — how many linkages EVER reached each stage (unlike byStatus, which is the current snapshot). reached.viewed only ever increases; attached/redeemed reflect currently-reached (their timestamps clear on cancel)."
- *                           properties:
- *                             viewed: { type: integer, example: 20 }
- *                             attached: { type: integer, example: 9 }
- *                             redeemed: { type: integer, example: 4 }
- *                         assignedTotal: { type: integer, example: 32 }
- *                         usedCount: { type: integer, example: 9, description: "Usage count — incremented at booking (attach), decremented on release; also drives the global cap" }
- *                         usageLimit: { type: integer, nullable: true, example: 100, description: "Global usage cap (null = unlimited)" }
- *                         remaining: { type: integer, nullable: true, example: 91, description: "usageLimit − usedCount (null = unlimited)" }
- *                         redemptionRate: { type: integer, example: 13, description: "Percentage of linkages redeemed (completed on delivery)" }
+ *                             byStatus:
+ *                               type: object
+ *                               properties:
+ *                                 assigned: { type: integer, example: 12 }
+ *                                 viewed: { type: integer, example: 8 }
+ *                                 attached: { type: integer, example: 5 }
+ *                                 redeemed: { type: integer, example: 4 }
+ *                                 expired: { type: integer, example: 2 }
+ *                                 cancelled: { type: integer, example: 1 }
+ *                             reached:
+ *                               type: object
+ *                               description: "Cumulative funnel — how many linkages EVER reached each stage (unlike byStatus, which is the current snapshot). reached.viewed only ever increases; attached/redeemed reflect currently-reached (their timestamps clear on cancel)."
+ *                               properties:
+ *                                 viewed: { type: integer, example: 20 }
+ *                                 attached: { type: integer, example: 9 }
+ *                                 redeemed: { type: integer, example: 4 }
+ *                             assignedTotal: { type: integer, example: 32 }
+ *                             usedCount: { type: integer, example: 9, description: "Usage count — incremented at booking (attach), decremented on release; also drives the global cap" }
+ *                             usageLimit: { type: integer, nullable: true, example: 100, description: "Global usage cap (null = unlimited)" }
+ *                             remaining: { type: integer, nullable: true, example: 91, description: "usageLimit − usedCount (null = unlimited)" }
+ *                             redemptionRate: { type: integer, example: 13, description: "Percentage of linkages redeemed (completed on delivery)" }
  *       400:
  *         description: Offer not found
  *         content:
@@ -616,7 +652,10 @@ router.get(ROUTE_OFFER_PERFORMANCE, [adminAuth], controller.getOfferPerformance)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/Offer' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/Offer' }
  *       400:
  *         description: Offer not found or validation error
  *         content:

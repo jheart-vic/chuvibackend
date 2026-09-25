@@ -49,21 +49,24 @@ const {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Payment initialized successfully
  *                 data:
  *                   type: object
  *                   properties:
- *                     authorization_url:
+ *                     message:
  *                       type: string
- *                       example: "https://checkout.paystack.com/2v4t6w4s8s"
- *                     access_code:
- *                       type: string
- *                       example: "ACCESS_23s5z3m0ha"
- *                     reference:
- *                       type: string
- *                       example: "T513406671019712"
+ *                       example: Payment initialized successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         authorization_url:
+ *                           type: string
+ *                           example: "https://checkout.paystack.com/2v4t6w4s8s"
+ *                         access_code:
+ *                           type: string
+ *                           example: "ACCESS_23s5z3m0ha"
+ *                         reference:
+ *                           type: string
+ *                           example: "T513406671019712"
  *       400:
  *         description: Validation error — missing or invalid fields
  *         content:
@@ -137,9 +140,12 @@ router.post(ROUTE_WALLET_TOP_UP, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Payment made successfully from wallet."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Payment made successfully from wallet."
  *       400:
  *         description: Validation error or insufficient balance
  *         content:
@@ -333,31 +339,34 @@ router.get(ROUTE_FETCH_USER_TRANSACTIONS, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     balance:
- *                       type: number
- *                       example: 1500.75
- *                       description: Cash balance
- *                     creditTotal:
- *                       type: number
- *                       example: 3000
- *                       description: Total usable reward credit
- *                     totalAvailable:
- *                       type: number
- *                       example: 4500.75
- *                     creditsByType:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         laundry: { type: number, example: 3000 }
- *                         referral: { type: number, example: 0 }
- *                         recovery: { type: number, example: 0 }
- *                         promotional: { type: number, example: 0 }
- *                     expiringSoon:
- *                       type: number
- *                       example: 0
- *                       description: Credit value expiring within 7 days
+ *                         balance:
+ *                           type: number
+ *                           example: 1500.75
+ *                           description: Cash balance
+ *                         creditTotal:
+ *                           type: number
+ *                           example: 3000
+ *                           description: Total usable reward credit
+ *                         totalAvailable:
+ *                           type: number
+ *                           example: 4500.75
+ *                         creditsByType:
+ *                           type: object
+ *                           properties:
+ *                             laundry: { type: number, example: 3000 }
+ *                             referral: { type: number, example: 0 }
+ *                             recovery: { type: number, example: 0 }
+ *                             promotional: { type: number, example: 0 }
+ *                         expiringSoon:
+ *                           type: number
+ *                           example: 0
+ *                           description: Credit value expiring within 7 days
  *       400:
  *         description: Validation error
  *         content:
@@ -483,58 +492,61 @@ router.get(ROUTE_WALLET_ELIGIBLE, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                           userId:
- *                             type: string
- *                           amount:
- *                             type: number
- *                           reference:
- *                             type: string
- *                           status:
- *                             type: string
- *                             example: success
- *                           type:
- *                             type: string
- *                             example: wallet-top-up
- *                           alertType:
- *                             type: string
- *                             enum: [credit, debit]
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                     totals:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         credit:
- *                           type: number
- *                           example: 50000
- *                         debit:
- *                           type: number
- *                           example: 20000
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 25
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         pages:
- *                           type: integer
- *                           example: 3
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               userId:
+ *                                 type: string
+ *                               amount:
+ *                                 type: number
+ *                               reference:
+ *                                 type: string
+ *                               status:
+ *                                 type: string
+ *                                 example: success
+ *                               type:
+ *                                 type: string
+ *                                 example: wallet-top-up
+ *                               alertType:
+ *                                 type: string
+ *                                 enum: [credit, debit]
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                         totals:
+ *                           type: object
+ *                           properties:
+ *                             credit:
+ *                               type: number
+ *                               example: 50000
+ *                             debit:
+ *                               type: number
+ *                               example: 20000
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 25
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             pages:
+ *                               type: integer
+ *                               example: 3
  *       400:
  *         description: Validation or request error
  *         content:
@@ -606,9 +618,12 @@ router.get(ROUTE_GET_MONTHLY_TRANSACTIONS, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Payment proof uploaded successfully. Awaiting verification.
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Payment proof uploaded successfully. Awaiting verification.
  *       400:
  *         description: Validation error or invalid user
  *         content:
@@ -676,36 +691,39 @@ router.post(ROUTE_UPLOAD_PAYMENT_PROOF, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     cashBalance: { type: number, example: 5000 }
- *                     creditTotal: { type: number, example: 3500 }
- *                     totalAvailable: { type: number, example: 8500 }
- *                     creditsByType:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         laundry: { type: number, example: 3000 }
- *                         referral: { type: number, example: 500 }
- *                         recovery: { type: number, example: 0 }
- *                         promotional: { type: number, example: 0 }
- *                     expiringSoon:
- *                       type: number
- *                       example: 500
- *                       description: Credit value expiring within 7 days
- *                     credits:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/WalletCredit' }
- *                     transactions:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/WalletTransaction' }
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         total: { type: integer, example: 12 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 1 }
+ *                         cashBalance: { type: number, example: 5000 }
+ *                         creditTotal: { type: number, example: 3500 }
+ *                         totalAvailable: { type: number, example: 8500 }
+ *                         creditsByType:
+ *                           type: object
+ *                           properties:
+ *                             laundry: { type: number, example: 3000 }
+ *                             referral: { type: number, example: 500 }
+ *                             recovery: { type: number, example: 0 }
+ *                             promotional: { type: number, example: 0 }
+ *                         expiringSoon:
+ *                           type: number
+ *                           example: 500
+ *                           description: Credit value expiring within 7 days
+ *                         credits:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/WalletCredit' }
+ *                         transactions:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/WalletTransaction' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 12 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
  *       400:
  *         description: Invalid user
  *       500:
@@ -758,11 +776,14 @@ router.get(ROUTE_WALLET_CREDITS, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     adjusted: { type: number, example: 2000 }
- *                     credit: { $ref: '#/components/schemas/WalletCredit' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         adjusted: { type: number, example: 2000 }
+ *                         credit: { $ref: '#/components/schemas/WalletCredit' }
  *       400:
  *         description: Validation error, unknown user/credit, or insufficient remaining value
  *       500:
@@ -798,37 +819,40 @@ router.get(ROUTE_WALLET_CREDITS, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     user:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         id: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *                         name: { type: string, example: "Ada Obi" }
- *                         email: { type: string, example: "ada@example.com" }
- *                         phone: { type: string, example: "+2348030000000" }
- *                     cashBalance: { type: number, example: 0 }
- *                     creditTotal: { type: number, example: 6000 }
- *                     totalAvailable: { type: number, example: 6000 }
- *                     creditsByType:
- *                       type: object
- *                       example: { laundry: 6000, referral: 0, recovery: 0, promotional: 0 }
- *                     expiringSoon: { type: number, example: 0 }
- *                     credits:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           creditId: { type: string, example: 6a5dc264b1ec30da397355b5 }
- *                           type: { type: string, example: laundry }
- *                           amount: { type: number, example: 4000 }
- *                           remaining: { type: number, example: 4000 }
- *                           status: { type: string, example: active }
- *                           sourceSystem: { type: string, example: admin }
- *                           note: { type: string, example: "Goodwill credit" }
- *                           expiresAt: { type: string, format: date-time }
- *                           createdAt: { type: string, format: date-time }
+ *                         user:
+ *                           type: object
+ *                           properties:
+ *                             id: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                             name: { type: string, example: "Ada Obi" }
+ *                             email: { type: string, example: "ada@example.com" }
+ *                             phone: { type: string, example: "+2348030000000" }
+ *                         cashBalance: { type: number, example: 0 }
+ *                         creditTotal: { type: number, example: 6000 }
+ *                         totalAvailable: { type: number, example: 6000 }
+ *                         creditsByType:
+ *                           type: object
+ *                           example: { laundry: 6000, referral: 0, recovery: 0, promotional: 0 }
+ *                         expiringSoon: { type: number, example: 0 }
+ *                         credits:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               creditId: { type: string, example: 6a5dc264b1ec30da397355b5 }
+ *                               type: { type: string, example: laundry }
+ *                               amount: { type: number, example: 4000 }
+ *                               remaining: { type: number, example: 4000 }
+ *                               status: { type: string, example: active }
+ *                               sourceSystem: { type: string, example: admin }
+ *                               note: { type: string, example: "Goodwill credit" }
+ *                               expiresAt: { type: string, format: date-time }
+ *                               createdAt: { type: string, format: date-time }
  *       400:
  *         description: Missing userId or user not found
  *         content:

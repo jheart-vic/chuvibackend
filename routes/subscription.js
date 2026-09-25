@@ -76,11 +76,14 @@ const router = require("express").Router();
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Plan created successfully
  *                 data:
- *                   $ref: '#/components/schemas/Plan'
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Plan created successfully
+ *                     data:
+ *                       $ref: '#/components/schemas/Plan'
  *       400:
  *         description: Validation error or plan already exists
  *         content:
@@ -120,10 +123,13 @@ router.post(ROUTE_CREATE_PLAN, [adminAuth], async (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Plan'
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Plan'
  *       500:
  *         description: Server error
  */
@@ -157,8 +163,11 @@ router.get(ROUTE_GET_PLANS, [auth], async (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   $ref: '#/components/schemas/Plan'
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       $ref: '#/components/schemas/Plan'
  *       404:
  *         description: Plan not found
  *       500:

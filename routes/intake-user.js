@@ -939,17 +939,20 @@ router.get(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/DispatchQueueOrder' }
- *                     pagination: { $ref: '#/components/schemas/PaginationMeta' }
- *                     needsRiderCount:
- *                       type: integer
- *                       description: Total across the whole queue with no rider assigned (not just this page).
- *                       example: 12
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/DispatchQueueOrder' }
+ *                         pagination: { $ref: '#/components/schemas/PaginationMeta' }
+ *                         needsRiderCount:
+ *                           type: integer
+ *                           description: Total across the whole queue with no rider assigned (not just this page).
+ *                           example: 12
  *       500:
  *         description: Server error
  */
@@ -1005,18 +1008,21 @@ router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/DispatchQueueOrder' }
- *                     pagination: { $ref: '#/components/schemas/PaginationMeta' }
- *                     needsRiderCount: { type: integer, example: 3 }
- *                     needsTagCount:
- *                       type: integer
- *                       description: "Ready delivery orders whose dispatch tag has not been printed — each one is blocked from rider assignment."
- *                       example: 2
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/DispatchQueueOrder' }
+ *                         pagination: { $ref: '#/components/schemas/PaginationMeta' }
+ *                         needsRiderCount: { type: integer, example: 3 }
+ *                         needsTagCount:
+ *                           type: integer
+ *                           description: "Ready delivery orders whose dispatch tag has not been printed — each one is blocked from rider assignment."
+ *                           example: 2
  *       500:
  *         description: Server error
  */
@@ -1203,7 +1209,10 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req,
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/DispatchTag' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/DispatchTag' }
  *       400:
  *         description: Order is not going out for delivery, or has not completed Pack & Seal
  *         content:
@@ -1261,15 +1270,18 @@ router.get(ROUTE_DISPATCH_TAG, [intakeUserAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   allOf:
- *                     - $ref: '#/components/schemas/DispatchTag'
- *                     - type: object
- *                       properties:
- *                         reprint:
- *                           type: boolean
- *                           description: true when this was not the first print
- *                           example: false
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/DispatchTag'
+ *                         - type: object
+ *                           properties:
+ *                             reprint:
+ *                               type: boolean
+ *                               description: true when this was not the first print
+ *                               example: false
  *       400:
  *         description: Order is not going out for delivery, or has not completed Pack & Seal
  *         content:
@@ -1474,59 +1486,62 @@ router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           oscNumber:
- *                             type: string
- *                             example: "ORD-2024-001"
- *                           fullName:
- *                             type: string
- *                             example: "Jude Victor"
- *                           phoneNumber:
- *                             type: string
- *                             example: "08012345678"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "standard"
- *                           amount:
- *                             type: number
- *                             example: 4500
- *                           channel:
- *                             type: string
- *                             example: "office"
- *                           stage:
- *                             type: object
- *                             properties:
- *                               status:
- *                                 type: string
- *                                 example: "queue"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 12
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         totalPages:
- *                           type: integer
- *                           example: 2
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               oscNumber:
+ *                                 type: string
+ *                                 example: "ORD-2024-001"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "Jude Victor"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08012345678"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "standard"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 4500
+ *                               channel:
+ *                                 type: string
+ *                                 example: "office"
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "queue"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 12
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             totalPages:
+ *                               type: integer
+ *                               example: 2
  *       400:
  *         description: Failed to fetch tagging queue
  *       401:

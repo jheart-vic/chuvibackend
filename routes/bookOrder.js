@@ -169,110 +169,113 @@ const {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f12345"
- *                     userId:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f54321"
- *                     fullName:
- *                       type: string
- *                       example: "John Doe"
- *                     phoneNumber:
- *                       type: string
- *                       example: "+2348151128383"
- *                     pickupAddress:
- *                       type: string
- *                       example: "12 Allen Avenue, Ikeja"
- *                     deliveryAddress:
- *                       type: string
- *                       example: "12 Allen Avenue, Ikeja"
- *                     pickupDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-06-01"
- *                     pickupTime:
- *                       type: string
- *                       example: "10am-12pm"
- *                     serviceType:
- *                       type: string
- *                       example: "wash-and-iron"
- *                     serviceTier:
- *                       type: string
- *                       example: "premium"
- *                     deliverySpeed:
- *                       type: string
- *                       example: "express"
- *                     amount:
- *                       type: number
- *                       example: 3500
- *                       description: Total calculated amount based on items and selected services
- *                     paymentMethod:
- *                       type: string
- *                       example: "paystack"
- *                       description: Automatically assigned by the system
- *                     oscNumber:
- *                       type: string
- *                       example: "OSC123456"
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           type:
- *                             type: string
- *                             example: "shirt"
- *                           price:
- *                             type: number
- *                             example: 700
- *                           quantity:
- *                             type: number
- *                             example: 2
- *                     extraNote:
- *                       type: string
- *                       example: "Handle with care"
- *                     stage:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         status:
+ *                         _id:
  *                           type: string
- *                           example: "in-process"
- *                         note:
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         userId:
  *                           type: string
- *                           example: "Picked up by driver"
- *                     paymentStatus:
- *                       type: string
- *                       example: "pending"
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T12:34:56.789Z"
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T13:00:00.123Z"
- *                 offer:
- *                   type: object
- *                   nullable: true
- *                   description: >
- *                     Present when a customerOfferId/promoOfferId was supplied.
- *                     `applied` is false when the offer was rejected — see `rejected`
- *                     for the reason(s); the order is then charged full price.
- *                   properties:
- *                     applied: { type: boolean, example: true }
- *                     totalDiscount: { type: number, example: 200 }
- *                     freeDelivery: { type: boolean, example: false }
- *                     freePickup: { type: boolean, example: false }
- *                     rejected:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           which: { type: string, example: personal }
- *                           reason: { type: string, example: "Minimum 2 items" }
+ *                           example: "64d3c9c0f1b2a8e9d0f54321"
+ *                         fullName:
+ *                           type: string
+ *                           example: "John Doe"
+ *                         phoneNumber:
+ *                           type: string
+ *                           example: "+2348151128383"
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "12 Allen Avenue, Ikeja"
+ *                         deliveryAddress:
+ *                           type: string
+ *                           example: "12 Allen Avenue, Ikeja"
+ *                         pickupDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-06-01"
+ *                         pickupTime:
+ *                           type: string
+ *                           example: "10am-12pm"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "premium"
+ *                         deliverySpeed:
+ *                           type: string
+ *                           example: "express"
+ *                         amount:
+ *                           type: number
+ *                           example: 3500
+ *                           description: Total calculated amount based on items and selected services
+ *                         paymentMethod:
+ *                           type: string
+ *                           example: "paystack"
+ *                           description: Automatically assigned by the system
+ *                         oscNumber:
+ *                           type: string
+ *                           example: "OSC123456"
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               type:
+ *                                 type: string
+ *                                 example: "shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 700
+ *                               quantity:
+ *                                 type: number
+ *                                 example: 2
+ *                         extraNote:
+ *                           type: string
+ *                           example: "Handle with care"
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status:
+ *                               type: string
+ *                               example: "in-process"
+ *                             note:
+ *                               type: string
+ *                               example: "Picked up by driver"
+ *                         paymentStatus:
+ *                           type: string
+ *                           example: "pending"
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T12:34:56.789Z"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T13:00:00.123Z"
+ *                     offer:
+ *                       type: object
+ *                       nullable: true
+ *                       description: >
+ *                         Present when a customerOfferId/promoOfferId was supplied.
+ *                         `applied` is false when the offer was rejected — see `rejected`
+ *                         for the reason(s); the order is then charged full price.
+ *                       properties:
+ *                         applied: { type: boolean, example: true }
+ *                         totalDiscount: { type: number, example: 200 }
+ *                         freeDelivery: { type: boolean, example: false }
+ *                         freePickup: { type: boolean, example: false }
+ *                         rejected:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               which: { type: string, example: personal }
+ *                               reason: { type: string, example: "Minimum 2 items" }
  *       400:
  *         description: Validation error or bad request
  *         content:
@@ -749,14 +752,17 @@ router.get(ROUTE_BOOK_ORDER+"/:id", [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *                     status: { type: string, example: cancelled }
- *                     cashRefunded: { type: number, example: 3000 }
- *                     creditsReversed: { type: number, example: 2000 }
- *                     refundedTo: { type: string, example: wallet }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                         status: { type: string, example: cancelled }
+ *                         cashRefunded: { type: number, example: 3000 }
+ *                         creditsReversed: { type: number, example: 2000 }
+ *                         refundedTo: { type: string, example: wallet }
  *       400:
  *         description: >
  *           Not cancellable (Amber/Red window or already cancelled), not the
@@ -812,16 +818,19 @@ router.post(ROUTE_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *                     status: { type: string, example: cancelled }
- *                     cancelledBy: { type: string, example: admin }
- *                     cashRefunded: { type: number, example: 5000 }
- *                     creditsReversed: { type: number, example: 0 }
- *                     feeApplied: { type: number, example: 0 }
- *                     refundedTo: { type: string, example: wallet }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                         status: { type: string, example: cancelled }
+ *                         cancelledBy: { type: string, example: admin }
+ *                         cashRefunded: { type: number, example: 5000 }
+ *                         creditsReversed: { type: number, example: 0 }
+ *                         feeApplied: { type: number, example: 0 }
+ *                         refundedTo: { type: string, example: wallet }
  *       400:
  *         description: Missing reason, order not found, already cancelled, or (intake) order already in processing
  *         content:
@@ -879,12 +888,15 @@ router.post(
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
- *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *                     status: { type: string, example: pending }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *                         orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                         status: { type: string, example: pending }
  *       400:
  *         description: Missing reason, not the owner, Green (cancel directly), Red, or a request is already pending
  *         content:
@@ -927,7 +939,10 @@ router.post(ROUTE_REQUEST_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/CancellationRequestPage' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/CancellationRequestPage' }
  *       500:
  *         description: Server error
  */
@@ -974,16 +989,19 @@ router.get(ROUTE_CANCELLATION_REQUESTS, [customerExperienceAuth], (req, res) => 
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
- *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *                     status: { type: string, example: approved }
- *                     cashRefunded: { type: number, example: 4500 }
- *                     creditsReversed: { type: number, example: 0 }
- *                     feeApplied: { type: number, example: 500 }
- *                     refundedTo: { type: string, example: wallet }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *                         orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                         status: { type: string, example: approved }
+ *                         cashRefunded: { type: number, example: 4500 }
+ *                         creditsReversed: { type: number, example: 0 }
+ *                         feeApplied: { type: number, example: 500 }
+ *                         refundedTo: { type: string, example: wallet }
  *       400:
  *         description: Request not found, already resolved, or order now in processing (Red)
  *         content:
@@ -1029,12 +1047,15 @@ router.post(ROUTE_APPROVE_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (re
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
- *                     orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
- *                     status: { type: string, example: rejected }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         requestId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
+ *                         orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *                         status: { type: string, example: rejected }
  *       400:
  *         description: Request not found or already resolved
  *         content:
