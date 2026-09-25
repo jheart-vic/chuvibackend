@@ -58,18 +58,21 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     feedback: { $ref: '#/components/schemas/Feedback' }
- *                     complaint:
- *                       allOf: [{ $ref: '#/components/schemas/ComplaintCase' }]
- *                       nullable: true
- *                       description: Present (non-null) only when type=complaint
- *                     referralEligible:
- *                       type: boolean
- *                       example: true
- *                       description: True when the customer said they were satisfied
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         feedback: { $ref: '#/components/schemas/Feedback' }
+ *                         complaint:
+ *                           allOf: [{ $ref: '#/components/schemas/ComplaintCase' }]
+ *                           nullable: true
+ *                           description: Present (non-null) only when type=complaint
+ *                         referralEligible:
+ *                           type: boolean
+ *                           example: true
+ *                           description: True when the customer said they were satisfied
  *       400:
  *         description: Validation error, order not delivered, or duplicate feedback
  *         content:
@@ -96,9 +99,12 @@ router.post(ROUTE_FEEDBACK_SUBMIT, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/ComplaintType' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/ComplaintType' }
  */
 router.get(ROUTE_FEEDBACK_COMPLAINT_TYPES, [auth], (req, res) => {
     req.query.active = 'true'
@@ -121,9 +127,12 @@ router.get(ROUTE_FEEDBACK_COMPLAINT_TYPES, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.get(ROUTE_FEEDBACK_MY_COMPLAINTS, [auth], (req, res) =>
     new FeedbackController().myComplaints(req, res),
@@ -146,7 +155,10 @@ router.get(ROUTE_FEEDBACK_MY_COMPLAINTS, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Not found
  *         content:
@@ -186,7 +198,10 @@ router.get(ROUTE_FEEDBACK_COMPLAINT, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Not awaiting confirmation
  *         content:
@@ -218,7 +233,10 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_CONFIRM, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Not awaiting confirmation
  *         content:
@@ -255,7 +273,10 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_REJECT, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Not closed, not yours, or reopening window passed
  *         content:
@@ -283,19 +304,22 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_REOPEN, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/ChatMessage' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 6 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 50 }
- *                         pages: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/ChatMessage' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 6 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 50 }
+ *                             pages: { type: integer, example: 1 }
  *   post:
  *     summary: Send a message in the complaint conversation
  *     tags: [Feedback & Recovery]
@@ -319,7 +343,10 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_REOPEN, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ChatMessage' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ChatMessage' }
  */
 router.get(ROUTE_FEEDBACK_COMPLAINT_MESSAGES, [auth], (req, res) =>
     new FeedbackController().customerListMessages(req, res),
@@ -345,10 +372,13 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_MESSAGES, [auth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   allOf: [{ $ref: '#/components/schemas/Feedback' }]
- *                   nullable: true
- *                   description: Null when the customer hasn't left feedback for this order yet
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       allOf: [{ $ref: '#/components/schemas/Feedback' }]
+ *                       nullable: true
+ *                       description: Null when the customer hasn't left feedback for this order yet
  */
 router.get(ROUTE_FEEDBACK_FOR_ORDER, [auth], (req, res) =>
     new FeedbackController().getFeedbackForOrder(req, res),

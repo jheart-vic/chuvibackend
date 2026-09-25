@@ -20,10 +20,13 @@ const router = require("express").Router();
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Plan'
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Plan'
  *       500:
  *         description: Server error
  */

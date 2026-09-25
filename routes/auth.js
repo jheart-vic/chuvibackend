@@ -479,12 +479,15 @@ router.post(ROUTE_FORGOT_PASSWORD, (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: OTP verified successfully
- *                 resetToken:
- *                   type: string
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: OTP verified successfully
+ *                     resetToken:
+ *                       type: string
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *       400:
  *         description: Invalid or expired OTP
  *       404:
@@ -536,9 +539,12 @@ router.post(ROUTE_VERIFY_RESET_PASSWORD_OTP, (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Password reset successful
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Password reset successful
  *       400:
  *         description: Invalid or expired reset token
  *       404:

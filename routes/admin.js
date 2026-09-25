@@ -673,57 +673,60 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Settings updated successfully
  *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
+ *                     message:
  *                       type: string
- *                       example: 64fa12b8a4b7c91234567890
- *                     washAndIronPerKg:
- *                       type: number
- *                       example: 1200
- *                     washOnlyPerKg:
- *                       type: number
- *                       example: 800
- *                     ironOnlyPerPiece:
- *                       type: number
- *                       example: 300
- *                     dryCleanPerPiece:
- *                       type: number
- *                       example: 1500
- *                     sameDayCharge:
- *                       type: number
- *                       example: 500
- *                     expressCharge:
- *                       type: number
- *                       example: 200
- *                     premiumServiceTierCharge:
- *                       type: number
- *                       example: 1.5
- *                     vipServiceTierCharge:
- *                       type: number
- *                       example: 2
- *                     serviceType:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["ironing-only", "washing-only", "wash-and-iron"]
- *                     pickupTimeSlots:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["10am-12pm", "4pm-6pm"]
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: 2026-01-12T10:00:00.000Z
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: 2026-05-19T14:00:00.000Z
+ *                       example: Settings updated successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                           example: 64fa12b8a4b7c91234567890
+ *                         washAndIronPerKg:
+ *                           type: number
+ *                           example: 1200
+ *                         washOnlyPerKg:
+ *                           type: number
+ *                           example: 800
+ *                         ironOnlyPerPiece:
+ *                           type: number
+ *                           example: 300
+ *                         dryCleanPerPiece:
+ *                           type: number
+ *                           example: 1500
+ *                         sameDayCharge:
+ *                           type: number
+ *                           example: 500
+ *                         expressCharge:
+ *                           type: number
+ *                           example: 200
+ *                         premiumServiceTierCharge:
+ *                           type: number
+ *                           example: 1.5
+ *                         vipServiceTierCharge:
+ *                           type: number
+ *                           example: 2
+ *                         serviceType:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                           example: ["ironing-only", "washing-only", "wash-and-iron"]
+ *                         pickupTimeSlots:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                           example: ["10am-12pm", "4pm-6pm"]
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2026-01-12T10:00:00.000Z
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2026-05-19T14:00:00.000Z
  *       400:
  *         description: Invalid value or payload format supplied
  *       401:
@@ -1660,50 +1663,53 @@ router.put(ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND, adminAuth, (req, res)=>{
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                           timestamp:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-03-23T09:45:00.000Z"
- *                           event:
- *                             type: string
- *                             example: "Dispatch Run Created"
- *                           type:
- *                             type: string
- *                             example: "dispatch-delivery"
- *                           reference:
- *                             type: string
- *                             nullable: true
- *                             example: "OSC-20260428-321782"
- *                           by:
- *                             type: string
- *                             nullable: true
- *                             example: "Ben Gerald"
- *                           notes:
- *                             type: string
- *                             example: "ORD-2024-001 order assigned to rider"
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 50 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 10 }
- *                         pages: { type: integer, example: 5 }
- *                     eventTypes:
- *                       type: array
- *                       description: All available event types for the filter dropdown
- *                       items:
- *                         type: string
- *                       example: ["order-created", "dispatch-delivery", "wallet-top-up"]
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               timestamp:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-03-23T09:45:00.000Z"
+ *                               event:
+ *                                 type: string
+ *                                 example: "Dispatch Run Created"
+ *                               type:
+ *                                 type: string
+ *                                 example: "dispatch-delivery"
+ *                               reference:
+ *                                 type: string
+ *                                 nullable: true
+ *                                 example: "OSC-20260428-321782"
+ *                               by:
+ *                                 type: string
+ *                                 nullable: true
+ *                                 example: "Ben Gerald"
+ *                               notes:
+ *                                 type: string
+ *                                 example: "ORD-2024-001 order assigned to rider"
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 50 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 10 }
+ *                             pages: { type: integer, example: 5 }
+ *                         eventTypes:
+ *                           type: array
+ *                           description: All available event types for the filter dropdown
+ *                           items:
+ *                             type: string
+ *                           example: ["order-created", "dispatch-delivery", "wallet-top-up"]
  *       401:
  *         description: Unauthorized
  *       500:
@@ -1741,40 +1747,43 @@ router.get(ROUTE_ADMIN_AUDIT_LITE, [adminAuth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id:
- *                         type: string
- *                         example: "6820d4a5b1e7b7c1a1234567"
- *                       userId:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
  *                         type: object
  *                         properties:
  *                           _id:
  *                             type: string
- *                             example: "6820d4a5b1e7b7c1a7654321"
- *                           fullName:
+ *                             example: "6820d4a5b1e7b7c1a1234567"
+ *                           userId:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "6820d4a5b1e7b7c1a7654321"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08012345678"
+ *                           balance:
+ *                             type: number
+ *                             example: 25000
+ *                           currency:
  *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
+ *                             example: "NGN"
+ *                           createdAt:
  *                             type: string
- *                             example: "08012345678"
- *                       balance:
- *                         type: number
- *                         example: 25000
- *                       currency:
- *                         type: string
- *                         example: "NGN"
- *                       createdAt:
- *                         type: string
- *                         format: date-time
- *                         example: "2026-05-11T10:00:00.000Z"
- *                       updatedAt:
- *                         type: string
- *                         format: date-time
- *                         example: "2026-05-11T12:00:00.000Z"
+ *                             format: date-time
+ *                             example: "2026-05-11T10:00:00.000Z"
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2026-05-11T12:00:00.000Z"
  *       400:
  *         description: Search query is required
  *         content:
@@ -2232,7 +2241,10 @@ router.delete(ROUTE_DELETE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { type: string, example: "Set added successfully" }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Set added successfully" }
  *       400:
  *         description: Missing name or pieces
  *         content:
@@ -2284,7 +2296,10 @@ router.post(ROUTE_ADD_ORDER_SET, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { type: string, example: "Set updated successfully" }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Set updated successfully" }
  *       400:
  *         description: Invalid pieces
  *         content:
@@ -2317,9 +2332,12 @@ router.put(ROUTE_UPDATE_ORDER_SET_ID, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/ItemSet' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/ItemSet' }
  */
 router.get(ROUTE_GET_ORDER_SETS, [auth], (req, res) => {
     const adminController = new AdminController()
@@ -2347,7 +2365,10 @@ router.get(ROUTE_GET_ORDER_SETS, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ItemSet' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ItemSet' }
  *       404:
  *         description: Set not found
  *         content:
@@ -2380,7 +2401,10 @@ router.get(ROUTE_GET_ORDER_SET_ID, [auth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { type: string, example: "Set deleted successfully" }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Set deleted successfully" }
  *       404:
  *         description: Set not found
  *         content:

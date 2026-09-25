@@ -51,9 +51,12 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/ComplaintType' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/ComplaintType' }
  *   post:
  *     summary: Create a complaint type (admin)
  *     tags: [Recovery (Staff)]
@@ -78,7 +81,10 @@ const {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintType' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintType' }
  *       400:
  *         description: Duplicate/validation
  *         content:
@@ -117,7 +123,10 @@ router.post(ROUTE_RECOVERY_COMPLAINT_TYPES, [adminAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintType' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintType' }
  */
 router.put(ROUTE_RECOVERY_COMPLAINT_TYPE_BY_ID, [adminAuth], (req, res) =>
     new FeedbackController().updateComplaintType(req, res),
@@ -147,19 +156,22 @@ router.put(ROUTE_RECOVERY_COMPLAINT_TYPE_BY_ID, [adminAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/Feedback' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 48 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 3 }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/Feedback' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 48 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 3 }
  */
 router.get(ROUTE_RECOVERY_FEEDBACK_LIST, [customerExperienceAuth], (req, res) =>
     new FeedbackController().listFeedback(req, res),
@@ -189,19 +201,22 @@ router.get(ROUTE_RECOVERY_FEEDBACK_LIST, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/ComplaintCase' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 12 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/ComplaintCase' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 12 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
  */
 router.get(ROUTE_RECOVERY_CASES, [customerExperienceAuth], (req, res) =>
     new FeedbackController().listCases(req, res),
@@ -223,7 +238,10 @@ router.get(ROUTE_RECOVERY_CASES, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.get(ROUTE_RECOVERY_CASE, [customerExperienceAuth], (req, res) =>
     new FeedbackController().getCase(req, res),
@@ -249,7 +267,10 @@ router.get(ROUTE_RECOVERY_CASE, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.post(ROUTE_RECOVERY_CASE_ASSIGN, [customerExperienceAuth], (req, res) =>
     new FeedbackController().assignCase(req, res),
@@ -282,7 +303,10 @@ router.post(ROUTE_RECOVERY_CASE_ASSIGN, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Illegal transition
  *         content:
@@ -320,7 +344,10 @@ router.post(ROUTE_RECOVERY_CASE_TRANSITION, [customerExperienceAuth], (req, res)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.post(ROUTE_RECOVERY_CASE_ACTIONS, [customerExperienceAuth], (req, res) =>
     new FeedbackController().addAction(req, res),
@@ -344,7 +371,10 @@ router.post(ROUTE_RECOVERY_CASE_ACTIONS, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.post(ROUTE_RECOVERY_CASE_ACTION_COMPLETE, [customerExperienceAuth], (req, res) =>
     new FeedbackController().completeAction(req, res),
@@ -389,7 +419,10 @@ router.post(ROUTE_RECOVERY_CASE_ACTION_COMPLETE, [customerExperienceAuth], (req,
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.post(ROUTE_RECOVERY_CASE_CREDIT_REQUEST, [customerExperienceAuth], (req, res) =>
     new FeedbackController().requestCredit(req, res),
@@ -429,7 +462,10 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_REQUEST, [customerExperienceAuth], (req, 
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Above threshold without admin approval, or nothing pending
  *         content:
@@ -464,7 +500,10 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_APPROVE, [customerExperienceAuth], (req, 
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.post(ROUTE_RECOVERY_CASE_CREDIT_REJECT, [customerExperienceAuth], (req, res) =>
     new FeedbackController().rejectCredit(req, res),
@@ -502,7 +541,10 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_REJECT, [customerExperienceAuth], (req, r
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Not found, not cash, or not approved
  *         content:
@@ -536,7 +578,10 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_MARK_PAID, [adminAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  */
 router.post(ROUTE_RECOVERY_CASE_ESCALATE, [customerExperienceAuth], (req, res) =>
     new FeedbackController().escalate(req, res),
@@ -568,7 +613,10 @@ router.post(ROUTE_RECOVERY_CASE_ESCALATE, [customerExperienceAuth], (req, res) =
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ComplaintCase' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ComplaintCase' }
  *       400:
  *         description: Not resolved, or confirmation window still open
  *         content:
@@ -621,11 +669,14 @@ router.post(ROUTE_RECOVERY_CASE_CLOSE, [customerExperienceAuth], (req, res) =>
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     complaint: { $ref: '#/components/schemas/ComplaintCase' }
- *                     order: { $ref: '#/components/schemas/BookOrderSummary' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *                         order: { $ref: '#/components/schemas/BookOrderSummary' }
  *       400:
  *         description: Invalid action, or original order/items missing
  *         content:
@@ -657,43 +708,46 @@ router.post(ROUTE_RECOVERY_CASE_RECOVERY_ORDER, [customerExperienceAuth], (req, 
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     complaint: { $ref: '#/components/schemas/ComplaintCase' }
- *                     evidence:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         photos: { type: array, items: { type: string } }
- *                         affectedItems: { type: array, items: { type: string } }
- *                     compensations: { type: array, items: { $ref: '#/components/schemas/RecoveryCompensation' } }
- *                     compensationSummary:
- *                       type: object
- *                       description: "§7: server-computed compensation totals so the FE doesn't re-sum or re-implement the approval gate."
- *                       properties:
- *                         cumulativeApproved: { type: number, example: 8000, description: Sum of APPROVED compensations (all types) on the case }
- *                         byType:
+ *                         complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *                         evidence:
  *                           type: object
- *                           description: Approved totals split by compensation type (keys omitted when zero).
  *                           properties:
- *                             wallet-credit: { type: number, example: 3000 }
- *                             cash: { type: number, example: 5000 }
- *                         approvalThreshold: { type: number, example: 10000, description: "Amount above which (single or cumulative) approval needs Admin; cash always needs Admin." }
- *                     recoveryActions: { type: array, items: { $ref: '#/components/schemas/RecoveryAction' } }
- *                     recoveryOrders: { type: array, items: { $ref: '#/components/schemas/BookOrderSummary' } }
- *                     escalation:
- *                       type: object
- *                       properties:
- *                         escalated: { type: boolean, example: false }
- *                         reason: { type: string, nullable: true }
- *                         escalatedAt: { type: string, format: date-time, nullable: true }
- *                     slaBreaches:
- *                       type: object
- *                       properties:
- *                         reviewOverdue: { type: boolean, example: false }
- *                         resolutionOverdue: { type: boolean, example: false }
- *                         escalated: { type: boolean, example: false }
- *                     messages: { type: array, items: { $ref: '#/components/schemas/ChatMessage' } }
+ *                             photos: { type: array, items: { type: string } }
+ *                             affectedItems: { type: array, items: { type: string } }
+ *                         compensations: { type: array, items: { $ref: '#/components/schemas/RecoveryCompensation' } }
+ *                         compensationSummary:
+ *                           type: object
+ *                           description: "§7: server-computed compensation totals so the FE doesn't re-sum or re-implement the approval gate."
+ *                           properties:
+ *                             cumulativeApproved: { type: number, example: 8000, description: Sum of APPROVED compensations (all types) on the case }
+ *                             byType:
+ *                               type: object
+ *                               description: Approved totals split by compensation type (keys omitted when zero).
+ *                               properties:
+ *                                 wallet-credit: { type: number, example: 3000 }
+ *                                 cash: { type: number, example: 5000 }
+ *                             approvalThreshold: { type: number, example: 10000, description: "Amount above which (single or cumulative) approval needs Admin; cash always needs Admin." }
+ *                         recoveryActions: { type: array, items: { $ref: '#/components/schemas/RecoveryAction' } }
+ *                         recoveryOrders: { type: array, items: { $ref: '#/components/schemas/BookOrderSummary' } }
+ *                         escalation:
+ *                           type: object
+ *                           properties:
+ *                             escalated: { type: boolean, example: false }
+ *                             reason: { type: string, nullable: true }
+ *                             escalatedAt: { type: string, format: date-time, nullable: true }
+ *                         slaBreaches:
+ *                           type: object
+ *                           properties:
+ *                             reviewOverdue: { type: boolean, example: false }
+ *                             resolutionOverdue: { type: boolean, example: false }
+ *                             escalated: { type: boolean, example: false }
+ *                         messages: { type: array, items: { $ref: '#/components/schemas/ChatMessage' } }
  *       400:
  *         description: Complaint not found
  *         content:
@@ -721,19 +775,22 @@ router.get(ROUTE_RECOVERY_CASE_DASHBOARD, [customerExperienceAuth], (req, res) =
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/ChatMessage' }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 6 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 50 }
- *                         pages: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/ChatMessage' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 6 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 50 }
+ *                             pages: { type: integer, example: 1 }
  *   post:
  *     summary: Reply in the complaint conversation (CX)
  *     tags: [Recovery (Staff)]
@@ -757,7 +814,10 @@ router.get(ROUTE_RECOVERY_CASE_DASHBOARD, [customerExperienceAuth], (req, res) =
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/ChatMessage' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ChatMessage' }
  */
 router.get(ROUTE_RECOVERY_CASE_MESSAGES, [customerExperienceAuth], (req, res) =>
     new FeedbackController().staffListMessages(req, res),

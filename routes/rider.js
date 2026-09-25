@@ -727,79 +727,82 @@ router.put(ROUTE_RIDER_MARK_DELIVERY_FAILED_ID, riderAuth, (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           oscNumber:
- *                             type: string
- *                             example: "OSC-20260428-321782"
- *                           fullName:
- *                             type: string
- *                             example: "Jude Victor"
- *                           phoneNumber:
- *                             type: string
- *                             example: "08012345678"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "standard"
- *                           amount:
- *                             type: number
- *                             example: 4500
- *                           pickupAddress:
- *                             type: string
- *                             example: "12 Lagos Street, Yaba"
- *                           stage:
- *                             type: object
- *                             properties:
- *                               status:
- *                                 type: string
- *                                 example: "delivered"
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               pickup:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "picked-up"
- *                                   isVerified:
- *                                     type: boolean
- *                                     example: true
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                               delivery:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     enum: [delivered, failed]
- *                                     example: "delivered"
- *                                   note:
- *                                     type: string
- *                                     nullable: true
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total: { type: integer, example: 42 }
- *                         page: { type: integer, example: 1 }
- *                         limit: { type: integer, example: 20 }
- *                         pages: { type: integer, example: 3 }
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               oscNumber:
+ *                                 type: string
+ *                                 example: "OSC-20260428-321782"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "Jude Victor"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08012345678"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "standard"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 4500
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "12 Lagos Street, Yaba"
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "delivered"
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   pickup:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "picked-up"
+ *                                       isVerified:
+ *                                         type: boolean
+ *                                         example: true
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         enum: [delivered, failed]
+ *                                         example: "delivered"
+ *                                       note:
+ *                                         type: string
+ *                                         nullable: true
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 42 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 3 }
  *       400:
  *         description: Failed to fetch delivery history
  *       401:
@@ -840,28 +843,31 @@ router.get(ROUTE_RIDER_HISTORY, [riderAuth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/TimelineOrder' }
- *                     pipeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key:
- *                             type: string
- *                             example: "qc_passed"
- *                           label:
- *                             type: string
- *                             example: "QC Passed"
- *                           completed:
- *                             type: boolean
- *                             example: true
- *                           timestamp:
- *                             type: string
- *                             format: date-time
- *                             nullable: true
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/TimelineOrder' }
+ *                         pipeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key:
+ *                                 type: string
+ *                                 example: "qc_passed"
+ *                               label:
+ *                                 type: string
+ *                                 example: "QC Passed"
+ *                               completed:
+ *                                 type: boolean
+ *                                 example: true
+ *                               timestamp:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 nullable: true
  *       400:
  *         description: Failed to fetch order timeline or rider not assigned to this order
  *       401:

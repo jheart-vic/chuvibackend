@@ -62,18 +62,21 @@ router.post(
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Image uploaded successfully
  *                 data:
  *                   type: object
  *                   properties:
- *                     imageUrl:
+ *                     message:
  *                       type: string
- *                       example: "https://yourdomain.com/uploads/image123.jpg"
- *                     publicId:
- *                       type: string
- *                       example: "image123"
+ *                       example: Image uploaded successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         imageUrl:
+ *                           type: string
+ *                           example: "https://yourdomain.com/uploads/image123.jpg"
+ *                         publicId:
+ *                           type: string
+ *                           example: "image123"
  *       400:
  *         description: Bad request, e.g., no file uploaded or invalid file
  *         content:

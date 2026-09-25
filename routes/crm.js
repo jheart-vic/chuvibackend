@@ -701,7 +701,10 @@ router.get(ROUTE_CRM_METRICS, [adminAuth], (req, res) => {
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { $ref: '#/components/schemas/MonthlyLeadReport' }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/MonthlyLeadReport' }
  *       400:
  *         description: Bad month format
  *         content:

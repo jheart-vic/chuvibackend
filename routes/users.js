@@ -87,60 +87,63 @@ const router = require("express").Router();
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
- *                     walletBalance:
- *                       type: number
- *                       example: 30000
- *                     pastOrdersCount:
- *                       type: integer
- *                       example: 5
- *                     unreadNotificationsCount:
- *                       type: integer
- *                       example: 2
- *                     ongoingOrder:
+ *                     message:
  *                       type: object
- *                       nullable: true
  *                       properties:
- *                         id:
- *                           type: string
- *                           example: "664abc123def456ghi789jkl"
- *                         status:
- *                           type: string
- *                           example: "ready"
- *                         amount:
+ *                         walletBalance:
  *                           type: number
- *                           example: 4500
- *                         createdAt:
- *                           type: string
- *                           format: date-time
- *                           example: "2025-11-28T14:47:00.000Z"
- *                     subscription:
- *                       type: object
- *                       nullable: true
- *                       properties:
- *                         status:
- *                           type: string
- *                           example: "active"
- *                         nextBillingDate:
- *                           type: string
- *                           format: date-time
- *                           example: "2025-12-28T00:00:00.000Z"
- *                         remainingItems:
+ *                           example: 30000
+ *                         pastOrdersCount:
  *                           type: integer
- *                           nullable: true
- *                           example: 8
- *                         plan:
+ *                           example: 5
+ *                         unreadNotificationsCount:
+ *                           type: integer
+ *                           example: 2
+ *                         ongoingOrder:
  *                           type: object
  *                           nullable: true
  *                           properties:
- *                             name:
+ *                             id:
  *                               type: string
- *                               example: "Student Plan"
- *                             monthlyLimits:
+ *                               example: "664abc123def456ghi789jkl"
+ *                             status:
+ *                               type: string
+ *                               example: "ready"
+ *                             amount:
+ *                               type: number
+ *                               example: 4500
+ *                             createdAt:
+ *                               type: string
+ *                               format: date-time
+ *                               example: "2025-11-28T14:47:00.000Z"
+ *                         subscription:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             status:
+ *                               type: string
+ *                               example: "active"
+ *                             nextBillingDate:
+ *                               type: string
+ *                               format: date-time
+ *                               example: "2025-12-28T00:00:00.000Z"
+ *                             remainingItems:
  *                               type: integer
- *                               example: 10
+ *                               nullable: true
+ *                               example: 8
+ *                             plan:
+ *                               type: object
+ *                               nullable: true
+ *                               properties:
+ *                                 name:
+ *                                   type: string
+ *                                   example: "Student Plan"
+ *                                 monthlyLimits:
+ *                                   type: integer
+ *                                   example: 10
  *       400:
  *         description: Failed to fetch dashboard data
  *         content:
@@ -262,11 +265,14 @@ router.get(ROUTE_GET_ACCOUNT, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: User profile updated successfully
  *                 data:
- *                   $ref: '#/components/schemas/User'
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: User profile updated successfully
+ *                     data:
+ *                       $ref: '#/components/schemas/User'
  *       400:
  *         description: Bad request (nothing to update or email already in use)
  *         content:
@@ -349,21 +355,24 @@ router.post(ROUTE_PROFILE_IMAGE_UPLOAD, [auth], image_uploader.single("image"), 
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message:
+ *                 data:
  *                   type: object
  *                   properties:
  *                     message:
- *                       type: string
- *                       example: Profile image removed successfully
- *                     data:
  *                       type: object
  *                       properties:
- *                         imageUrl:
+ *                         message:
  *                           type: string
- *                           example: https://static.vecteezy.com/system/resources/previews/005/544/718/non_2x/profile-icon-design-free-vector.jpg
- *                         publicId:
- *                           type: string
- *                           example: ""
+ *                           example: Profile image removed successfully
+ *                         data:
+ *                           type: object
+ *                           properties:
+ *                             imageUrl:
+ *                               type: string
+ *                               example: https://static.vecteezy.com/system/resources/previews/005/544/718/non_2x/profile-icon-design-free-vector.jpg
+ *                             publicId:
+ *                               type: string
+ *                               example: ""
  *       401:
  *         description: Unauthorized
  *         content:
@@ -416,19 +425,22 @@ router.delete(ROUTE_PROFILE_IMAGE_DELETE, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Address added successfully
  *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
+ *                     message:
  *                       type: string
- *                       example: 64fbc91d7e9a8c0012ab3456
- *                     label:
- *                       type: string
- *                     address:
- *                       type: string
+ *                       example: Address added successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                           example: 64fbc91d7e9a8c0012ab3456
+ *                         label:
+ *                           type: string
+ *                         address:
+ *                           type: string
  *       400:
  *         description: Invalid input data
  *       401:
@@ -468,9 +480,12 @@ router.post(ROUTE_ADD_ADDRESS, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Address deleted successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Address deleted successfully
  *       401:
  *         description: Unauthorized
  *       404:
@@ -621,21 +636,24 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Payment initialized successfully
  *                 data:
  *                   type: object
  *                   properties:
- *                     authorization_url:
+ *                     message:
  *                       type: string
- *                       example: "https://checkout.paystack.com/2v4t6w4s8s"
- *                     access_code:
- *                       type: string
- *                       example: "ACCESS_23s5z3m0ha"
- *                     reference:
- *                       type: string
- *                       example: "T513406671019712"
+ *                       example: Payment initialized successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         authorization_url:
+ *                           type: string
+ *                           example: "https://checkout.paystack.com/2v4t6w4s8s"
+ *                         access_code:
+ *                           type: string
+ *                           example: "ACCESS_23s5z3m0ha"
+ *                         reference:
+ *                           type: string
+ *                           example: "T513406671019712"
  *       400:
  *         description: Validation error — missing or invalid fields
  *         content:
@@ -705,16 +723,19 @@ router.post(ROUTE_INITIALIZE_PAYMENT, auth, (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Notification preference updated successfully
  *                 data:
  *                   type: object
  *                   properties:
- *                     whatsappNotification:
- *                       type: boolean
- *                     emailNotification:
- *                       type: boolean
+ *                     message:
+ *                       type: string
+ *                       example: Notification preference updated successfully
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         whatsappNotification:
+ *                           type: boolean
+ *                         emailNotification:
+ *                           type: boolean
  *       400:
  *         description: Invalid request body
  *       401:
@@ -751,9 +772,12 @@ router.patch(
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: User account deleted successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: User account deleted successfully
  *       401:
  *         description: Unauthorized
  *       404:
@@ -872,9 +896,12 @@ router.get(ROUTE_GET_USER_NOTIFICATIONS, auth, (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Password changed successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Password changed successfully
  *       400:
  *         description: Validation error or incorrect current password
  *         content:
@@ -981,9 +1008,12 @@ router.get(ROUTE_GET_USERS_BY_TYPE, [auth], (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 message:
- *                   type: string
- *                   example: Profile completed successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Profile completed successfully
  *       400:
  *         description: Phone number missing or profile already completed
  *       401:
