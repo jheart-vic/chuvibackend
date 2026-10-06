@@ -80,7 +80,7 @@ class PressAndIronService extends BaseService {
                             page: 1,
                             limit: 5,
                             sort: { 'stage.updatedAt': 1 },
-                            select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt pressDetails',
+                            select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt pressDetails',
                             lean: true,
                         },
                     ),
@@ -129,7 +129,7 @@ class PressAndIronService extends BaseService {
                 page,
                 limit,
                 sort: { 'stage.updatedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt pressDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt pressDetails',
                 lean: true,
             })
 
@@ -536,14 +536,18 @@ class PressAndIronService extends BaseService {
                 page,
                 limit,
                 sort: { 'pressDetails.startedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt pressDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt pressDetails',
                 lean: true,
             })
 
             const ordersWithMeta = data.map((order) => {
                 const startedAt = order.pressDetails?.startedAt
+                // PRESS_DURATION_MINUTES is keyed by DELIVERY SPEED
+                // (standard/express/same-day), not by serviceTier
+                // (classic/premium/vip) — indexing it by tier never matched, so
+                // every order silently fell through to the 30-minute default.
                 const durationMinutes =
-                    PRESS_DURATION_MINUTES[order.serviceTier] ?? 30
+                    PRESS_DURATION_MINUTES[order.deliverySpeed] ?? PRESS_DURATION_MINUTES.standard
                 const estimatedFinish = startedAt
                     ? new Date(
                           new Date(startedAt).getTime() +
@@ -620,7 +624,7 @@ class PressAndIronService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus stageHistory pressDetails createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus stageHistory pressDetails createdAt updatedAt',
                     populate: {
                         path: 'pressDetails.operatorId',
                         select: 'fullName',
@@ -822,7 +826,7 @@ class PressAndIronService extends BaseService {
                 page,
                 limit,
                 sort: { updatedAt: -1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory pressDetails createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory pressDetails createdAt updatedAt',
                 lean: true,
             })
 

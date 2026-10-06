@@ -43,19 +43,23 @@ const {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     stats:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         qcQueue:   { type: integer, example: 2 }
- *                         activeQC:  { type: integer, example: 0 }
- *                         packing:   { type: integer, example: 0 }
- *                         ready:     { type: integer, example: 0 }
- *                     recentQueue:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
+ *                         stats:
+ *                           type: object
+ *                           properties:
+ *                             qcQueue:   { type: integer, example: 2 }
+ *                             activeQC:  { type: integer, example: 0 }
+ *                             packing:   { type: integer, example: 0 }
+ *                             ready:     { type: integer, example: 0 }
+ *                         recentQueue:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
  *       500:
  *         description: Server error
  */
@@ -91,14 +95,18 @@ router.get(ROUTE_QC_DASHBOARD, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -132,14 +140,18 @@ router.get(ROUTE_QC_QUEUE, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -168,11 +180,15 @@ router.get(ROUTE_ACTIVE_QC_QUEUE, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
- *                     allItemsPassed: { type: boolean, example: false }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
+ *                         allItemsPassed: { type: boolean, example: false }
  *       404:
  *         description: Order not found or not in QC stage
  *       500:
@@ -248,11 +264,15 @@ router.get(ROUTE_QC_QUEUE_SINGLE, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message:        { type: string, example: "3 item(s) marked as QC passed" }
- *                     allItemsPassed: { type: boolean, example: true }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message:        { type: string, example: "3 item(s) marked as QC passed" }
+ *                         allItemsPassed: { type: boolean, example: true }
  *       400:
  *         description: No valid items found, or neither itemIds nor allItems provided
  *       404:
@@ -289,7 +309,11 @@ router.patch(ROUTE_QC_CONFIRM_ITEM, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item QC status undone" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item QC status undone" }
  *       404:
  *         description: Order or item not found
  *       500:
@@ -324,7 +348,11 @@ router.patch(ROUTE_QC_UNDO_CONFIRM_ITEM, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Order passed QC and sent to Pack & Seal" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Order passed QC and sent to Pack & Seal" }
  *       400:
  *         description: Not all items have passed QC
  *       404:
@@ -365,14 +393,18 @@ router.patch(ROUTE_QC_PASS_ORDER, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -401,10 +433,14 @@ router.get(ROUTE_QC_PACK_AND_SEAL, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
  *       404:
  *         description: Order not found or not in Pack & Seal stage
  *       500:
@@ -452,7 +488,11 @@ router.get(ROUTE_QC_PACK_AND_SEAL_DETAIL, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Order packed and sealed. Now ready for delivery." }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Order packed and sealed. Now ready for delivery." }
  *       400:
  *         description: Checklist incomplete
  *       404:
@@ -492,14 +532,18 @@ router.patch(ROUTE_QC_PACK_AND_SEAL_COMPLETE, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -556,7 +600,11 @@ router.get(ROUTE_QC_READY_ORDERS, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item placed on hold successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item placed on hold successfully" }
  *       400:
  *         description: reason or assignTo missing or invalid
  *       404:
@@ -605,39 +653,43 @@ router.patch(ROUTE_QC_HOLD, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           orderId:       { type: string }
- *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                           fullName:      { type: string, example: "Jude Victor" }
- *                           stationStatus: { type: string, example: "pressing-and-ironing-station" }
- *                           holdType:
- *                             type: string
- *                             enum: [assigned_to_us, raised_by_us]
- *                             example: assigned_to_us
- *                           holdReason:    { type: string, example: "item_missing" }
- *                           holdTime:      { type: string, format: date-time }
- *                           flaggedItems:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 itemId:        { type: string }
- *                                 tagId:         { type: string }
- *                                 type:          { type: string, example: "shirt" }
- *                                 flagNote:      { type: string }
- *                                 holdReason:    { type: string, example: "item_missing" }
- *                                 assignTo:      { type: string, example: "press-and-iron" }
- *                                 heldByStation: { type: string, example: "qc-station" }
- *                                 heldAt:        { type: string, format: date-time }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId:       { type: string }
+ *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:      { type: string, example: "Jude Victor" }
+ *                               stationStatus: { type: string, example: "pressing-and-ironing-station" }
+ *                               holdType:
+ *                                 type: string
+ *                                 enum: [assigned_to_us, raised_by_us]
+ *                                 example: assigned_to_us
+ *                               holdReason:    { type: string, example: "item_missing" }
+ *                               holdTime:      { type: string, format: date-time }
+ *                               flaggedItems:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     itemId:        { type: string }
+ *                                     tagId:         { type: string }
+ *                                     type:          { type: string, example: "shirt" }
+ *                                     flagNote:      { type: string }
+ *                                     holdReason:    { type: string, example: "item_missing" }
+ *                                     assignTo:      { type: string, example: "press-and-iron" }
+ *                                     heldByStation: { type: string, example: "qc-station" }
+ *                                     heldAt:        { type: string, format: date-time }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -671,9 +723,13 @@ router.get(ROUTE_QC_GET_HOLD, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Order released from hold and returned to QC queue
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Order released from hold and returned to QC queue
  *       404:
  *         description: Order not found or not on hold at this station
  *       500:
@@ -718,14 +774,18 @@ router.patch(ROUTE_QC_RELEASE, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -758,29 +818,33 @@ router.get(ROUTE_QC_HISTORY, [qcAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/TimelineOrder' }
- *                     pipeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key:       { type: string, example: "qc_passed" }
- *                           label:     { type: string, example: "QC Passed" }
- *                           completed: { type: boolean, example: true }
- *                           timestamp: { type: string, format: date-time, nullable: true }
- *                     itemTimeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemId:    { type: string }
- *                           itemType:  { type: string, example: "shirt" }
- *                           action:    { type: string, example: "qc_passed" }
- *                           note:      { type: string }
- *                           timestamp: { type: string, format: date-time }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/TimelineOrder' }
+ *                         pipeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key:       { type: string, example: "qc_passed" }
+ *                               label:     { type: string, example: "QC Passed" }
+ *                               completed: { type: boolean, example: true }
+ *                               timestamp: { type: string, format: date-time, nullable: true }
+ *                         itemTimeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               itemId:    { type: string }
+ *                               itemType:  { type: string, example: "shirt" }
+ *                               action:    { type: string, example: "qc_passed" }
+ *                               note:      { type: string }
+ *                               timestamp: { type: string, format: date-time }
  *       404:
  *         description: Order not found
  *       500:

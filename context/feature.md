@@ -153,12 +153,26 @@ A1-A5 + A7 were built BEFORE the answers came back, assuming QC would print. Q4 
       REWORK: paths move to the intake-user mount, and the schema gains `paymentState`/`paymentNotice`
       (R3) + the new `tagPrinted`/`needsTag`/`printCount`/`reprintFlagged` fields on the deliverable-
       orders rows. Note in the description that `ref` is what a future barcode would encode (Q5).
-- [ ] A8 — DB verify (needs `testing_db`): print + reprint write the record and audit; both gates refuse
-      against real orders; **rider assignment REFUSED on an unprinted delivery order and ALLOWED right
-      after printing**; a pickup-only order is assignable without a tag; a real subscription order shows
-      `paid`; a real unpaid card order shows the outstanding figure + the unpaid notice; per-piece count
-      matches a really-booked order's `items.length`; the deliverable-orders list shows `needsTag`
-      before and after printing.
+- [x] A8 — **DB-VERIFIED 2026-09-29: NEW `dispatchTagStaging.js` ran 46/46 GREEN against `testingdb`**
+      (all 17 scenarios). Proved what the offline harness could not:
+      `dispatchTag.printedAt`/`printCount`/`printedBy`/`ref` really PERSIST in Mongo; the Activity +
+      AuditLog rows are written and the reprint's audit line reads "REPRINTED (print #2)";
+      `reprintFlagged` false at 3 prints / true at 4; **rider assignment REFUSED on an unprinted
+      delivery order with `needsDispatchTag` and NO rider written, then ALLOWED after printing with the
+      rider actually stored**; a non-delivery order is never blocked; the deliverable-orders queue
+      returns `needsTag`/`tagPrinted`/`printCount` + `needsTagCount` from a real query; paid → `paid` +
+      "nothing to collect", unpaid → the figure + "settle it in the app / do NOT collect cash",
+      subscription order → `paid` despite amount 9000; legacy STRING address normalised; and
+      `itemCount` = **5 pieces from a real 3+2 booking** through `postBookOrder`.
+      All probe data removed (verified 0 leftover orders / users / dispatchTag / audit rows).
+      **Harness safety:** refuses without `STAGING_OK=1`, refuses `NODE_ENV=production` without
+      `STAGING_FORCE=1`, and — unlike the older harnesses — **hard-refuses any DB named `laundrydb`**
+      (both gates verified). Run:
+      `STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchTagStaging.js` (never edit `.env`).
+      **Two harness bugs the run itself found:** the booking payload was missing the required
+      `fullName`; and `postBookOrder` returns `{ message: <string>, order, offer }` — the order document
+      is a SIBLING of `message`, not inside it, so the order id is at `data.order._id`.
+      NOT covered (deliberately): the HTTP/auth layer — the FE clicked that through against live data.
 
 **Two things the build found that the plan didn't have:**
 - **`amount` is ALREADY the full billed total** (`bookOrder.service.js:664` = items + pickup/delivery/

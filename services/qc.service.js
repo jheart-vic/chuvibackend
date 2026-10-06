@@ -80,7 +80,7 @@ class QCService extends BaseService {
                         page: 1,
                         limit: 5,
                         sort: { 'stage.updatedAt': 1 },
-                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt qcDetails',
+                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage createdAt qcDetails',
                         lean: true,
                     },
                 ),
@@ -130,14 +130,14 @@ class QCService extends BaseService {
                 page,
                 limit,
                 sort: { 'stage.updatedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt qcDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
 
             const ordersWithMeta = data.map((o) => {
                 const arrivedAt = o.stage?.updatedAt
                 const durationMinutes =
-                    QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
+                    QC_DURATION_MINUTES[o.deliverySpeed] ?? QC_DURATION_MINUTES.standard
                 const estimatedFinish = arrivedAt
                     ? new Date(
                           new Date(arrivedAt).getTime() +
@@ -198,14 +198,14 @@ class QCService extends BaseService {
                 page,
                 limit,
                 sort: { 'stage.updatedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt qcDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
 
             const ordersWithMeta = data.map((o) => {
                 const arrivedAt = o.stage?.updatedAt
                 const durationMinutes =
-                    QC_DURATION_MINUTES[o.deliverySpeed] ?? 20
+                    QC_DURATION_MINUTES[o.deliverySpeed] ?? QC_DURATION_MINUTES.standard
                 const estimatedFinish = arrivedAt
                     ? new Date(
                           new Date(arrivedAt).getTime() +
@@ -266,7 +266,7 @@ class QCService extends BaseService {
 
             const arrivedAt = order.stage?.updatedAt
             const durationMinutes =
-                QC_DURATION_MINUTES[order.deliverySpeed] ?? 20
+                QC_DURATION_MINUTES[order.deliverySpeed] ?? QC_DURATION_MINUTES.standard
             const estimatedFinish = arrivedAt
                 ? new Date(
                       new Date(arrivedAt).getTime() +
@@ -603,7 +603,7 @@ class QCService extends BaseService {
                 page,
                 limit,
                 sort: { 'qcDetails.passedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt qcDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
             console.log({ data, pagination })
@@ -780,7 +780,7 @@ class QCService extends BaseService {
                 page,
                 limit,
                 sort: { 'stage.updatedAt': -1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt qcDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
 
@@ -984,7 +984,7 @@ class QCService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus qcDetails createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus qcDetails createdAt updatedAt',
                     lean: true,
                 },
             )
@@ -1188,7 +1188,7 @@ class QCService extends BaseService {
                 page,
                 limit,
                 sort: { updatedAt: -1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory qcDetails createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory qcDetails createdAt updatedAt',
                 lean: true,
             })
 

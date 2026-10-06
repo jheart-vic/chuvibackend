@@ -478,108 +478,112 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     total:
- *                       type: integer
- *                       example: 42
- *                     page:
- *                       type: integer
- *                       example: 1
- *                     limit:
- *                       type: integer
- *                       example: 10
- *                     totalPages:
- *                       type: integer
- *                       example: 5
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           userId:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f54321"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "+1234567890"
- *                           pickupAddress:
- *                             type: string
- *                             example: "123 Main Street"
- *                           deliveryAddress:
- *                             type: string
- *                             example: "123 Main Street"
- *                           pickupDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-13"
- *                           pickupTime:
- *                             type: string
- *                             example: "morning"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           deliverySpeed:
- *                             type: string
- *                             example: "express | standard | same-day"
- *                           amount:
- *                             type: number
- *                             example: 150
- *                           pricing:
- *                             $ref: '#/components/schemas/OrderPricing'
- *                           paymentMethod:
- *                             type: string
- *                             example: "paystack"
- *                           oscNumber:
- *                             type: string
- *                             example: "OSC123456"
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                           example: 42
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         limit:
+ *                           type: integer
+ *                           example: 10
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 5
+ *                         data:
+ *                           type: array
  *                           items:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 type:
- *                                   type: string
- *                                   example: "shirt"
- *                                 price:
- *                                   type: number
- *                                   example: 50
- *                                 quantity:
- *                                   type: number
- *                                   example: 2
- *                           extraNote:
- *                             type: string
- *                             example: "Handle with care"
- *                           stage:
  *                             type: object
  *                             properties:
- *                               status:
+ *                               _id:
  *                                 type: string
- *                                 example: "in-process"
- *                               note:
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               userId:
  *                                 type: string
- *                                 example: "Picked up by driver"
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
- *                           updatedAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T13:00:00.123Z"
+ *                                 example: "64d3c9c0f1b2a8e9d0f54321"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "+1234567890"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "123 Main Street"
+ *                               deliveryAddress:
+ *                                 type: string
+ *                                 example: "123 Main Street"
+ *                               pickupDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-13"
+ *                               pickupTime:
+ *                                 type: string
+ *                                 example: "morning"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               deliverySpeed:
+ *                                 type: string
+ *                                 example: "express | standard | same-day"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 150
+ *                               pricing:
+ *                                 $ref: '#/components/schemas/OrderPricing'
+ *                               paymentMethod:
+ *                                 type: string
+ *                                 example: "paystack"
+ *                               oscNumber:
+ *                                 type: string
+ *                                 example: "OSC123456"
+ *                               items:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     type:
+ *                                       type: string
+ *                                       example: "shirt"
+ *                                     price:
+ *                                       type: number
+ *                                       example: 50
+ *                                     quantity:
+ *                                       type: number
+ *                                       example: 2
+ *                               extraNote:
+ *                                 type: string
+ *                                 example: "Handle with care"
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "in-process"
+ *                                   note:
+ *                                     type: string
+ *                                     example: "Picked up by driver"
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
+ *                               updatedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Invalid query parameters
  *       500:
@@ -613,91 +617,95 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f12345"
- *                     userId:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f54321"
- *                     fullName:
- *                       type: string
- *                       example: "John Doe"
- *                     phoneNumber:
- *                       type: string
- *                       example: "+1234567890"
- *                     pickupAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     deliveryAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     pickupDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-13"
- *                     pickupTime:
- *                       type: string
- *                       example: "morning"
- *                     serviceType:
- *                       type: string
- *                       example: "wash-and-iron"
- *                     serviceTier:
- *                       type: string
- *                       example: "premium"
- *                     deliverySpeed:
- *                       type: string
- *                       example: "express"
- *                     amount:
- *                       type: number
- *                       example: 150
- *                     pricing:
- *                       $ref: '#/components/schemas/OrderPricing'
- *                     paymentMethod:
- *                       type: string
- *                       example: "paystack"
- *                     oscNumber:
- *                       type: string
- *                       example: "OSC123456"
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           type:
- *                             type: string
- *                             example: "shirt"
- *                           price:
- *                             type: number
- *                             example: 50
- *                           quantity:
- *                             type: number
- *                             example: 2
- *                     extraNote:
- *                       type: string
- *                       example: "Handle with care"
- *                     stage:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         status:
+ *                         _id:
  *                           type: string
- *                           example: "in-process"
- *                         note:
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         userId:
  *                           type: string
- *                           example: "Picked up by driver"
- *                     paymentStatus:
- *                       type: string
- *                       example: "pending"
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T12:34:56.789Z"
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T13:00:00.123Z"
+ *                           example: "64d3c9c0f1b2a8e9d0f54321"
+ *                         fullName:
+ *                           type: string
+ *                           example: "John Doe"
+ *                         phoneNumber:
+ *                           type: string
+ *                           example: "+1234567890"
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         deliveryAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         pickupDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-13"
+ *                         pickupTime:
+ *                           type: string
+ *                           example: "morning"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "premium"
+ *                         deliverySpeed:
+ *                           type: string
+ *                           example: "express"
+ *                         amount:
+ *                           type: number
+ *                           example: 150
+ *                         pricing:
+ *                           $ref: '#/components/schemas/OrderPricing'
+ *                         paymentMethod:
+ *                           type: string
+ *                           example: "paystack"
+ *                         oscNumber:
+ *                           type: string
+ *                           example: "OSC123456"
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               type:
+ *                                 type: string
+ *                                 example: "shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 50
+ *                               quantity:
+ *                                 type: number
+ *                                 example: 2
+ *                         extraNote:
+ *                           type: string
+ *                           example: "Handle with care"
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status:
+ *                               type: string
+ *                               example: "in-process"
+ *                             note:
+ *                               type: string
+ *                               example: "Picked up by driver"
+ *                         paymentStatus:
+ *                           type: string
+ *                           example: "pending"
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T12:34:56.789Z"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Invalid order ID
  *       404:

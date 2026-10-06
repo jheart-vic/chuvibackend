@@ -85,14 +85,18 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -125,13 +129,17 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     allItemsSorted: { type: boolean, example: false }
- *                     allItemsPretreated: { type: boolean, example: false }
- *                     readyToSend: { type: boolean, example: false }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         allItemsSorted: { type: boolean, example: false }
+ *                         allItemsPretreated: { type: boolean, example: false }
+ *                         readyToSend: { type: boolean, example: false }
  *       404:
  *         description: Order not found or not in sort & pretreat stage
  *       500:
@@ -219,7 +227,11 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item details saved successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item details saved successfully" }
  *       400:
  *         description: Validation error
  *       404:
@@ -262,11 +274,15 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message: { type: string, example: "Item marked as sorted" }
- *                     allItemsSorted: { type: boolean, example: false }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message: { type: string, example: "Item marked as sorted" }
+ *                         allItemsSorted: { type: boolean, example: false }
  *       400:
  *         description: Item already marked as sorted
  *       404:
@@ -307,7 +323,11 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item sort undone successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item sort undone successfully" }
  *       404:
  *         description: Order or item not found
  *       500:
@@ -342,11 +362,15 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message: { type: string, example: "All items marked as sorted successfully" }
- *                     allItemsSorted: { type: boolean, example: true }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message: { type: string, example: "All items marked as sorted successfully" }
+ *                         allItemsSorted: { type: boolean, example: true }
  *       404:
  *         description: Order not found
  *       500:
@@ -387,13 +411,17 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message: { type: string, example: "Item marked as pretreated" }
- *                     allItemsSorted: { type: boolean, example: true }
- *                     allItemsPretreated: { type: boolean, example: false }
- *                     readyToSend: { type: boolean, example: false }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message: { type: string, example: "Item marked as pretreated" }
+ *                         allItemsSorted: { type: boolean, example: true }
+ *                         allItemsPretreated: { type: boolean, example: false }
+ *                         readyToSend: { type: boolean, example: false }
  *       400:
  *         description: Item already marked as pretreated
  *       404:
@@ -434,7 +462,11 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item pretreat status undone successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item pretreat status undone successfully" }
  *       404:
  *         description: Order or item not found
  *       500:
@@ -487,7 +519,11 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item flagged for review successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item flagged for review successfully" }
  *       400:
  *         description: Note is required
  *       404:
@@ -535,66 +571,70 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           oscNumber:
- *                             type: string
- *                             example: "OSC-001"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "+2348012345678"
- *                           serviceType:
- *                             type: string
- *                             example: "wash_and_iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "standard"
- *                           amount:
- *                             type: number
- *                             example: 5000
- *                           flaggedItemCount:
- *                             type: integer
- *                             description: Number of items on this order with flaggedForReview = true
- *                             example: 2
- *                           stage:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
  *                             type: object
  *                             properties:
- *                               status:
+ *                               _id:
  *                                 type: string
- *                                 example: "sort_and_pretreat"
- *                               note:
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               oscNumber:
  *                                 type: string
+ *                                 example: "OSC-001"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "+2348012345678"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash_and_iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "standard"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 5000
+ *                               flaggedItemCount:
+ *                                 type: integer
+ *                                 description: Number of items on this order with flaggedForReview = true
+ *                                 example: 2
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "sort_and_pretreat"
+ *                                   note:
+ *                                     type: string
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                               items:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                               stageHistory:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
  *                               updatedAt:
  *                                 type: string
  *                                 format: date-time
- *                           items:
- *                             type: array
- *                             items:
- *                               type: object
- *                           stageHistory:
- *                             type: array
- *                             items:
- *                               type: object
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                           updatedAt:
- *                             type: string
- *                             format: date-time
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -640,14 +680,18 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -687,14 +731,18 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -727,10 +775,14 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
  *       404:
  *         description: Order not found or not currently in washing stage
  *       500:
@@ -775,14 +827,18 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -815,10 +871,14 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
  *       404:
  *         description: Order not found or not currently in ironing stage
  *       500:
@@ -866,14 +926,18 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -915,29 +979,33 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/TimelineOrder' }
- *                     pipeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key: { type: string, example: "washing" }
- *                           label: { type: string, example: "Washing" }
- *                           completed: { type: boolean, example: true }
- *                           timestamp: { type: string, format: date-time, nullable: true, example: "2026-03-29T10:30:00.000Z" }
- *                     itemTimeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemId: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
- *                           itemType: { type: string, example: "trouser" }
- *                           action: { type: string, example: "sorted" }
- *                           note: { type: string, example: "" }
- *                           timestamp: { type: string, format: date-time, example: "2026-03-29T09:10:00.000Z" }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/TimelineOrder' }
+ *                         pipeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key: { type: string, example: "washing" }
+ *                               label: { type: string, example: "Washing" }
+ *                               completed: { type: boolean, example: true }
+ *                               timestamp: { type: string, format: date-time, nullable: true, example: "2026-03-29T10:30:00.000Z" }
+ *                         itemTimeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               itemId: { type: string, example: "64d3c9c0f1b2a8e9d0f67890" }
+ *                               itemType: { type: string, example: "trouser" }
+ *                               action: { type: string, example: "sorted" }
+ *                               note: { type: string, example: "" }
+ *                               timestamp: { type: string, format: date-time, example: "2026-03-29T09:10:00.000Z" }
  *       404:
  *         description: Order not found
  *       500:
@@ -976,12 +1044,16 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
- *                     allItemsSorted: { type: boolean, example: true }
- *                     allItemsPretreated: { type: boolean, example: true }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
+ *                         allItemsSorted: { type: boolean, example: true }
+ *                         allItemsPretreated: { type: boolean, example: true }
  *       404:
  *         description: Order not found or has not passed through sort & pretreat
  *       500:
@@ -1021,24 +1093,28 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/BookOrder' }
- *                     flaggedItems:
- *                       type: array
- *                       description: Only items where flaggedForReview is true
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id: { type: string }
- *                           type: { type: string, example: "shirt" }
- *                           flagNote: { type: string, example: "Color bleeding risk on collar" }
- *                           damageRiskFlags:
- *                             type: array
- *                             items: { type: string }
- *                             example: ["color_bleeding_risk"]
- *                     flaggedItemCount: { type: integer, example: 2 }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
+ *                         flaggedItems:
+ *                           type: array
+ *                           description: Only items where flaggedForReview is true
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id: { type: string }
+ *                               type: { type: string, example: "shirt" }
+ *                               flagNote: { type: string, example: "Color bleeding risk on collar" }
+ *                               damageRiskFlags:
+ *                                 type: array
+ *                                 items: { type: string }
+ *                                 example: ["color_bleeding_risk"]
+ *                         flaggedItemCount: { type: integer, example: 2 }
  *       404:
  *         description: Order not found or has no flagged items
  *       500:
@@ -1100,7 +1176,11 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item placed on hold successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item placed on hold successfully" }
  *       400:
  *         description: reason or assignTo missing or invalid
  *       404:
@@ -1153,42 +1233,46 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           orderId:       { type: string }
- *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                           fullName:      { type: string, example: "Temitope Balogun" }
- *                           phoneNumber:   { type: string, example: "07081234567" }
- *                           serviceType:   { type: string, example: "wash-and-iron" }
- *                           serviceTier:   { type: string, example: "standard" }
- *                           stationStatus: { type: string, example: "wash-and-dry-station" }
- *                           holdType:
- *                             type: string
- *                             enum: [assigned_to_us, raised_by_us]
- *                             example: assigned_to_us
- *                           holdReason:    { type: string, example: "item_missing" }
- *                           holdTime:      { type: string, format: date-time }
- *                           flaggedItems:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 itemId:        { type: string }
- *                                 tagId:         { type: string }
- *                                 type:          { type: string, example: "shirt" }
- *                                 flagNote:      { type: string }
- *                                 holdReason:    { type: string, example: "item_missing" }
- *                                 assignTo:      { type: string, example: "intake-and-tag" }
- *                                 heldByStation: { type: string, example: "sort-and-pretreat-station" }
- *                                 heldAt:        { type: string, format: date-time }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId:       { type: string }
+ *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:      { type: string, example: "Temitope Balogun" }
+ *                               phoneNumber:   { type: string, example: "07081234567" }
+ *                               serviceType:   { type: string, example: "wash-and-iron" }
+ *                               serviceTier:   { type: string, example: "standard" }
+ *                               stationStatus: { type: string, example: "wash-and-dry-station" }
+ *                               holdType:
+ *                                 type: string
+ *                                 enum: [assigned_to_us, raised_by_us]
+ *                                 example: assigned_to_us
+ *                               holdReason:    { type: string, example: "item_missing" }
+ *                               holdTime:      { type: string, format: date-time }
+ *                               flaggedItems:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     itemId:        { type: string }
+ *                                     tagId:         { type: string }
+ *                                     type:          { type: string, example: "shirt" }
+ *                                     flagNote:      { type: string }
+ *                                     holdReason:    { type: string, example: "item_missing" }
+ *                                     assignTo:      { type: string, example: "intake-and-tag" }
+ *                                     heldByStation: { type: string, example: "sort-and-pretreat-station" }
+ *                                     heldAt:        { type: string, format: date-time }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -1228,9 +1312,13 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Order released from hold and returned to sort & pretreat queue
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Order released from hold and returned to sort & pretreat queue
  *       404:
  *         description: Order not found or not on hold at this station
  *       500:

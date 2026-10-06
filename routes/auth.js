@@ -100,27 +100,31 @@ const router = require("express").Router();
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Registration successful. Please verify your email.
- *                 user:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     email:
+ *                     message:
  *                       type: string
- *                     fullName:
- *                       type: string
- *                     phoneNumber:
- *                       type: string
- *                     userType:
- *                       type: string
- *                     servicePlatform:
- *                       type: string
- *                     otp:
- *                       type: string
- *                     otpExpiresAt:
- *                       type: string
- *                       format: date-time
+ *                       example: Registration successful. Please verify your email.
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         email:
+ *                           type: string
+ *                         fullName:
+ *                           type: string
+ *                         phoneNumber:
+ *                           type: string
+ *                         userType:
+ *                           type: string
+ *                         servicePlatform:
+ *                           type: string
+ *                         otp:
+ *                           type: string
+ *                         otpExpiresAt:
+ *                           type: string
+ *                           format: date-time
  *       400:
  *         description: Missing or invalid fields, or user already exists
  *         content:
@@ -180,9 +184,13 @@ router.post(ROUTE_REGISTER, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: <access_token>
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: <access_token>
  *       400:
  *         description: Missing or invalid email
  *       500:
@@ -230,9 +238,13 @@ router.post(ROUTE_GOOGLE_SIGNUP, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: <access_token>
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: <access_token>
  *       400:
  *         description: Missing or invalid email
  *       500:
@@ -277,29 +289,33 @@ router.post(ROUTE_APPLE_SIGNUP, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   description: Access token (JWT)
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
- *                 user:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
- *                   description: Logged in user details
  *                   properties:
- *                     id:
+ *                     message:
  *                       type: string
- *                       example: "612345abcdef67890"
- *                     email:
+ *                       description: Access token (JWT)
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                     user:
+ *                       type: object
+ *                       description: Logged in user details
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "612345abcdef67890"
+ *                         email:
+ *                           type: string
+ *                           example: user@example.com
+ *                         userType:
+ *                           type: string
+ *                           example: admin
+ *                         name:
+ *                           type: string
+ *                           example: John Doe
+ *                     refreshToken:
  *                       type: string
- *                       example: user@example.com
- *                     userType:
- *                       type: string
- *                       example: admin
- *                     name:
- *                       type: string
- *                       example: John Doe
- *                 refreshToken:
- *                   type: string
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *       401:
  *         description: Invalid credentials
  *         content:
@@ -353,29 +369,33 @@ router.post(ROUTE_LOGIN, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   description: Access token (JWT)
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
- *                 user:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
- *                   description: Logged in user details
  *                   properties:
- *                     id:
+ *                     message:
  *                       type: string
- *                       example: "612345abcdef67890"
- *                     email:
+ *                       description: Access token (JWT)
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                     user:
+ *                       type: object
+ *                       description: Logged in user details
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "612345abcdef67890"
+ *                         email:
+ *                           type: string
+ *                           example: user@example.com
+ *                         userType:
+ *                           type: string
+ *                           example: admin
+ *                         name:
+ *                           type: string
+ *                           example: John Doe
+ *                     refreshToken:
  *                       type: string
- *                       example: user@example.com
- *                     userType:
- *                       type: string
- *                       example: admin
- *                     name:
- *                       type: string
- *                       example: John Doe
- *                 refreshToken:
- *                   type: string
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *       401:
  *         description: Invalid credentials
  *         content:
@@ -426,9 +446,13 @@ router.post(ROUTE_LOGOUT, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Reset email sent
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Reset email sent
  *       400:
  *         description: Missing or invalid email
  *       500:
@@ -593,9 +617,13 @@ router.post(ROUTE_RESET_PASSWORD, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP verified successfully
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: OTP verified successfully
  *       400:
  *         description: Missing or invalid email or OTP
  *       500:
@@ -638,9 +666,13 @@ router.post(ROUTE_VERIFY_OTP, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP resent to email successfully.
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: OTP resent to email successfully.
  *       400:
  *         description: Missing or invalid email
  *       404:
@@ -678,9 +710,13 @@ router.post(ROUTE_RESEND_OTP, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *       400:
  *         description: Refresh token is missing or invalid
  *         content:
@@ -781,21 +817,25 @@ router.get(ROUTE_ADMIN_REGISTER, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: JWT_ACCESS_TOKEN
- *                 user:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     email:
+ *                     message:
  *                       type: string
- *                     fullName:
+ *                       example: JWT_ACCESS_TOKEN
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         email:
+ *                           type: string
+ *                         fullName:
+ *                           type: string
+ *                         userType:
+ *                           type: string
+ *                           example: admin
+ *                     refreshToken:
  *                       type: string
- *                     userType:
- *                       type: string
- *                       example: admin
- *                 refreshToken:
- *                   type: string
  *       401:
  *         description: Invalid credentials
  *         content:

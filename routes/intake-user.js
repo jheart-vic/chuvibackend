@@ -118,89 +118,93 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f12345"
- *                     userId:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f54321"
- *                     fullName:
- *                       type: string
- *                       example: "John Doe"
- *                     phoneNumber:
- *                       type: string
- *                       example: "+1234567890"
- *                     pickupAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     deliveryAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     pickupDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-13"
- *                     pickupTime:
- *                       type: string
- *                       example: "morning"
- *                     serviceType:
- *                       type: string
- *                       example: "wash-and-iron"
- *                     serviceTier:
- *                       type: string
- *                       example: "premium"
- *                     deliverySpeed:
- *                       type: string
- *                       example: "express"
- *                     amount:
- *                       type: number
- *                       example: 150
- *                     paymentMethod:
- *                       type: string
- *                       example: "paystack"
- *                     oscNumber:
- *                       type: string
- *                       example: "OSC123456"
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           type:
- *                             type: string
- *                             example: "shirt"
- *                           price:
- *                             type: number
- *                             example: 50
- *                           quantity:
- *                             type: number
- *                             example: 2
- *                     extraNote:
- *                       type: string
- *                       example: "Handle with care"
- *                     stage:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         status:
+ *                         _id:
  *                           type: string
- *                           example: "in-process"
- *                         note:
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         userId:
  *                           type: string
- *                           example: "Picked up by driver"
- *                     paymentStatus:
- *                       type: string
- *                       example: "pending"
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T12:34:56.789Z"
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T13:00:00.123Z"
+ *                           example: "64d3c9c0f1b2a8e9d0f54321"
+ *                         fullName:
+ *                           type: string
+ *                           example: "John Doe"
+ *                         phoneNumber:
+ *                           type: string
+ *                           example: "+1234567890"
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         deliveryAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         pickupDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-13"
+ *                         pickupTime:
+ *                           type: string
+ *                           example: "morning"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "premium"
+ *                         deliverySpeed:
+ *                           type: string
+ *                           example: "express"
+ *                         amount:
+ *                           type: number
+ *                           example: 150
+ *                         paymentMethod:
+ *                           type: string
+ *                           example: "paystack"
+ *                         oscNumber:
+ *                           type: string
+ *                           example: "OSC123456"
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               type:
+ *                                 type: string
+ *                                 example: "shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 50
+ *                               quantity:
+ *                                 type: number
+ *                                 example: 2
+ *                         extraNote:
+ *                           type: string
+ *                           example: "Handle with care"
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status:
+ *                               type: string
+ *                               example: "in-process"
+ *                             note:
+ *                               type: string
+ *                               example: "Picked up by driver"
+ *                         paymentStatus:
+ *                           type: string
+ *                           example: "pending"
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T12:34:56.789Z"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Validation error
  *       500:
@@ -226,45 +230,49 @@ router.post(ROUTE_CREATE_BOOK_ORDER, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id:
- *                         type: string
- *                         example: "64d3c9c0f1b2a8e9d0f12345"
- *                       fullName:
- *                         type: string
- *                         example: "John Doe"
- *                       phoneNumber:
- *                         type: string
- *                         example: "+1234567890"
- *                       serviceType:
- *                         type: string
- *                         example: "wash-and-iron"
- *                       serviceTier:
- *                         type: string
- *                         example: "premium"
- *                       amount:
- *                         type: number
- *                         example: 150
- *                       paymentStatus:
- *                         type: string
- *                         example: "pending"
- *                       stage:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
  *                         type: object
  *                         properties:
- *                           status:
+ *                           _id:
+ *                             type: string
+ *                             example: "64d3c9c0f1b2a8e9d0f12345"
+ *                           fullName:
+ *                             type: string
+ *                             example: "John Doe"
+ *                           phoneNumber:
+ *                             type: string
+ *                             example: "+1234567890"
+ *                           serviceType:
+ *                             type: string
+ *                             example: "wash-and-iron"
+ *                           serviceTier:
+ *                             type: string
+ *                             example: "premium"
+ *                           amount:
+ *                             type: number
+ *                             example: 150
+ *                           paymentStatus:
  *                             type: string
  *                             example: "pending"
- *                           note:
+ *                           stage:
+ *                             type: object
+ *                             properties:
+ *                               status:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               note:
+ *                                 type: string
+ *                                 example: "Awaiting pickup"
+ *                           createdAt:
  *                             type: string
- *                             example: "Awaiting pickup"
- *                       createdAt:
- *                         type: string
- *                         format: date-time
- *                         example: "2026-01-13T12:34:56.789Z"
+ *                             format: date-time
+ *                             example: "2026-01-13T12:34:56.789Z"
  *       500:
  *         description: Server error
  */
@@ -296,86 +304,90 @@ router.get(ROUTE_GET_PENDING_ORDERS, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f12345"
- *                     fullName:
- *                       type: string
- *                       example: "John Doe"
- *                     phoneNumber:
- *                       type: string
- *                       example: "+1234567890"
- *                     pickupAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     deliveryAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     pickupDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-13"
- *                     pickupTime:
- *                       type: string
- *                       example: "morning"
- *                     serviceType:
- *                       type: string
- *                       example: "wash-and-iron"
- *                     serviceTier:
- *                       type: string
- *                       example: "premium"
- *                     deliverySpeed:
- *                       type: string
- *                       example: "express"
- *                     amount:
- *                       type: number
- *                       example: 150
- *                     paymentMethod:
- *                       type: string
- *                       example: "paystack"
- *                     oscNumber:
- *                       type: string
- *                       example: "OSC123456"
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           type:
- *                             type: string
- *                             example: "shirt"
- *                           price:
- *                             type: number
- *                             example: 50
- *                           quantity:
- *                             type: number
- *                             example: 2
- *                     extraNote:
- *                       type: string
- *                       example: "Handle with care"
- *                     stage:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         status:
+ *                         _id:
  *                           type: string
- *                           example: "in-process"
- *                         note:
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         fullName:
  *                           type: string
- *                           example: "Picked up by driver"
- *                     paymentStatus:
- *                       type: string
- *                       example: "pending"
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T12:34:56.789Z"
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T13:00:00.123Z"
+ *                           example: "John Doe"
+ *                         phoneNumber:
+ *                           type: string
+ *                           example: "+1234567890"
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         deliveryAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         pickupDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-13"
+ *                         pickupTime:
+ *                           type: string
+ *                           example: "morning"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "premium"
+ *                         deliverySpeed:
+ *                           type: string
+ *                           example: "express"
+ *                         amount:
+ *                           type: number
+ *                           example: 150
+ *                         paymentMethod:
+ *                           type: string
+ *                           example: "paystack"
+ *                         oscNumber:
+ *                           type: string
+ *                           example: "OSC123456"
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               type:
+ *                                 type: string
+ *                                 example: "shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 50
+ *                               quantity:
+ *                                 type: number
+ *                                 example: 2
+ *                         extraNote:
+ *                           type: string
+ *                           example: "Handle with care"
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status:
+ *                               type: string
+ *                               example: "in-process"
+ *                             note:
+ *                               type: string
+ *                               example: "Picked up by driver"
+ *                         paymentStatus:
+ *                           type: string
+ *                           example: "pending"
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T12:34:56.789Z"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Invalid request (e.g., missing ID)
  *       404:
@@ -423,9 +435,13 @@ router.get(ROUTE_GET_BOOK_ORDER_ID, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order flagged successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order flagged successfully"
  *       400:
  *         description: Validation error or missing order ID
  *         content:
@@ -470,19 +486,23 @@ router.post(ROUTE_FLAG_ORDER_ID, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     pendingOrders:
- *                       type: integer
- *                       example: 120
- *                     taggingQueueOrders:
- *                       type: number
- *                       example: 500
- *                     holdOrders:
- *                       type: number
- *                       description: Percentage change compared to yesterday
- *                       example: 12
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         pendingOrders:
+ *                           type: integer
+ *                           example: 120
+ *                         taggingQueueOrders:
+ *                           type: number
+ *                           example: 500
+ *                         holdOrders:
+ *                           type: number
+ *                           description: Percentage change compared to yesterday
+ *                           example: 12
  *       500:
  *         description: Server error
  */
@@ -514,9 +534,13 @@ router.get(ROUTE_INTAKE_USER_DASHBOARD_STATS, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order moved to tag and queue successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order moved to tag and queue successfully"
  *       400:
  *         description: Validation error or missing order ID
  *         content:
@@ -600,9 +624,13 @@ router.post(ROUTE_PROCEED_TO_TAG_ID, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Tag successfully confirmed"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Tag successfully confirmed"
  *       400:
  *         description: Validation error or missing parameters
  *         content:
@@ -661,9 +689,13 @@ router.put(ROUTE_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Tag successfully undone"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Tag successfully undone"
  *       400:
  *         description: Validation error or missing parameters
  *         content:
@@ -736,9 +768,13 @@ router.put(ROUTE_UNDO_CONFIRM_TAG_ID_ITEM_ID, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Top-up request sent successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Top-up request sent successfully"
  *       400:
  *         description: Validation error or missing order ID
  *         content:
@@ -818,9 +854,13 @@ router.post(ROUTE_SEND_TOP_UP_REQUEST_ID, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Wallet credit request successful of 2000 Reason: Refund for damaged item"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Wallet credit request successful of 2000 Reason: Refund for damaged item"
  *       400:
  *         description: Validation error or insufficient balance
  *         content:
@@ -872,9 +912,13 @@ router.post(ROUTE_ADJUST_WALLET, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: number
- *                   example: 5000
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: number
+ *                       example: 5000
  *       400:
  *         description: Missing user ID
  *         content:
@@ -1061,9 +1105,13 @@ router.get(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Rider successfully assigned to order"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Rider successfully assigned to order"
  *       400:
  *         description: Validation error or missing parameters
  *         content:
@@ -1129,9 +1177,13 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Rider successfully assigned to order"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Rider successfully assigned to order"
  *       400:
  *         description: >
  *           Missing parameters, or the dispatch tag has not been printed yet
@@ -1325,11 +1377,15 @@ router.post(ROUTE_DISPATCH_TAG_PRINT, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message: { type: string, example: "All tags generated successfully" }
- *                     order: { $ref: '#/components/schemas/BookOrder' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message: { type: string, example: "All tags generated successfully" }
+ *                         order: { $ref: '#/components/schemas/BookOrder' }
  *       404:
  *         description: Order not found or not in tagging queue
  *       500:
@@ -1366,9 +1422,13 @@ router.patch(ROUTE_INTAKE_GENERATE_ALL_TAGS, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "All items tagged. Ready to send to Sort & Pretreat."
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "All items tagged. Ready to send to Sort & Pretreat."
  *       400:
  *         description: One or more items still untagged
  *         content:
@@ -1419,27 +1479,31 @@ router.patch(ROUTE_INTAKE_COMPLETE_TAGGING, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           oscNumber:   { type: string, example: "OSC-20260428-321782" }
- *                           fullName:    { type: string, example: "Jude Victor" }
- *                           phoneNumber: { type: string, example: "08081234567" }
- *                           serviceType: { type: string, example: "wash-and-iron" }
- *                           serviceTier: { type: string, example: "standard" }
- *                           amount:      { type: number, example: 5000 }
- *                           stage:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
  *                             type: object
  *                             properties:
- *                               status: { type: string, example: "pending" }
- *                           createdAt:   { type: string, format: date-time }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                               oscNumber:   { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:    { type: string, example: "Jude Victor" }
+ *                               phoneNumber: { type: string, example: "08081234567" }
+ *                               serviceType: { type: string, example: "wash-and-iron" }
+ *                               serviceTier: { type: string, example: "standard" }
+ *                               amount:      { type: number, example: 5000 }
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status: { type: string, example: "pending" }
+ *                               createdAt:   { type: string, format: date-time }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -1581,37 +1645,41 @@ const controller = new IntakeUserController()
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           orderId:       { type: string }
- *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                           fullName:      { type: string, example: "Jude Victor" }
- *                           holdType:      { type: string, enum: [raised_by_us], example: "raised_by_us" }
- *                           holdReason:    { type: string, example: "item_missing" }
- *                           holdTime:      { type: string, format: date-time }
- *                           stationStatus: { type: string, example: "sort-and-pretreat-station" }
- *                           operator:      { type: string, example: "Victor Jp", nullable: true }
- *                           flaggedItems:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 itemId:        { type: string }
- *                                 tagId:         { type: string, example: "Tag-2024-001-01" }
- *                                 type:          { type: string, example: "shirt" }
- *                                 flagNote:      { type: string }
- *                                 holdReason:    { type: string, example: "item_missing" }
- *                                 assignTo:      { type: string, example: "sort-and-pretreat" }
- *                                 heldByStation: { type: string, example: "wash-and-dry-station" }
- *                                 heldAt:        { type: string, format: date-time }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId:       { type: string }
+ *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:      { type: string, example: "Jude Victor" }
+ *                               holdType:      { type: string, enum: [raised_by_us], example: "raised_by_us" }
+ *                               holdReason:    { type: string, example: "item_missing" }
+ *                               holdTime:      { type: string, format: date-time }
+ *                               stationStatus: { type: string, example: "sort-and-pretreat-station" }
+ *                               operator:      { type: string, example: "Victor Jp", nullable: true }
+ *                               flaggedItems:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     itemId:        { type: string }
+ *                                     tagId:         { type: string, example: "Tag-2024-001-01" }
+ *                                     type:          { type: string, example: "shirt" }
+ *                                     flagNote:      { type: string }
+ *                                     holdReason:    { type: string, example: "item_missing" }
+ *                                     assignTo:      { type: string, example: "sort-and-pretreat" }
+ *                                     heldByStation: { type: string, example: "wash-and-dry-station" }
+ *                                     heldAt:        { type: string, format: date-time }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -1640,7 +1708,11 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Order released from hold and returned to wash queue" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Order released from hold and returned to wash queue" }
  *       404:
  *         description: Order not found or not on hold
  *       500:
@@ -1686,34 +1758,38 @@ router.patch(ROUTE_INTAKE_USER_RELEASE, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                           fullName:      { type: string, example: "Jude Victor" }
- *                           phoneNumber:   { type: string, example: "08012345678" }
- *                           serviceType:   { type: string, example: "wash-and-iron" }
- *                           serviceTier:   { type: string, example: "standard" }
- *                           amount:        { type: number, example: 4500 }
- *                           channel:       { type: string, example: "website" }
- *                           stage:
- *                             type: object
- *                             properties:
- *                               status: { type: string, example: "washing" }
- *                           stationStatus: { type: string, example: "wash-and-dry-station" }
- *                           createdAt:     { type: string, format: date-time }
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:      { type: integer, example: 42 }
- *                         page:       { type: integer, example: 1 }
- *                         limit:      { type: integer, example: 20 }
- *                         totalPages: { type: integer, example: 3 }
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:      { type: string, example: "Jude Victor" }
+ *                               phoneNumber:   { type: string, example: "08012345678" }
+ *                               serviceType:   { type: string, example: "wash-and-iron" }
+ *                               serviceTier:   { type: string, example: "standard" }
+ *                               amount:        { type: number, example: 4500 }
+ *                               channel:       { type: string, example: "website" }
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status: { type: string, example: "washing" }
+ *                               stationStatus: { type: string, example: "wash-and-dry-station" }
+ *                               createdAt:     { type: string, format: date-time }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:      { type: integer, example: 42 }
+ *                             page:       { type: integer, example: 1 }
+ *                             limit:      { type: integer, example: 20 }
+ *                             totalPages: { type: integer, example: 3 }
  *       500:
  *         description: Server error
  */
@@ -1751,32 +1827,36 @@ router.get(ROUTE_INTAKE_HISTORY, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:          { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *                     oscNumber:    { type: string, example: "OSC-20260428-321782" }
- *                     fullName:     { type: string, example: "Jude Victor" }
- *                     phoneNumber:  { type: string, example: "08012345678" }
- *                     serviceType:  { type: string, example: "wash-and-iron" }
- *                     serviceTier:  { type: string, example: "standard" }
- *                     amount:       { type: number, example: 4500 }
- *                     stage:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         status: { type: string, example: "queue" }
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:       { type: string }
- *                           type:      { type: string, example: "shirt" }
- *                           tagId:     { type: string, example: "TAG-OSC-20260428-321782-01" }
- *                           tagStatus: { type: string, example: "complete" }
- *                           tagColor:  { type: string, example: "red" }
- *                           tagState:  { type: array, items: { type: string } }
- *                     createdAt: { type: string, format: date-time }
+ *                         _id:          { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *                         oscNumber:    { type: string, example: "OSC-20260428-321782" }
+ *                         fullName:     { type: string, example: "Jude Victor" }
+ *                         phoneNumber:  { type: string, example: "08012345678" }
+ *                         serviceType:  { type: string, example: "wash-and-iron" }
+ *                         serviceTier:  { type: string, example: "standard" }
+ *                         amount:       { type: number, example: 4500 }
+ *                         stage:
+ *                           type: object
+ *                           properties:
+ *                             status: { type: string, example: "queue" }
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:       { type: string }
+ *                               type:      { type: string, example: "shirt" }
+ *                               tagId:     { type: string, example: "TAG-OSC-20260428-321782-01" }
+ *                               tagStatus: { type: string, example: "complete" }
+ *                               tagColor:  { type: string, example: "red" }
+ *                               tagState:  { type: array, items: { type: string } }
+ *                         createdAt: { type: string, format: date-time }
  *       400:
  *         description: Order not found or not in draft state
  *       401:
@@ -1816,30 +1896,34 @@ router.patch(ROUTE_INTAKE_DRAFT_RESUME, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/TimelineOrder' }
- *                     pipeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key:       { type: string, example: "tagged" }
- *                           label:     { type: string, example: "Tagged" }
- *                           completed: { type: boolean, example: true }
- *                           timestamp: { type: string, format: date-time, nullable: true }
- *                     itemTimeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemId:   { type: string }
- *                           itemType: { type: string, example: "shirt" }
- *                           tagId:    { type: string, example: "OSC-20260428-321782-01" }
- *                           action:   { type: string, example: "tag_confirmed" }
- *                           note:     { type: string }
- *                           timestamp: { type: string, format: date-time }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/TimelineOrder' }
+ *                         pipeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key:       { type: string, example: "tagged" }
+ *                               label:     { type: string, example: "Tagged" }
+ *                               completed: { type: boolean, example: true }
+ *                               timestamp: { type: string, format: date-time, nullable: true }
+ *                         itemTimeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               itemId:   { type: string }
+ *                               itemType: { type: string, example: "shirt" }
+ *                               tagId:    { type: string, example: "OSC-20260428-321782-01" }
+ *                               action:   { type: string, example: "tag_confirmed" }
+ *                               note:     { type: string }
+ *                               timestamp: { type: string, format: date-time }
  *       400:
  *         description: Failed to fetch order timeline
  *       401:
@@ -1912,9 +1996,13 @@ router.get(ROUTE_INTAKE_HISTORY_TIMELINE, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order marked as collected successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order marked as collected successfully"
  *       400:
  *         description: |
  *           Request failed. Possible reasons:
@@ -1966,9 +2054,13 @@ router.patch(ROUTE_INTAKE_MARK_AS_DELIVERED, [intakeUserAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Rider unassigned from pickup successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Rider unassigned from pickup successfully"
  *       400:
  *         description: |
  *           Unassignment blocked. Possible reasons:
@@ -2029,9 +2121,13 @@ router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req,
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Rider unassigned from delivery successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Rider unassigned from delivery successfully"
  *       400:
  *         description: |
  *           Unassignment blocked. Possible reasons:

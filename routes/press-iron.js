@@ -31,18 +31,22 @@ const {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         pressQueue:     { type: integer, example: 2 }
- *                         activePress:    { type: integer, example: 0 }
- *                         completedToday: { type: integer, example: 0 }
- *                     recentQueue:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         data:
+ *                           type: object
+ *                           properties:
+ *                             pressQueue:     { type: integer, example: 2 }
+ *                             activePress:    { type: integer, example: 0 }
+ *                             completedToday: { type: integer, example: 0 }
+ *                         recentQueue:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
  *       500:
  *         description: Server error
  */
@@ -76,14 +80,18 @@ router.get(ROUTE_PRESS_IRON_DASHBOARD, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -113,11 +121,15 @@ router.get(ROUTE_PRESS_IRON_QUEUE, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     allItemsConfirmed: { type: boolean, example: false }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         allItemsConfirmed: { type: boolean, example: false }
  *       404:
  *         description: Order not found or not in ironing stage
  *       500:
@@ -191,11 +203,15 @@ router.get(ROUTE_PRESS_IRON_QUEUE_SINGLE, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message:           { type: string, example: "3 item(s) confirmed for pressing" }
- *                     allItemsConfirmed: { type: boolean, example: true }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message:           { type: string, example: "3 item(s) confirmed for pressing" }
+ *                         allItemsConfirmed: { type: boolean, example: true }
  *       400:
  *         description: No valid items found, or neither itemIds nor allItems provided
  *       404:
@@ -233,7 +249,11 @@ router.patch(ROUTE_PRESS_IRON_CONFIRM_FOR_PRESSING, [pressAndIronAuth], (req, re
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item press confirmation undone" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item press confirmation undone" }
  *       404:
  *         description: Order or item not found
  *       500:
@@ -293,7 +313,11 @@ router.patch(ROUTE_PRESS_IRON_UNDO_CONFIRM_FOR_PRESSING, [pressAndIronAuth], (re
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item placed on hold successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item placed on hold successfully" }
  *       400:
  *         description: reason or assignTo missing or invalid
  *       404:
@@ -329,14 +353,18 @@ router.patch(ROUTE_PRESS_IRON_HOLD, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -384,40 +412,44 @@ router.get(ROUTE_PRESS_IRON_GET_ACTIVE_PRESS, [pressAndIronAuth], (req, res) => 
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           orderId:       { type: string }
- *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                           fullName:      { type: string, example: "Jude Victor" }
- *                           stationStatus: { type: string, example: "wash-and-dry-station" }
- *                           holdType:
- *                             type: string
- *                             enum: [assigned_to_us, raised_by_us]
- *                             example: assigned_to_us
- *                           holdReason:    { type: string, example: "item_missing" }
- *                           holdTime:      { type: string, format: date-time }
- *                           operator:      { type: string, example: "Victor Jp", nullable: true }
- *                           flaggedItems:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 itemId:        { type: string }
- *                                 tagId:         { type: string, example: "Tag-2024-001-01" }
- *                                 type:          { type: string, example: "shirt" }
- *                                 flagNote:      { type: string }
- *                                 holdReason:    { type: string, example: "item_missing" }
- *                                 assignTo:      { type: string, example: "wash-and-dry" }
- *                                 heldByStation: { type: string, example: "pressing-and-ironing-station" }
- *                                 heldAt:        { type: string, format: date-time }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId:       { type: string }
+ *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:      { type: string, example: "Jude Victor" }
+ *                               stationStatus: { type: string, example: "wash-and-dry-station" }
+ *                               holdType:
+ *                                 type: string
+ *                                 enum: [assigned_to_us, raised_by_us]
+ *                                 example: assigned_to_us
+ *                               holdReason:    { type: string, example: "item_missing" }
+ *                               holdTime:      { type: string, format: date-time }
+ *                               operator:      { type: string, example: "Victor Jp", nullable: true }
+ *                               flaggedItems:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     itemId:        { type: string }
+ *                                     tagId:         { type: string, example: "Tag-2024-001-01" }
+ *                                     type:          { type: string, example: "shirt" }
+ *                                     flagNote:      { type: string }
+ *                                     holdReason:    { type: string, example: "item_missing" }
+ *                                     assignTo:      { type: string, example: "wash-and-dry" }
+ *                                     heldByStation: { type: string, example: "pressing-and-ironing-station" }
+ *                                     heldAt:        { type: string, format: date-time }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -451,9 +483,13 @@ router.get(ROUTE_PRESS_IRON_GET_HOLD, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Order released from hold and returned to press queue
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Order released from hold and returned to press queue
  *       404:
  *         description: Order not found or not on hold at this station
  *       500:
@@ -495,14 +531,18 @@ router.patch(ROUTE_PRESS_IRON_RELEASE, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -536,42 +576,46 @@ router.get(ROUTE_PRESS_IRON_HISTORY, [pressAndIronAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order:
- *                       allOf:
- *                         - $ref: '#/components/schemas/TimelineOrder'
- *                         - type: object
- *                           properties:
- *                             pressDetails:
- *                               type: object
- *                               nullable: true
- *                               description: Press timings (this station only).
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order:
+ *                           allOf:
+ *                             - $ref: '#/components/schemas/TimelineOrder'
+ *                             - type: object
  *                               properties:
- *                                 startedAt: { type: string, format: date-time, nullable: true }
- *                                 completedAt: { type: string, format: date-time, nullable: true }
- *                                 operatorId: { type: string, nullable: true }
- *                     pipeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key:       { type: string, example: "ironing" }
- *                           label:     { type: string, example: "Ironing" }
- *                           completed: { type: boolean, example: true }
- *                           timestamp: { type: string, format: date-time, nullable: true }
- *                     itemTimeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           itemId:    { type: string }
- *                           itemType:  { type: string, example: "shirt" }
- *                           tagId:     { type: string, example: "Tag-2024-001-01" }
- *                           action:    { type: string, example: "press_confirmed" }
- *                           note:      { type: string }
- *                           timestamp: { type: string, format: date-time }
+ *                                 pressDetails:
+ *                                   type: object
+ *                                   nullable: true
+ *                                   description: Press timings (this station only).
+ *                                   properties:
+ *                                     startedAt: { type: string, format: date-time, nullable: true }
+ *                                     completedAt: { type: string, format: date-time, nullable: true }
+ *                                     operatorId: { type: string, nullable: true }
+ *                         pipeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key:       { type: string, example: "ironing" }
+ *                               label:     { type: string, example: "Ironing" }
+ *                               completed: { type: boolean, example: true }
+ *                               timestamp: { type: string, format: date-time, nullable: true }
+ *                         itemTimeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               itemId:    { type: string }
+ *                               itemType:  { type: string, example: "shirt" }
+ *                               tagId:     { type: string, example: "Tag-2024-001-01" }
+ *                               action:    { type: string, example: "press_confirmed" }
+ *                               note:      { type: string }
+ *                               timestamp: { type: string, format: date-time }
  *       404:
  *         description: Order not found
  *       500:

@@ -38,18 +38,22 @@ const {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Notification'
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
- *                     unreadCount:
- *                       type: integer
- *                       example: 3
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/Notification'
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
+ *                         unreadCount:
+ *                           type: integer
+ *                           example: 3
  *       500:
  *         description: Server error
  */
@@ -84,8 +88,12 @@ router.get(ROUTE_GET_ALL_USER_NOTIFICATIONS, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   $ref: '#/components/schemas/Notification'
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       $ref: '#/components/schemas/Notification'
  *       404:
  *         description: Notification not found
  *       500:
@@ -118,9 +126,13 @@ router.get(ROUTE_GET_USER_NOTIFICATION, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Notification marked as read
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Notification marked as read
  *       400:
  *         description: Notification already read
  *       404:
@@ -151,9 +163,13 @@ router.patch(ROUTE_MARK_NOTIFICATION_AS_READ, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: 5 notification(s) marked as read
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: 5 notification(s) marked as read
  *       500:
  *         description: Server error
  */
@@ -184,9 +200,13 @@ router.patch(ROUTE_MARK_ALL_NOTIFICATIONS_AS_READ, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Notification deleted
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Notification deleted
  *       404:
  *         description: Notification not found
  *       500:
@@ -214,9 +234,13 @@ router.delete(ROUTE_DELETE_NOTIFICATION, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: 12 notification(s) deleted
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: 12 notification(s) deleted
  *       500:
  *         description: Server error
  */
