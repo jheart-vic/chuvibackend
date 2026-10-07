@@ -464,6 +464,15 @@ const bookOrderSchema = new mongoose.Schema(
                 isVerified: { type: Boolean, default: false },
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
+                // Why a run did not happen, in the rider's words. The pickup leg
+                // had NO note field at all, so markPickupAsFailed wrote
+                // `pickup.note` and Mongoose silently dropped it on every failed
+                // pickup — the office saw a failure with no reason (brief 3.2).
+                // Kept separate from the delivery `note`, which is the customer's
+                // special delivery instruction and is printed on the dispatch tag:
+                // writing a failure reason into that would put "customer not at
+                // home" on the tag as an instruction to the next rider.
+                failureNote: { type: String },
                 // Unassigned-dispatch sweep guards (fire once per stage).
                 alertedAt: { type: Date },
                 escalatedAt: { type: Date },
@@ -475,7 +484,10 @@ const bookOrderSchema = new mongoose.Schema(
                     default: DELIVERY_STATUS.READY,
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+                // The customer's special delivery instruction — this is the line
+                // the dispatch tag prints. NOT the place for a failure reason.
                 note: { type: String },
+                failureNote: { type: String },
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
                 alertedAt: { type: Date },

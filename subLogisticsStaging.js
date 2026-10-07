@@ -109,8 +109,10 @@ async function main() {
             isPickUp,
             isDelivery,
             items: [{ type: 'shirt', price: 1, quantity: 1 }],
-            pickupAddress: 'Test address, off Aroma',
-            deliveryAddress: 'Test address, off Aroma',
+            // A landmark is REQUIRED on both legs since brief 3.3 (the rider
+            // navigates by it), so a bare string address no longer books.
+            pickupAddress: { label: 'Home', address: 'Test address, off Aroma', landmark: 'By the mast' },
+            deliveryAddress: { label: 'Home', address: 'Test address, off Aroma', landmark: 'By the mast' },
             ...(overflowPaymentMethod && { overflowPaymentMethod }),
         }
         const res = await new BookOrderService().createOrder({ userId: customer._id.toString(), payload })

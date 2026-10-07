@@ -28,4 +28,39 @@ function validateStructuredAddress(input, field = 'pickupAddress') {
     return { ok: true, value: a }
 }
 
-module.exports = { normalizeAddress, validateStructuredAddress }
+// Brief 3.3 — the customer booking path only ever required `address`, so a
+// customer-placed order usually reached the rider with no landmark at all, while
+// staff intake (validateStructuredAddress) demanded all three. The customer's
+// SAVED addresses do carry a landmark (it is required on user.addresses), so when
+// a booking's address matches one of them, borrow its landmark and label instead
+// of sending the rider out without one. Making landmark mandatory on the customer
+// path would be a breaking change for the live app, so this recovers it silently
+// and `landmarkMissing` on the dispatch rows shows what is still genuinely blank.
+const addressKey = (s) =>
+    String(s || '')
+        .toLowerCase()
+        .replace(/[\s,.-]+/g, ' ')
+        .trim()
+
+function enrichFromSavedAddresses(input, savedAddresses) {
+    const a = normalizeAddress(input)
+    if (!a || !a.address) return a
+    if (a.landmark && a.label) return a
+
+    const match = (savedAddresses || []).find(
+        (s) => addressKey(s?.address) === addressKey(a.address),
+    )
+    if (!match) return a
+
+    return {
+        label: a.label || String(match.label || '').trim(),
+        address: a.address,
+        landmark: a.landmark || String(match.landmark || '').trim(),
+    }
+}
+
+module.exports = {
+    normalizeAddress,
+    validateStructuredAddress,
+    enrichFromSavedAddresses,
+}

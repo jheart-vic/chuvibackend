@@ -7,6 +7,7 @@ const UserModel = require('../models/user.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
 const createAuditLog = require('../util/createAuditLog')
+const { notifyRoles } = require('../util/notifyRoles')
 const { getObjectId } = require('../util/helper')
 const {
     ROLE,
@@ -178,27 +179,12 @@ class WalletAdjustmentService extends BaseService {
     // Brief 4.3 also asks for this: the admin must actually hear about wallet
     // adjustments and requests. Fire-and-forget — a notification failure must
     // never break the money flow.
+    // One implementation of "notify everyone with role X" now lives in
+    // util/notifyRoles.js — this stays as the named entry point the money flow
+    // already uses. NOTE it now notifies ACTIVE admins only (a suspended admin
+    // was previously still messaged).
     async notifyAdmins({ title, body, subBody, type }) {
-        try {
-            const admins = await UserModel.find({ userType: ROLE.ADMIN })
-                .select('_id')
-                .lean()
-            await Promise.all(
-                admins.map((a) =>
-                    createNotification({
-                        userId: a._id,
-                        title,
-                        body,
-                        subBody,
-                        type,
-                    }),
-                ),
-            )
-            return admins.length
-        } catch (error) {
-            console.log(error)
-            return 0
-        }
+        return notifyRoles({ roles: ROLE.ADMIN, title, body, subBody, type })
     }
 
     /**

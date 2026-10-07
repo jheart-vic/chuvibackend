@@ -12,6 +12,7 @@ const {
     signAccessToken,
     cookieOptions,
     getObjectId,
+    normalizePhone,
 } = require('../util/helper')
 const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require('../util/constants')
 const FreePlanModel = require('../models/freeplan.model')
@@ -78,7 +79,9 @@ class AuthService extends BaseService {
                 email: post.email,
                 password: post.password,
                 fullName: post.fullName,
-                phoneNumber: post.phoneNumber,
+                // Brief 4.6 — one stored phone format everywhere, so a customer
+                // who signs up as "8031…" and books as "08031…" stays ONE person.
+                phoneNumber: normalizePhone(post.phoneNumber),
                 userType: post.userType || ROLE.USER,
                 servicePlatform: 'local',
             })

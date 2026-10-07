@@ -14,6 +14,7 @@ const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
 const WalletAdjustmentRequestModel = require('../models/walletAdjustmentRequest.model')
 const WalletAdjustmentService = require('./walletAdjustment.service')
+const { logSafely } = require('../util/safeLog')
 const {
     ORDER_STATUS,
     PAYMENT_ORDER_STATUS,
@@ -2117,41 +2118,55 @@ class AdminService extends BaseService {
                 })
             }
 
-            await UpdateFundModel.create({
-                userId,
-                amount,
-                type: 'credit',
-                ...(message && { message }),
-            })
-
-            const wallet = await WalletModel.findOne({ userId })
-
-            if (!wallet) {
+            // Brief 2.3/2.4 (found while answering 4.3): this admin path kept its
+            // OWN copy of the money code — a non-atomic `balance += amount` after a
+            // separate read, and a ledger line with no performedBy, no balanceAfter
+            // and no rollback. That is exactly what 2.3 fixed on the intake path, so
+            // route it through the one shared mover: an admin's adjustment and an
+            // operator's now produce identical ledger lines.
+            let ledger
+            try {
+                ledger = await WalletAdjustmentService.applyAdjustment({
+                    userId,
+                    amount,
+                    type: 'credit',
+                    reason: message || 'Admin added fund to wallet',
+                    performedBy: req.user?.id,
+                    performedByName: 'Admin',
+                })
+            } catch (error) {
                 return BaseService.sendFailedResponse({
-                    error: 'Wallet not found for user',
+                    error: error.message || 'Failed to add fund to wallet',
                 })
             }
-            wallet.balance += amount
-            await wallet.save()
 
-            await WalletTransactionModel.create({
-                userId,
-                type: 'credit',
-                amount,
-                status: 'success',
-                description: message || 'Admin added fund to wallet',
-            })
+            // Kept: the existing UpdateFund row other screens read.
+            await logSafely(
+                'Admin fund-add record',
+                UpdateFundModel.create({
+                    userId,
+                    amount,
+                    type: 'credit',
+                    ...(message && { message }),
+                }),
+            )
 
-            await createNotification({
-                userId: userId,
-                title: 'Wallet addition',
-                body: `${req.body.amount} has been added to your wallet`,
-                // subBody: `Order ID: ${oscNumber}.`,
-                type: NOTIFICATION_TYPE.WALLET_UPDATE,
-            })
+            // The money has moved — telling the customer must not be able to
+            // report the move as a failure (brief 2.5 / 3.1 / 4.1, same shape).
+            await logSafely(
+                'Wallet addition notification',
+                createNotification({
+                    userId: userId,
+                    title: 'Wallet addition',
+                    body: `₦${amount} has been added to your wallet`,
+                    type: NOTIFICATION_TYPE.WALLET_UPDATE,
+                }),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Fund added to wallet successfully',
+                balance: ledger?.wallet?.balance ?? null,
+                transaction: ledger?.ledgerEntry ?? null,
             })
         } catch (error) {
             console.log(error)
@@ -2179,45 +2194,52 @@ class AdminService extends BaseService {
                     error: 'User ID is required to deduct fund from wallet',
                 })
 
-            const wallet = await WalletModel.findOne({ userId })
-            if (!wallet)
-                return BaseService.sendFailedResponse({
-                    error: 'Wallet not found for user',
+            // Same as addFund: the shared mover owns the money. Its overdraw guard
+            // is part of the update itself, so two concurrent deductions cannot
+            // both pass it — the read-then-subtract here could.
+            let ledger
+            try {
+                ledger = await WalletAdjustmentService.applyAdjustment({
+                    userId,
+                    amount,
+                    type: 'debit',
+                    reason: message || 'Admin deducted fund from wallet',
+                    performedBy: req.user?.id,
+                    performedByName: 'Admin',
                 })
-
-            if (wallet.balance < amount) {
+            } catch (error) {
                 return BaseService.sendFailedResponse({
-                    error: 'Insufficient balance in wallet',
+                    error:
+                        /insufficient/i.test(error.message || '')
+                            ? 'Insufficient balance in wallet'
+                            : error.message || 'Failed to deduct fund from wallet',
                 })
             }
 
-            wallet.balance -= amount
-            await wallet.save()
+            await logSafely(
+                'Admin fund-deduct record',
+                UpdateFundModel.create({
+                    userId,
+                    amount,
+                    type: 'debit',
+                    ...(message && { message }),
+                }),
+            )
 
-            await UpdateFundModel.create({
-                userId,
-                amount,
-                type: 'debit',
-                ...(message && { message }),
-            })
-
-            await WalletTransactionModel.create({
-                userId,
-                type: 'debit',
-                amount,
-                status: 'success',
-                description: message || 'Admin deducted fund from wallet',
-            })
-
-            await createNotification({
-                userId,
-                title: 'Wallet deduction',
-                body: `₦${amount} has been deducted from your wallet`,
-                type: NOTIFICATION_TYPE.WALLET_UPDATE,
-            })
+            await logSafely(
+                'Wallet deduction notification',
+                createNotification({
+                    userId,
+                    title: 'Wallet deduction',
+                    body: `₦${amount} has been deducted from your wallet`,
+                    type: NOTIFICATION_TYPE.WALLET_UPDATE,
+                }),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Fund deducted from wallet successfully',
+                balance: ledger?.wallet?.balance ?? null,
+                transaction: ledger?.ledgerEntry ?? null,
             })
         } catch (error) {
             console.log(error)

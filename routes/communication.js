@@ -3,6 +3,7 @@ const CommunicationController = require('../controllers/communication.controller
 const adminAuth = require('../middlewares/adminAuth')
 const {
     ROUTE_COMM_TEMPLATES,
+    ROUTE_COMM_TEMPLATE_META,
     ROUTE_COMM_TEMPLATE_BY_ID,
     ROUTE_COMM_LOGS,
     ROUTE_COMM_RETRY_FAILED,
@@ -95,6 +96,92 @@ router.get(ROUTE_COMM_TEMPLATES, [adminAuth], (req, res) => {
 router.post(ROUTE_COMM_TEMPLATES, [adminAuth], (req, res) => {
     const controller = new CommunicationController()
     return controller.createTemplate(req, res)
+})
+
+/**
+ * @swagger
+ * /communication/templates/meta:
+ *   get:
+ *     summary: Template editor options — placeholder keys and target pages (admin)
+ *     description: >
+ *       Everything the template editor (and the offer-message editor) needs to
+ *       offer dropdowns instead of making the admin guess.
+ *
+ *       `placeholders` — every `{{key}}` available. The first entries are
+ *       UNIVERSAL (filled from the user document for every template). The rest
+ *       carry `onlyFor: <templateKey>`, because those values come from the `data`
+ *       object that specific system passes — using one in another template prints
+ *       the raw `{{key}}` to the customer. Anything an admin has typed that no
+ *       system supplies comes back with `unresolved: true` so the editor can warn.
+ *
+ *       `pages` — the deep-link targets the app handles, each with one line on
+ *       what it opens. For `order`, also send `recordId` (the order id).
+ *
+ *       `templates` — the keys other systems render by. A template's TEXT is
+ *       editable; its KEY is not, because the sending code looks it up by key.
+ *     tags: [Communication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The lists that back the editor's dropdowns
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         pages:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               page: { type: string, example: wallet }
+ *                               description: { type: string, example: "The wallet page, showing balance and credits — use when money or credit has moved." }
+ *                         placeholders:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key: { type: string, example: firstName }
+ *                               description: { type: string, example: "First word of the customer's name — the usual greeting." }
+ *                               example: { type: string, example: Ada }
+ *                               onlyFor:
+ *                                 type: string
+ *                                 description: Present when the key is only supplied for that one template key.
+ *                                 example: offer-available
+ *                               unresolved:
+ *                                 type: boolean
+ *                                 description: True when a template uses this key but no system supplies it.
+ *                                 example: false
+ *                         templates:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key: { type: string, example: offer-available }
+ *                               description: { type: string, example: Sent when a customer is given an offer they can use. }
+ *                               sentBy: { type: string, example: Offer system (offer.service.js) }
+ *                               exists: { type: boolean, example: true }
+ *                         channels:
+ *                           type: array
+ *                           items: { type: string, example: sms }
+ *                         existing:
+ *                           type: array
+ *                           description: Templates already stored, so the editor can show which keys are taken.
+ *                           items: { $ref: '#/components/schemas/CommunicationTemplate' }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_COMM_TEMPLATE_META, [adminAuth], (req, res) => {
+    const controller = new CommunicationController()
+    return controller.getTemplateMeta(req, res)
 })
 
 /**

@@ -10,7 +10,7 @@ with the §3 answers written LAST from shipped code. Final deliverable = **ONE c
 |---|---|---|
 |**G1**| 1.1 cards stay in a queue | ✅ **committed** `8795099` |
 | | 1.2 S1→S2 Accept all does nothing | ✅ committed (was a symptom of 1.1) |
-| | 1.3 S3 "Waiting for confirmation" | ✅ fixed 2026-10-05, **NEEDS DEPLOY** (see below) |
+| | 1.3 S3 "Waiting for confirmation" | ✅ fixed 2026-10-05 and **NOW DEPLOYED** — `mesage-and-alert-fix` was merged into `origin/main` on 7 Oct (PR #239, `f11a05b`) |
 | | 1.4 Flag / Move to Hold do nothing | ✅ backend half committed; UI must SHOW errors (FE) |
 | | 1.5 S2 partial sorting + skip pretreat | ✅ committed |
 | | 1.6 per-item care tier | ✅ committed |
@@ -20,22 +20,29 @@ with the §3 answers written LAST from shipped code. Final deliverable = **ONE c
 | | 2.3 wallet adjustment not in ledger | ✅ committed |
 | | 2.4 per-role limits + approval | ✅ done, UNCOMMITTED |
 | | 2.5 false "cannot create plan" | ✅ code done, UNCOMMITTED (**was a real bug — the plan WAS created**); DB harness pending a URI |
-|**G3**| 3.1 rider assignment does not save | ⬜ expect: the dispatch-tag gate refusing, FE swallows it |
-| | 3.2 Failed pickups filter | ⬜ cheap — `PICKUP_STATUS.FAILED` already exists |
-| | 3.3 landmark on pickup address | ⬜ cheap — field already exists, needs surfacing |
-|**G4**| 4.1 template save returns 400 | ⬜ |
-| | 4.2 keys + target pages dropdowns | ⬜ needs a list endpoint + the written list |
-| | 4.3 admin notifications | 🟡 **partly done in 2.4** (adjustments + requests notify admins) |
+|**G3**| 3.1 rider assignment does not save | ✅ code done, UNCOMMITTED. **NOT the dispatch-tag gate — that isn't deployed.** Nothing validated the rider id |
+| | 3.2 Failed pickups filter | ✅ code done, UNCOMMITTED (+ the office was never notified at all) |
+| | 3.3 landmark on pickup address | ✅ code done, UNCOMMITTED |
+|**G4**| 4.1 template save returns 400 | ✅ done, UNCOMMITTED — **reproduced: `channels.filter is not a function`** |
+| | 4.2 keys + target pages dropdowns | ✅ backend done (`GET /communication/templates/meta`); written list = `util/commMeta.js` |
+| | 4.3 admin notifications | ✅ done — notice names customer+amount+operator; **event list derived: only 6 of 87 sites reach an admin** |
 | | 4.4 Holds Active/Overdue overlap | ✅ committed |
 | | 4.5 CRM dormant rate 100% | ⛔ blocked on the client's own Q2/Q3 — answer in §3 |
-| | 4.6 names as code text, phone formats | ⬜ |
+| | 4.6 names as code text, phone formats | ✅ done, UNCOMMITTED — **`normalizePhone` itself was the profile-splitter** |
 |**§2**| N1 Quick Booking · N2 Recovery dashboard | ⬜ after the fixes |
 |**§3**| Q1–Q8 answers + assemble the deliverable | ⬜ LAST |
 
 ## Verification gates — run ALL of these after any change
 ```bash
-node briefCheck.js                                   # 47/47  offline, no DB
-STAGING_OK=1 MONGODB_URL="<testing uri>" node planCreateStaging.js      # NEW (2.5)
+node briefCheck.js                                   # 101/101  offline, no DB
+STAGING_OK=1 MONGODB_URL="<testing uri>" node planCreateStaging.js      # 39 (2.5)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchStaging.js        # 46 (3.1/3.2/3.3)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node templateStaging.js        # 27 (4.1/4.2)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node botStaging.js             # 11/11 (bot books, so the landmark rule hits it)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node phase12Staging.js         # 14
+STAGING_OK=1 MONGODB_URL="<testing uri>" node subLogisticsStaging.js    # 20
+STAGING_OK=1 MONGODB_URL="<testing uri>" node handoffStaging.js         # 54
+MONGODB_URL="<uri>" node phoneFormatBackfill.js --dry   # 4.6 migration, dry first
 STAGING_OK=1 MONGODB_URL="<testing uri>" node stationFlowStaging.js    # 80/80
 STAGING_OK=1 MONGODB_URL="<testing uri>" node tierPricingStaging.js    # 33/33
 STAGING_OK=1 MONGODB_URL="<testing uri>" node offerAdminStaging.js     # 37/37
@@ -50,19 +57,30 @@ node -e "const s=require('swagger-jsdoc')({definition:{openapi:'3.0.0',info:{tit
 **NEVER edit `.env`** — it points at the LIVE `laundrydb`. Pass `MONGODB_URL` inline. Every harness
 hard-refuses a DB named `laundrydb`.
 
-## Uncommitted right now (Group 2: 2.1, 2.2, 2.4)
+## Uncommitted right now (Groups 2, 3 and 4 — all DB-verified)
 NEW: `services/walletAdjustment.service.js`, `models/walletAdjustmentRequest.model.js`,
-`offerAdminStaging.js`, `freeLogisticsStaging.js`, `walletLimitStaging.js`.
-MODIFIED: `briefCheck.js`, `services/{admin,bookOrder,intake-user,offerApi}.service.js`,
-`controllers/{admin,offer}.controller.js`, `routes/{admin,offer}.js`,
-`models/{adminSetting,bookOrder,customerOffer}.model.js`, `swagger/schemas.js`,
-`util/{constants,page-route}.js`, `context/*`.
+`util/{notifyRoles,safeLog,commMeta,displayName}.js`, `phoneFormatBackfill.js`,
+`offerAdminStaging.js`, `freeLogisticsStaging.js`, `walletLimitStaging.js`,
+`planCreateStaging.js`, `dispatchStaging.js`, `templateStaging.js`.
+MODIFIED: `briefCheck.js`, `botStaging.js`, `subLogisticsStaging.js`,
+`services/{admin,auth,bookOrder,communicationAdmin,intake-user,offerApi,rider,subscription,
+walletAdjustment}.service.js`, `services/bot/booking.flow.js`,
+`controllers/{admin,offer,intake-user,communication}.controller.js`,
+`routes/{admin,offer,intake-user,bookOrder,subscription,communication}.js`,
+`models/{adminSetting,bookOrder,customerOffer,plan}.model.js`, `swagger/schemas.js`,
+`util/{constants,page-route,address,helper,itemSummary}.js`, `context/*`.
+
+## ⚠️ LOCAL `main` IS 127 COMMITS BEHIND `origin/main` — ALWAYS CHECK `origin/main`
+**Trap that produced a wrong diagnosis on 2026-10-07 (user caught it).** `git show main:…` says the
+dispatch-tag gate does not exist; `git show origin/main:…` says it does. `mesage-and-alert-fix` was
+merged to `origin/main` on 7 Oct (PR #239, `f11a05b`), which means the dispatch tag, the wash-station
+fixes (1.3) and the Lagos TZ pin ARE deployed. `git fetch` first, and never reason about "what the
+client is running" from the local branch.
 
 ## THINGS TO TELL THE CLIENT (don't lose these)
-1. **1.3 is already fixed but NOT DEPLOYED.** Render serves `main`; the work is on
-   `mesage-and-alert-fix`. Answer to "what is the system waiting for, and from whom": **nothing** —
-   every item was already confirmed, the screen just wasn't being told. It adds a `canMoveToDrying`
-   flag the FE must key the button on.
+1. **1.3 is fixed AND now deployed** (merged to `origin/main` 7 Oct). Answer to "what is the system
+   waiting for, and from whom": **nothing** — every item was already confirmed, the screen just wasn't
+   being told. It adds a `canMoveToDrying` flag the FE must key the button on.
 2. **The Thursday 8 Oct deadline cannot cover all 22 + 2.** Say so explicitly; the brief asks to be
    told early.
 3. **2.1 "offers do not save" — the save was never broken.** A new offer defaults to `status: draft`,
@@ -74,7 +92,26 @@ MODIFIED: `briefCheck.js`, `services/{admin,bookOrder,intake-user,offerApi}.serv
    when the doc is MISSING — CHECK THE LIVE `AdminSetting` before saying it's fixed in production.**
 6. **1.4 part 3 is FE:** the backend already returns `{success:false, data:{error}}`; the UI isn't
    displaying it. This sits behind several "nothing happens" reports.
-7. **2.5 — every plan you thought failed was actually created.** The save worked; the activity-log
+7. **3.2 — every failed pickup ever recorded lost the rider's reason** (`pickup.note` was not a field
+   on the schema), **and nobody in the office was ever notified** — both failure handlers messaged only
+   the rider who pressed the button. If they have been wondering why failed pickups seem to vanish,
+   that is why. Also: a failed DELIVERY was overwriting the customer's special delivery instruction,
+   which is the line the dispatch tag prints.
+8. **3.3 — the customer app does not ask for a landmark.** Staff intake requires one; customer booking
+   requires only the address. It is now borrowed automatically from the customer's saved address when
+   it matches, and anything still blank is flagged `landmarkMissing`. **Making it mandatory in the app
+   is a one-line backend change — do they want it?**
+9. **4.1 — what the 400 was rejecting: nothing in the template.** It was the *shape* of one field —
+   a channel sent as a single string (`"sms"`) instead of a list, which crashed before any validation
+   ran. Also worth telling them: a template could be saved with a whitespace-only body, which would
+   then send an EMPTY message to customers. Both fixed.
+10. **4.6 — the phone normaliser itself was creating the duplicate profiles.** It never added the
+   leading 0 back to a 10-digit number, so `8031234567` and `08031234567` were two different people to
+   the CRM. Run `phoneFormatBackfill.js --dry` against live first: it lists any customer already split
+   across two profiles. **Merging those is their call, not ours** — it decides which history survives.
+11. **FE shape note (4.6):** item briefs now send the readable name in `name` and the stored slug in a
+   new `rawType`. Anything matching on the slug must switch to `rawType`.
+12. **2.5 — every plan you thought failed was actually created.** The save worked; the activity-log
    write behind it was rejected and that was reported as the plan failing, which is why the retry then
    said "Plan title already exists". **Check the plans list for duplicates/strays created during their
    4–6 Oct testing** — they are real plans. Also tell them `paystackPlanCode` is mandatory to create a
@@ -241,7 +278,120 @@ returns e.g. *"Order OSC-… is no longer at sort & pretreat (it is now at "queu
 changed from this station."* Flag and Hold themselves were verified to work (scenarios 9–10) — they
 were being refused, and the refusal was unreadable.
 
-### 2.5 — DONE (2026-10-07). NEW `planCreateStaging.js`. **A REAL BUG: the plan WAS created.**
+### GROUP 4 — 4.1/4.2/4.3/4.6 DONE (2026-10-07). NEW `templateStaging.js` 27/27.
+Client's Group 4 text re-confirmed against this plan on 2026-10-07: identical, with two details added —
+4.3's test wants the notice to name **customer + amount + operator** (it does), and 4.6 includes
+**station** names as well as item names.
+
+**4.1 — REPRODUCED. The 400 was `post.channels.filter is not a function`.**
+`updateTemplate` (and `createTemplate`) called `.filter` straight on `post.channels`. A channel picker
+that sends a single value as a **string** (`channels: "sms"`) instead of an array throws a TypeError,
+the catch-all turns it into *"Failed to update template"*, and every save looks rejected. **That is the
+answer to "what is the 400 rejecting" — nothing in the template; the shape of one field.**
+- Fixed via `normalizeChannels()` (string or array, de-duped, unknown values named with the valid list).
+- **Found two more by running the client's test:** (a) a whitespace-only `body` SAVED — Mongoose
+  `required` passes on `"   "`, so a template could be blanked and would then render empty to every
+  customer; now refused by field name. (b) `createAuditLog` runs after `template.save()` and rethrows,
+  so an audit problem reported a saved template as failed — the 2.5/3.1 shape again.
+- Model rejections now name the field (`describeTemplateError`), and the PUT of a WHOLE object (the
+  common admin-UI pattern) is proven to save and survive a reopen.
+
+**4.2 — NEW `GET /api/communication/templates/meta`** (adminAuth) backs both dropdowns.
+`util/commMeta.js` holds the written answer the client asked for, **derived from what the code actually
+sends, not invented**: 5 target pages and 13 placeholder keys, each with one line.
+- `{{name}}`/`{{firstName}}` are UNIVERSAL (filled from the user doc by `CommunicationService.render`).
+  **Every other key is supplied by one specific system** for one template key, so each carries
+  `onlyFor` — using it elsewhere prints the raw `{{key}}` to the customer. A key an admin typed that no
+  system supplies comes back `unresolved: true` so the editor can warn.
+- Template keys in use: `offer-available`, `referral-reward`, `referral-level-up`,
+  `referral-monthly-benefit`, `complaint-update`, `generic-announcement`.
+
+**4.3 — the notice already names customer, amount and operator.** The list they asked for, derived by
+scanning all 87 notification call sites: **only 6 reach an admin** — wallet adjusted, wallet adjustment
+request, the two approve/reject notices, plus pickup-failed and delivery-failed (new in 3.2).
+Everything else goes to the customer or to one named staff member/station.
+- **FOUND WHILE ANSWERING IT: `admin.service.js` kept its OWN wallet add/deduct code** —
+  `wallet.balance += amount` after a separate read (the non-atomic overdraw race 2.3 fixed), a ledger
+  line with no `performedBy`/`balanceAfter`/`manual-adjustment` type, and no rollback. Both paths now
+  delegate to `WalletAdjustmentService.applyAdjustment`, so an admin's adjustment and an operator's
+  write identical ledger lines — which was 2.4's whole design point.
+
+**4.6 — the phone normaliser WAS the profile-splitter.** `normalizePhone` only stripped a `234`
+prefix, so the bare 10-digit form `8031234567` came back **unchanged** and did not match `08031234567`.
+CRM links identity by normalised phone, so that one gap is enough to make one person two profiles —
+exactly the client's two orders. Now canonical `0` + 10 digits; all seven real-world forms
+(`0803…`, `803…`, `+234803…`, `234 803…`, `0803-123…`, `00234803…`, `+234 (0) 803…`) normalise
+identically, and it is idempotent. Applied on WRITE at signup, customer booking and staff intake, plus
+NEW `phoneFormatBackfill.js` (idempotent, `--dry`) which also **reports CRM profiles already split**
+across one number — it does not merge them, because choosing which history survives is a business call.
+- Names: NEW `util/displayName.js`. `prettifyName` turns the stored slug into
+  `"Shirts / Tops / Blouses"`, `stationLabel` turns `intake-and-tag-station` into `"Intake & Tag"`.
+  Applied in `util/itemSummary.js`, which is the shared brief builder behind EVERY station card, the
+  dispatch tag and the handoff payloads — so the name reads the same at S1, S2 and S3 (their test).
+  **Shape note for the FE: briefs now carry the readable form in `name` and the stored slug in a new
+  `rawType`.** Anything matching on the slug must read `rawType`.
+
+### GROUP 3 — DONE (2026-10-07). NEW `dispatchStaging.js` 37/37 → 46/46 with the landmark rule.
+
+**3.1 "assigning a rider does not save" — the triage guess (the dispatch-tag gate) was WRONG, and the
+real cause is worse: NOTHING checked that the id in the URL was a rider.**
+`riderId` came off the route param and went straight into `$set` with `runValidators: false`. Two
+failure shapes, and the second is exactly the client's words:
+- not an ObjectId → Mongoose CastError on the `$set` → the catch returns "Failed to assign rider to
+  order" and nothing IS written;
+- **a valid ObjectId that is not a rider** (a customer, a stale/deleted staff id) → **the write
+  SUCCEEDS**, but the queue populates the ref to `null`, so the row comes back reading
+  `needsRider: true` again. The assignment is in the database; the screen cannot show it.
+- **ROOT CAUSE UPSTREAM: there was no endpoint anywhere that listed riders** — `ROLE.RIDER` appeared in
+  NO service, controller or util. The picker had no authoritative source for its ids.
+- FIX: NEW `GET /api/intake-user/riders` (active riders, `?search`, `?includeInactive`, each with
+  `activePickups`/`activeDeliveries`/`activeRuns` so work can be spread); NEW `resolveRider()` refusing
+  by name before any write ("STG Customer is not a rider, so the order cannot be assigned to them.");
+  the assigned rider is RETURNED so the row can be redrawn without a refetch.
+- **Also the 2.5 false-failure class again:** the activity row, the rider's notification and the audit
+  line all run AFTER the write and each rethrows, so any of them failing reported a completed
+  assignment as failed. All three now go through `logSafely`. Both legs (pickup + delivery) fixed.
+- The dispatch-tag gate is UNCHANGED and still refuses with `needsDispatchTag` (harness asserts it).
+  **Since it is now deployed, it IS what they will hit next** — the FE must branch on that flag.
+
+**3.2 Failed pickups — the filter did not exist, and neither did the data behind it.**
+- `legStatus` query filter on both dispatch queues (comma-separated, unknown values **refused** with
+  the valid list rather than silently returning everything), plus `failedCount` beside
+  `needsRiderCount`, and `legStatus`/`failed`/`legNote` on every row. **`legStatus=failed` IS the
+  Failed Pickups view.** A failed pickup keeps its PENDING stage AND its rider, so until now it sat in
+  the queue indistinguishable from a healthy assigned run.
+- **`dispatchDetails.pickup.note` WAS NOT A SCHEMA PATH.** `markPickupAsFailed` wrote it and Mongoose
+  strict mode silently dropped it — **every failed pickup ever recorded lost the rider's reason.**
+  Found by RUNNING the harness, not by reading. NEW `failureNote` on both legs.
+- **And on the delivery leg the reason was overwriting `delivery.note` — the customer's special
+  delivery instruction, which is the line the DISPATCH TAG PRINTS.** A failed delivery would put
+  "customer not at home" on the reprinted tag as an instruction to the next rider. Now separate fields.
+- **Nobody in the office was ever told.** Both failure handlers called
+  `createNotification({ userId })` with the RIDER's own id — the person who just pressed the button —
+  and no one else. Now `notifyRoles([intake-and-tag, customer-experience, admin])`. Harness asserts
+  the office count goes up and the rider's does NOT.
+- `NOTIFICATION_TYPE.DELIVERY_FAILED` did not exist (there was a `PICKUP_FAILED`), so every failed
+  delivery was filed under the default `system`. Added.
+- **NEW `util/notifyRoles.js`** — "notify everyone with role X" existed as three near-identical copies
+  (admin.service's station operators, walletAdjustment's `notifyAdmins`, and this). One implementation
+  now; `notifyAdmins` delegates to it. It can never throw, and it now skips suspended staff.
+
+**3.3 Landmark — the field was always there; one list never shaped it.**
+- `getRiderAssignedPickups`/`getRiderAssignedDeliveries` were the ONLY dispatch lists that never called
+  `normalizeOrderAddresses`, so a legacy string address arrived with no `landmark` key at all — while
+  Active Pickups, the same order one tap later, showed it. Both now normalize, select explicitly, and
+  lift `pickupLandmark`/`deliveryLandmark` onto the row. The S1 queue gained `landmark` too.
+- **ANSWER TO THE USER'S QUESTION: no, the customer is NOT asked for a landmark when booking.**
+  `bookOrder.service` requires only `pickupAddress.address`; label/landmark are optional on the
+  customer path (staff intake requires all three via `validateStructuredAddress`). Hard-requiring it
+  would break every live app build that does not send it, so instead: NEW
+  `enrichFromSavedAddresses()` — when the booked address matches one of the customer's SAVED addresses
+  (where `landmark` IS required on the schema), the landmark and label are borrowed automatically; and
+  rows that still have none carry **`landmarkMissing: true`** so the office can chase them. The
+  booking request body now documents that the app should collect it. **One-line change to make it
+  mandatory once the app sends it — the client's call.**
+
+### 2.5 — DONE (2026-10-07). NEW `planCreateStaging.js` 39/39. **A REAL BUG: the plan WAS created.**
 
 **"It says the plan cannot be created" — and every time, the plan was already in the database.**
 `createPlan` writes the plan, THEN calls `createAuditLog`, which **rethrows** on failure. The audit row
@@ -504,16 +654,22 @@ AND count membership at every step. **Never edit `.env` (it points at the LIVE `
 - [x] F2.5 — DONE (code). The plan WAS being created; the audit log then threw and the catch
       reported failure. See the section below. NEW `planCreateStaging.js` — needs the testing URI.
 ### Fixes — Group 3
-- [ ] F3.1 — diagnose + fix rider assignment (expect: the dispatch-tag gate).
-- [ ] F3.2 — Failed pickups filter.
-- [ ] F3.3 — landmark surfaced on rider + dispatch payloads.
+- [x] F3.1 — DONE. **The triage guess was WRONG** — the dispatch-tag gate is not in `main`, so it
+      cannot be what the client hit. Real cause: nothing validated the rider id. NEW
+      `GET /intake-user/riders` + `resolveRider` + non-fatal side effects. See below.
+- [x] F3.2 — DONE. `legStatus` filter + `failedCount` + `failed`/`legNote` on the row, and the
+      failure notification now reaches the OFFICE instead of the rider who pressed the button.
+- [x] F3.3 — DONE. The rider's assigned-pickups/deliveries lists never normalized addresses.
 ### Fixes — Group 4
-- [ ] F4.1 — template update: real validation, field-named errors.
-- [ ] F4.2 — keys + target-pages list endpoint (+ the written list for them).
-- [ ] F4.3 — admin notifications on wallet adjustment/request + the event list.
+- [x] F4.1 — DONE. The 400 was `channels.filter is not a function` (a string, not an array). Plus a
+      blankable required field and an audit write that could fail the save.
+- [x] F4.2 — DONE. `GET /communication/templates/meta` + `util/commMeta.js` (the written list).
+- [x] F4.3 — DONE. Notice names customer+amount+operator; event list derived (6 of 87 sites reach an
+      admin); admin.service's own wallet money code routed through the shared mover.
 - [x] F4.4 — holds Active excludes Overdue (CONFIRMED BUG). DONE via NEW `util/holdSla.js`.
 - [ ] F4.5 — blocked on Q2/Q3; answer in §3.
-- [ ] F4.6 — item/station name display form + one phone format (+ backfill).
+- [x] F4.6 — DONE. `util/displayName.js` in the shared brief builder; `normalizePhone` fixed (it was
+      the profile-splitter), applied on write, + `phoneFormatBackfill.js` which reports split profiles.
 ### New features
 - [ ] N1 — Quick Booking (count-only booking → rider confirms count + photo → S1 finalises with real
       items + per-item tier → payment request → processing starts only after payment; <₦4,000 charged

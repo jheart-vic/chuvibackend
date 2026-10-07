@@ -1146,6 +1146,29 @@
  *             itemCount: { type: integer, example: 3 }
  *             waitingMinutes: { type: integer, example: 95 }
  *             waitingDays: { type: integer, example: 0 }
+ *             legStatus:
+ *               type: string
+ *               nullable: true
+ *               description: "This leg's own status (`dispatchDetails.<leg>.status`). Filter the queue on it with `?legStatus=`."
+ *               example: scheduled
+ *             failed:
+ *               type: boolean
+ *               description: "True when this leg's status is `failed`. A failed run keeps its stage and its rider, so without this flag it is indistinguishable from a healthy assigned one."
+ *               example: false
+ *             legNote:
+ *               type: string
+ *               nullable: true
+ *               description: The rider's note for this leg — on a failed run, why it failed.
+ *               example: "Customer not at home, phone switched off"
+ *             landmark:
+ *               type: string
+ *               nullable: true
+ *               description: "This leg's address landmark, lifted out of the structured address so a row can show it beside the street."
+ *               example: "Opposite the blue mosque"
+ *             landmarkMissing:
+ *               type: boolean
+ *               description: "True when this leg's address has no landmark. The customer app does not ask for one yet (staff intake does), so a customer-placed order can reach the rider with no directions; where the address matches one the customer has saved, the landmark is borrowed from it automatically."
+ *               example: false
  *             tagPrinted:
  *               type: boolean
  *               description: "DELIVERY queue only. Whether the dispatch tag has been printed. Absent on the pickup queue — pickups are never tagged."

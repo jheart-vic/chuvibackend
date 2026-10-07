@@ -139,6 +139,9 @@ const NOTIFICATION_TYPE = {
     PICKUP_STARTED: 'pickup-started',
     PICKUP_FAILED: 'pickup-failed',
     DELIVERY_STARTED: 'delivery-started',
+    // There was a PICKUP_FAILED but no delivery counterpart, so every failed
+    // delivery was filed as the default `system` and could not be filtered.
+    DELIVERY_FAILED: 'delivery-failed',
     ORDER_UPDATED: 'order-updated',
     ORDER_FLAGGED: 'order-flagged',
     ORDER_ON_HOLD: 'order_on_hold',

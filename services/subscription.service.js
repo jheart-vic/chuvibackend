@@ -12,12 +12,10 @@ const { AUDIT_LOG_CATEGORIES } = require('../util/constants')
 // createAuditLog RETHROWS, and every plan write logs AFTER the data is already
 // saved, so any audit-log problem turned a completed action into a generic
 // failure (and the retry then hit "Plan title already exists"). The audit trail
-// must never be able to reverse the outcome the operator is shown: log failures
-// are recorded to the console and swallowed here.
-const auditSafely = (payload) =>
-    createAuditLog(payload).catch((error) => {
-        console.error('Audit log failed (non-fatal):', error?.message || error)
-    })
+// must never be able to reverse the outcome the operator is shown.
+// Shared with intake-user (3.1) and communication (4.1) via util/safeLog.js.
+const { logSafely } = require('../util/safeLog')
+const auditSafely = (payload) => logSafely('Audit log', createAuditLog(payload))
 
 // Turn a Mongoose write error into a sentence that names the field, instead of
 // the catch-all "Something went wrong" that hid 2.5 for so long.

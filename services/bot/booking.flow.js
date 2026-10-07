@@ -11,6 +11,8 @@ const BotContextService = require('../botContext.service')
 const AdminSettingModel = require('../../models/adminSetting.model')
 const OrderItemModel = require('../../models/orderItem.model')
 const SubscriptionModel = require('../../models/subscription.model')
+const UserModel = require('../../models/user.model')
+const { enrichFromSavedAddresses } = require('../../util/address')
 const { BOT_INTENT, BILLING_TYPE, DELIVERY_SPEED } = require('../../util/constants')
 const { naira } = require('./format')
 
@@ -39,6 +41,7 @@ module.exports = {
         let bItems = slots.bItems || null
         let bServiceType = slots.bServiceType || null
         let bAddress = slots.bPickupAddress || null
+        let bLandmark = slots.bLandmark || null
         let bDate = slots.bDatePhrase || null
         let bTime = slots.bTime || null
         let bTimeAuto = slots.bTimeAuto || false
@@ -98,6 +101,7 @@ module.exports = {
                 bItems,
                 bServiceType,
                 bPickupAddress: bAddress,
+                bLandmark,
                 bDatePhrase: bDate,
                 bTime,
                 bTimeAuto,
@@ -150,7 +154,7 @@ module.exports = {
             }
             if (this.isAffirmative(text)) {
                 return await this._placeBooking({
-                    userId, bItems, bServiceType, bAddress, bDate, bTime, bTimeAuto, bPhone, bSpeed,
+                    userId, bItems, bServiceType, bAddress, bLandmark, bDate, bTime, bTimeAuto, bPhone, bSpeed,
                 })
             }
             // otherwise treat it as a correction and fall through to re-summarise
@@ -180,6 +184,33 @@ module.exports = {
             return {
                 replies: ['Where should we pick it up? Please send the pickup address.'],
                 state: persist('collect-address'),
+            }
+        }
+        // The landmark is REQUIRED on both legs now (brief 3.3) — the rider
+        // navigates by it. Try the customer's saved addresses first so anyone
+        // reusing a known address is never asked, and only then ask. Without this
+        // step every bot booking would simply be refused by postBookOrder.
+        if (!bLandmark) {
+            const saved = await this._savedLandmarkFor(userId, bAddress)
+            if (saved) {
+                bLandmark = saved
+            } else if (step === 'collect-landmark') {
+                // Taken as typed (minus a conversational lead-in): for a landmark
+                // the prepositions ARE the content — "beside", "opposite", "near"
+                // — so the address cleaner would strip the useful part.
+                const given = String(text || '')
+                    .trim()
+                    .replace(/^\s*(?:it'?s|it\s+is|its|the\s+landmark\s+is)\b[\s,:.-]*/i, '')
+                    .trim()
+                if (given) bLandmark = given
+            }
+        }
+        if (!bLandmark) {
+            return {
+                replies: [
+                    "What's a landmark near that address? The rider uses it to find you — e.g. \"opposite the blue mosque\" or \"beside Zenith Bank\".",
+                ],
+                state: persist('collect-landmark'),
             }
         }
         // Part B — a DAY is enough; if no time is given we default a pickup window
@@ -231,7 +262,7 @@ module.exports = {
             "Here's your booking:",
             `• Items: ${itemsLine}`,
             `• Service: ${bServiceType} (classic tier)`,
-            `• Pickup: ${bAddress}${bDate ? `, ${bDate}` : ''}${bTime ? ` ${bTime}${bTimeAuto ? ' (default window — tell me if you’d prefer another time)' : ''}` : ''}`,
+            `• Pickup: ${bAddress}${bLandmark ? ` (landmark: ${bLandmark})` : ''}${bDate ? `, ${bDate}` : ''}${bTime ? ` ${bTime}${bTimeAuto ? ' (default window — tell me if you’d prefer another time)' : ''}` : ''}`,
             `• Delivery: ${this._describeSpeed(bSpeed, setting)}`,
             `Estimated total: about ${naira(estimate)} — you'll see the exact amount once it's placed.`,
             'Shall I place it? (yes/no)',
@@ -244,7 +275,19 @@ module.exports = {
     // cover it with their plan (reuses postBookOrder's own limit/heavy-item
     // validation — a rejected attempt creates NO order); (2) otherwise / on plan
     // rejection, place pay-per-item and collect payment (wallet or card).
-    async _placeBooking({ userId, bItems, bServiceType, bAddress, bDate, bTime, bTimeAuto, bPhone, bSpeed }) {
+    // The landmark the customer already has stored for this address, if any, so
+    // the flow only asks when it genuinely does not know (brief 3.3).
+    async _savedLandmarkFor(userId, address) {
+        try {
+            const user = await UserModel.findById(userId).select('addresses').lean()
+            const enriched = enrichFromSavedAddresses(address, user?.addresses)
+            return enriched?.landmark || null
+        } catch (_) {
+            return null
+        }
+    },
+
+    async _placeBooking({ userId, bItems, bServiceType, bAddress, bLandmark, bDate, bTime, bTimeAuto, bPhone, bSpeed }) {
         const defaults = await BotContextService.savedDefaults(userId)
         const phone = bPhone || defaults.phoneNumber
         const basePayload = {
@@ -260,9 +303,19 @@ module.exports = {
                 price: Math.round(i.price) || 0,
                 quantity: Math.max(1, Math.round(i.quantity) || 1),
             })),
-            pickupAddress: bAddress,
-            // Bot returns laundry to the pickup address (single-address flow).
-            deliveryAddress: bAddress,
+            // Structured, because the landmark is required on both legs now.
+            pickupAddress: {
+                label: '',
+                address: bAddress,
+                landmark: bLandmark || '',
+            },
+            // Bot returns laundry to the pickup address (single-address flow), so
+            // the same landmark applies to the delivery leg.
+            deliveryAddress: {
+                label: '',
+                address: bAddress,
+                landmark: bLandmark || '',
+            },
         }
         if (bTime) basePayload.pickupTime = bTime
         const day = this._resolvePickupDate(bDate)

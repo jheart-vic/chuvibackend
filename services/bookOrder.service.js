@@ -1,7 +1,7 @@
 const BaseService = require('./base.service')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
-const { normalizeAddress } = require('../util/address')
+const { normalizeAddress, enrichFromSavedAddresses } = require('../util/address')
 const { buildPricingFallback, presentOrder, presentOrders } = require('../util/orderView')
 const { explodeItemsToPieces } = require('../util/explodeItems')
 const {
@@ -17,6 +17,7 @@ const {
     roundToNearestHundred,
     calculateDueDate,
     getObjectId,
+    normalizePhone,
 } = require('../util/helper')
 const { priceItems } = require('../util/itemPricing')
 const SubscriptionModel = require('../models/subscription.model')
@@ -847,8 +848,23 @@ class BookOrderService extends BaseService {
             // Structure addresses (tolerant: accepts a plain string or object).
             // Require an address to be PRESENT when pickup/delivery is requested;
             // label/landmark stay optional on the customer path (back-compat).
-            post.pickupAddress = normalizeAddress(post.pickupAddress)
-            post.deliveryAddress = normalizeAddress(post.deliveryAddress)
+            // Brief 4.6 — store ONE phone format. The same customer appeared with
+            // and without the leading 0 on two different orders, and because CRM
+            // links identity by normalised phone that splits one person into two
+            // profiles.
+            if (post.phoneNumber) post.phoneNumber = normalizePhone(post.phoneNumber)
+
+            // 3.3: when the customer sends an address they already have saved,
+            // borrow its landmark/label — the rider needs the "how do I find the
+            // door" line and the app does not ask for it yet.
+            post.pickupAddress = enrichFromSavedAddresses(
+                post.pickupAddress,
+                user.addresses,
+            )
+            post.deliveryAddress = enrichFromSavedAddresses(
+                post.deliveryAddress,
+                user.addresses,
+            )
             if (post.isPickUp && !post.pickupAddress?.address) {
                 return BaseService.sendFailedResponse({
                     error: 'pickupAddress is required when isPickUp is true',
@@ -857,6 +873,25 @@ class BookOrderService extends BaseService {
             if (post.isDelivery && !post.deliveryAddress?.address) {
                 return BaseService.sendFailedResponse({
                     error: 'deliveryAddress is required when isDelivery is true',
+                })
+            }
+            // Brief 3.3 (client decision 2026-10-07): the LANDMARK is now required
+            // on both legs, because the rider navigates by it — they are going to
+            // an address they have never seen, and a street line alone is not
+            // enough. Staff intake has always demanded it; the customer path used
+            // to let it through empty, which is how orders reached riders with no
+            // directions. Checked AFTER enrichFromSavedAddresses, so a customer
+            // reusing a saved address is never asked twice.
+            if (post.isPickUp && !post.pickupAddress?.landmark) {
+                return BaseService.sendFailedResponse({
+                    error: 'pickupAddress.landmark is required — the rider needs a landmark to find the pickup address.',
+                    field: 'pickupAddress.landmark',
+                })
+            }
+            if (post.isDelivery && !post.deliveryAddress?.landmark) {
+                return BaseService.sendFailedResponse({
+                    error: 'deliveryAddress.landmark is required — the rider needs a landmark to find the delivery address.',
+                    field: 'deliveryAddress.landmark',
                 })
             }
 

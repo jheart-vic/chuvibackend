@@ -165,11 +165,26 @@ const cookieOptions = {
 
 module.exports.cookieOptions = cookieOptions;
 
+// ONE canonical form for a Nigerian number: 0 + 10 local digits ("08031234567").
+//
+// Brief 4.6 — "one customer's phone shows with the leading 0 on one order and
+// without it on another ... one person is never two profiles." The old version
+// only stripped a 234 prefix, so the bare 10-digit form ("8031234567") came back
+// UNCHANGED and therefore did not match the same number written "08031234567".
+// Since CRM identity links by normalised phone, that one gap is enough to split a
+// customer into two profiles.
 const normalizePhone = (phone) => {
-    if (!phone) return ''
-    const digits = phone.replace(/\D/g, '') // strip all non-digits
-    if (digits.startsWith('234')) return '0' + digits.slice(3)
-    return digits
+    if (!phone && phone !== 0) return ''
+    let digits = String(phone).replace(/\D/g, '') // strip all non-digits
+    if (!digits) return ''
+    // Strip the country code in any of its written forms, THEN any trunk zero —
+    // "+234 (0) 803 …" carries both, and handling only one of them produced a
+    // double zero.
+    if (digits.startsWith('00234')) digits = digits.slice(5)
+    else if (digits.startsWith('234')) digits = digits.slice(3)
+    digits = digits.replace(/^0+/, '')
+    // What is left is the 10-digit local number; stamp the single 0 back on.
+    return digits ? '0' + digits : ''
 }
 
 module.exports.normalizePhone = normalizePhone

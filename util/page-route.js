@@ -224,6 +224,9 @@ exports.ROUTE_ADJUST_WALLET = '/adjust-wallet/:id/:userId'
 exports.ROUTE_GET_USER_WALLET_ID = '/get-user-wallet/:id'
 exports.ROUTE_PICKABLE_ORDERS = '/pickable-orders'
 exports.ROUTE_DELIVERABLE_ORDERS = '/deliverable-orders'
+// The riders available to assign a run to. There was no such endpoint anywhere,
+// so the assignment screen had no authoritative source for its list.
+exports.ROUTE_RIDERS = '/riders'
 // Dispatch tag — one per order, rider deliveries only. Printed by S1 at the
 // moment they hand the bagged order to the rider, and a printed tag is required
 // before ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID will accept an assignment.
@@ -321,6 +324,10 @@ exports.ROUTE_RECOVERY_CASE_MESSAGES = "/cases/:id/messages"
 
 // communication layer (admin)
 exports.ROUTE_COMM_TEMPLATES = "/templates"
+// Everything the template editor needs for its dropdowns: placeholder keys and
+// target pages, each with a description (brief 4.2). Declared BEFORE
+// /templates/:id so "meta" is never read as an id.
+exports.ROUTE_COMM_TEMPLATE_META = "/templates/meta"
 exports.ROUTE_COMM_TEMPLATE_BY_ID = "/templates/:id"
 exports.ROUTE_COMM_LOGS = "/logs"
 exports.ROUTE_COMM_RETRY_FAILED = "/retry-failed"

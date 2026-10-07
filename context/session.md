@@ -2,11 +2,74 @@
 
 > **CURRENT STATE 2026-10-07 — see `context/feature.md`'s STATUS BOARD at the top for the full
 > picture.** Working the 6 Oct client Developer Brief, backend only, order = fixes → features →
-> answers. **Group 1 COMMITTED (`8795099 group 1 done`). GROUP 2 IS NOW COMPLETE (2.1 / 2.2 / 2.4 /
-> 2.5) but UNCOMMITTED. NEXT = Group 3 (3.1 rider assignment, 3.2 failed-pickups filter, 3.3
-> landmark).** Eight verification gates must stay green (commands in the status board); `briefCheck.js`
-> is 47/47 and `planCreateStaging.js` still needs the testing URI. Never edit `.env` — pass
-> `MONGODB_URL` inline.
+> answers. **Group 1 COMMITTED (`8795099`). ALL 22 FIXES NOW DONE except 4.5 (blocked on the client's
+> own Q2/Q3) and the FE-only ones (1.7, 1.8, part of 1.4/1.5/2.1). UNCOMMITTED.
+> NEXT = §2 new features: N1 Quick Booking, N2 Recovery/Complaints/Feedback dashboard — then the §3
+> answers LAST.** Every gate green 2026-10-07: briefCheck **101** · stationFlow 80 · tierPricing 33 ·
+> offerAdmin 37 · freeLogistics 23 · walletLimit 39 · dispatchTag 46 · planCreate 39 · dispatch 46 ·
+> template 27 · phase12 14 · subLogistics 20 · handoff 54 · botStaging 11/11. Swagger 56/287, 0 wrong
+> envelopes. Never edit `.env` — pass `MONGODB_URL` inline (testingdb URI supplied by the user).
+
+### GROUP 4 DONE (4.1/4.2/4.3/4.6) — NEW `templateStaging.js` 27/27
+- **4.1 REPRODUCED: the 400 was `post.channels.filter is not a function`.** A channel picker sending a
+  single value as a STRING (`channels: "sms"`) hit `.filter` on a string → TypeError → the catch-all
+  said "Failed to update template". **Nothing in the template was being rejected — the shape of one
+  field was.** Running the client's own test also found: a whitespace-only `body` SAVED (Mongoose
+  `required` passes on `"   "`, so a template could be blanked and then render empty to customers), and
+  the audit write could report a saved template as failed.
+- **4.2** NEW `GET /api/communication/templates/meta` + `util/commMeta.js` = the written list they asked
+  for, derived from what the code actually sends: 5 pages, 13 keys, each with one line. Only
+  `{{name}}`/`{{firstName}}` are universal; every other key belongs to ONE template key (`onlyFor`),
+  and a key no system supplies is flagged `unresolved`.
+- **4.3** The notice already names customer+amount+operator. Scanned all **87** notification call sites:
+  **only 6 reach an admin.** FOUND WHILE DOING IT: `admin.service.js` had its OWN wallet add/deduct code
+  with the pre-2.3 bugs (non-atomic `balance += amount`, weak ledger line, no rollback); both now
+  delegate to `WalletAdjustmentService.applyAdjustment`.
+- **4.6 the phone normaliser ITSELF was the profile-splitter** — it only stripped a `234` prefix, so
+  `8031234567` came back unchanged and never matched `08031234567`. CRM links identity by normalised
+  phone, so that alone makes one person two profiles. Canonical `0`+10 digits now; 7 real-world forms
+  collapse to one; idempotent; applied on write at signup/booking/intake; NEW `phoneFormatBackfill.js`
+  (`--dry`) which also REPORTS already-split CRM profiles without merging them (that is a business call).
+  NEW `util/displayName.js` (`prettifyName`/`stationLabel`) applied in `util/itemSummary.js`, the shared
+  brief builder behind every station card. **FE shape note: briefs now carry the readable form in `name`
+  and the stored slug in a new `rawType`.**
+- **NEW `util/safeLog.js`** — the "a record of the work must never reverse the work" wrapper, now shared
+  by subscription (2.5), intake-user (3.1), communication (4.1) and admin (4.3). Three bug reports in
+  this one brief were that single shape.
+
+### ⚠️ LOCAL `main` IS 127 COMMITS BEHIND `origin/main` — THIS CAUSED A WRONG DIAGNOSIS
+I concluded 3.1 could not be the dispatch-tag gate because `git show main:…` had no `needsDispatchTag`.
+**The user corrected me and was right:** `git show origin/main:…` HAS it — `mesage-and-alert-fix` was
+merged to `origin/main` on 7 Oct (PR #239, `f11a05b`, ~5h before). So the dispatch tag, the 1.3
+wash-station fixes and the Lagos TZ pin ARE deployed. **`git fetch` and read `origin/main` before ever
+reasoning about what the client is running.** (The 3.1 fix stands regardless — see feature.md.)
+
+### GROUP 3 DONE — NEW `dispatchStaging.js` 37/37
+- **3.1: nothing validated the rider id.** A valid ObjectId that is not a rider SAVED and then
+  populated back as `null`, so the row read "needs a rider" again — the client's exact words. Upstream
+  cause: **no endpoint anywhere listed riders** (`ROLE.RIDER` appeared in no service at all), so the
+  picker had no source for its ids. NEW `GET /intake-user/riders` + `resolveRider()` + the assigned
+  rider returned in the response. The three post-write side effects (activity/notification/audit) went
+  through `logSafely` — the same false-failure class as 2.5, on both legs.
+- **3.2: `dispatchDetails.pickup.note` WAS NOT A SCHEMA PATH** — Mongoose silently dropped it, so every
+  failed pickup ever recorded lost the rider's reason. Only RUNNING the harness found it. And the
+  delivery leg wrote its reason into `delivery.note`, **the line the dispatch tag PRINTS as the
+  customer's special instruction**. NEW `failureNote` on both legs. Plus: `legStatus` filter (unknown
+  values refused with the valid list), `failedCount`, `failed`/`legNote` on the row — and **both failure
+  handlers notified only the RIDER who pressed the button**, never the office. `NOTIFICATION_TYPE`
+  had `PICKUP_FAILED` but no `DELIVERY_FAILED`, so failed deliveries were filed as `system`.
+- **NEW `util/notifyRoles.js`** — the third copy of "notify everyone with role X" was about to be
+  written; one implementation now, `notifyAdmins` delegates, suspended staff skipped, never throws.
+- **3.3: the rider's assigned-pickups/deliveries lists were the only dispatch lists that never called
+  `normalizeOrderAddresses`** — a legacy string address reached them with no `landmark` key at all,
+  while Active Pickups (same order, one tap later) showed it.
+- **User asked whether the customer fills in the landmark when booking: NO.** Only `address` is
+  required on the customer path. Rather than hard-require it (that breaks every live app build that
+  doesn't send it), NEW `enrichFromSavedAddresses()` borrows the landmark from the customer's SAVED
+  address when it matches (landmark IS required on `user.addresses`), and rows with none carry
+  `landmarkMissing: true`. Making it mandatory is a one-line change and the client's call.
+- Harness bugs the run found: order ITEMS require `type`, not `name` (a top-level required-path scan
+  does not see subdoc paths), and `ORDER_CHANNEL` is whatsapp|website|office — there is no "walk-in".
 
 ### 2.5 DONE — NEW `planCreateStaging.js` (DB run pending a URI). briefCheck 47/47
 **A REAL BUG, and the opposite of the report: the plan WAS created every time.** `createPlan` saves the

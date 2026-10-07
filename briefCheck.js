@@ -192,10 +192,15 @@ ok('the plan writes log through the non-fatal auditSafely wrapper',
     (sub.match(/await auditSafely\(\{/g) || []).length === 4)
 ok('createAuditLog is only reached via that wrapper',
     (sub.match(/createAuditLog\(/g) || []).length === 1)
-ok('the wrapper swallows the log failure instead of rethrowing',
-    /createAuditLog\(payload\)\.catch\(/.test(sub) && !/throw/.test(
-        sub.slice(sub.indexOf('const auditSafely'), sub.indexOf('// Turn a Mongoose')),
-    ))
+// The wrapper now lives in util/safeLog.js (shared with intake-user 3.1 and
+// communication 4.1). Assert the shared one really swallows, by RUNNING it.
+ok('the plan audit goes through the shared safe wrapper',
+    /auditSafely = \(payload\) => logSafely\('Audit log', createAuditLog\(payload\)\)/.test(sub))
+const { logSafely: safeLogFn } = require(path.join(ROOT, 'util/safeLog'))
+let swallowed = 'threw'
+safeLogFn('briefCheck probe', Promise.reject(new Error('boom')))
+    .then(() => { swallowed = 'swallowed' })
+    .catch(() => { swallowed = 'threw' })
 const createPlanSrc = sub.slice(sub.indexOf('async createPlan('), sub.indexOf('async updatePlan('))
 ok('the plan write has its own try/catch so a real failure is named',
     /newPlan = await PlanModel\.create\(post\)/.test(createPlanSrc) &&
@@ -213,5 +218,293 @@ ok('updatePlan runs validators so a bad edit cannot save silently',
 ok('updatePlan returns the saved plan for the edit screen',
     /data: updatedPlan/.test(sub))
 
-console.log(`\n${pass} passed, ${fail} failed\n`)
-process.exit(fail ? 1 : 0)
+// ─── 4.1 / 4.3 Templates and the one money path ──────────────────────────────
+console.log('\n4.1 — template saves report the truth')
+const commSrc = fs.readFileSync(
+    path.join(ROOT, 'services/communicationAdmin.service.js'),
+    'utf8',
+)
+ok('channels are normalised, so a single channel as a STRING no longer throws',
+    /function normalizeChannels/.test(commSrc) &&
+        /Array\.isArray\(input\) \? input : \[input\]/.test(commSrc))
+// Strip comments first — the fix QUOTES the broken line in the comment that
+// explains it, and that must not read as the bug still being there (the same
+// care the 2.3 check above takes).
+const commCode = commSrc
+    .split(/\r?\n/)
+    .filter((l) => !l.trim().startsWith('//'))
+    .join('\n')
+ok('no raw post.channels.filter left (that WAS the 400)',
+    !/post\.channels\.filter/.test(commCode))
+ok('both create and update use the shared normaliser',
+    (commSrc.match(/normalizeChannels\(post\.channels\)/g) || []).length === 2)
+ok('a blanked required field is refused by name',
+    /firstBlankRequiredField/.test(commSrc) && /cannot be empty/.test(commSrc))
+ok('model rejections name the field instead of a generic 400',
+    /describeTemplateError/.test(commSrc))
+ok('the audit row cannot fail a saved template',
+    (commSrc.match(/logSafely\(/g) || []).length >= 2)
+ok('the 4.2 dropdown source exists',
+    /async getTemplateMeta\(req\)/.test(commSrc) &&
+        fs.existsSync(path.join(ROOT, 'util/commMeta.js')))
+const meta = require(path.join(ROOT, 'util/commMeta'))
+ok('every target page documents what it opens',
+    meta.TARGET_PAGES.length > 0 &&
+        meta.TARGET_PAGES.every((p) => p.page && p.description))
+ok('every placeholder key documents what it is',
+    meta.TEMPLATE_KEYS.every((t) =>
+        (t.placeholders || []).every((p) => p.key && p.description)))
+ok('the universal keys are the two the renderer actually fills',
+    meta.UNIVERSAL_PLACEHOLDERS.map((p) => p.key).sort().join(',') === 'firstName,name')
+
+console.log('\n4.3 — ONE path moves money by hand')
+const adminSrc = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+const adminCode = adminSrc
+    .split(/\r?\n/)
+    .filter((l) => !l.trim().startsWith('//'))
+    .join('\n')
+ok('the admin add/deduct paths no longer mutate the balance themselves',
+    !/wallet\.balance \+=|wallet\.balance -=/.test(adminCode))
+ok('they delegate to the shared applyAdjustment (identical ledger lines)',
+    (adminCode.match(/WalletAdjustmentService\.applyAdjustment\(/g) || []).length === 2)
+ok('the customer notification cannot fail a completed movement',
+    /logSafely\(\s*'Wallet addition notification'/.test(adminSrc) &&
+        /logSafely\(\s*'Wallet deduction notification'/.test(adminSrc))
+ok('one shared safeLog is used instead of a copy per service',
+    fs.existsSync(path.join(ROOT, 'util/safeLog.js')) &&
+        /require\('\.\.\/util\/safeLog'\)/.test(
+            fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8'),
+        ))
+
+// ─── 4.6 Names as code text, and one phone format ────────────────────────────
+console.log('\n4.6 — readable names and a single phone format')
+const { prettifyName, stationLabel } = require(path.join(ROOT, 'util/displayName'))
+const { itemBrief, briefsForAll, summarize } = require(path.join(ROOT, 'util/itemSummary'))
+const { normalizePhone } = require(path.join(ROOT, 'util/helper'))
+
+// The client's exact two strings.
+ok('"Shirts-/-tops-/-blouses" reads as "Shirts / Tops / Blouses"',
+    prettifyName('Shirts-/-tops-/-blouses') === 'Shirts / Tops / Blouses',
+    prettifyName('Shirts-/-tops-/-blouses'))
+ok('"Blazers-/-jackets-/-hoodie" reads properly too',
+    prettifyName('Blazers-/-jackets-/-hoodie') === 'Blazers / Jackets / Hoodie',
+    prettifyName('Blazers-/-jackets-/-hoodie'))
+ok('"intake-and-tag-station" reads as a station name',
+    stationLabel('intake-and-tag-station') === 'Intake & Tag',
+    stationLabel('intake-and-tag-station'))
+ok('an unknown station still reads as words, never as a slug',
+    !/-/.test(stationLabel('some-new-station')))
+
+// RUN the brief builders — these feed every station card, so this is the
+// "reads the same at S1, S2 and S3" requirement.
+const sampleItems = [
+    { _id: 'i1', type: 'Shirts-/-tops-/-blouses', quantity: 1, tagId: 'TAG-01' },
+    { _id: 'i2', type: 'Shirts-/-tops-/-blouses', quantity: 1 },
+    { _id: 'i3', type: 'Blazers-/-jackets-/-hoodie', quantity: 1 },
+]
+const oneBrief = itemBrief(sampleItems, 'i1')
+const allBriefs = briefsForAll(sampleItems)
+ok('itemBrief sends the readable name',
+    oneBrief.name === 'Shirts / Tops / Blouses', oneBrief.name)
+ok('…and keeps the stored slug as rawType for anything that matches on it',
+    oneBrief.rawType === 'Shirts-/-tops-/-blouses')
+ok('briefsForAll agrees with itemBrief (same wording at every station)',
+    allBriefs[0].name === oneBrief.name && allBriefs[0].rawType === oneBrief.rawType)
+ok('a missing item still returns a usable brief',
+    itemBrief(sampleItems, 'nope').name === 'Item')
+ok('the summary line reads properly',
+    summarize(allBriefs) === '2 Shirts / Tops / Blouseses'
+        ? false // guard: pluralisation must not mangle a slashed name
+        : /Shirts \/ Tops \/ Blouses/.test(summarize(allBriefs)),
+    summarize(allBriefs))
+
+// One phone format — the actual cause of one person becoming two profiles.
+const forms = [
+    '08031234567',
+    '8031234567',
+    '+2348031234567',
+    '234 803 123 4567',
+    '0803-123-4567',
+    '002348031234567',
+    '+234 (0) 803 123 4567',
+]
+const normalised = forms.map(normalizePhone)
+ok('every real-world form of one number normalises identically',
+    new Set(normalised).size === 1 && normalised[0] === '08031234567',
+    JSON.stringify(normalised))
+ok('the bare 10-digit form gains its leading 0 (this is what split profiles)',
+    normalizePhone('8031234567') === normalizePhone('08031234567'))
+ok('a blank or junk number stays empty rather than becoming "0"',
+    normalizePhone('') === '' && normalizePhone('0000') === '' &&
+        normalizePhone(null) === '')
+ok('normalising is idempotent',
+    normalizePhone(normalizePhone('8031234567')) === '08031234567')
+const bookSrc = fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')
+const authSrc = fs.readFileSync(path.join(ROOT, 'services/auth.service.js'), 'utf8')
+ok('the three write paths store the normalised form',
+    /post\.phoneNumber = normalizePhone\(post\.phoneNumber\)/.test(bookSrc) &&
+        /post\.phoneNumber = normalizePhone\(post\.phoneNumber\)/.test(intake) &&
+        /phoneNumber: normalizePhone\(post\.phoneNumber\)/.test(authSrc))
+ok('a backfill exists for the records already stored',
+    fs.existsSync(path.join(ROOT, 'phoneFormatBackfill.js')))
+
+// ─── 3.1 Rider assignment — RUN the branches, don't just read them ───────────
+// The 1.6 lesson: node --check and require() both passed three ReferenceErrors.
+// These stub the two models and actually execute the refusal and success paths.
+console.log('\n3.1 — rider assignment validates the rider (executed, not read)')
+const BookOrderModel = require(path.join(ROOT, 'models/bookOrder.model'))
+const UserModel = require(path.join(ROOT, 'models/user.model'))
+const ActivityModel2 = require(path.join(ROOT, 'models/activity.model'))
+const { ROLE, GENERAL_STATUS, PICKUP_STATUS } = require(path.join(ROOT, 'util/constants'))
+const IntakeUserService = require(path.join(ROOT, 'services/intake-user.service'))
+
+const run = (async () => {
+    const svc = new IntakeUserService()
+    const ORDER = {
+        _id: 'o1',
+        oscNumber: 'OSC-20261007-000001',
+        items: [{}, {}],
+        isPickUp: true,
+        isDelivery: false,
+    }
+    let writes = []
+    const realFind = BookOrderModel.findById
+    const realUpdate = BookOrderModel.findByIdAndUpdate
+    const realUser = UserModel.findById
+    const realActivity = ActivityModel2.create
+
+    BookOrderModel.findById = async () => ORDER
+    BookOrderModel.findByIdAndUpdate = async (...args) => {
+        writes.push(args)
+        return ORDER
+    }
+    const stubUser = (doc) => {
+        UserModel.findById = () => ({ select: async () => doc })
+    }
+    const call = (riderId) =>
+        svc.assignRiderTopPickupOrder({
+            params: { id: 'o1', riderId },
+            query: {},
+            user: { id: 'staff1' },
+        })
+
+    try {
+        // not an ObjectId at all
+        stubUser(null)
+        writes = []
+        let r = await call('not-an-objectid')
+        ok('a non-ObjectId rider id is refused', r.success === false)
+        ok('  …and NOTHING is written', writes.length === 0)
+        ok('  …with a message about the id, not the generic failure',
+            /not valid/i.test(r.data.error || ''), JSON.stringify(r.data.error))
+
+        // a valid id that is not a rider — the case that "saved" and then vanished
+        stubUser({
+            _id: '65a7d3e9b8f9c10012a9c321',
+            fullName: 'Ada Customer',
+            userType: ROLE.USER,
+            status: GENERAL_STATUS.ACTIVE,
+        })
+        writes = []
+        r = await call('65a7d3e9b8f9c10012a9c321')
+        ok('a valid id that is NOT a rider is refused', r.success === false)
+        ok('  …and NOTHING is written (this used to save and read back null)',
+            writes.length === 0)
+        ok('  …naming the person', /Ada Customer/.test(r.data.error || ''))
+
+        // a suspended rider
+        stubUser({
+            _id: '65a7d3e9b8f9c10012a9c322',
+            fullName: 'Musa Bello',
+            userType: ROLE.RIDER,
+            status: GENERAL_STATUS.SUSPENDED,
+        })
+        writes = []
+        r = await call('65a7d3e9b8f9c10012a9c322')
+        ok('a suspended rider is refused', r.success === false)
+        ok('  …and NOTHING is written', writes.length === 0)
+
+        // the happy path, with every post-write side effect BROKEN
+        stubUser({
+            _id: '65a7d3e9b8f9c10012a9c323',
+            fullName: 'Musa Bello',
+            phoneNumber: '08031234567',
+            userType: ROLE.RIDER,
+            status: GENERAL_STATUS.ACTIVE,
+        })
+        ActivityModel2.create = async () => {
+            throw new Error('simulated activity failure')
+        }
+        writes = []
+        r = await call('65a7d3e9b8f9c10012a9c323')
+        ok('an active rider is assigned', r.success === true)
+        ok('  …the assignment IS written', writes.length === 1)
+        ok('  …a broken activity/notification/audit log does NOT fail it',
+            r.success === true, JSON.stringify(r.data))
+        ok('  …the rider comes back for the FE to redraw the row',
+            r.data?.rider?.fullName === 'Musa Bello')
+        ok('  …and the leg status is reported',
+            r.data?.pickupStatus === PICKUP_STATUS.SCHEDULED)
+    } finally {
+        BookOrderModel.findById = realFind
+        BookOrderModel.findByIdAndUpdate = realUpdate
+        UserModel.findById = realUser
+        ActivityModel2.create = realActivity
+    }
+
+    // ─── 3.2 / 3.3 structure ────────────────────────────────────────────────
+    console.log('\n3.2 / 3.3 — failed-pickup filter and the landmark')
+    const intakeSrc = fs.readFileSync(
+        path.join(ROOT, 'services/intake-user.service.js'),
+        'utf8',
+    )
+    const riderSrc = fs.readFileSync(
+        path.join(ROOT, 'services/rider.service.js'),
+        'utf8',
+    )
+    ok('the dispatch queue accepts a legStatus filter',
+        /legStatus,/.test(intakeSrc) &&
+            /query\[`dispatchDetails\.\$\{leg\}\.status`\]/.test(intakeSrc))
+    ok('an unknown legStatus is refused, not silently ignored',
+        /Unknown \$\{leg\} status/.test(intakeSrc))
+    ok('rows carry the leg status, a failed flag and the rider note',
+        /legStatus: legState/.test(intakeSrc) &&
+            /failed:\n?\s*legState ===/.test(intakeSrc) &&
+            /legNote:/.test(intakeSrc))
+    ok('the queue returns a failedCount beside needsRiderCount',
+        /failedCount: await BookOrderModel\.countDocuments/.test(intakeSrc))
+    ok('a failed pickup now notifies the OFFICE, not the rider who pressed it',
+        /notifyRoles\(\{\s*roles: \[ROLE\.INTAKE_AND_TAG/.test(riderSrc) &&
+            !/userId: userId,\s*title: 'Pickup Update'/.test(riderSrc))
+    ok("the rider's assigned-pickups list normalizes addresses (3.3)",
+        /getRiderAssignedPickups[\s\S]{0,1200}normalizeOrderAddresses\(order\)/.test(riderSrc))
+    ok('  …and lifts the landmark onto the row',
+        /pickupLandmark: order\.pickupAddress\?\.landmark/.test(riderSrc))
+    ok("the rider's assigned-deliveries list does the same",
+        /deliveryLandmark: order\.deliveryAddress\?\.landmark/.test(riderSrc))
+    ok('the S1 dispatch queue surfaces the landmark too',
+        /landmark:\n?\s*\(leg === 'pickup' \? o\.pickupAddress : o\.deliveryAddress\)/.test(intakeSrc))
+    ok('one shared notifyRoles replaces the duplicated role-notify loops',
+        fs.existsSync(path.join(ROOT, 'util/notifyRoles.js')) &&
+            /notifyRoles\(\{ roles: ROLE\.ADMIN/.test(
+                fs.readFileSync(path.join(ROOT, 'services/walletAdjustment.service.js'), 'utf8'),
+            ))
+    // Resolved after a tick, so it is checked here inside the async block.
+    ok('the shared safeLog swallows a failed record-keeping write',
+        swallowed === 'swallowed', `got: ${swallowed}`)
+    ok('there is now a riders endpoint to pick an id from',
+        /async getRiders\(req\)/.test(intakeSrc) &&
+            /ROUTE_RIDERS/.test(fs.readFileSync(path.join(ROOT, 'routes/intake-user.js'), 'utf8')))
+
+    console.log(`\n${pass} passed, ${fail} failed\n`)
+    process.exit(fail ? 1 : 0)
+})()
+
+run.catch((e) => {
+    console.error('CHECK ERROR:', e)
+    process.exit(1)
+})
+
+// NOTE: the tally and process.exit live INSIDE the async block above. A
+// top-level `process.exit` here would fire before those checks resolved and the
+// run would report only the synchronous ones.
