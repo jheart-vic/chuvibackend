@@ -649,9 +649,18 @@ class BookOrderService extends BaseService {
     // to the item subtotal and waives pickup/delivery fees the offer covers.
     // Returns the authoritative charge total plus the validated breakdown.
     async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting }) {
-        if (!post.customerOfferId && !post.promoOfferId) {
-            return { finalTotal: itemsSubtotal + extraDeliveryCost, breakdown: null }
-        }
+        // This used to return early unless the customer had SELECTED an offer:
+        //     if (!post.customerOfferId && !post.promoOfferId) return ...
+        // BASELINE offers (what the client calls "General") are applied BY RULE
+        // and have no linkage and no id for the customer to send — so that
+        // early return skipped them entirely and "Always Free at ₦8,000" never
+        // waived anything, while the app still advertised it. That is client
+        // brief 6 Oct 2026 item 2.2: free pickup and delivery offered, ₦2,000
+        // still charged.
+        //
+        // validateAndPrice already evaluates baselines first and tolerates
+        // having no personal/promo selection (offer.service.js:729), so the
+        // correct behaviour is simply to always ask it.
         const deliveryFee = post.isDelivery ? adminOrderSetting.deliveryFee || 0 : 0
         const pickupFee = post.isPickUp ? adminOrderSetting.pickupFee || 0 : 0
 
@@ -696,6 +705,16 @@ class BookOrderService extends BaseService {
         const freeDeliveryWaived = breakdown?.freeDelivery ? deliveryFee : 0
         const freePickupWaived = breakdown?.freePickup ? pickupFee : 0
         const appliedOffers = []
+        // Baselines come first and are the ones most likely to have waived the
+        // fees. They were missing here, so a summary could show "Pickup: Free"
+        // with no offer name to explain it (brief 2.2 asks for the name).
+        for (const b of breakdown?.baseline || []) {
+            appliedOffers.push({
+                offerId: b.offerId,
+                name: b.name,
+                type: 'baseline',
+            })
+        }
         if (breakdown?.personal)
             appliedOffers.push({
                 offerId: breakdown.personal.offerId,

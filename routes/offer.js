@@ -664,4 +664,121 @@ router.get(ROUTE_OFFER_PERFORMANCE, [adminAuth], controller.getOfferPerformance)
  */
 router.put(ROUTE_OFFER_BY_ID, [adminAuth], controller.updateOffer)
 
+/**
+ * @swagger
+ * /offers/{id}:
+ *   get:
+ *     summary: Read one offer (admin)
+ *     description: |
+ *       Re-read a single offer authoritatively — the builder previously had
+ *       list, create and update but no way to fetch one offer, so an edit
+ *       screen had nothing to reload from after saving. Also returns how many
+ *       customers currently hold it, so the admin can see what deleting would
+ *       affect before trying.
+ *     tags: [Offers - Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d1f9a2e3c3b4a1d2f1c1a0" }
+ *     responses:
+ *       200:
+ *         description: The offer, plus its customer-linkage counts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/Offer'
+ *                         - type: object
+ *                           properties:
+ *                             linkages:
+ *                               type: object
+ *                               properties:
+ *                                 live: { type: integer, description: Customers currently holding it (assigned/viewed/attached), example: 2 }
+ *                                 total: { type: integer, description: Every customer it was ever given to, example: 7 }
+ *                                 deletable: { type: boolean, description: True only when it has never been given to anyone — then DELETE really deletes., example: false }
+ *       404:
+ *         description: Offer not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_OFFER_BY_ID, [adminAuth], controller.getOffer)
+
+/**
+ * @swagger
+ * /offers/{id}:
+ *   delete:
+ *     summary: Delete an offer (admin)
+ *     description: |
+ *       Deleting is conditional, because a customer offer links back to the
+ *       offer it came from — hard-deleting one that has been handed out would
+ *       erase the record of a benefit someone was actually given.
+ *
+ *       - **Never given to anyone** → really deleted (`deleted: true`).
+ *       - **Only finished linkages** (redeemed / expired / cancelled) →
+ *         **archived** (`archived: true`), and the response says why.
+ *       - **Customers currently hold it** → refused with `requiresForce: true`
+ *         and the count. Repeat with `?force=true` to cancel those offers and
+ *         archive it.
+ *
+ *       An archived offer is out of every customer-facing path exactly like a
+ *       deleted one; the only difference is that its history survives. To stop
+ *       an offer being given out WITHOUT touching anyone who already has it,
+ *       pause it instead (`PUT /offers/{id}` with `status: paused`).
+ *     tags: [Offers - Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d1f9a2e3c3b4a1d2f1c1a0" }
+ *       - in: query
+ *         name: force
+ *         required: false
+ *         schema: { type: boolean, example: true }
+ *         description: Cancel the offers customers are currently holding and archive it anyway.
+ *     responses:
+ *       200:
+ *         description: The offer was deleted or archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         deleted: { type: boolean, example: false }
+ *                         archived: { type: boolean, example: true }
+ *                         offerId: { type: string, example: "64d1f9a2e3c3b4a1d2f1c1a0" }
+ *                         cancelledLinkages: { type: integer, example: 2 }
+ *                         totalLinkages: { type: integer, example: 7 }
+ *                         message: { type: string, example: "Offer \"First Experience\" was archived instead of deleted, because 7 customer(s) have already been given it and that record has to be kept." }
+ *       400:
+ *         description: |
+ *           Customers currently hold this offer and `force` was not set. The
+ *           response carries `liveLinkages`, `totalLinkages` and
+ *           `requiresForce: true`.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Offer not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.delete(ROUTE_OFFER_BY_ID, [adminAuth], controller.deleteOffer)
+
 module.exports = router

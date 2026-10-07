@@ -53,6 +53,12 @@ not the bot repo) are part of the plan.
 
 ## CURRENT WORK (2026-10-07): Developer Brief 6 Oct 2026 — 22 fixes + 2 features + 8 answers
 
+**PROGRESS: Group 1 ALL DONE + committed (`8795099 group 1 done`). Group 2: 2.1 / 2.2 / 2.3 / 2.4
+done (2.3 committed, the rest uncommitted); 2.5 is next. Groups 3 and 4 not started, except 4.4
+(committed) and 4.3 partly covered by 2.4. §2 features and the §3 answers come after the fixes.**
+Seven verification gates (one offline + six DB) must stay green — commands are in the STATUS BOARD at
+the top of `context/feature.md`, which is the single place to look after a context clear.
+
 Client PDF "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas", from their own testing 4–6 Oct.
 **Full plan + per-item triage is in `context/feature.md` (CURRENT feature).**
 - **BACKEND ONLY** (the FE team has a separate repo; the user is not on it). Items tagged A (pure

@@ -210,6 +210,150 @@ class OfferApiService extends BaseService {
         }
     }
 
+    // Read ONE offer. The builder had list/create/update but no way to re-read a
+    // single offer, so an edit screen had nothing authoritative to reload from
+    // after saving — part of the client's "the offer still holds the old
+    // details" report (brief 6 Oct 2026, item 2.1).
+    async getOffer(req) {
+        try {
+            const { id } = req.params
+            const offer = await OfferModel.findById(id).lean()
+            if (!offer) {
+                return BaseService.sendFailedResponse({ error: 'Offer not found' })
+            }
+            // Linkage counts, so the admin can see what deleting would affect.
+            const [live, total] = await Promise.all([
+                CustomerOfferModel.countDocuments({
+                    offerId: offer._id,
+                    status: {
+                        $in: [
+                            CUSTOMER_OFFER_STATUS.ASSIGNED,
+                            CUSTOMER_OFFER_STATUS.VIEWED,
+                            CUSTOMER_OFFER_STATUS.ATTACHED,
+                        ],
+                    },
+                }),
+                CustomerOfferModel.countDocuments({ offerId: offer._id }),
+            ])
+            return BaseService.sendSuccessResponse({
+                message: {
+                    ...offer,
+                    linkages: { live, total, deletable: total === 0 },
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to fetch offer' })
+        }
+    }
+
+    /**
+     * Delete an offer (brief 2.1 — "there is no delete button anywhere", and
+     * their test ends "then delete a test offer").
+     *
+     * Deleting is not unconditional, because a customer offer links back to the
+     * offer it came from: hard-deleting one that has been handed out would
+     * orphan those linkages and erase the record of a benefit someone was
+     * actually given. So:
+     *   - no linkages at all        → really deleted (the test-offer case)
+     *   - only finished linkages    → ARCHIVED, and we say why (history is kept)
+     *   - live linkages (assigned /
+     *     viewed / attached)        → refused, naming the count, unless
+     *                                 `force=true`, which cancels them and
+     *                                 archives the offer
+     * An archived offer is out of every customer-facing path exactly like a
+     * deleted one; the difference is only that its history survives.
+     */
+    async deleteOffer(req) {
+        try {
+            const { id } = req.params
+            const force = req.query?.force === 'true' || req.body?.force === true
+
+            const offer = await OfferModel.findById(id)
+            if (!offer) {
+                return BaseService.sendFailedResponse({ error: 'Offer not found' })
+            }
+
+            const LIVE = [
+                CUSTOMER_OFFER_STATUS.ASSIGNED,
+                CUSTOMER_OFFER_STATUS.VIEWED,
+                CUSTOMER_OFFER_STATUS.ATTACHED,
+            ]
+            const [live, total] = await Promise.all([
+                CustomerOfferModel.countDocuments({
+                    offerId: offer._id,
+                    status: { $in: LIVE },
+                }),
+                CustomerOfferModel.countDocuments({ offerId: offer._id }),
+            ])
+
+            // Never handed out → nothing to preserve.
+            if (total === 0) {
+                await OfferModel.deleteOne({ _id: offer._id })
+                await createAuditLog({
+                    userId: getObjectId(req.user.id),
+                    action: `Deleted offer "${offer.name}" (never linked to any customer)`,
+                    category: AUDIT_LOG_CATEGORIES.OFFER,
+                })
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        deleted: true,
+                        archived: false,
+                        offerId: offer._id,
+                        message: `Offer "${offer.name}" was deleted.`,
+                    },
+                })
+            }
+
+            if (live > 0 && !force) {
+                return BaseService.sendFailedResponse({
+                    error: `"${offer.name}" is currently held by ${live} customer(s). Pause it to stop it being given out, or delete it anyway to cancel those ${live} offer(s).`,
+                    liveLinkages: live,
+                    totalLinkages: total,
+                    requiresForce: true,
+                })
+            }
+
+            let cancelled = 0
+            if (live > 0) {
+                const res = await CustomerOfferModel.updateMany(
+                    { offerId: offer._id, status: { $in: LIVE } },
+                    {
+                        $set: {
+                            status: CUSTOMER_OFFER_STATUS.CANCELLED,
+                            cancelledAt: new Date(),
+                        },
+                    },
+                )
+                cancelled = res.modifiedCount || 0
+            }
+
+            offer.status = OFFER_STATUS.ARCHIVED
+            offer.updatedBy = getObjectId(req.user.id)
+            await offer.save()
+
+            await createAuditLog({
+                userId: getObjectId(req.user.id),
+                action: `Archived offer "${offer.name}" (${total} customer linkage(s) kept${cancelled ? `, ${cancelled} live one(s) cancelled` : ''})`,
+                category: AUDIT_LOG_CATEGORIES.OFFER,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    deleted: false,
+                    archived: true,
+                    offerId: offer._id,
+                    cancelledLinkages: cancelled,
+                    totalLinkages: total,
+                    message: `Offer "${offer.name}" was archived instead of deleted, because ${total} customer(s) have already been given it and that record has to be kept. It will no longer appear anywhere for customers.`,
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: 'Failed to delete offer' })
+        }
+    }
+
     async getOfferPerformance(req) {
         try {
             const { id } = req.params
@@ -281,6 +425,7 @@ class OfferApiService extends BaseService {
                 })
             }
             linkage.status = CUSTOMER_OFFER_STATUS.CANCELLED
+            linkage.cancelledAt = new Date()
             linkage.note = [linkage.note, `Cancelled: ${reason}`].filter(Boolean).join(' | ')
             await linkage.save()
 

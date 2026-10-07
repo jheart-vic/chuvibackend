@@ -169,6 +169,11 @@ exports.ROUTE_GET_ADMIN_SETTING = '/get-admin-setting'
 exports.ROUTE_UPDATE_ADMIN_SETTING = '/update-admin-setting'
 exports.ROUTE_ADMIN_ORDER_ORDERID = '/order/:id'
 exports.ROUTE_ADMIN_PAYMENT_VERIFICATION_QUEUE = '/payment-verification-queue'
+// Staff wallet adjustments above their role limit, awaiting an admin decision
+// (client brief 6 Oct 2026, item 2.4).
+exports.ROUTE_ADMIN_WALLET_ADJUSTMENT_REQUESTS = '/wallet-adjustment-requests'
+exports.ROUTE_ADMIN_WALLET_ADJUSTMENT_APPROVE = '/wallet-adjustment-requests/:id/approve'
+exports.ROUTE_ADMIN_WALLET_ADJUSTMENT_REJECT = '/wallet-adjustment-requests/:id/reject'
 exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT = '/payment/:id/accept'
 exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT = '/payment/:id/reject'
 exports.ROUTE_ADMIN_ORDER_BY_STATE = '/orders/by-state'

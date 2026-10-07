@@ -8,6 +8,7 @@ const PaymentModel = require('../models/payment.model')
 const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
+const WalletAdjustmentService = require('./walletAdjustment.service')
 const {
     WALLET_TX_TYPE,
     PAYMENT_ORDER_STATUS,
@@ -929,57 +930,66 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            // Client brief 6 Oct 2026, item 2.3: this used to do
-            // `wallet.balance += amount; wallet.save()` with no await and NO
-            // ledger line at all, so an adjustment moved real money and left no
-            // record the customer or the admin could see.
-            //
-            // Now: one atomic $inc (guarded on sufficient funds for a debit, so
-            // two concurrent debits can't overdraw), then a WalletTransaction
-            // written from the balance the update itself returned. The ledger
-            // line carries who did it, why, and the balance after — which is
-            // what makes "balance == sum of its ledger lines" checkable.
-            const delta = type === 'credit' ? amount : -amount
-            const guard = { userId: wallet.userId }
-            if (delta < 0) guard.balance = { $gte: amount }
-
-            const updatedWallet = await WalletModel.findOneAndUpdate(
-                guard,
-                { $inc: { balance: delta } },
-                { new: true },
+            // Client brief 6 Oct 2026, item 2.4: an operator may adjust up to
+            // their ROLE's limit, which the admin sets in settings. Above it,
+            // NOTHING moves — the adjustment becomes a request for an admin.
+            const roleLimit = await WalletAdjustmentService.getRoleLimit(
+                staff?.userType,
             )
-            if (!updatedWallet) {
-                return BaseService.sendFailedResponse({
-                    error: 'Insufficient balance',
+            if (amount > roleLimit) {
+                const request = await WalletAdjustmentService.createRequest({
+                    userId,
+                    amount,
+                    type,
+                    reason: message,
+                    requestedBy: staffId,
+                    requestedByRole: staff?.userType,
+                    roleLimit: Number.isFinite(roleLimit) ? roleLimit : 0,
+                    orderId: order._id,
+                    orderRef: order.oscNumber,
+                    customerName: order.fullName,
+                    requestedByName: staffName,
+                })
+                // Deliberately a SUCCESS: the operator did everything right and
+                // their request was recorded. Telling them it "failed" would
+                // invite them to retry and stack duplicate requests.
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        requiresApproval: true,
+                        requestId: request._id,
+                        status: request.status,
+                        type,
+                        amount,
+                        reason: message,
+                        roleLimit: Number.isFinite(roleLimit) ? roleLimit : 0,
+                        balance: wallet.balance, // unchanged
+                        message: `₦${amount} is above your ₦${Number.isFinite(roleLimit) ? roleLimit : 0} limit, so it has been sent to an admin to approve. Nothing has changed in the wallet yet.`,
+                    },
                 })
             }
 
-            let ledgerEntry
+            // Within the limit: move it now. The money path is shared with
+            // admin approval (walletAdjustment.service) so an approved ₦10,000
+            // and an allowed ₦3,000 produce identical ledger lines (item 2.3).
+            let applied
             try {
-                ledgerEntry = await WalletTransactionModel.create({
-                    userId: getObjectId(userId),
-                    type: WALLET_TX_TYPE.MANUAL_ADJUSTMENT,
-                    amount: delta, // signed: credits positive, debits negative
-                    status: 'success',
-                    description: `Wallet ${type} by ${staffName} (order ${order.oscNumber})`,
+                applied = await WalletAdjustmentService.applyAdjustment({
+                    userId,
+                    amount,
+                    type,
                     reason: message,
-                    performedBy: getObjectId(staffId),
-                    relatedOrderId: order._id,
-                    balanceAfter: updatedWallet.balance,
-                    reference: order.oscNumber,
+                    performedBy: staffId,
+                    performedByName: staffName,
+                    orderId: order._id,
+                    orderRef: order.oscNumber,
                 })
-            } catch (ledgerError) {
-                // The ledger IS the record. If it can't be written, put the
-                // money back rather than leave an untraceable movement.
-                console.log(ledgerError)
-                await WalletModel.updateOne(
-                    { userId: wallet.userId },
-                    { $inc: { balance: -delta } },
-                )
+            } catch (adjustError) {
                 return BaseService.sendFailedResponse({
-                    error: 'Could not record the adjustment in the ledger — no money was moved. Please try again.',
+                    error: adjustError.message || 'Failed to adjust the wallet',
                 })
             }
+            const updatedWallet = applied.wallet
+            const ledgerEntry = applied.ledgerEntry
 
             order.adjustWallet.message = message
             order.adjustWallet.amount = amount
@@ -1009,13 +1019,24 @@ class IntakeUserService extends BaseService {
                 orderId: order._id,
             })
 
+            // Brief 4.3: the admin must hear about every adjustment, not only
+            // the ones that needed approving. Fire-and-forget.
+            await WalletAdjustmentService.notifyAdmins({
+                title: 'Wallet adjusted',
+                body: `${staffName} ${type === 'credit' ? 'credited' : 'debited'} ₦${amount} ${type === 'credit' ? 'to' : 'from'} ${order.fullName}. Reason: ${message}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: {
+                    requiresApproval: false,
                     type,
                     amount,
                     reason: message,
                     balance: updatedWallet.balance,
                     performedBy: staffId,
+                    roleLimit: Number.isFinite(roleLimit) ? roleLimit : null,
                     // The ledger line this adjustment created — the customer
                     // and the admin both read the same row (brief 2.3).
                     transaction: {

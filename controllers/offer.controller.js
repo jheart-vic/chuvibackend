@@ -12,7 +12,9 @@ const handle = (method) => async (req, res) => {
 class OfferController extends BaseController {
     listOffers = handle('listOffers')
     createOffer = handle('createOffer')
+    getOffer = handle('getOffer')
     updateOffer = handle('updateOffer')
+    deleteOffer = handle('deleteOffer')
     getOfferPerformance = handle('getOfferPerformance')
     assignOffer = handle('assignOffer')
     cancelLinkage = handle('cancelLinkage')

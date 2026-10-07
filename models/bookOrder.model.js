@@ -313,7 +313,7 @@ const bookOrderSchema = new mongoose.Schema(
                         // in the shorthand form and mis-casts the array to [String].
                         offerId: { type: mongoose.Schema.Types.ObjectId },
                         name: { type: String },
-                        type: { type: String }, // personal | promotion
+                        type: { type: String }, // baseline | personal | promotion
                     },
                 ],
                 creditApplied: Number, // wallet reward credit used

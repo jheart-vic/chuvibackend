@@ -14,8 +14,6 @@
  *           type: string
  *         duration:
  *           type: string
- *         itemPerMonth:
- *           type: integer
  *         price:
  *           type: integer
  *         monthlyLimits:
@@ -461,7 +459,7 @@
  *             properties:
  *               offerId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
  *               name: { type: string, example: "Weekend 10% off" }
- *               type: { type: string, enum: [personal, promotion], example: personal }
+ *               type: { type: string, enum: [baseline, personal, promotion], description: "baseline = a standing policy the client calls a General offer, applied by rule with no selection.", example: baseline }
  *         creditApplied: { type: number, nullable: true, description: Wallet reward credit used, example: 1000 }
  *         orderTotal: { type: number, description: Amount the order was billed after offers and credit (== order.amount), example: 5700 }
  *         youSaved: { type: number, nullable: true, description: offerDiscount + waived fees + creditApplied, example: 2300 }
@@ -547,6 +545,27 @@
  *               reversed: { type: boolean, example: false }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
+ *
+ *     WalletAdjustmentRequest:
+ *       type: object
+ *       description: "A staff wallet adjustment that exceeded the operator's role limit and is waiting for an admin. Nothing moves in the wallet until it is approved; approval then runs the same code path as a within-limit adjustment, so it produces an identical ledger line."
+ *       properties:
+ *         _id: { type: string, example: 64d3c9c0f1b2a8e9d0f12345 }
+ *         userId: { type: string, description: The customer whose wallet would move (populated on list), example: 64d3c9c0f1b2a8e9d0f54321 }
+ *         amount: { type: integer, description: Always positive; the direction is in `type`., example: 10000 }
+ *         type: { type: string, enum: [credit, debit], example: credit }
+ *         reason: { type: string, example: "Refund for a damaged shirt" }
+ *         requestedBy: { type: string, description: The operator who asked (populated on list), example: 64d3c9c0f1b2a8e9d0f99999 }
+ *         requestedByRole: { type: string, enum: [intake-and-tag, customer-experience, qc, press, wash-and-dry, sort-and-pretreat, rider, admin], example: intake-and-tag }
+ *         roleLimitAtRequest: { type: integer, description: "The role's limit AT THE TIME, stored so changing the setting later never rewrites why approval was needed.", example: 5000 }
+ *         orderId: { type: string, nullable: true, example: 64d3c9c0f1b2a8e9d0f11111 }
+ *         status: { type: string, enum: [pending, approved, rejected], example: pending }
+ *         decidedBy: { type: string, nullable: true, example: 64d3c9c0f1b2a8e9d0f22222 }
+ *         decidedAt: { type: string, format: date-time, nullable: true, example: "2026-10-07T12:05:00.000Z" }
+ *         decisionNote: { type: string, nullable: true, example: "Approved — matches the complaint record." }
+ *         walletTransactionId: { type: string, nullable: true, description: The ledger line the approval produced., example: 64d3c9c0f1b2a8e9d0f33333 }
+ *         balanceAfter: { type: integer, nullable: true, example: 12500 }
+ *         createdAt: { type: string, format: date-time, example: "2026-10-07T11:40:00.000Z" }
  *
  *     WalletTransaction:
  *       type: object
@@ -683,6 +702,7 @@
  *         viewedAt: { type: string, format: date-time, nullable: true }
  *         attachedAt: { type: string, format: date-time, nullable: true }
  *         redeemedAt: { type: string, format: date-time, nullable: true }
+ *         cancelledAt: { type: string, format: date-time, nullable: true, description: Set when the offer was cancelled, whether manually or because its offer was deleted., example: "2026-10-07T11:42:00.000Z" }
  *         displayRules: { type: array, items: { type: string }, description: "Display-ready rule summary (my-offers rewards only).", example: ["Minimum order ₦2,000", "One use per customer"] }
  *         expiresInDays: { type: integer, nullable: true, description: "Whole days until this linkage expires, rounded up; 0 if past (my-offers rewards only).", example: 5 }
  *         remainingUses: { type: integer, nullable: true, description: "GLOBAL uses left on the underlying offer; null = unlimited (my-offers rewards only)." }

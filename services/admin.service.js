@@ -12,6 +12,8 @@ const UpdateFundModel = require('../models/updateFund.model')
 const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
+const WalletAdjustmentRequestModel = require('../models/walletAdjustmentRequest.model')
+const WalletAdjustmentService = require('./walletAdjustment.service')
 const {
     ORDER_STATUS,
     PAYMENT_ORDER_STATUS,
@@ -22,6 +24,7 @@ const {
     DELIVERY_SPEED,
     ROLE,
     ACTIVITY_TYPE,
+    WALLET_ADJUSTMENT_REQUEST_STATUS,
 } = require('../util/constants')
 const { presentOrder } = require('../util/orderView')
 const {
@@ -1278,6 +1281,66 @@ class AdminService extends BaseService {
             })
         }
     }
+    // ── Wallet adjustment approvals (client brief 2.4) ──────────────────────
+    // Staff adjustments above their role's limit land here and move no money
+    // until an admin decides. Mirrors how top-up requests reach the dashboard.
+    async getWalletAdjustmentRequests(req) {
+        try {
+            const { status, page, limit } = req.query
+            const filter = {}
+            // Default to what needs a decision — the dashboard's job.
+            filter.status = status || WALLET_ADJUSTMENT_REQUEST_STATUS.PENDING
+            if (status === 'all') delete filter.status
+
+            const result = await paginate(
+                WalletAdjustmentRequestModel,
+                filter,
+                {
+                    page,
+                    limit,
+                    sort: { createdAt: -1 },
+                    populate: [
+                        { path: 'userId', select: 'fullName email phoneNumber' },
+                        { path: 'requestedBy', select: 'fullName userType' },
+                        { path: 'decidedBy', select: 'fullName' },
+                        { path: 'orderId', select: 'oscNumber' },
+                    ],
+                    lean: true,
+                },
+            )
+            return BaseService.sendSuccessResponse({ message: result })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch wallet adjustment requests',
+            })
+        }
+    }
+
+    async approveWalletAdjustment(req) {
+        return WalletAdjustmentService.decideRequest({
+            requestId: req.params.id,
+            approve: true,
+            adminId: req.user.id,
+            note: req.body?.note || '',
+        })
+    }
+
+    async rejectWalletAdjustment(req) {
+        const note = req.body?.note || ''
+        if (!note.trim()) {
+            return BaseService.sendFailedResponse({
+                error: 'A note is required when rejecting a wallet adjustment, so the operator knows why.',
+            })
+        }
+        return WalletAdjustmentService.decideRequest({
+            requestId: req.params.id,
+            approve: false,
+            adminId: req.user.id,
+            note,
+        })
+    }
+
     async getPaymentVerificationQueue(req, res) {
         try {
             const result = await paginate(

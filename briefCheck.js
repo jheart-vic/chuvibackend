@@ -117,23 +117,48 @@ ok('no un-awaited bare balance mutation left',
     !/wallet\.balance \+=|wallet\.balance -=/.test(adjustCode))
 ok('every save/write in the method is awaited',
     !/(?<!await )(?<!\w)(order|wallet)\.save\(/.test(adjustCode))
+// The money path moved into the shared walletAdjustment service (item 2.4), so
+// that an admin APPROVING an over-limit adjustment and an operator making a
+// within-limit one write identical ledger lines. The guarantees are the same;
+// they are just asserted where they now live.
+const wa = fs.readFileSync(
+    path.join(ROOT, 'services/walletAdjustment.service.js'),
+    'utf8',
+)
+const apply = wa.slice(
+    wa.indexOf('async applyAdjustment('),
+    wa.indexOf('async createRequest('),
+)
+ok('the shared applyAdjustment exists', apply.length > 500)
 ok('balance moves via a single atomic $inc',
-    /findOneAndUpdate\([\s\S]{0,200}\$inc: \{ balance: delta \}/.test(adjust))
+    /findOneAndUpdate\([\s\S]{0,200}\$inc: \{ balance: delta \}/.test(apply))
 ok('a debit is guarded on sufficient funds (no overdraw race)',
-    /guard\.balance = \{ \$gte: amount \}/.test(adjust))
+    /guard\.balance = \{ \$gte: value \}/.test(apply))
 ok('a WalletTransaction is created',
-    /WalletTransactionModel\.create\(/.test(adjust))
+    /WalletTransactionModel\.create\(/.test(apply))
 ok('the ledger line is a manual-adjustment',
-    /type: WALLET_TX_TYPE\.MANUAL_ADJUSTMENT/.test(adjust))
+    /type: WALLET_TX_TYPE\.MANUAL_ADJUSTMENT/.test(apply))
 ok('the ledger line carries reason, performedBy and balanceAfter',
-    /reason: message/.test(adjust) &&
-        /performedBy: getObjectId\(staffId\)/.test(adjust) &&
-        /balanceAfter: updatedWallet\.balance/.test(adjust))
+    /reason,/.test(apply) &&
+        /performedBy: performedBy \? getObjectId\(performedBy\)/.test(apply) &&
+        /balanceAfter: updated\.balance/.test(apply))
 ok('amount is signed so the ledger sums to the balance',
-    /const delta = type === 'credit' \? amount : -amount/.test(adjust) &&
-        /amount: delta/.test(adjust))
+    /const delta = type === 'credit' \? value : -value/.test(apply) &&
+        /amount: delta/.test(apply))
 ok('a failed ledger write rolls the money back',
-    /\$inc: \{ balance: -delta \}/.test(adjust))
+    /\$inc: \{ balance: -delta \}/.test(apply))
+ok('a reason is mandatory',
+    /A reason is required for a wallet adjustment/.test(apply))
+ok('adjustWallet delegates to the shared path rather than keeping a copy',
+    /WalletAdjustmentService\.applyAdjustment\(/.test(adjust))
+ok('over-limit adjustments become a request instead of moving money',
+    /WalletAdjustmentService\.createRequest\(/.test(adjust) &&
+        /requiresApproval: true/.test(adjust))
+ok('the limit comes from settings, never from code',
+    /getRoleLimit/.test(adjust) &&
+        /walletAdjustmentLimits/.test(
+            fs.readFileSync(path.join(ROOT, 'models/adminSetting.model.js'), 'utf8'),
+        ))
 ok('the audit log attributes the OPERATOR, not the customer',
     /createAuditLog\(\{[\s\S]{0,80}userId: getObjectId\(staffId\)/.test(adjust))
 ok('zero / negative adjustments are rejected',
@@ -142,6 +167,51 @@ ok('the response returns the created ledger row to the FE',
     /transaction: \{[\s\S]{0,400}balanceAfter: ledgerEntry\.balanceAfter/.test(adjust))
 ok('no reference to the un-populated order.userId.fullName remains',
     !/order\.userId\.fullName/.test(adjust))
+
+// ─── 2.5 "Cannot create plan" when the plan was actually created ─────────────
+console.log('\n2.5 — plan create reports the truth')
+const { AUDIT_LOG_CATEGORIES } = require(path.join(ROOT, 'util/constants'))
+const AuditLogModel = require(path.join(ROOT, 'models/audit.log.model'))
+const sub = fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8')
+
+ok("'subscription' is a valid audit category",
+    AUDIT_LOG_CATEGORIES.SUBSCRIPTION === 'subscription')
+// The trigger: an audit row was rejected by the enum AFTER the plan was saved.
+ok('an audit row with that category validates',
+    !new AuditLogModel({
+        userId: '65a7d3e9b8f9c10012a9c321',
+        action: 'probe',
+        category: 'subscription',
+    }).validateSync())
+// Every category string in the file must be a real enum member, so this can't
+// regrow by someone adding a fifth call site with a new word.
+const cats = [...sub.matchAll(/category:\s*['"`]([a-z_-]+)['"`]/g)].map((m) => m[1])
+ok('no hardcoded audit category strings left in subscription.service',
+    cats.length === 0, JSON.stringify(cats))
+ok('the plan writes log through the non-fatal auditSafely wrapper',
+    (sub.match(/await auditSafely\(\{/g) || []).length === 4)
+ok('createAuditLog is only reached via that wrapper',
+    (sub.match(/createAuditLog\(/g) || []).length === 1)
+ok('the wrapper swallows the log failure instead of rethrowing',
+    /createAuditLog\(payload\)\.catch\(/.test(sub) && !/throw/.test(
+        sub.slice(sub.indexOf('const auditSafely'), sub.indexOf('// Turn a Mongoose')),
+    ))
+const createPlanSrc = sub.slice(sub.indexOf('async createPlan('), sub.indexOf('async updatePlan('))
+ok('the plan write has its own try/catch so a real failure is named',
+    /newPlan = await PlanModel\.create\(post\)/.test(createPlanSrc) &&
+        /describeDbError\(error, 'Could not create the plan'\)/.test(createPlanSrc))
+ok('paystackPlanCode is validated (it is required on the model)',
+    /paystackPlanCode: 'string\|required'/.test(createPlanSrc))
+ok('itemPerMonth is no longer demanded (the model does not store it)',
+    !/itemPerMonth: 'integer\|required'/.test(createPlanSrc))
+ok('a duplicate title maps to a clear message, not the generic error',
+    /error\?\.code === 11000/.test(sub) && /'Plan title already exists'/.test(sub))
+ok('a Mongoose validation error names the offending field',
+    /error\?\.name === 'ValidationError'/.test(sub) && /\$\{first\.path\} is required/.test(sub))
+ok('updatePlan runs validators so a bad edit cannot save silently',
+    /runValidators: true/.test(sub))
+ok('updatePlan returns the saved plan for the edit screen',
+    /data: updatedPlan/.test(sub))
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

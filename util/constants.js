@@ -317,6 +317,11 @@ const AUDIT_LOG_CATEGORIES = {
     COMMUNICATION: 'communication',
     OFFER: 'offer',
     RECOVERY: 'recovery',
+    // Subscription/plan admin actions. These four call sites existed and were
+    // writing category: 'subscription' long before the enum did, so every one
+    // of them threw a Mongoose enum ValidationError AFTER the plan was already
+    // written — which is brief item 2.5's false "cannot create plan".
+    SUBSCRIPTION: 'subscription',
 }
 
 // ─── CRM ────────────────────────────────────────────────────────────────────
@@ -467,6 +472,14 @@ const CREDIT_SOURCE = {
     RECOVERY: 'recovery',
     ADMIN: 'admin',
     ORDER: 'order',
+}
+
+// Staff wallet adjustments above their role's limit become a request an admin
+// must approve before any money moves (client brief 6 Oct 2026, item 2.4).
+const WALLET_ADJUSTMENT_REQUEST_STATUS = {
+    PENDING: 'pending',
+    APPROVED: 'approved',
+    REJECTED: 'rejected',
 }
 
 const WALLET_TX_TYPE = {
@@ -781,6 +794,7 @@ module.exports = {
     CREDIT_STATUS,
     CREDIT_SOURCE,
     WALLET_TX_TYPE,
+    WALLET_ADJUSTMENT_REQUEST_STATUS,
     COMM_CHANNEL,
     COMM_STATUS,
     COMM_SOURCE_SYSTEM,

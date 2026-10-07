@@ -1,5 +1,43 @@
 # Current Session Log
 
+> **CURRENT STATE 2026-10-07 — see `context/feature.md`'s STATUS BOARD at the top for the full
+> picture.** Working the 6 Oct client Developer Brief, backend only, order = fixes → features →
+> answers. **Group 1 COMMITTED (`8795099 group 1 done`). GROUP 2 IS NOW COMPLETE (2.1 / 2.2 / 2.4 /
+> 2.5) but UNCOMMITTED. NEXT = Group 3 (3.1 rider assignment, 3.2 failed-pickups filter, 3.3
+> landmark).** Eight verification gates must stay green (commands in the status board); `briefCheck.js`
+> is 47/47 and `planCreateStaging.js` still needs the testing URI. Never edit `.env` — pass
+> `MONGODB_URL` inline.
+
+### 2.5 DONE — NEW `planCreateStaging.js` (DB run pending a URI). briefCheck 47/47
+**A REAL BUG, and the opposite of the report: the plan WAS created every time.** `createPlan` saves the
+plan, then calls `createAuditLog`, which **rethrows**; the row carried `category: 'subscription'` and
+**`'subscription'` was never in `AUDIT_LOG_CATEGORIES`** → enum ValidationError → the catch returned the
+generic "Something went wrong", and the retry hit "Plan title already exists". A repo-wide scan found
+**exactly four such sites, all in `subscription.service.js`** (create/update/delete plan +
+cancelSubscription) — so update and delete had the same false failure, and a cancellation reported
+failure after Paystack had already been told.
+- Added `AUDIT_LOG_CATEGORIES.SUBSCRIPTION`; briefCheck asserts **no hardcoded category string remains
+  in the file**, so a new call site can't reintroduce it with a different word.
+- **The structural fix: an audit log must never reverse the outcome the operator is shown.** New
+  `auditSafely()` swallows log failures at all four sites. **`createAuditLog` itself left alone** — 127
+  other call sites share it and widening that is a separate call.
+- Real failures now name themselves (`describeDbError`: 11000 → "Plan title already exists",
+  ValidationError → the field, CastError → the field + type); the plan write has its own try/catch so
+  the unique-title index rejecting reads as a conflict.
+- **The validation rules contradicted the model BOTH ways:** `paystackPlanCode` is `required` on the
+  model but wasn't validated (⇒ the generic error), and `itemPerMonth` was `integer|required` while the
+  model field is COMMENTED OUT — the screen was refused over a field the backend discards. Fixed both,
+  plus the swagger `Plan` schema and the required list.
+- `updatePlan` gained `runValidators: true` and now returns the saved plan (same gap as 2.1's missing
+  `GET /offers/:id`). `cancelSubscription`'s `error.response.data.message` threw on a network failure
+  and surfaced as "Failed to cancel plan" — fixed.
+- **FOUND, NOT FIXED: a 4th swagger envelope variant — 15 blocks with `success` + `error` as SIBLINGS**
+  (the three earlier sweeps only hunted `success`+`message`). Failure side this time, docs-only. Sites:
+  `/admin/search-wallet`, `/auth/login|logout|refresh-token`, `/bookOrder/create-book-order`,
+  `/api/user/get-dashboard`, `/users/update-user|initialize-payment|change-password`,
+  `/utils/image-upload-single`, `/wallet/wallet-top-up|pay-with-wallet` (+3 more). Canonical gate still
+  reads 0 because it only checks `success`+`message`.
+
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
@@ -39,6 +77,68 @@ envelopes. All touched services load.
   left `stage.status: QUEUE`. A push S1→S2 only creates a PENDING handoff (items stay at S1 until S2
   confirms) and S2's Accept-all was failing (1.2) — so nothing moved and the number was honest.
   **Do NOT "fix" the drafts count.** Fix the confirm.
+### 2.4 DONE — NEW `walletLimitStaging.js` 39/39 (the client's own test)
+Per-role wallet limits + admin approval.
+- **KEY DESIGN:** NEW `services/walletAdjustment.service.js` owns ALL manual balance movement, so an
+  operator adjusting within their limit and an admin APPROVING an over-limit request run the SAME
+  `applyAdjustment` — identical ledger lines. A separate copy for approval would have quietly undone
+  2.3. The 2.3 money code moved there; `intake-user.adjustWallet` delegates.
+- Limits in **`AdminSetting.walletAdjustmentLimits` (a Map role→naira)**, defaults intake-and-tag
+  5000 / CX 10000. A Map not named fields, so a new role needs a settings edit not a deploy.
+  `updateAdminSettings` already `$set`s anything, so no service change. **No entry = 0** (everything
+  becomes a request); **admin unlimited**.
+- Over-limit returns **SUCCESS** with `requiresApproval: true` — calling it a failure would invite a
+  retry and stack duplicate requests.
+- `roleLimitAtRequest` stored so changing the setting never rewrites why approval was needed.
+- Approve **claims the request BEFORE** moving money (no double-pay) and **returns it to pending if
+  applying fails**. Reject REQUIRES a note. New admin endpoints + `WalletAdjustmentRequest` schema.
+- Brief **4.3 partly covered**: admins notified of every adjustment AND every request.
+- **briefCheck.js updated** to assert the money guarantees at their new home (34/34). All 5 DB gates
+  re-run green. **NEXT: 2.5 (false "cannot create plan"), then Group 3.**
+
+### 2.2 DONE — a REAL bug. NEW `freeLogisticsStaging.js` 23/23
+**USER CORRECTION THAT CRACKED IT: the client's "General" offer is `OFFER_TYPE.BASELINE`** (there is
+no "general" in the code). I had been testing with `promotional`, which carries an id and so was
+never affected — the bug only bites the type the client actually uses.
+- **ROOT CAUSE:** `_priceWithOffers` returned EARLY unless `post.customerOfferId || post.promoOfferId`.
+  A BASELINE offer applies BY RULE with **no linkage and no id to send**, so every one of them was
+  skipped. `offer.service.validateAndPrice` handled baselines correctly all along (`:729-743`);
+  booking never called it. The app advertised free pickup/delivery and charged ₦2,000 anyway.
+  Fix = always call `validateAndPrice` (it already tolerates no selection).
+- **Second half (the display ask):** `_buildPricing`'s `appliedOffers` was built from personal +
+  promotion ONLY, so a summary could say "Pickup: Free" with no offer name. Baselines now pushed
+  first with `type: 'baseline'`. (`pricing.appliedOffers.type` IS genuinely named `type` — it uses
+  the explicit `{ type: String }` form to dodge the Mongoose keyword, unlike `benefits.benefitType`.)
+- Verified the client's three cases + draft/archived/single-leg guards. All gates re-run green.
+- **Harness bug: the fees are on `AdminSetting`, NOT `AdminOrderDetails`** (`adminOrderSetting` at
+  `bookOrder.service.js:865` is AdminSettingModel). Reading the wrong model compared every total to
+  ₦0 and produced 9 meaningless failures.
+
+### 2.1 DONE — NEW `offerAdminStaging.js` 37/37 (runs the CLIENT'S OWN test)
+**"Offers do not save" was three separate things and the SAVE WAS NEVER BROKEN.** Create+update at
+`offerApi.service.js` persist correctly — proved by replaying their exact test (create the three
+named offers, leave, re-list, edit each, delete one).
+1. A new offer defaults to **`status: 'draft'`** → a list filtered to `status=active` can't show it.
+   That is the "gone after refresh" report, and it is **FE/workflow, not a lost save**. Say so.
+2. **No `GET /offers/:id` existed** (list/create/update only) → an edit screen had nothing to reload
+   one offer from; likeliest source of "still holds the old details". ADDED, returns
+   `linkages {live,total,deletable}`.
+3. **No delete existed at all.** ADDED, conditional: never-given → really deleted; only finished
+   linkages → ARCHIVED (history kept); customers currently hold it → refused with
+   `requiresForce:true`+count, `?force=true` cancels them and archives. `ARCHIVED` was already in
+   `OFFER_STATUS`.
+- **`CustomerOffer.cancelledAt` added at the user's request** — correct call: every other terminal
+  state stamps its own time, so a cancellation could only be inferred from `updatedAt`, which a later
+  write would clobber. Both cancel paths stamp it.
+- **Date-library question answered with evidence:** `moment` appears in only 2 files
+  (`util/lagosDay.js`, `crm.service.js`), both for calendar BUCKETING; **0 places stamp a field with
+  moment**, 64 use `new Date()`. Keep `new Date()` for instants, moment for Lagos boundaries —
+  especially since server.js pins TZ so `new Date()` is already Lagos-correct.
+- **Harness bugs (never assume a shape):** `OFFER_TYPE` is personal|promotional|baseline (no
+  "general"), and the benefit field is **`benefitType`** not `type` (Mongoose reserved keyword in a
+  subdoc — same trap already commented in `pricing.appliedOffers`). A `|| 'general'` fallback quietly
+  produced an invalid value; the harness now hard-fails if setup doesn't complete.
+
 ### 1.6 DONE — GROUP 1 COMPLETE. NEW `tierPricingStaging.js` 33/33; all four gates green
 Per-item care tier, the item that moves MONEY, so it got its own harness.
 - **NEW `util/itemPricing.js`.** The maths existed as THREE near-identical copies that had **already
