@@ -60,6 +60,14 @@ const userSchema = new mongoose.Schema(
                 GENERAL_STATUS.SUSPENDED,
             ],
         },
+        // Why the account is not active, who did it and when. Added 2026-10-07
+        // with the suspend/reinstate endpoint: until then NOTHING could write
+        // `status` at all, so the field above was permanently 'active' and the
+        // suspension checks that already existed (rider assignment, the riders
+        // list, staff notifications) could never fire.
+        statusReason: { type: String },
+        statusChangedAt: { type: Date },
+        statusChangedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         addresses: [AddressSchema],
         // quick default pickup address (editable via the in-app bot, Phase 6)
         defaultPickupAddress: { type: String },

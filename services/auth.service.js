@@ -14,7 +14,12 @@ const {
     getObjectId,
     normalizePhone,
 } = require('../util/helper')
-const { EXPIRES_AT, SERVICE_PLATFORM, ROLE } = require('../util/constants')
+const {
+    EXPIRES_AT,
+    SERVICE_PLATFORM,
+    ROLE,
+    GENERAL_STATUS,
+} = require('../util/constants')
 const FreePlanModel = require('../models/freeplan.model')
 const WalletModel = require('../models/wallet.model')
 const createAuditLog = require('../util/createAuditLog')
@@ -1116,6 +1121,21 @@ class AuthService extends BaseService {
             return {
                 success: false,
                 error: 'Email is not verified. Please verify your email',
+            }
+        }
+
+        // A suspended account must not be able to sign in, or suspension is
+        // decoration: the rider could still open the app and work the jobs
+        // already assigned to them. This is the single chokepoint every login
+        // path goes through (customer, staff, admin and Google), so one check
+        // here closes all of them.
+        if (user.status && user.status !== GENERAL_STATUS.ACTIVE) {
+            return {
+                success: false,
+                error:
+                    user.status === GENERAL_STATUS.SUSPENDED
+                        ? `This account is suspended${user.statusReason ? `: ${user.statusReason}` : ''}. Please contact an administrator.`
+                        : 'This account is not active. Please contact an administrator.',
             }
         }
 

@@ -19,6 +19,9 @@ const {
     ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND,
     ROUTE_ADMIN_AUDIT_LITE,
     ROUTE_SEARCH_WALLET,
+    ROUTE_ADMIN_WALLET_TRANSACTIONS,
+    ROUTE_ADMIN_STAFF,
+    ROUTE_ADMIN_STAFF_STATUS,
     ROUTE_SEARCH_ORDERS,
     ROUTE_SEARCH_ORDER_DETAIL,
     ROUTE_ADMIN_ORDER_DETAILS,
@@ -673,6 +676,20 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                 items:
  *                   type: string
  *                 example: ["10am-12pm", "4pm-6pm"]
+ *               walletAdjustmentLimits:
+ *                 type: object
+ *                 description: >
+ *                   Brief item 2.4 — the most one operator of each role may move in a single
+ *                   wallet adjustment, in naira. Keys are ROLE values; a role with NO entry has a
+ *                   limit of 0, meaning every adjustment it makes becomes an approval request.
+ *                   Admin is unlimited and is never read from here.
+ *                   WARNING: this is replaced WHOLESALE, not merged — send every role you want to
+ *                   keep, or the omitted ones fall back to 0. Read the current values from
+ *                   GET /admin/get-admin-setting first.
+ *                 additionalProperties: { type: number }
+ *                 example:
+ *                   intake-and-tag: 5000
+ *                   customer-experience: 10000
  *     responses:
  *       200:
  *         description: Admin settings updated successfully
@@ -688,10 +705,12 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                   type: object
  *                   properties:
  *                     message:
- *                       type: string
- *                       example: Settings updated successfully
- *                     data:
  *                       type: object
+ *                       description: >
+ *                         The SAVED AdminSetting document itself — not a confirmation string.
+ *                         (This block used to document `message` as a string with the document
+ *                         beside it under `data`; neither matched the wire.) Read the limits
+ *                         back from here to confirm what was stored.
  *                       properties:
  *                         _id:
  *                           type: string
@@ -730,6 +749,12 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                           items:
  *                             type: string
  *                           example: ["10am-12pm", "4pm-6pm"]
+ *                         walletAdjustmentLimits:
+ *                           type: object
+ *                           additionalProperties: { type: number }
+ *                           example:
+ *                             intake-and-tag: 5000
+ *                             customer-experience: 10000
  *                         createdAt:
  *                           type: string
  *                           format: date-time
@@ -2044,6 +2069,245 @@ router.get(ROUTE_ADMIN_AUDIT_LITE, [adminAuth], (req, res) => {
 router.get(ROUTE_SEARCH_WALLET, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.searchWallet(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/wallet-transactions:
+ *   get:
+ *     summary: Wallet ledger across all customers (admin)
+ *     description: >
+ *       Brief item 2.3 — the admin side of the wallet ledger. Every wallet movement in the
+ *       system writes a WalletTransaction, so this lists top-ups, order payments, reversals,
+ *       credit expiry and manual adjustments, each with the customer, the operator who did it,
+ *       the reason and the balance it left behind. The customer sees their own lines at
+ *       GET /wallet/fetch-user-transactions; this is the same data, unscoped.
+ *       A manual adjustment stores a SIGNED amount, so a deduction is negative.
+ *       `totals` covers the whole filtered set, not just the current page.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema: { type: string }
+ *         description: One customer's ledger. Takes precedence over `search`.
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "Ikechukwu" }
+ *         description: Customer name or phone, matched the same way as /admin/search-wallet.
+ *       - in: query
+ *         name: type
+ *         schema: { type: string, enum: [credit, debit, reversal, expiry, manual-adjustment] }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [pending, success, failed] }
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date, example: '2026-10-01' }
+ *         description: Lagos day, inclusive.
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date, example: '2026-10-31' }
+ *         description: Lagos day, inclusive through end of day.
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *     responses:
+ *       200:
+ *         description: Paginated ledger lines plus money-in / money-out totals
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/AdminWalletTransaction' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 134 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 7 }
+ *                         totals:
+ *                           type: object
+ *                           properties:
+ *                             credit: { type: integer, example: 450000 }
+ *                             debit: { type: integer, example: 312500 }
+ *                             net: { type: integer, example: 137500 }
+ *       400:
+ *         description: Unknown type, or userId was not a valid id
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_WALLET_TRANSACTIONS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.listWalletTransactions(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/staff:
+ *   get:
+ *     summary: List staff accounts with their working status (admin)
+ *     description: >
+ *       Everyone who is not a customer, with whether they can currently work.
+ *       Customers are deliberately unreachable from here — suspending a paying customer
+ *       is a different decision and must not happen by accident from a staff screen.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: role
+ *         schema: { type: string, enum: [admin, intake-and-tag, sort-and-pretreat, wash-and-dry, press, qc, rider, customer-experience] }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [active, inactive, pending, suspended] }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "Emma" }
+ *         description: Name, phone or email.
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 50 }
+ *     responses:
+ *       200:
+ *         description: Staff rows plus a count per status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StaffAccount' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 12 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 50 }
+ *                             pages: { type: integer, example: 1 }
+ *                         counts:
+ *                           type: object
+ *                           description: How many staff sit at each status.
+ *                           properties:
+ *                             active: { type: integer, example: 10 }
+ *                             inactive: { type: integer, example: 1 }
+ *                             pending: { type: integer, example: 0 }
+ *                             suspended: { type: integer, example: 1 }
+ *       400:
+ *         description: Unknown role or status
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_STAFF, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.listStaff(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/staff/{id}/status:
+ *   patch:
+ *     summary: Suspend, deactivate or reinstate a staff member (admin)
+ *     description: >
+ *       The only thing in the system that writes `User.status`. Until this existed the
+ *       field was 'active' from signup forever, so the suspension checks that were
+ *       already in place could never fire.
+ *       Suspending takes effect immediately and does two things: the person can no
+ *       longer sign in, and they can no longer be assigned a pickup or a delivery
+ *       (rider assignment already refuses a non-active rider, and GET /intake-user/riders
+ *       already hides them unless includeInactive=true).
+ *       It does NOT move work already assigned to them — reassign that separately.
+ *       A reason is required for anything other than 'active'; it is shown to the staff
+ *       member and kept on the record. Calling it with the status they already have is
+ *       a no-op that returns `changed: false` rather than writing a second audit line.
+ *       Refused when: the target is a customer, the target is you, or the target is the
+ *       last active admin (which would leave nobody able to undo it).
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: The staff member's User id.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [active, inactive, suspended]
+ *                 example: suspended
+ *               reason:
+ *                 type: string
+ *                 description: Required unless status is 'active'.
+ *                 example: "Left the company on 6 October."
+ *     responses:
+ *       200:
+ *         description: The saved staff record, and what the change actually does
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         staff: { $ref: '#/components/schemas/StaffAccount' }
+ *                         changed:
+ *                           type: boolean
+ *                           example: true
+ *                           description: False when they already held that status; nothing was written.
+ *                         previousStatus: { type: string, example: active }
+ *                         effect:
+ *                           type: string
+ *                           example: "They can no longer sign in, and cannot be assigned a pickup or a delivery. Work already assigned to them is NOT moved — reassign it."
+ *       400:
+ *         description: Invalid status, missing reason, a customer, yourself, or the last active admin
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.patch(ROUTE_ADMIN_STAFF_STATUS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.setStaffStatus(req, res)
 })
 
 /**

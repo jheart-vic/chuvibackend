@@ -181,6 +181,30 @@ class AdminController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async listWalletTransactions(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.listWalletTransactions(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async listStaff(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.listStaff(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async setStaffStatus(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.setStaffStatus(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async addItem(req, res) {
         const adminService = new AdminService()
         const result = await adminService.addItem(req)

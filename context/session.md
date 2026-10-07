@@ -2,13 +2,53 @@
 
 > **CURRENT STATE 2026-10-07 — see `context/feature.md`'s STATUS BOARD at the top for the full
 > picture.** Working the 6 Oct client Developer Brief, backend only, order = fixes → features →
-> answers. **Group 1 COMMITTED (`8795099`). ALL 22 FIXES NOW DONE except 4.5 (blocked on the client's
-> own Q2/Q3) and the FE-only ones (1.7, 1.8, part of 1.4/1.5/2.1). UNCOMMITTED.
-> NEXT = §2 new features: N1 Quick Booking, N2 Recovery/Complaints/Feedback dashboard — then the §3
-> answers LAST.** Every gate green 2026-10-07: briefCheck **101** · stationFlow 80 · tierPricing 33 ·
+> answers. **§1 ALL 22 FIXES DONE** (4.5 needed no code — answered; 1.7/1.8 + parts of 1.4/1.5/2.1 are
+> FE-only). **§3 Q1–Q8 ALL WRITTEN.** **MERGED: PR #240 (`2084e07`) put Groups 1–4 on `origin/main` —
+> BUT `cc8ef2c` ("all done") is NOT on main and carries the 4.4 SLA-badge/holdMeta unification in
+> `admin.service.js`, so 4.4 is not fully live until it is merged too.**
+> **NEXT = §2. N1 Quick Booking is BLOCKED on 5 client questions sent 2026-10-07 (count mismatch ·
+> who picks service+speed · payment-request direction · cancellation rules · the ₦4,000 line) — build
+> on the stated defaults if no reply. N2 Recovery/Complaints/Feedback dashboard STARTED.** Every gate green 2026-10-07: briefCheck **101** · stationFlow 80 · tierPricing 33 ·
 > offerAdmin 37 · freeLogistics 23 · walletLimit 39 · dispatchTag 46 · planCreate 39 · dispatch 46 ·
 > template 27 · phase12 14 · subLogistics 20 · handoff 54 · botStaging 11/11. Swagger 56/287, 0 wrong
 > envelopes. Never edit `.env` — pass `MONGODB_URL` inline (testingdb URI supplied by the user).
+
+### STAFF SUSPENSION BUILT (2026-10-07) — FE: "no endpoint to suspend a rider"
+True, and the shape was the interesting part: **every reader of `User.status` already existed and
+nothing could write it**, so suspension was unreachable dead code. NEW `GET /api/admin/staff` +
+`PATCH /api/admin/staff/:id/status`, new `statusReason`/`statusChangedAt`/`statusChangedBy`, and a
+**login refusal in `_handleLogin`** (without it a suspended rider still signs in and works their
+existing jobs — suspension would be decoration). Guards: not yourself, not the last active admin,
+not a customer; reason required; idempotent. `staffStatusStaging.js` **38/38** proves it bites at
+sign-in, at assignment and in the riders list. See feature.md for the full design.
+- **`logSafely(label, work)` took a PROMISE and I passed a thunk** → `await someFunction` resolves
+  to the function, so the audit row and the notification were never written, nothing threw, and the
+  endpoint reported clean success. **The silent-no-op shape, found only by counting the rows.**
+  `util/safeLog.js` now accepts either form. All safeLog-dependent gates re-run green.
+
+### §2 N2 DASHBOARD BUILT + N1 QUESTIONS SENT (2026-10-07)
+- **N1 Quick Booking is BLOCKED on 5 client questions** drafted as one copy/paste block: count mismatch
+  (customer vs rider vs S1) · who picks service + delivery speed (the brief captures NEITHER, so nothing
+  can be priced or promised at booking) · the payment-request direction (**today's "top up request" runs
+  the OTHER way** — the customer uploads bank-transfer proof; nothing pushes a bill from the office) ·
+  cancellation (who, until when, does "in full" include the pickup fee) · whether the ₦4,000 line is the
+  existing offers or a new overriding rule. Defaults stated for all five; build on them if no reply.
+- **N2 BUILT.** See feature.md's "§2 N2" section for the design. Headlines: the NPS 0–10 question did
+  not exist and is new on `Feedback` (`npsScore` has **no default — 0 is a real answer**); the throttle
+  tracks **asked** (on `CrmProfile.lastNpsAskedAt`, because an ignored prompt leaves no Feedback row)
+  separately from **answered**; a throttled score is dropped, never fatal; "delivered in the month"
+  comes off `stageHistory`, not `updatedAt`, so it does not repeat the §3 Q1 flaw.
+- **ALL GATES GREEN AGAINST `testingdb` 2026-10-07:** `recoveryReportStaging` **49/49** (the client's
+  own worked example lands on **4.3 · NPS 40 · 50%**) · `walletLimitStaging` **55/55** (now includes
+  the admin ledger) · briefCheck 104 · holds 22 · bot 11/11 · dispatch 46 · template 27 ·
+  stationFlow 80. Swagger **59 schemas / 290 paths / 0 wrong envelopes**.
+- **TWO BUGS THE RUNS CAUGHT, both "green for the wrong reason" shapes:**
+  (1) **`createdAt` is IMMUTABLE under Mongoose timestamps** — `updateOne({$set:{createdAt}})` is
+  silently dropped, so the first harness run backdated nothing and 14 assertions failed against an
+  honestly-empty month. Backdate via `Model.collection.updateOne` (raw driver).
+  (2) **the role field on `User` is `userType`, not `role`** — the admin ledger populated
+  `select: 'fullName role'` and got the name with the role `undefined`, so every operator would have
+  shown a blank role; asserting on `fullName` alone had passed.
 
 ### §3 Q1–Q8 ALL ANSWERED + FE CHANGELOG WRITTEN (2026-10-07)
 - **`context/CLIENT-ANSWERS-oct2026.md`** — all eight questions in the client's requested form, ending

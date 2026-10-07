@@ -26,7 +26,10 @@ const {
     ROLE,
     ACTIVITY_TYPE,
     WALLET_ADJUSTMENT_REQUEST_STATUS,
+    WALLET_TX_TYPE,
+    GENERAL_STATUS,
 } = require('../util/constants')
+const { startOfDay, endOfDay } = require('../util/lagosDay')
 const { presentOrder } = require('../util/orderView')
 const {
     activeHoldsFilter,
@@ -2351,6 +2354,407 @@ class AdminService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to search wallet',
+            })
+        }
+    }
+
+    // ── Staff status: suspend / reinstate ────────────────────────────────────
+    // Raised by the FE 2026-10-07: "there is no endpoint to suspend a rider."
+    // Correct, and the gap was narrower and worse than it looked. `User.status`
+    // already has active|inactive|suspended; `resolveRider` already refuses a
+    // non-active rider both places a rider can be assigned; `getRiders` already
+    // hides them; `notifyRoles` already skips them. Every READER was built.
+    // NOTHING COULD EVER WRITE THE FIELD — it was 'active' from signup forever,
+    // so the whole suspension path was unreachable. These two methods are the
+    // missing write, plus the login check in auth.service.
+    async listStaff(req) {
+        try {
+            const { role, status, search, page = 1, limit = 50 } = req.query || {}
+
+            // Customers are deliberately out of reach here. Suspending a paying
+            // customer is a different decision with different consequences, and
+            // a staff screen must not be able to do it by accident.
+            const staffRoles = Object.values(ROLE).filter((r) => r !== ROLE.USER)
+
+            const query = { userType: { $in: staffRoles } }
+            if (role) {
+                if (!staffRoles.includes(role)) {
+                    return BaseService.sendFailedResponse({
+                        error: `role must be one of: ${staffRoles.join(', ')}`,
+                    })
+                }
+                query.userType = role
+            }
+            if (status) {
+                if (!Object.values(GENERAL_STATUS).includes(status)) {
+                    return BaseService.sendFailedResponse({
+                        error: `status must be one of: ${Object.values(GENERAL_STATUS).join(', ')}`,
+                    })
+                }
+                query.status = status
+            }
+            if (search && search.trim()) {
+                const keyword = search.trim()
+                query.$or = [
+                    { fullName: { $regex: keyword, $options: 'i' } },
+                    { phoneNumber: { $regex: keyword, $options: 'i' } },
+                    { email: { $regex: keyword, $options: 'i' } },
+                ]
+            }
+
+            const { data, pagination } = await paginate(UserModel, query, {
+                page,
+                limit,
+                sort: { userType: 1, fullName: 1 },
+                select: 'fullName email phoneNumber userType status image statusReason statusChangedAt createdAt',
+                lean: true,
+            })
+
+            const rows = data.map((u) => ({
+                ...u,
+                role: u.userType,
+                // the one thing the screen needs to know before it offers the
+                // button: can this person still work?
+                canWork: u.status === GENERAL_STATUS.ACTIVE,
+            }))
+
+            const counts = await UserModel.aggregate([
+                { $match: { userType: { $in: staffRoles } } },
+                { $group: { _id: '$status', total: { $sum: 1 } } },
+            ])
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    data: rows,
+                    pagination,
+                    counts: Object.values(GENERAL_STATUS).reduce(
+                        (acc, s) => ({
+                            ...acc,
+                            [s]: counts.find((c) => c._id === s)?.total || 0,
+                        }),
+                        {},
+                    ),
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to list staff',
+            })
+        }
+    }
+
+    async setStaffStatus(req) {
+        try {
+            const actorId = req.user?.id
+            const { status, reason } = req.body || {}
+            const targetId = getObjectId(req.params?.id)
+
+            if (!targetId) {
+                return BaseService.sendFailedResponse({
+                    error: 'That staff id is not valid.',
+                })
+            }
+            if (!Object.values(GENERAL_STATUS).includes(status)) {
+                return BaseService.sendFailedResponse({
+                    error: `status must be one of: ${Object.values(GENERAL_STATUS).join(', ')}`,
+                })
+            }
+
+            const target = await UserModel.findById(targetId).select(
+                'fullName userType status',
+            )
+            if (!target) {
+                return BaseService.sendFailedResponse({
+                    error: 'That staff member no longer exists.',
+                })
+            }
+            if (target.userType === ROLE.USER) {
+                return BaseService.sendFailedResponse({
+                    error: `${target.fullName || 'That account'} is a customer, not a staff member. Customer accounts are not suspended from here.`,
+                })
+            }
+
+            // Locking yourself out is never what you meant.
+            if (
+                String(targetId) === String(actorId) &&
+                status !== GENERAL_STATUS.ACTIVE
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'You cannot suspend or deactivate your own account.',
+                })
+            }
+
+            // …and neither is locking EVERYONE out. Without this, suspending the
+            // last admin leaves nobody who can reinstate anyone, and the only
+            // way back is a database edit.
+            if (
+                target.userType === ROLE.ADMIN &&
+                status !== GENERAL_STATUS.ACTIVE
+            ) {
+                const otherActiveAdmins = await UserModel.countDocuments({
+                    _id: { $ne: targetId },
+                    userType: ROLE.ADMIN,
+                    status: GENERAL_STATUS.ACTIVE,
+                })
+                if (otherActiveAdmins === 0) {
+                    return BaseService.sendFailedResponse({
+                        error: 'This is the only active admin. Make another account an active admin first, or nobody will be able to undo this.',
+                    })
+                }
+            }
+
+            // A reason is the whole point of the record — "why is this rider
+            // suspended" must be answerable six weeks later.
+            if (status !== GENERAL_STATUS.ACTIVE && !String(reason || '').trim()) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please give a reason. It is shown to the staff member and kept on the record.',
+                })
+            }
+
+            if (target.status === status) {
+                // Idempotent on purpose: a double-tap must not write a second
+                // audit line implying it happened twice.
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        staff: {
+                            _id: target._id,
+                            fullName: target.fullName,
+                            role: target.userType,
+                            status: target.status,
+                        },
+                        changed: false,
+                        note: `${target.fullName || 'They'} is already ${status}.`,
+                    },
+                })
+            }
+
+            const previousStatus = target.status
+            target.status = status
+            target.statusReason = status === GENERAL_STATUS.ACTIVE ? null : String(reason).trim()
+            target.statusChangedAt = new Date()
+            target.statusChangedBy = getObjectId(actorId)
+            await target.save()
+
+            // Everything below is RECORD-KEEPING. It runs after the status is
+            // already saved and must never be able to report the change as
+            // failed — the 2.5 / 4.1 / 3.1 false-failure shape. See util/safeLog.
+            const verb =
+                status === GENERAL_STATUS.ACTIVE
+                    ? 'reinstated'
+                    : status === GENERAL_STATUS.SUSPENDED
+                      ? 'suspended'
+                      : 'deactivated'
+
+            await logSafely('staff status audit', () =>
+                createAuditLog({
+                    userId: getObjectId(actorId),
+                    action: `${verb} ${target.fullName || 'a staff member'} (${target.userType}) — was ${previousStatus}${target.statusReason ? `. Reason: ${target.statusReason}` : ''}`,
+                    category: 'auth',
+                }),
+            )
+            await logSafely('staff status notice', () =>
+                createNotification({
+                    userId: target._id,
+                    title:
+                        status === GENERAL_STATUS.ACTIVE
+                            ? 'Your account has been reinstated'
+                            : `Your account has been ${verb}`,
+                    body:
+                        status === GENERAL_STATUS.ACTIVE
+                            ? 'You can sign in and pick up work again.'
+                            : `${target.statusReason} — you will not be able to sign in until this is lifted.`,
+                    type: NOTIFICATION_TYPE.SYSTEM,
+                }),
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    staff: {
+                        _id: target._id,
+                        fullName: target.fullName,
+                        role: target.userType,
+                        status: target.status,
+                        statusReason: target.statusReason,
+                        statusChangedAt: target.statusChangedAt,
+                    },
+                    changed: true,
+                    previousStatus,
+                    // what this actually does, in the caller's words
+                    effect:
+                        status === GENERAL_STATUS.ACTIVE
+                            ? 'They can sign in and be assigned work again.'
+                            : 'They can no longer sign in, and cannot be assigned a pickup or a delivery. Work already assigned to them is NOT moved — reassign it.',
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to update that staff member',
+            })
+        }
+    }
+
+    // Admin-side wallet ledger (brief item 2.3). The customer could already see
+    // their own lines (`/wallet/fetch-user-transactions`, scoped to req.user),
+    // but NOTHING on the admin side listed wallet movements — so the client's own
+    // test for 2.3 ("both lines show in the customer app AND in admin") could not
+    // be satisfied, and the admin Money page had no source to read.
+    //
+    // Every movement in the system writes a WalletTransaction, so this is the
+    // whole ledger: top-ups, order payments, reversals, credit expiry and manual
+    // adjustments, each with who did it and the balance it left behind.
+    async listWalletTransactions(req) {
+        try {
+            const {
+                userId,
+                type,
+                status,
+                search,
+                from,
+                to,
+                page = 1,
+                limit = 20,
+            } = req.query || {}
+
+            const query = {}
+
+            if (type) {
+                if (!Object.values(WALLET_TX_TYPE).includes(type)) {
+                    return BaseService.sendFailedResponse({
+                        error: `type must be one of: ${Object.values(WALLET_TX_TYPE).join(', ')}`,
+                    })
+                }
+                query.type = type
+            }
+            if (status) query.status = status
+
+            if (userId) {
+                const id = getObjectId(userId)
+                if (!id) {
+                    return BaseService.sendFailedResponse({
+                        error: 'userId is not a valid id',
+                    })
+                }
+                query.userId = id
+            } else if (search && search.trim()) {
+                // same name/phone search as the wallet search above, so the two
+                // admin screens find the same person by the same text
+                const keyword = search.trim()
+                const users = await UserModel.find({
+                    $or: [
+                        { fullName: { $regex: keyword, $options: 'i' } },
+                        { phoneNumber: { $regex: keyword, $options: 'i' } },
+                    ],
+                })
+                    .select('_id')
+                    .lean()
+                if (!users.length) {
+                    return BaseService.sendSuccessResponse({
+                        message: {
+                            data: [],
+                            pagination: { total: 0, page: Number(page), limit: Number(limit), pages: 0 },
+                            totals: { credit: 0, debit: 0, net: 0 },
+                        },
+                    })
+                }
+                query.userId = { $in: users.map((u) => u._id) }
+            }
+
+            // Lagos day boundaries, and the upper bound is EXCLUSIVE — `to` means
+            // "through the end of that day", so a transaction at 23:59 is in.
+            if (from || to) {
+                query.createdAt = {}
+                if (from) query.createdAt.$gte = startOfDay(new Date(from))
+                if (to) query.createdAt.$lt = endOfDay(new Date(to))
+            }
+
+            const { data, pagination } = await paginate(
+                WalletTransactionModel,
+                query,
+                {
+                    page,
+                    limit,
+                    sort: { createdAt: -1 },
+                    populate: [
+                        { path: 'userId', select: 'fullName phoneNumber' },
+                        // the role field on User is `userType`, NOT `role` —
+                        // selecting `role` returns a populated doc with the name
+                        // filled in and the role silently undefined, which is
+                        // exactly how this shipped the first time
+                        { path: 'performedBy', select: 'fullName userType' },
+                    ],
+                    lean: true,
+                },
+            )
+
+            // Money in / money out across the WHOLE filtered set, not just this
+            // page — a page total would be meaningless on a ledger.
+            const totalsAgg = await WalletTransactionModel.aggregate([
+                { $match: query },
+                { $group: { _id: '$type', total: { $sum: '$amount' } } },
+            ])
+            const sumOf = (t) =>
+                totalsAgg.find((r) => r._id === t)?.total || 0
+            // A manual adjustment stores a SIGNED amount (2.3), so it lands on
+            // whichever side its sign says — never assume the type alone.
+            const manual = await WalletTransactionModel.aggregate([
+                { $match: { ...query, type: WALLET_TX_TYPE.MANUAL_ADJUSTMENT } },
+                {
+                    $group: {
+                        _id: null,
+                        up: {
+                            $sum: {
+                                $cond: [{ $gt: ['$amount', 0] }, '$amount', 0],
+                            },
+                        },
+                        down: {
+                            $sum: {
+                                $cond: [{ $lt: ['$amount', 0] }, '$amount', 0],
+                            },
+                        },
+                    },
+                },
+            ])
+            const credit =
+                sumOf(WALLET_TX_TYPE.CREDIT) + (manual[0]?.up || 0)
+            const debit =
+                sumOf(WALLET_TX_TYPE.DEBIT) +
+                Math.abs(manual[0]?.down || 0) +
+                sumOf(WALLET_TX_TYPE.EXPIRY)
+
+            const rows = data.map((t) => ({
+                ...t,
+                customer: t.userId
+                    ? {
+                          _id: t.userId._id,
+                          fullName: t.userId.fullName,
+                          phoneNumber: t.userId.phoneNumber,
+                      }
+                    : null,
+                // who moved the money — null for system/automatic movements
+                operator: t.performedBy
+                    ? {
+                          _id: t.performedBy._id,
+                          fullName: t.performedBy.fullName,
+                          role: t.performedBy.userType,
+                      }
+                    : null,
+                userId: t.userId?._id || t.userId,
+                performedBy: t.performedBy?._id || t.performedBy || null,
+            }))
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    data: rows,
+                    pagination,
+                    totals: { credit, debit, net: credit - debit },
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to load wallet transactions',
             })
         }
     }

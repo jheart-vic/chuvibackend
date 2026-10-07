@@ -11,9 +11,15 @@
 //
 // Returns the result on success, or null when the record-keeping failed.
 
-async function logSafely(label, promise) {
+// Accepts either the promise itself or a function returning one. The thunk form
+// is the natural assumption for a "run this safely" helper, and getting it wrong
+// used to FAIL SILENTLY in the worst possible way: `await someFunction` resolves
+// to the function, so the call never happened, nothing threw, and the caller saw
+// a clean success with no audit row and no notification written. Caught by
+// staffStatusStaging.js on 2026-10-07 — accept both rather than leave the trap.
+async function logSafely(label, work) {
     try {
-        return await promise
+        return await (typeof work === 'function' ? work() : work)
     } catch (error) {
         console.error(`${label} failed (non-fatal):`, error?.message || error)
         return null

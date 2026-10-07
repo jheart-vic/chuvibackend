@@ -67,6 +67,12 @@ const crmProfileSchema = new mongoose.Schema(
         wasDormant: { type: Boolean, default: false },
         dormantSince: { type: Date },
 
+        // §2 N2: last time this customer was SHOWN the NPS (0-10 recommend)
+        // question. Lives here, not only on Feedback, because a prompt the
+        // customer ignores creates no Feedback record to stamp — without it the
+        // "at most once in 30 days" rule would only throttle people who answer.
+        lastNpsAskedAt: { type: Date },
+
         // referral eligibility is paused while an unresolved complaint is open
         // (Feedback & Recovery sets this; Phase 5 Referral reads it)
         referralPaused: { type: Boolean, default: false },
