@@ -24,6 +24,10 @@ const {
     ACTIVITY_TYPE,
 } = require('../util/constants')
 const { presentOrder } = require('../util/orderView')
+const {
+    activeHoldsFilter,
+    overdueHoldsFilter,
+} = require('../util/holdSla')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const { getObjectId } = require('../util/helper')
@@ -346,36 +350,17 @@ class AdminService extends BaseService {
             })
 
             // ── Holds ───────────────────────────────────────────────────────
-            const activeHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-            })
+            // Active = on hold and still inside its SLA; Overdue = on hold and
+            // past it. The two filters are exact complements ($nor vs $or over
+            // the same branches), so no order is in both and the counts sum to
+            // all holds — client brief 4.4, where both cards showed the same 3.
+            const activeHolds = await BookOrderModel.countDocuments(
+                activeHoldsFilter(now),
+            )
 
-            const overdueHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-                $or: [
-                    {
-                        deliverySpeed: DELIVERY_SPEED.SAME_DAY,
-                        'stage.updatedAt': {
-                            $lt: new Date(now - 2 * 60 * 60 * 1000),
-                        },
-                    },
-                    {
-                        deliverySpeed: DELIVERY_SPEED.EXPRESS,
-                        'stage.updatedAt': {
-                            $lt: new Date(now - 4 * 60 * 60 * 1000),
-                        },
-                    },
-                    {
-                        deliverySpeed: DELIVERY_SPEED.STANDARD,
-                        'stage.updatedAt': {
-                            $lt: new Date(now - 6 * 60 * 60 * 1000),
-                        },
-                    },
-                    {
-                        deliveryDate: { $lt: now },
-                    },
-                ],
-            })
+            const overdueHolds = await BookOrderModel.countDocuments(
+                overdueHoldsFilter(now),
+            )
 
             const expiringTodayHolds = await BookOrderModel.countDocuments({
                 'stage.status': ORDER_STATUS.HOLD,
@@ -1689,37 +1674,14 @@ class AdminService extends BaseService {
             let filter = {}
 
             switch (type) {
+                // Same two filters the dashboard cards count with, so the list
+                // behind each card always matches the number on it (brief 4.4).
                 case 'activeHolds':
-                    filter = { 'stage.status': ORDER_STATUS.HOLD }
+                    filter = activeHoldsFilter(now)
                     break
 
                 case 'overdueHolds':
-                    filter = {
-                        'stage.status': ORDER_STATUS.HOLD,
-                        $or: [
-                            {
-                                deliverySpeed: DELIVERY_SPEED.SAME_DAY,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 2 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliverySpeed: DELIVERY_SPEED.EXPRESS,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 4 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliverySpeed: DELIVERY_SPEED.STANDARD,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 6 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliveryDate: { $lt: now },
-                            },
-                        ],
-                    }
+                    filter = overdueHoldsFilter(now)
                     break
 
                 case 'expiringToday':

@@ -427,9 +427,24 @@
  *         time with `reconstructed:true` and unknown figures set to null.
  *       properties:
  *         itemsBase: { type: number, description: Item subtotal before the tier multiplier, example: 4000 }
- *         serviceTier: { type: string, enum: [classic, premium, vip], example: premium }
- *         tierMultiplier: { type: number, nullable: true, description: Multiplier applied for the chosen tier (null on reconstructed), example: 1.5 }
- *         tierUplift: { type: number, nullable: true, description: itemsSubtotal - itemsBase, example: 2000 }
+ *         serviceTier: { type: string, enum: [classic, premium, vip], description: "The ORDER's care tier. Individual items may override it — see tierLines.", example: premium }
+ *         tierMultiplier: { type: number, nullable: true, description: "Multiplier applied for the tier. NULL when the order mixes tiers (no single multiplier describes it) or on a reconstructed receipt — read tierLines instead.", example: 1.5 }
+ *         isMixedTier: { type: boolean, description: "True when the items are not all on one care tier. Show the per-item breakdown rather than a single tier badge.", example: true }
+ *         tiersUsed: { type: array, items: { type: string, enum: [classic, premium, vip] }, description: Every care tier present on the order., example: [classic, vip] }
+ *         tierLines:
+ *           type: array
+ *           description: "One line per booked item line, priced at that item's own care tier (falling back to the order's). linePrice = basePrice x tierMultiplier."
+ *           items:
+ *             type: object
+ *             properties:
+ *               type: { type: string, description: Item name, example: shirt }
+ *               quantity: { type: number, example: 2 }
+ *               serviceTier: { type: string, enum: [classic, premium, vip], example: vip }
+ *               unitPrice: { type: number, description: Per-piece price after the service-type multiplier and rounding, example: 1000 }
+ *               basePrice: { type: number, description: unitPrice x quantity, at CLASSIC, example: 2000 }
+ *               tierMultiplier: { type: number, example: 2 }
+ *               linePrice: { type: number, description: What this line actually costs, example: 4000 }
+ *         tierUplift: { type: number, nullable: true, description: itemsSubtotal - itemsBase — what the tier upgrades added, example: 2000 }
  *         itemsSubtotal: { type: number, description: Item subtotal after the tier multiplier, example: 6000 }
  *         speedCharge: { type: number, nullable: true, description: Express / same-day surcharge, example: 1000 }
  *         pickupFee: { type: number, nullable: true, example: 500 }
@@ -1016,13 +1031,15 @@
  *
  *     Handoff:
  *       type: object
- *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count."
+ *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count. A pending handoff becomes 'superseded' when the same items leave the source station by another route (e.g. a later push to a different station) — it can never be confirmed, so it stops being listed as incoming and clears itself on the next read of the incoming queue."
  *       properties:
  *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
  *         fromStation: { type: string, example: sort-and-pretreat-station }
  *         toStation: { type: string, example: wash-and-dry-station }
  *         count: { type: number, description: "Number of physical pieces in the handoff.", example: 3 }
- *         status: { type: string, enum: [pending, confirmed, rejected], example: pending }
+ *         status: { type: string, enum: [pending, confirmed, rejected, superseded], example: pending }
+ *         supersededAt: { type: string, format: date-time, nullable: true, description: "Set when this handoff was overtaken; it is no longer actionable.", example: "2026-10-07T09:15:00.000Z" }
+ *         supersededBy: { type: string, nullable: true, description: "The handoff that overtook this one, when it was superseded by a new push.", example: 64d1f9a2e3c3b4a1d2f1c1b7 }
  *         summary: { type: string, description: "Readable roll-up by item name.", example: "2 Shirts, 1 Trouser" }
  *         items:
  *           type: array

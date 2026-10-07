@@ -8,6 +8,7 @@ const {
     ROUTE_SORT_AND_PRETREAT_MARK_ITEM_SORTED,
     ROUTE_SORT_AND_PRETREAT_UNMARK_SORTED_ITEM,
     ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED,
+    ROUTE_SORT_AND_PRETREAT_BULK_SORT,
     ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED,
     ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED,
     ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED,
@@ -382,6 +383,117 @@ router.patch(
     (req, res) => {
         const controller = new SortAndPretreatController()
         return controller.markAllItemsAsSorted(req, res)
+    },
+)
+
+/**
+ * @swagger
+ * /sort-pretreat/order/{id}/items/sort:
+ *   patch:
+ *     summary: Sort any selection of items at Sort & Pretreat in one call
+ *     description: |
+ *       The sorter's whole gesture in one request: pick one item, several, or
+ *       all of the pieces currently at this station, give them a colour group,
+ *       a fabric type and a pretreatment choice, and mark them sorted.
+ *
+ *       **Pretreatment is not a fixed step.** Sending
+ *       `pretreatmentOptions: ["no_pretreatment_needed"]` sets the pieces'
+ *       `pretreatStatus` to `not_required`, which completes them at this
+ *       station immediately — there is no pretreatment to mark as done. Any
+ *       other option leaves them `pending` here until the operator marks the
+ *       pretreatment done with the existing mark-pretreated endpoint.
+ *
+ *       **Fabric type applies to white and coloured items alike.**
+ *
+ *       Pieces that are finished here are handed to Wash & Dry as a normal
+ *       handoff, so they appear on the S3 screen straight away and S3 confirms
+ *       receipt batch by batch. Send `sendToWash: false` to sort without
+ *       handing over. The order can therefore sit at two stations at once —
+ *       `itemsLeftAtStation` / `totalItemCount` give the "3 of 10 left" line.
+ *     tags:
+ *       - Sort & Pretreat
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemIds:
+ *                 type: array
+ *                 description: "The selected pieces. Omit, or send all:true, for every piece currently at this station."
+ *                 items: { type: string }
+ *                 example: ["64d3c9c0f1b2a8e9d0f1aaa1", "64d3c9c0f1b2a8e9d0f1aaa2"]
+ *               all: { type: boolean, example: false, description: "Apply to every piece currently at this station." }
+ *               colorGroup: { type: string, enum: [white, colored], example: colored }
+ *               fabricType: { type: string, enum: [delicate, light, heavy], example: light }
+ *               pretreatmentOptions:
+ *                 type: array
+ *                 items: { type: string, enum: [stain_treatment_required, odor_removal, spot_cleaning, special_detergent, fabric_softener_prep, no_pretreatment_needed] }
+ *                 example: ["no_pretreatment_needed"]
+ *               damageRiskFlags:
+ *                 type: array
+ *                 items: { type: string, enum: [tears_damage, color_bleeding_risk, shrink_risk] }
+ *                 example: []
+ *               itemNote: { type: string, example: "Collar stain on the blue one" }
+ *               markSorted: { type: boolean, default: true, example: true }
+ *               sendToWash: { type: boolean, default: true, example: true }
+ *     responses:
+ *       200:
+ *         description: The selected items were updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         updated: { type: integer, example: 7 }
+ *                         markedSorted: { type: integer, example: 7 }
+ *                         pretreatmentRequired: { type: boolean, nullable: true, example: false, description: "null when the request did not set a pretreatment choice." }
+ *                         readyForWash: { type: integer, example: 7 }
+ *                         readyItemIds: { type: array, items: { type: string }, example: ["64d3c9c0f1b2a8e9d0f1aaa1"] }
+ *                         itemsLeftAtStation: { type: integer, example: 3, description: "Drives the \"3 of 10 left\" line on the order card." }
+ *                         totalItemCount: { type: integer, example: 10 }
+ *                         allItemsSorted: { type: boolean, example: false }
+ *                         stillAtStation: { type: integer, example: 10 }
+ *                         handoff: { $ref: '#/components/schemas/Handoff' }
+ *       400:
+ *         description: |
+ *           Nothing selected, a selected item is not at this station, an invalid
+ *           choice, "no pretreatment needed" combined with other options, or a
+ *           colour group / fabric type / pretreatment choice missing on an item
+ *           being marked sorted. The message names which.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Order not found, or no longer at Sort & Pretreat
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.patch(
+    ROUTE_SORT_AND_PRETREAT_BULK_SORT,
+    [sortAndPretreatAuth],
+    (req, res) => {
+        const controller = new SortAndPretreatController()
+        return controller.bulkSortItems(req, res)
     },
 )
 

@@ -7,7 +7,9 @@ const NotificationModel = require('../models/notification.model')
 const PaymentModel = require('../models/payment.model')
 const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
+const WalletTransactionModel = require('../models/walletTransaction.model')
 const {
+    WALLET_TX_TYPE,
     PAYMENT_ORDER_STATUS,
     BILLING_TYPE,
     ORDER_CHANNEL,
@@ -32,6 +34,7 @@ const {
     calculateDueDate,
     getObjectId,
 } = require('../util/helper')
+const { priceItems } = require('../util/itemPricing')
 const paginate = require('../util/paginate')
 const { presentOrder } = require('../util/orderView')
 const sendSms = require('../util/sendSms')
@@ -86,6 +89,9 @@ class IntakeUserService extends BaseService {
                 'items.*.type': 'string|required',
                 'items.*.price': 'integer|required',
                 'items.*.quantity': 'integer|required',
+                // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
+                // piece is priced at the order's tier, exactly as before.
+                'items.*.serviceTier': 'string|in:classic,premium,vip',
             }
 
             const validateMessage = {
@@ -136,35 +142,17 @@ class IntakeUserService extends BaseService {
                 ? matchedService.pricePerPiece
                 : 1
 
-            const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1
-            const VIP = adminOrderSetting.vipServiceTierCharge || 1
-
-            let multiplier = 1
-            if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM
-            if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
-
-            let totalPrice = post.items.reduce((sum, item) => {
-                const price = Number(item.price)
-                const quantity = Number(item.quantity)
-
-                return (
-                    sum +
-                    roundToNearestHundred(price * serviceTypeMultiplier) *
-                        quantity *
-                        multiplier
-                )
-            }, 0)
-
-            // CLASSIC-tier subtotal (multiplier 1) for the receipt's tier-uplift line.
-            const itemsBase = post.items.reduce((sum, item) => {
-                const price = Number(item.price)
-                const quantity = Number(item.quantity)
-                return (
-                    sum +
-                    roundToNearestHundred(price * serviceTypeMultiplier) *
-                        quantity
-                )
-            }, 0)
+            // Per-item care tier (brief 1.6) — same helper the two customer
+            // booking branches use, so a staff-created order prices identically.
+            const priced = priceItems({
+                items: post.items,
+                serviceTypeMultiplier,
+                orderTier: post.serviceTier,
+                adminOrderSetting,
+            })
+            let totalPrice = priced.total
+            // CLASSIC-tier subtotal for the receipt's tier-uplift line.
+            const itemsBase = priced.itemsBase
             const itemsSubtotal = totalPrice
 
             let speedCharge = 0
@@ -229,7 +217,12 @@ class IntakeUserService extends BaseService {
             newOrder.pricing = new BookOrderService()._buildPricing({
                 serviceTier: post.serviceTier,
                 itemsBase,
-                tierMultiplier: multiplier,
+                tierMultiplier: priced.isMixedTier
+                        ? null
+                        : priced.lines[0]?.tierMultiplier ?? 1,
+                    tierLines: priced.lines,
+                    tiersUsed: priced.tiersUsed,
+                    isMixedTier: priced.isMixedTier,
                 itemsSubtotal,
                 speedCharge,
                 pickupFee,
@@ -867,7 +860,8 @@ class IntakeUserService extends BaseService {
     async adjustWallet(req) {
         try {
             const orderId = req.params.id
-            const userId = req.params.userId
+            const userId = req.params.userId // the CUSTOMER whose wallet moves
+            const staffId = req.user?.id // the operator doing it
             const post = req.body
 
             if (!orderId) {
@@ -889,6 +883,12 @@ class IntakeUserService extends BaseService {
                     error: 'User not found',
                 })
             }
+
+            // Who performed it — needed on the ledger line and the audit entry.
+            // Both used to be attributed to the CUSTOMER, which made "who did
+            // it" unanswerable (brief 2.3 asks for exactly that field).
+            const staff = staffId ? await UserModel.findById(staffId) : null
+            const staffName = staff?.fullName || 'staff'
 
             const validateRule = {
                 message: 'string|required',
@@ -915,6 +915,12 @@ class IntakeUserService extends BaseService {
 
             const { type, message, amount } = post
 
+            if (!Number.isFinite(amount) || amount <= 0) {
+                return BaseService.sendFailedResponse({
+                    error: 'Adjustment amount must be greater than zero',
+                })
+            }
+
             const wallet = await WalletModel.findOne({ userId })
 
             if (!wallet) {
@@ -923,45 +929,109 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            if (type === 'credit') {
-                wallet.balance += amount
-                wallet.save()
-            } else {
-                if (wallet.balance < amount) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Insufficient balance',
-                    })
-                }
-                wallet.balance -= amount
-                wallet.save()
+            // Client brief 6 Oct 2026, item 2.3: this used to do
+            // `wallet.balance += amount; wallet.save()` with no await and NO
+            // ledger line at all, so an adjustment moved real money and left no
+            // record the customer or the admin could see.
+            //
+            // Now: one atomic $inc (guarded on sufficient funds for a debit, so
+            // two concurrent debits can't overdraw), then a WalletTransaction
+            // written from the balance the update itself returned. The ledger
+            // line carries who did it, why, and the balance after — which is
+            // what makes "balance == sum of its ledger lines" checkable.
+            const delta = type === 'credit' ? amount : -amount
+            const guard = { userId: wallet.userId }
+            if (delta < 0) guard.balance = { $gte: amount }
+
+            const updatedWallet = await WalletModel.findOneAndUpdate(
+                guard,
+                { $inc: { balance: delta } },
+                { new: true },
+            )
+            if (!updatedWallet) {
+                return BaseService.sendFailedResponse({
+                    error: 'Insufficient balance',
+                })
+            }
+
+            let ledgerEntry
+            try {
+                ledgerEntry = await WalletTransactionModel.create({
+                    userId: getObjectId(userId),
+                    type: WALLET_TX_TYPE.MANUAL_ADJUSTMENT,
+                    amount: delta, // signed: credits positive, debits negative
+                    status: 'success',
+                    description: `Wallet ${type} by ${staffName} (order ${order.oscNumber})`,
+                    reason: message,
+                    performedBy: getObjectId(staffId),
+                    relatedOrderId: order._id,
+                    balanceAfter: updatedWallet.balance,
+                    reference: order.oscNumber,
+                })
+            } catch (ledgerError) {
+                // The ledger IS the record. If it can't be written, put the
+                // money back rather than leave an untraceable movement.
+                console.log(ledgerError)
+                await WalletModel.updateOne(
+                    { userId: wallet.userId },
+                    { $inc: { balance: -delta } },
+                )
+                return BaseService.sendFailedResponse({
+                    error: 'Could not record the adjustment in the ledger — no money was moved. Please try again.',
+                })
             }
 
             order.adjustWallet.message = message
             order.adjustWallet.amount = amount
-            order.save()
+            await order.save({ validateBeforeSave: false })
 
             await ActivityModel.create({
                 title: 'Wallet Adjustment',
-                description: `${type === 'credit' ? 'Credited' : 'Debited'} ${amount} to wallet of ${order.userId.fullName} with ${order.userId.phoneNumber}. Reason: ${message}`,
+                description: `${type === 'credit' ? 'Credited' : 'Debited'} ₦${amount} ${type === 'credit' ? 'to' : 'from'} the wallet of ${order.fullName} (${order.phoneNumber}) by ${staffName}. Reason: ${message}`,
                 type: ACTIVITY_TYPE.WALLET_ADJUSTMENT,
+                orderId: order._id,
+                userId: getObjectId(staffId),
+                reference: order.oscNumber,
             })
 
             await createNotification({
                 userId,
                 title: `Wallet ${type === 'credit' ? 'Credit' : 'Debit'} Notification`,
-                body: `Your wallet has been ${type === 'credit' ? 'credited' : 'debited'} with ${amount}.`,
+                body: `Your wallet has been ${type === 'credit' ? 'credited' : 'debited'} with ₦${amount}.`,
                 subBody: `Reason: ${message}`,
                 type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
             })
-            await createAuditLog({userId: getObjectId(userId), action: `Adjusted wallet with a ${type} of ₦${amount} for user ${order.userId.fullName} with message: ${message}`, category: 'wallet', orderId: order._id})
+            // Audit the OPERATOR, not the customer — this records who acted.
+            await createAuditLog({
+                userId: getObjectId(staffId),
+                action: `Adjusted wallet (${type} ₦${amount}) for ${order.fullName} (${order.phoneNumber}) on order ${order.oscNumber}. Reason: ${message}. New balance: ₦${updatedWallet.balance}`,
+                category: 'wallet',
+                orderId: order._id,
+            })
 
             return BaseService.sendSuccessResponse({
-                message: `Wallet ${type} request successful of ${amount} Reason: ${message}`,
+                message: {
+                    type,
+                    amount,
+                    reason: message,
+                    balance: updatedWallet.balance,
+                    performedBy: staffId,
+                    // The ledger line this adjustment created — the customer
+                    // and the admin both read the same row (brief 2.3).
+                    transaction: {
+                        id: ledgerEntry._id,
+                        type: ledgerEntry.type,
+                        amount: ledgerEntry.amount,
+                        reason: ledgerEntry.reason,
+                        balanceAfter: ledgerEntry.balanceAfter,
+                        createdAt: ledgerEntry.createdAt,
+                    },
+                },
             })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to flag order',
+                error: 'Failed to adjust the wallet',
             })
         }
     }

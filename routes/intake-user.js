@@ -848,7 +848,12 @@ router.post(ROUTE_SEND_TOP_UP_REQUEST_ID, [intakeUserAuth], (req, res) => {
  *                 example: credit
  *     responses:
  *       200:
- *         description: Wallet adjustment successful
+ *         description: |
+ *           Wallet adjusted. Every adjustment now also writes a WalletTransaction
+ *           ledger line (type `manual-adjustment`, signed amount, reason, the
+ *           operator who did it and the balance after), which the customer and
+ *           the admin both read — so the wallet balance always equals the sum of
+ *           its ledger lines. The created row is returned as `transaction`.
  *         content:
  *           application/json:
  *             schema:
@@ -859,30 +864,32 @@ router.post(ROUTE_SEND_TOP_UP_REQUEST_ID, [intakeUserAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     message:
- *                       type: string
- *                       example: "Wallet credit request successful of 2000 Reason: Refund for damaged item"
+ *                       type: object
+ *                       properties:
+ *                         type: { type: string, enum: [credit, debit], example: credit }
+ *                         amount: { type: integer, example: 2000, description: Always positive; the direction is in `type` }
+ *                         reason: { type: string, example: "Refund for damaged item" }
+ *                         balance: { type: integer, example: 7500, description: The wallet's cash balance after this adjustment }
+ *                         performedBy: { type: string, nullable: true, example: "64d3c9c0f1b2a8e9d0f99999", description: Staff user who made the adjustment }
+ *                         transaction: { $ref: '#/components/schemas/WalletTransaction' }
  *       400:
- *         description: Validation error or insufficient balance
+ *         description: |
+ *           Validation error, a non-positive amount, insufficient balance on a
+ *           debit, or the ledger line could not be written (in which case no
+ *           money was moved — the balance change is rolled back).
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Insufficient balance"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       404:
  *         description: Order, user, or wallet not found
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Wallet not found"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_ADJUST_WALLET, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();

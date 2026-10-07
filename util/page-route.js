@@ -108,6 +108,9 @@ exports.ROUTE_SORT_AND_PRETREAT_UPDATE_ITEM = "/order/:id/items/:itemId/sort-det
 exports.ROUTE_SORT_AND_PRETREAT_MARK_ITEM_SORTED = "/order/:id/items/:itemId/mark-sorted";
 exports.ROUTE_SORT_AND_PRETREAT_UNMARK_SORTED_ITEM = "/order/:id/items/:itemId/undo-sorted";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED = "/order/:id/mark-all-sorted";
+// Bulk: sort ANY subset of the items at S2 in one call (client brief 1.5 — the
+// sorter could previously act on one item or on all of them, never on a few).
+exports.ROUTE_SORT_AND_PRETREAT_BULK_SORT = "/order/:id/items/sort";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED = "/order/:id/items/:itemId/mark-pretreated";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED = "/order/:id/items/:itemId/undo-pretreated";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED = "/order/:id/items/:itemId/flag";

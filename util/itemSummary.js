@@ -13,6 +13,10 @@ function itemBrief(items, id) {
         tagId: it.tagId || '',
         name: it.type,
         quantity: it.quantity || 1,
+        // Care tier for this piece — the brief asks for the tier to show on the
+        // item's tag and on its card at every station (6 Oct 2026, item 1.6).
+        // null means the piece follows the order's tier.
+        serviceTier: it.serviceTier || null,
     }
 }
 
@@ -27,6 +31,7 @@ function briefsForAll(items) {
         tagId: it.tagId || '',
         name: it.type,
         quantity: it.quantity || 1,
+        serviceTier: it.serviceTier || null,
     }))
 }
 

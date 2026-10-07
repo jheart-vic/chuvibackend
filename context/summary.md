@@ -51,6 +51,20 @@ not the bot repo) are part of the plan.
 | 6. In-app bot | ✅ built + verified (18-check script + boot), awaiting commit | `proper-swagger-prt` |
 | 7. WhatsApp reconnection | later (separate budget) | — |
 
+## CURRENT WORK (2026-10-07): Developer Brief 6 Oct 2026 — 22 fixes + 2 features + 8 answers
+
+Client PDF "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas", from their own testing 4–6 Oct.
+**Full plan + per-item triage is in `context/feature.md` (CURRENT feature).**
+- **BACKEND ONLY** (the FE team has a separate repo; the user is not on it). Items tagged A (pure
+  backend) / B (FE waiting on me) / C (pure FE) / D (blocked on a client answer).
+- **Order: fixes → new features → answers.** Answers written LAST from shipped code; deliverable is
+  ONE copy/paste block (§1 status · §2 status · §3 answers as rule/formula/worked example).
+- **Their Thu 8 Oct deadline cannot cover all 22+2 — tell them early.**
+- Headline findings: 1.1 is S2-on-`stage.status` vs S3/S4-on-`items[].currentStation` (decision D3
+  coming home); 1.2 is a symptom of 1.1; 2.3 and 4.4 are confirmed bugs; 3.1 is probably the
+  dispatch-tag gate, not a failed write; **1.3 is already fixed here but unshipped — Render serves
+  `main` while the work sits on `mesage-and-alert-fix`.**
+
 ## Client "Fix & Improvement Brief" (2026-08-02) — ALL 8 sections DONE, uncommitted
 
 A separate 8-section correction brief was delivered and built on branch `bot-polising`.

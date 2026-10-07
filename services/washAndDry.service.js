@@ -86,16 +86,22 @@ class WashAndDryService extends BaseService {
                     },
                 }),
 
+                // "Recent Wash Queue" must be the SAME SET as the washQueue
+                // count above, or the card contradicts the number beside it.
+                // This previously matched every order with an item at S3
+                // regardless of wash phase, so the tab read 0 while the list
+                // still showed orders already Washing (client brief 1.1).
                 paginate(
                     BookOrderModel,
                     {
                         'items.currentStation': HERE,
+                        'washDetails.startedAt': { $exists: false },
                     },
                     {
                         page: 1,
                         limit: 5,
                         sort: { 'stage.updatedAt': 1 },
-                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage createdAt washDetails',
+                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
                         lean: true,
                     },
                 ),
@@ -109,9 +115,18 @@ class WashAndDryService extends BaseService {
                         activeDry,
                         completedToday,
                     },
-                    recentQueue: recentQueueResult.data.map((o) =>
-                        scopeOrderToStation(o, HERE),
-                    ),
+                    // Same derived fields the queue tab returns, so the two
+                    // surfaces render identically from identical data.
+                    recentQueue: recentQueueResult.data.map((o) => ({
+                        ...scopeOrderToStation(o, HERE),
+                        flaggedItemCount: countAtStation(
+                            o,
+                            HERE,
+                            (i) => i.flaggedForReview,
+                        ),
+                        allItemsConfirmed: allAtStation(o, HERE, isWashed),
+                        confirmedItemCount: countAtStation(o, HERE, isWashed),
+                    })),
                 },
             })
         } catch (error) {

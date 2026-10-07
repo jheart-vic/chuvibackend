@@ -18,6 +18,7 @@ const {
     calculateDueDate,
     getObjectId,
 } = require('../util/helper')
+const { priceItems } = require('../util/itemPricing')
 const SubscriptionModel = require('../models/subscription.model')
 const { v4: uuidv4 } = require('uuid')
 const {
@@ -674,6 +675,12 @@ class BookOrderService extends BaseService {
         serviceTier,
         itemsBase,
         tierMultiplier = 1,
+        // Per-item care tiers (brief 1.6). When the order mixes tiers a single
+        // order-level multiplier is meaningless, so callers send null for it
+        // and the receipt shows the per-piece lines instead.
+        tierLines = null,
+        tiersUsed = null,
+        isMixedTier = false,
         itemsSubtotal,
         speedCharge = 0,
         pickupFee = 0,
@@ -705,6 +712,9 @@ class BookOrderService extends BaseService {
             itemsBase,
             serviceTier,
             tierMultiplier,
+            tierLines,
+            tiersUsed,
+            isMixedTier,
             tierUplift: itemsSubtotal - itemsBase,
             itemsSubtotal,
             speedCharge,
@@ -792,6 +802,9 @@ class BookOrderService extends BaseService {
                 'items.*.type': 'string|required',
                 'items.*.price': 'integer|required',
                 'items.*.quantity': 'integer|required',
+                // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
+                // piece is priced at the order's tier, exactly as before.
+                'items.*.serviceTier': 'string|in:classic,premium,vip',
             }
 
             const validateMessage = {
@@ -1071,39 +1084,18 @@ class BookOrderService extends BaseService {
                     ? matchedService.pricePerPiece
                     : 1
 
-                const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1
-                const VIP = adminOrderSetting.vipServiceTierCharge || 1
-
-                let multiplier = 1
-                if (post.serviceTier === SERVICE_TIERS.PREMIUM)
-                    multiplier = PREMIUM
-                if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
-
-                let totalPrice = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-
-                    // Multiply the item subtotal by the selected tier multiplier
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity *
-                            multiplier
-                    )
-                }, 0)
-
-                // Same sum at the CLASSIC tier (multiplier 1) — lets the receipt
-                // show the tier uplift separately. multiplier factors out of each
-                // line, so itemsBase * multiplier === totalPrice exactly.
-                const itemsBase = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity
-                    )
-                }, 0)
+                // Per-item care tier (brief 1.6) via the shared helper, so this
+                // branch, the pay-from-wallet branch and the staff intake path
+                // can never price the same basket differently again.
+                const priced = priceItems({
+                    items: post.items,
+                    serviceTypeMultiplier,
+                    orderTier: post.serviceTier,
+                    adminOrderSetting,
+                })
+                let totalPrice = priced.total
+                // Same items at CLASSIC — lets the receipt show the tier uplift.
+                const itemsBase = priced.itemsBase
 
                 let speedCharge = 0
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
@@ -1188,7 +1180,12 @@ class BookOrderService extends BaseService {
                 newOrder.pricing = this._buildPricing({
                     serviceTier: post.serviceTier,
                     itemsBase,
-                    tierMultiplier: multiplier,
+                    tierMultiplier: priced.isMixedTier
+                        ? null
+                        : priced.lines[0]?.tierMultiplier ?? 1,
+                    tierLines: priced.lines,
+                    tiersUsed: priced.tiersUsed,
+                    isMixedTier: priced.isMixedTier,
                     itemsSubtotal,
                     speedCharge,
                     pickupFee,
@@ -1229,38 +1226,20 @@ class BookOrderService extends BaseService {
                     ? matchedService.pricePerPiece
                     : 1
 
-                const PREMIUM =
-                    adminOrderSetting.premiumServiceTierCharge || 1.5
-                const VIP = adminOrderSetting.vipServiceTierCharge || 2
-
-                let multiplier = 1
-                if (post.serviceTier === SERVICE_TIERS.PREMIUM)
-                    multiplier = PREMIUM
-                if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
-
-                let totalPrice = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-
-                    // Multiply the item subtotal by the selected tier multiplier
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity *
-                            multiplier
-                    )
-                }, 0)
-
+                // Shared per-item tier pricing (brief 1.6). NOTE: this branch
+                // used to default a missing tier charge to 1.5/2 while the two
+                // other pricing sites used 1 — the same basket priced
+                // differently depending on which screen created the order. The
+                // helper defaults to 1 (no uplift) everywhere.
+                const priced = priceItems({
+                    items: post.items,
+                    serviceTypeMultiplier,
+                    orderTier: post.serviceTier,
+                    adminOrderSetting,
+                })
+                let totalPrice = priced.total
                 // CLASSIC-tier subtotal for the receipt's tier-uplift line.
-                const itemsBase = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity
-                    )
-                }, 0)
+                const itemsBase = priced.itemsBase
 
                 let speedCharge = 0
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
@@ -1348,7 +1327,12 @@ class BookOrderService extends BaseService {
                 newOrder.pricing = this._buildPricing({
                     serviceTier: post.serviceTier,
                     itemsBase,
-                    tierMultiplier: multiplier,
+                    tierMultiplier: priced.isMixedTier
+                        ? null
+                        : priced.lines[0]?.tierMultiplier ?? 1,
+                    tierLines: priced.lines,
+                    tiersUsed: priced.tiersUsed,
+                    isMixedTier: priced.isMixedTier,
                     itemsSubtotal,
                     speedCharge,
                     pickupFee,

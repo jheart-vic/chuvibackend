@@ -3,6 +3,151 @@
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
 
+## Session: 2026-10-07 — Developer Brief (6 Oct) TRIAGED + LOCKED. NO CODE YET.
+
+New client PDF: "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas" — 22 fixes, 2 new
+features, 8 questions, from their own testing 4–6 Oct. **Full plan now lives in `context/feature.md`
+as the CURRENT feature** (dispatch tag demoted to PREVIOUS). Read that first.
+
+- **SCOPE: BACKEND ONLY** (user: the FE team has its own repo, user is not on it). Every item is
+  tagged A (pure backend) / B (FE waiting on me) / C (pure FE, not mine) / D (blocked on an answer).
+- **ORDER AGREED: fixes → new features → answers.** Answers written LAST, from shipped code.
+  Deliverable = ONE copy/paste block (§1 status · §2 status · §3 answers in their
+  rule/formula/worked-example form).
+- **Their Thursday 8 Oct deadline is not achievable for all 22+2 — must tell them early** (the brief
+  explicitly asks for that). Propose Group 1 + 2.3 + 4.4 by Thursday, rest the week after.
+
+### BUILD STARTED same session — 3 items landed, offline-verified 29/29 (`node briefCheck.js`)
+NEW `briefCheck.js` at the repo ROOT (deliberately committed, not left in the scratchpad — it is the
+regression gate for the whole package and must survive a context clear). Swagger 55/281, 0 wrong
+envelopes. All touched services load.
+- **1.1 (S3 dashboard half) DONE.** `washAndDry.getDashboard`'s "Recent Wash Queue" paginated on
+  `{'items.currentStation': HERE}` while the `washQueue` COUNT beside it ALSO required
+  `'washDetails.startedAt': {$exists:false}` — the client's screenshot exactly (tab 0, list showing
+  two orders already Washing). Same filter + same derived fields on both now.
+- **4.4 DONE.** NEW `util/holdSla.js`: one `breachBranches` definition, `overdueHoldsFilter` ($or) and
+  `activeHoldsFilter` ($nor over the SAME branches) as exact complements + `isHoldBreached`. Both
+  `admin.service.js` call sites (dashboard counts, Holds Management list) use it. Harness asserts the
+  complement STRUCTURALLY so they can't drift again.
+- **2.3 DONE.** `adjustWallet` now: atomic `$inc` guarded on funds (no overdraw race) → a
+  `WalletTransaction` (`manual-adjustment`, SIGNED amount, reason, performedBy, balanceAfter,
+  relatedOrderId) → **rollback of the balance if the ledger write fails** (the ledger IS the record).
+  Fixed in passing: two un-awaited `save()`s; the audit log credited the CUSTOMER not the operator;
+  `order.userId.fullName` read off an un-populated ref. Swagger updated to the new object response.
+- **BIG ONE: 1.1.1 and 1.2 are the SAME incident and the drafts count was CORRECT.** The dashboard
+  drafts count and `getDrafts` use byte-identical queries, so 15 staying 15 means the orders never
+  left `stage.status: QUEUE`. A push S1→S2 only creates a PENDING handoff (items stay at S1 until S2
+  confirms) and S2's Accept-all was failing (1.2) — so nothing moved and the number was honest.
+  **Do NOT "fix" the drafts count.** Fix the confirm.
+### 1.6 DONE — GROUP 1 COMPLETE. NEW `tierPricingStaging.js` 33/33; all four gates green
+Per-item care tier, the item that moves MONEY, so it got its own harness.
+- **NEW `util/itemPricing.js`.** The maths existed as THREE near-identical copies that had **already
+  drifted** — two defaulted a missing tier charge to `|| 1`, the third to `|| 1.5`/`|| 2`, so the same
+  basket priced differently depending on which screen created the order. One helper now; fallback is
+  **1 (no uplift)** everywhere, because an unconfigured setting must never silently charge more.
+- `items[].serviceTier` (enum + null). **Absent = follow the order's tier** → existing orders and
+  callers are byte-identical. Formula and rounding position unchanged.
+- `pricing` gained `tierLines[]`/`tiersUsed[]`/`isMixedTier`; `tierMultiplier` is **null when mixed**.
+  Swagger updated on the schema AND the booking request body. `itemSummary` briefs carry the tier so
+  it reaches handoff cards / dispatch tag / station payloads.
+- **BUG 1 — three `ReferenceError`s that BOTH `node --check` AND `require()` passed.** The call sites
+  still passed `tierMultiplier: multiplier` after I deleted that variable. Only executing each branch
+  caught it. Exactly the `isWashed`-hoist lesson from 2026-10-05: **loading a service proves nothing
+  about its method bodies** — if you touch a branch, run that branch.
+- **BUG 2 — `config/setup.js` seeded the tier charges INVERTED:** `premium: 2, vip: 1.5` vs the
+  model's own defaults premium 1.5 / vip 2, so a freshly seeded DB charged MORE for Premium than for
+  VIP. Confirmed live (testingdb prices VIP ×1.5). Seed fixed. **setup.js only seeds when the doc is
+  MISSING → existing DBs keep the inverted values. CHECK THE LIVE `AdminSetting` before claiming this
+  is fixed in production.**
+- Gates after the change: tierPricing 33 · stationFlow 80 · briefCheck 29 · dispatchTag 46.
+  Swagger 55/282, 0 bad envelopes. **NEXT: Group 2 (2.1 offer DELETE, 2.2, 2.4, 2.5).**
+
+### 1.5 DONE same session — `stationFlowStaging.js` now 80/80
+NEW **`PATCH /api/sort-pretreat/order/:id/items/sort`** (`bulkSortItems`). Before this the surface was
+per-ITEM or whole-order ONLY, and the whole-order one could not set colour/pretreatment at all —
+literally the client's 1.5.1 and 1.5.2. Takes `itemIds[]`/`all`, colour, fabric, pretreatment,
+damage flags, note, `markSorted`, `sendToWash`.
+- **The "no pretreatment" machinery already existed and nothing could set it:** the enum value
+  `no_pretreatment_needed` and `pretreatStatus: 'not_required'` were both in the model, and
+  `itemCompleteAt` already accepts `not_required` — so choosing it finishes the piece at S2 with no
+  step to mark done. One line of wiring, not a feature.
+- Required-ness is enforced **at mark-sorted time**, not at save time, so the operator can work in
+  stages; messages say how many pieces are missing what.
+- **STATED ASSUMPTION to raise with the client:** the brief wants the 7 to "show in the S3 Wash Queue
+  at once" AND S3 to confirm per batch — only both true if marking sorted also HANDS OVER. So
+  completed pieces auto-push to S3 as a normal handoff; `sendToWash:false` opts out.
+- **`markItemAsPretreated` had a real split-flow bug, fixed in passing:** `allItemsSorted`/
+  `allItemsPretreated`/`readyToSend` were computed over EVERY item, so with 7 pieces already at wash
+  `readyToSend` could never turn true for the 3 left. Now station-scoped. It also hands the piece
+  over now ("those 3 then join the rest at S3").
+- Verified against the brief's OWN worked example (scenario 14), end to end, including the
+  "3 of 10 left" counter and both batches meeting at S3.
+- **Test-design lesson repeated:** two guard-rail assertions "failed" only because they ran after the
+  order had fully moved to S3, so the order-level guard fired first. The behaviour was right and the
+  test was wrong — same class of mistake as the earlier missing-`note` assertion. Guard-rail cases now
+  run against a fresh order still at the station.
+
+### 1.1 / 1.2 / 1.4 ROOT-CAUSED, REPRODUCED AND FIXED same session — DB-verified 50/50
+User supplied the testingdb URI. NEW **`stationFlowStaging.js`** (repo root): walks one order
+S1→S2→S3 through the REAL services asserting, after each move, that the station it LEFT drops it, the
+station it ENTERED lists it, and **every count equals its list**. `STAGING_OK=1 MONGODB_URL="…" node
+stationFlowStaging.js` → **50/50**. Safety-gated, hard-refuses `laundrydb`, cleans up (0 leftovers).
+- **The happy path was NEVER broken** (scenarios 1–8 green on clean data). 1.1 was not "queues are
+  wrong in general" — which is why reading the queue code kept coming up empty.
+- **REAL CAUSE, reproduced verbatim (scenario 12):** `isWholeOrderGate` is
+  `fromIdx === 0 || toIdx === last` and the only ordering rule is `toIdx > fromIdx`, so a push may
+  legitimately SKIP a station (a wash-only order really does go S3→S5 — must stay). Nothing
+  invalidated an EARLIER pending handoff when the same items left by the new route. push S1→S2 (H1)
+  → push S1→S3 (H2) → S3 confirms H2 → pieces at S3, order reads "washing", **H1 still pending** →
+  still drawn in S2's Incoming → Accept all hits `isWholeAt(INTAKE)` false → the client's exact
+  string *"…must move the whole order — all items must still be at intake-and-tag-station"*. That is
+  also how OSC-20261004-631233 was at S3 Washing AND in S2's Incoming list.
+- **FIX:** `HandoffSchema.status` gains `superseded` (+`supersededAt`/`supersededBy`); a new push
+  supersedes intersecting earlier pending handoffs from the same station (+Activity row); `confirm`
+  checks staleness BEFORE the gates and returns a plain sentence; the `status !== 'pending'` guard
+  now distinguishes confirmed/rejected/superseded; **`pendingQueue` is self-healing** and persists the
+  cleanup — **so the client's two already-stranded orders fix themselves on the next read, no
+  migration** (scenario 13 writes the damage straight to Mongo and proves it).
+- **1.4 backend half DONE:** flag + hold were verified to WORK (scenarios 9–10); they were being
+  refused and the refusal was unreadable. S2's NINE identical `'Order not found or not in sort &
+  pretreat stage'` guards now call NEW `explainNotAtSort(orderId)` — one extra read, a sentence that
+  names the order and where it actually is. Swagger `Handoff` schema updated (55/281, 0 bad
+  envelopes). The "display the error" half remains FE (Bucket C).
+- **Harness bugs the run found (worth remembering):** `sendToHold` takes `itemId` as a ROUTE PARAM and
+  requires `assignTo`; `flagItemForReview` requires a `note` — a first draft "passed" a station-guard
+  assertion that was actually failing on a missing note, i.e. the test was green for the wrong reason.
+
+### Verified against the code BEFORE planning (these are findings, not guesses)
+- **1.1 root cause — TWO parallel notions of "where is this order".** S2 `sortAndPretreat.service.js`
+  filters `stage.status === sort-and-pretreat` at ORDER level (~15 sites); S3/S4 filter
+  `items[].currentStation` at ITEM level; `handoff.service.js:351-369` only rewrites `stage.status`
+  when `summaryStatus()` CHANGES, which a partial move doesn't. So an order is legitimately in BOTH
+  lists. This is decision D3 from the split-flow work coming home — S2 was deliberately left on
+  `stage.status` and that is now the bug.
+- **1.2 is NOT its own bug** — the red message is `handoff.service.js:280`, the CONFIRM-side
+  whole-order gate, firing because the items already left S1. Symptom of 1.1.
+- **2.3 CONFIRMED BUG:** `intake-user.service.js:867 adjustWallet` mutates `wallet.balance` and writes
+  NO `WalletTransaction` at all; both `save()` calls un-awaited.
+- **4.4 CONFIRMED BUG:** `admin.service.js:349/:353` — `activeHolds` is ALL holds, `overdueHolds` is a
+  strict SUBSET of it. Duplicated at `:1692/:1696`.
+- **3.1 is probably NOT "doesn't save"** — `intake-user.service.js:1340` really writes the rider. The
+  dispatch-tag gate at `:1331` refuses with `needsDispatchTag` and the FE swallows it.
+- **2.1:** create/update at `offerApi.service.js:125/168` are CORRECT and persist; what is genuinely
+  missing is a DELETE route (`util/page-route.js:250-261`). "Gone after refresh" is most likely
+  offers defaulting to `status: draft` against an active-filtered list.
+- **1.5:** only per-item + all-items endpoints exist (`:276`, `:473`, `:665`) — no bulk endpoint, which
+  is exactly the "cannot select a few" complaint. Model ALREADY has `colorGroup`/`fabricType`/
+  `pretreatmentOptions` + a `not_required` pretreatStatus (bookOrder.model.js:62-94).
+- **3.2/3.3 are cheap:** `PICKUP_STATUS.FAILED` exists (constants.js:32); `landmark` exists on
+  `user.model.js:10` and in `util/address.js`'s structured address.
+- **1.3 IS ALREADY FIXED HERE BUT NOT DEPLOYED** — the 2026-10-05/06 wash-station work is on
+  `mesage-and-alert-fix`; Render serves `main`. Same stale-deploy pattern as 2026-09-25. Merging also
+  ships the dispatch-tag gate, which may change 3.1.
+- **1.6 (per-item care tier) is the money risk** — it moves pricing that booking, the bot, offers and
+  subscription draw-down all share. Scheduled LAST in Group 1 with its own DB harness.
+- **4.5 is blocked on their own Q2/Q3** and the 125% case was already fixed 2026-09-23; 100% may now
+  simply be true. Do NOT change the formula on a guess — answer it in §3.
+
 ## Session: 2026-09-24 (cont.) — Dispatch Tag PLANNED + the 2 flagged debts moved INTO plan (NO CODE)
 
 New client brief "CHUVI Dispatch Tag — Simple Explanation". Rewrote `context/feature.md` as a 3-part

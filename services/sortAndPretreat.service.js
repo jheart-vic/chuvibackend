@@ -28,6 +28,10 @@ const {
     allAtStation,
     stationOf,
 } = require('../util/stationScope')
+// Sorted pieces are handed to wash through the normal handoff flow, so S3 still
+// confirms receipt batch by batch (client brief 1.5, confirmation 1).
+const HandoffServiceClass = require('./handoff.service')
+const HandoffService = new HandoffServiceClass()
 
 // Split-flow: this station only ever sees/acts on the items sitting at it.
 // The ORDER-level query stays on stage.status (decision D3): sort is the
@@ -35,6 +39,34 @@ const {
 // any order holding an item here reads 'sort-and-pretreat'. Only the ITEMS need
 // scoping — otherwise a piece already handed to wash still renders here too.
 const HERE = STATION_STATUS.SORT_AND_PRETREAT_STATION
+
+// Why did this order not match the station query? "Order not found or not in
+// sort & pretreat stage" covers three very different situations and tells the
+// operator nothing about which — so a button appears to do nothing (client
+// brief 6 Oct 2026, item 1.4: "a button that fails always shows a message that
+// says why"). One extra read turns it into an actionable sentence.
+async function explainNotAtSort(orderId) {
+    let order = null
+    try {
+        order = await BookOrderModel.findById(orderId)
+            .select('oscNumber stage items')
+            .lean()
+    } catch (e) {
+        // A malformed id lands here — treat it as not found.
+    }
+    if (!order) return 'That order does not exist.'
+
+    const here = (order.items || []).filter(
+        (i) => (i.currentStation || STATION_STATUS.INTAKE_AND_TAG_STATION) === HERE,
+    ).length
+    const total = (order.items || []).length
+    const ref = order.oscNumber ? `Order ${order.oscNumber}` : 'This order'
+
+    if (here > 0) {
+        return `${ref} still has ${here} of ${total} item(s) at sort & pretreat, but the order is recorded as "${order.stage?.status}". Refresh the queue — if it persists, report it.`
+    }
+    return `${ref} is no longer at sort & pretreat (it is now at "${order.stage?.status}"), so it cannot be changed from this station.`
+}
 
 class SortAndPretreatService extends BaseService {
     async getDashboard(req) {
@@ -239,7 +271,7 @@ class SortAndPretreatService extends BaseService {
 
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             // Scoped to this station: items already handed on to wash are done
@@ -301,7 +333,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)
@@ -469,6 +501,350 @@ class SortAndPretreatService extends BaseService {
         }
     }
 
+    /**
+     * BULK SORT — client brief 6 Oct 2026, item 1.5.
+     *
+     * The sorter opens an order, picks the items that belong together, gives
+     * them a colour group, a fabric type and a pretreatment choice, and sends
+     * them on. Before this she could act on ONE item or on ALL of them, and
+     * when she chose "all" she could not set the colour group or pretreatment
+     * at all — the app only stamped them sorted. This does the whole gesture in
+     * one call for any subset.
+     *
+     * Body:
+     *   itemIds[]            the selected pieces; omit (or `all: true`) for
+     *                        every piece currently at this station
+     *   colorGroup           white | colored          (required to mark sorted)
+     *   fabricType           delicate | light | heavy (applies to white AND
+     *                        coloured items alike — the old UI label said
+     *                        "White fabric type", which was only a label)
+     *   pretreatmentOptions[]  one or more options, or ['no_pretreatment_needed']
+     *   damageRiskFlags[], itemNote
+     *   markSorted           default true
+     *   sendToWash           default true — see below
+     *
+     * Pretreatment is no longer a fixed step for every item. Choosing
+     * "no_pretreatment_needed" sets `pretreatStatus: 'not_required'`, which
+     * already satisfies the station's completion gate (`itemCompleteAt` accepts
+     * complete|not_required), so those pieces are finished at S2 the moment
+     * they are sorted and there is nothing to "mark as done". Anything else
+     * leaves `pretreatStatus: 'pending'` and the piece stays here until the
+     * operator marks the pretreatment done.
+     *
+     * ASSUMPTION (stated, not silent): the brief's worked example says the 7
+     * sorted pieces "show in the S3 Wash Queue at once", and separately that S3
+     * confirms receipt per batch. Those are only both true if marking them
+     * sorted also HANDS THEM OVER. So when a piece becomes complete here this
+     * pushes it to S3 as a normal handoff, which is what puts it on S3's screen
+     * for confirmation. Pass `sendToWash: false` to sort without handing over.
+     */
+    async bulkSortItems(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+            const post = req.body || {}
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const user = await UserModel.findById(userId)
+            if (!user)
+                return BaseService.sendFailedResponse({
+                    error: 'User not found',
+                })
+
+            const order = await BookOrderModel.findOne({
+                _id: orderId,
+                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+            })
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: await explainNotAtSort(orderId),
+                })
+
+            // ── which pieces ────────────────────────────────────────────────
+            const mine = itemsAtStation(order, HERE)
+            if (!mine.length)
+                return BaseService.sendFailedResponse({
+                    error: 'No items are currently at the sort & pretreat station.',
+                })
+
+            const wantAll = post.all === true || post.itemIds === undefined
+            let selected
+            if (wantAll) {
+                selected = mine
+            } else {
+                if (!Array.isArray(post.itemIds) || !post.itemIds.length) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Select at least one item, or send all: true.',
+                    })
+                }
+                const wanted = post.itemIds.map(String)
+                const mineIds = new Set(mine.map((i) => String(i._id)))
+                // Name the pieces that aren't here rather than silently sorting
+                // a smaller set than the operator selected.
+                const notHere = wanted.filter((id) => !mineIds.has(id))
+                if (notHere.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `${notHere.length} of the ${wanted.length} selected item(s) are not at sort & pretreat — refresh the order and try again.`,
+                        itemsNotAtStation: notHere,
+                    })
+                }
+                const want = new Set(wanted)
+                selected = mine.filter((i) => want.has(String(i._id)))
+            }
+
+            // ── validate the choices ────────────────────────────────────────
+            const allowedColorGroups = Object.values(COLOR_GROUP)
+            const allowedFabricTypes = Object.values(FABRIC_TYPE)
+            const allowedPretreatments = Object.values(PRETREATMENT_OPTIONS)
+            const allowedDamageFlags = Object.values(DAMAGE_RISK_FLAGS)
+
+            if (
+                post.colorGroup !== undefined &&
+                !allowedColorGroups.includes(post.colorGroup)
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: `colorGroup must be one of: ${allowedColorGroups.join(', ')}`,
+                })
+            }
+            if (
+                post.fabricType !== undefined &&
+                !allowedFabricTypes.includes(post.fabricType)
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: `fabricType must be one of: ${allowedFabricTypes.join(', ')}`,
+                })
+            }
+            let pretreatments
+            if (post.pretreatmentOptions !== undefined) {
+                if (!Array.isArray(post.pretreatmentOptions)) {
+                    return BaseService.sendFailedResponse({
+                        error: 'pretreatmentOptions must be an array',
+                    })
+                }
+                const invalid = post.pretreatmentOptions.filter(
+                    (o) => !allowedPretreatments.includes(o),
+                )
+                if (invalid.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Invalid pretreatmentOptions: ${invalid.join(', ')}`,
+                    })
+                }
+                pretreatments = post.pretreatmentOptions
+                // "No pretreatment needed" is a choice on its own, not one more
+                // treatment to also carry out.
+                if (
+                    pretreatments.includes(
+                        PRETREATMENT_OPTIONS.NO_PRETREATMENT,
+                    ) &&
+                    pretreatments.length > 1
+                ) {
+                    return BaseService.sendFailedResponse({
+                        error: '"No pretreatment needed" cannot be combined with other pretreatment options.',
+                    })
+                }
+            }
+            if (post.damageRiskFlags !== undefined) {
+                if (!Array.isArray(post.damageRiskFlags)) {
+                    return BaseService.sendFailedResponse({
+                        error: 'damageRiskFlags must be an array',
+                    })
+                }
+                const invalid = post.damageRiskFlags.filter(
+                    (f) => !allowedDamageFlags.includes(f),
+                )
+                if (invalid.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Invalid damageRiskFlags: ${invalid.join(', ')}`,
+                    })
+                }
+            }
+            if (
+                post.itemNote !== undefined &&
+                typeof post.itemNote !== 'string'
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'itemNote must be a string',
+                })
+            }
+
+            const markSorted = post.markSorted !== false
+            const noPretreat =
+                pretreatments !== undefined &&
+                pretreatments.includes(PRETREATMENT_OPTIONS.NO_PRETREATMENT)
+
+            // The client's rule: "Colour group is required for every item."
+            // Enforced at the point it matters — when the piece is declared
+            // sorted and allowed to leave — so details can still be saved in
+            // stages while the operator works.
+            if (markSorted) {
+                const missingColor = selected.filter(
+                    (i) => !(post.colorGroup ?? i.colorGroup),
+                )
+                if (missingColor.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Choose a colour group (${allowedColorGroups.join(' or ')}) before marking ${missingColor.length === selected.length ? 'these items' : `${missingColor.length} of these items`} sorted.`,
+                    })
+                }
+                const missingFabric = selected.filter(
+                    (i) => !(post.fabricType ?? i.fabricType),
+                )
+                if (missingFabric.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Choose a fabric type (${allowedFabricTypes.join(', ')}) before marking ${missingFabric.length === selected.length ? 'these items' : `${missingFabric.length} of these items`} sorted.`,
+                    })
+                }
+                const missingPretreat = selected.filter(
+                    (i) =>
+                        pretreatments === undefined &&
+                        !(i.pretreatmentOptions || []).length,
+                )
+                if (missingPretreat.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Choose a pretreatment option, or "no pretreatment needed", before marking ${missingPretreat.length === selected.length ? 'these items' : `${missingPretreat.length} of these items`} sorted.`,
+                    })
+                }
+            }
+
+            // ── apply ───────────────────────────────────────────────────────
+            const now = new Date()
+            const selectedIds = selected.map((i) => i._id)
+            const changes = []
+            if (post.colorGroup !== undefined)
+                changes.push(`colorGroup=${post.colorGroup}`)
+            if (post.fabricType !== undefined)
+                changes.push(`fabricType=${post.fabricType}`)
+            if (pretreatments !== undefined)
+                changes.push(`pretreatment=[${pretreatments.join(', ')}]`)
+            if (post.damageRiskFlags !== undefined)
+                changes.push(`damageRiskFlags=[${post.damageRiskFlags.join(', ')}]`)
+            if (post.itemNote !== undefined) changes.push('itemNote updated')
+            if (markSorted) changes.push('marked sorted')
+            const changeNote = changes.join(' | ') || 'no changes'
+
+            const set = {}
+            if (post.colorGroup !== undefined)
+                set['items.$[sel].colorGroup'] = post.colorGroup
+            if (post.fabricType !== undefined)
+                set['items.$[sel].fabricType'] = post.fabricType
+            if (pretreatments !== undefined) {
+                set['items.$[sel].pretreatmentOptions'] = pretreatments
+                // THIS is what removes the pretreatment step for these pieces.
+                set['items.$[sel].pretreatStatus'] = noPretreat
+                    ? 'not_required'
+                    : 'pending'
+            }
+            if (post.damageRiskFlags !== undefined)
+                set['items.$[sel].damageRiskFlags'] = post.damageRiskFlags
+            if (post.itemNote !== undefined)
+                set['items.$[sel].itemNote'] = post.itemNote
+            if (markSorted) set['items.$[sel].sortStatus'] = 'complete'
+
+            if (!Object.keys(set).length) {
+                return BaseService.sendFailedResponse({
+                    error: 'Nothing to change — send a colour group, fabric type, pretreatment choice, note, or markSorted.',
+                })
+            }
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: set,
+                    $push: {
+                        'items.$[sel].actionLog': {
+                            action: markSorted ? 'sorted' : 'sort_details_updated',
+                            note: changeNote,
+                            timestamp: now,
+                        },
+                    },
+                },
+                {
+                    arrayFilters: [{ 'sel._id': { $in: selectedIds } }],
+                    runValidators: false,
+                },
+            )
+
+            // ── who is finished here, and hand them over ────────────────────
+            const fresh = await BookOrderModel.findById(orderId)
+            const stillHere = itemsAtStation(fresh, HERE)
+            const isDoneHere = (i) =>
+                ['complete', 'not_required'].includes(i.sortStatus) &&
+                ['complete', 'not_required'].includes(i.pretreatStatus)
+            const readyIds = selected
+                .map((i) => fresh.items.id(i._id))
+                .filter((i) => i && isDoneHere(i))
+                .map((i) => String(i._id))
+
+            let handoff = null
+            const sendToWash = post.sendToWash !== false
+            if (sendToWash && readyIds.length) {
+                const pushed = await HandoffService.push({
+                    params: { id: orderId },
+                    user: { id: userId },
+                    body: {
+                        fromStation: HERE,
+                        toStation: STATION_STATUS.WASH_AND_DRY_STATION,
+                        itemIds: readyIds,
+                        note: 'Sorted at sort & pretreat',
+                    },
+                })
+                // A failed handover must not undo the sorting the operator just
+                // did — report it instead, so the work is kept and the reason
+                // is visible rather than the button appearing to do nothing.
+                handoff = pushed.success
+                    ? pushed.data?.message
+                    : { error: pushed.data?.error }
+            }
+
+            await ActivityModel.create({
+                title: markSorted ? 'Items Sorted' : 'Item Sort Details Updated',
+                description: `${selected.length} item(s) on order ${fresh.oscNumber} updated at sort & pretreat by ${user.fullName}. ${changeNote}.${readyIds.length ? ` ${readyIds.length} ready for wash.` : ''}`,
+                type: ACTIVITY_TYPE.ORDER_UPDATED,
+                orderId: fresh._id,
+                userId,
+                reference: fresh.oscNumber,
+            })
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'sort',
+                action: `Bulk sort on ${selected.length} item(s): ${changeNote}`,
+            })
+
+            const remainingHere = itemsAtStation(fresh, HERE).filter(
+                (i) => !readyIds.includes(String(i._id)),
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    updated: selected.length,
+                    markedSorted: markSorted ? selected.length : 0,
+                    pretreatmentRequired: pretreatments === undefined
+                        ? null
+                        : !noPretreat,
+                    readyForWash: readyIds.length,
+                    readyItemIds: readyIds,
+                    // "3 of 10 left" on the S2 order card.
+                    itemsLeftAtStation: remainingHere.length,
+                    totalItemCount: fresh.items.length,
+                    handoff,
+                    allItemsSorted: allAtStation(fresh, HERE, (i) =>
+                        ['complete', 'not_required'].includes(i.sortStatus),
+                    ),
+                    stillAtStation: stillHere.length,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to sort the selected items',
+            })
+        }
+    }
+
     //MARK ITEM AS SORTED
     async markItemAsSorted(req) {
         try {
@@ -497,7 +873,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)
@@ -594,7 +970,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)
@@ -684,7 +1060,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
             // "All" means all items AT THIS STATION — pieces already handed on to
             // wash must not be re-stamped here.
@@ -779,7 +1155,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)
@@ -811,13 +1187,51 @@ class SortAndPretreatService extends BaseService {
             )
 
             const updatedOrder = await BookOrderModel.findById(orderId).lean()
-            const allItemsSorted = updatedOrder.items.every(
-                (i) => i.sortStatus === 'complete',
-            )
-            const allItemsPretreated = updatedOrder.items.every(
-                (i) => i.pretreatStatus === 'complete',
+            // Scoped to THIS station. Computed over every item in the order,
+            // these could never turn true once part of the order had moved on —
+            // 7 pieces at wash would hold `readyToSend` false forever for the 3
+            // still here. "All" at a split station means all the ones I have.
+            const doneSorted = (i) =>
+                ['complete', 'not_required'].includes(i.sortStatus)
+            const donePretreated = (i) =>
+                ['complete', 'not_required'].includes(i.pretreatStatus)
+            const allItemsSorted = allAtStation(updatedOrder, HERE, doneSorted)
+            const allItemsPretreated = allAtStation(
+                updatedOrder,
+                HERE,
+                donePretreated,
             )
             const readyToSend = allItemsSorted && allItemsPretreated
+
+            // The brief's worked example: once the pretreatment is done, those
+            // pieces "then join the rest at S3". Hand over the piece that just
+            // finished, exactly as the bulk sort endpoint does, so a pretreated
+            // item doesn't sit at S2 waiting for a separate manual push.
+            // sendToWash:false opts out.
+            let handoff = null
+            const freshItem = updatedOrder.items.find(
+                (i) => String(i._id) === String(itemId),
+            )
+            if (
+                req.body?.sendToWash !== false &&
+                freshItem &&
+                doneSorted(freshItem) &&
+                donePretreated(freshItem)
+            ) {
+                const pushed = await HandoffService.push({
+                    params: { id: orderId },
+                    user: { id: userId },
+                    body: {
+                        fromStation: HERE,
+                        toStation: STATION_STATUS.WASH_AND_DRY_STATION,
+                        itemIds: [String(itemId)],
+                        note: 'Pretreatment complete',
+                    },
+                })
+                handoff = pushed.success
+                    ? pushed.data?.message
+                    : { error: pushed.data?.error }
+            }
 
             await ActivityModel.create({
                 title: 'Item Pretreated',
@@ -846,6 +1260,7 @@ class SortAndPretreatService extends BaseService {
                 message: {
                     message: 'Item marked as pretreated',
                     data: { allItemsSorted, allItemsPretreated, readyToSend },
+                    handoff,
                 },
             })
         } catch (error) {
@@ -884,7 +1299,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)
@@ -978,7 +1393,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)
@@ -1727,7 +2142,7 @@ class SortAndPretreatService extends BaseService {
             })
             if (!order)
                 return BaseService.sendFailedResponse({
-                    error: 'Order not found or not in sort & pretreat stage',
+                    error: await explainNotAtSort(orderId),
                 })
 
             const item = order.items.id(itemId)

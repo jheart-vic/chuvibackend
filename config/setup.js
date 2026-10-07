@@ -20,8 +20,15 @@ const init = async () => {
       dryCleanPerPiece: 8000,
       sameDayCharge: 500,
       expressCharge: 200,
-      premiumServiceTierCharge: 2,
-      vipServiceTierCharge: 1.5,
+      // These were INVERTED (premium 2, vip 1.5), so on a freshly seeded DB a
+      // Premium item cost MORE than the same item at VIP, while the model's own
+      // defaults (adminSetting.model.js) say premium 1.5 / vip 2. Aligned with
+      // the model; VIP is the top tier and must not be the cheaper uplift.
+      // NOTE: config/setup.js only seeds when the document is MISSING, so an
+      // existing database keeps whatever it has — check the live values before
+      // telling anyone this is fixed there.
+      premiumServiceTierCharge: 1.5,
+      vipServiceTierCharge: 2,
     }
     await AdminSettingModel.create(defaultSetting)
 

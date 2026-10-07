@@ -1,4 +1,294 @@
-# Current Feature: CHUVI Dispatch Tag (+ 2 carried-over debts)
+# Current Feature: Developer Brief — 6 October 2026 (22 fixes + 2 features + 8 answers)
+
+**SOURCE:** client PDF "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas" — from their own
+testing of the stack 4–6 Oct. Three sections: **§1** 22 fixes/changes in 4 groups, **§2** 2 new
+features (N1 Quick Booking, N2 Recovery/Complaints/Feedback dashboard), **§3** 8 questions about how
+the system works today.
+
+**SCOPE DECISION (user, 2026-10-07): BACKEND ONLY.** The FE team has its own repo and the user is not
+on it. Every item below is tagged with who owns it.
+
+**AGREED ORDER (user, 2026-10-07): fixes → new features → answers.** The §3 answers are written LAST,
+from the shipped code, so they describe what the client will actually be testing.
+
+**FINAL DELIVERABLE:** ONE copy/paste block for the client containing (a) §1 per-item status, (b) §2
+status, (c) the §3 answers in their requested form — *rule in plain words · exact formula/condition in
+the code · one worked example with real numbers*.
+
+**Their deadline was Thu 8 Oct evening (test Fri 9 Oct). 22 items + 2 features is not achievable in
+that window — tell them early (the brief explicitly asks for this).** Proposed split: Group 1 + the
+confirmed data bugs (2.3, 4.4) by Thursday; the rest the following week.
+
+---
+
+## TRIAGE (verified against the code 2026-10-07, not guessed)
+
+### Bucket A — pure backend, FE changes nothing
+FE's existing calls simply start behaving. No new fields, no contract change.
+
+| # | Item | Finding / what to do |
+|---|---|---|
+| 1.1 | Cards stay in a queue after moving | **ROOT CAUSE FOUND: two parallel notions of "where is this order".** S2 `sortAndPretreat.service.js` queries `stage.status === sort-and-pretreat` at ORDER level (~15 sites, e.g. :87, :186, :683); S3/S4 query `items[].currentStation` at ITEM level. `handoff.service.js:351-369` only rewrites `stage.status` when `summaryStatus()` CHANGES — on a partial move it doesn't. So an order legitimately appears in S2's list AND S3's list. Fix = make `currentStation` the single source of truth, scope S2's queries, recompute every count from the SAME query that builds its list, and void stale pending handoffs. ("No manual refresh" half is FE.) |
+| 1.2 | S1→S2 Accept all does nothing | **NOT a separate bug — a symptom of 1.1.** The red text is `handoff.service.js:280` (the CONFIRM-side whole-order gate), firing because the items are no longer all at S1. |
+| 1.4 | Flag / Move to Hold do nothing | Both endpoints EXIST (`sortAndPretreat.service.js:998` markAsFlagged, `:1673` sendToHold). They are refused by the `stage.status` guard (same root cause as 1.1) and the FE doesn't render the refusal. Fix the guard + make the message name the reason. |
+| 2.3 | Wallet adjustment not in ledger | **CONFIRMED BUG.** `intake-user.service.js:867 adjustWallet` does `wallet.balance += amount; wallet.save()` and **never writes a `WalletTransaction`** — the money genuinely has no ledger line. Also BOTH `wallet.save()` and `order.save()` are un-awaited. Route through `WalletCreditService` so every movement writes a line. |
+| 4.4 | Holds Active & Overdue count the same orders | **CONFIRMED BUG.** `admin.service.js:349` `activeHolds` = ALL holds; `:353` `overdueHolds` = holds past SLA — a strict SUBSET. Same filter duplicated at `:1692/:1696`. Fix: Active must exclude the breached set so Active + Overdue = all holds. |
+| 4.1 | Template save returns 400 | `communicationAdmin.service.js updateTemplate` has no explicit 400 path; a model enum rejection (likely `page`) is swallowed into a generic "Failed to update template". Make the handler name the field — that also answers their "what is the 400 rejecting". |
+| 4.6 | Names as code text + phone formats | Backend stores the slug ("Shirts-/-tops-/-blouses") and two phone formats (with/without leading 0). Normalise on write + backfill. |
+| 2.5 | False "cannot create plan" | Repro then fix the create response/validation. |
+| 3.1 | Rider assignment does not save | **It DOES save** (`intake-user.service.js:1340` writes `dispatchDetails.delivery.rider`). Almost certainly the dispatch-tag gate at `:1331` refusing with `needsDispatchTag`, invisible because the FE swallows errors. Confirm live. |
+| 4.3 | Admin notifications | Emit on wallet adjustment + adjustment request; produce the list of events that notify admin today (they asked for it). |
+
+### Bucket B — FE is WAITING on me (ship these early)
+- **1.5** S2 partial sorting — only per-item (`updateItemSortDetails` :276, `markItemAsSorted` :473) and all-items (`markAllItemsAsSorted` :665) endpoints exist; **no bulk endpoint**, which is exactly why "you cannot select a few" and why colour/pretreat can't be set on a multi-selection. NEW bulk endpoint: `itemIds[] + colorGroup + fabricType + pretreatmentOptions`. Model ALREADY has `colorGroup`/`fabricType`/`pretreatmentOptions` and a `not_required` pretreatStatus (bookOrder.model.js:62-94) → the "No pretreatment needed" path is half-built.
+- **1.6** per-item care tier — touches PRICING (`roundToNearestHundred(OrderItem.price × serviceType.pricePerPiece)`, resolved once per order today and reused by booking, bot, offers, subscription draw-down). **Do LAST in Group 1 with its own DB harness** — highest money-bug risk in the brief.
+- **2.1** `DELETE /api/offers/:id` — **genuinely absent** (`util/page-route.js:250-261` has no delete). Create/update code at `offerApi.service.js:125/168` is CORRECT and does persist; the "not there after refresh" is most likely offers defaulting to `status: draft` while the FE list filters to active.
+- **2.2** free pickup/delivery actually ₦0 + offer name in the pricing breakdown.
+- **2.4** per-role wallet-adjustment limits (admin-settable, NOT hardcoded) + approval queue above the limit, modelled on the existing top-up-request flow (`intake-user.service.js:~790`).
+- **3.2** Failed-pickups filter — `PICKUP_STATUS.FAILED` already exists (`util/constants.js:32`).
+- **3.3** landmark on dispatch/rider payloads — field already exists (`user.model.js:10` required; `util/address.js` structured `{label,address,landmark}`; optional on the customer booking path, `bookOrder.service.js:817`).
+- **4.2** keys + target-pages list endpoint (they also want the written list).
+- **N1** Quick Booking · **N2** Recovery/Complaints/Feedback dashboard (N2 needs a NEW NPS 0–10 question with a 30-day per-customer throttle — does not exist today).
+
+### Bucket C — pure FE, nothing for me
+1.7 tag font weight (rendering is FE-side) · 1.8 Refresh pressed/loading state · **1.4 part 3 "a failing button always shows a message"** (backend already returns `{success:false,data:{error}}` — the FE isn't displaying it; this sits behind several "nothing happens" reports) · 1.5 part 4 the "White fabric type" → "Fabric type" label · 2.1's Delete button + create/edit success states.
+
+### Bucket D — blocked on a client answer
+- **4.5 CRM dormant rate 100%** — the client says themselves to answer Q2/Q3 first. The 125% case was already fixed 2026-09-23 (numerator scoped to `totalOrders>=1`); 100% is now mathematically valid and may simply be TRUE for their 4 dormant / 4 converted. **Answer it in §3, do not change the formula on a guess.**
+
+---
+
+## TWO THINGS TO TELL THE CLIENT IMMEDIATELY
+
+1. **1.3 (S3 stuck on "Waiting for confirmation") is ALREADY FIXED in this repo but NOT DEPLOYED.**
+   Fixed 2026-10-05/06: `getActiveWash`/`getActiveDry` were not returning `allItemsConfirmed`, so a
+   shared station card read `undefined` → falsy → a "waiting confirmation" that could never clear.
+   Committed on `mesage-and-alert-fix`; **Render serves `main`.** Same stale-deploy pattern the FE hit
+   on 2026-09-25. It adds a NEW `canMoveToDrying` flag → half Bucket B, the FE must key the button on
+   it. **Merging to main may also change 3.1's behaviour** (the dispatch-tag gate ships in the same
+   branch). Answer to their "what is the system waiting for, and from whom": nothing — every item was
+   already confirmed; the screen just wasn't being told so.
+2. **The Thursday date is not achievable for all 22 + 2.** Say so now; the brief asks to be told early.
+
+---
+
+## PROGRESS (2026-10-07)
+
+**Offline regression gate: `briefCheck.js` at the repo root — `node briefCheck.js` — 29/29 green.**
+(Committed rather than left in the scratchpad on purpose: it is the gate for this whole package and
+must survive a context clear.) Swagger 55 schemas / 281 paths, 0 wrong envelopes.
+
+DONE so far:
+- **1.1 (part — the S3 dashboard half).** `washAndDry.service.js getDashboard`: "Recent Wash Queue"
+  paginated on `{'items.currentStation': HERE}` alone while the `washQueue` COUNT beside it also
+  required `'washDetails.startedAt': {$exists:false}`. That is EXACTLY the client's screenshot — tab
+  reads 0, list still shows two orders already Washing. The list now uses the identical filter and
+  returns the same derived fields (`allItemsConfirmed`/`confirmedItemCount`/`flaggedItemCount`) so the
+  card and the tab cannot disagree.
+- **4.4 holds.** NEW `util/holdSla.js` — ONE breach definition (`breachBranches`), with
+  `overdueHoldsFilter` ($or) and `activeHoldsFilter` ($nor over the SAME branches) as exact
+  complements, plus `isHoldBreached` for rows already in hand. Both call sites in `admin.service.js`
+  (the dashboard counts ~:349 and the Holds Management list ~:1692) now use them, so Active + Overdue
+  always partition the holds. The harness asserts the complement structurally, so the two can never
+  drift apart again.
+- **2.3 wallet ledger.** `intake-user.service.js adjustWallet` rewritten: one atomic `$inc` guarded on
+  sufficient funds for a debit (no overdraw race), then a `WalletTransaction` (`manual-adjustment`,
+  SIGNED amount so the ledger sums to the balance, `reason`, `performedBy`, `balanceAfter`,
+  `relatedOrderId`). **If the ledger write fails the balance change is rolled back** — the ledger is
+  the record, so no silent untraceable movement. Also fixed in passing: both `save()` calls were
+  un-awaited; the audit log attributed the action to the CUSTOMER not the operator; and
+  `order.userId.fullName` was read off an un-populated ref. Response now returns the created row;
+  swagger updated to the new object shape ($ref WalletTransaction).
+
+### 1.1 / 1.2 / 1.4 — ROOT CAUSE FOUND, REPRODUCED AND FIXED (2026-10-07, DB-verified 50/50)
+
+**NEW `stationFlowStaging.js`** (repo root) — walks one order S1→S2→S3 through the REAL services and
+asserts, after every move, that the station it LEFT stops listing it, the station it ENTERED lists it,
+and **every dashboard count equals the length of the list behind it** (the client's literal
+requirement). Run:
+`STAGING_OK=1 MONGODB_URL="<testing uri>" node stationFlowStaging.js` → **50 passed, 0 failed.**
+Safety-gated like the other harnesses (STAGING_OK, NODE_ENV, hard-refuses `laundrydb`); cleans up.
+
+**THE HAPPY PATH WAS NEVER BROKEN.** Scenarios 1–8 pass on clean data: push → pending → confirm moves
+the pieces, counts track lists exactly, a partial release shows 2 at S2 and 3 at S3 with no piece in
+two places, and the order leaves S2 entirely once the last piece goes. So 1.1 was never "the queues
+are wrong in general".
+
+**THE ACTUAL CAUSE (scenario 12 reproduces the client's verbatim error string):**
+`isWholeOrderGate(fromIdx, toIdx)` is `fromIdx === 0 || toIdx === SEQ.length - 1`, and the only
+ordering rule on a push is `toIdx > fromIdx`. **A push may therefore SKIP a station** — which is
+deliberate and must stay (a wash-only order legitimately goes S3→S5). But nothing invalidated an
+earlier pending handoff when the same items left by the new route. So:
+1. push S1→S2 → handoff H1 pending; 2. push S1→S3 → H2; 3. S3 confirms H2, pieces land at S3, the
+order reads "washing"; 4. **H1 is still pending** → still drawn in S2's Incoming handoffs;
+5. S2 taps Accept all → `isWholeAt(INTAKE)` is false → *"intake-and-tag-station →
+sort-and-pretreat-station must move the whole order — all items must still be at
+intake-and-tag-station"*. **That is item 1.2's screenshot exactly, and explains why
+OSC-20261004-631233 showed at S3 Washing while sitting in S2's Incoming list.**
+
+**THE FIX (three parts, all verified):**
+- `HandoffSchema.status` gains **`superseded`** (+ `supersededAt`, `supersededBy`). A new push
+  supersedes any earlier PENDING handoff from the same `fromStation` whose itemIds intersect it, and
+  logs an Activity row. The stale card never reaches the screen.
+- `confirm` checks staleness BEFORE the gates: if every claimed item has left `fromStation`, it marks
+  the handoff superseded and returns a plain sentence naming where the items went, instead of the
+  dead-end gate error. The `status !== 'pending'` guard now distinguishes confirmed / rejected /
+  superseded rather than always saying "already confirmed".
+- `pendingQueue` is **self-healing**: a pending handoff whose items have all left is never listed, and
+  the read persists the supersede. **This clears the client's two already-stranded orders with no
+  migration** — scenario 13 writes the damage straight to Mongo and proves the next read fixes it.
+
+**1.4 ALSO FIXED (the part that was really backend).** S2's nine identical guards all returned
+*"Order not found or not in sort & pretreat stage"* — three different situations behind one
+meaningless sentence, which is exactly the brief's "a button that fails always shows a message that
+says why". NEW `explainNotAtSort(orderId)` in `sortAndPretreat.service.js` does one extra read and
+returns e.g. *"Order OSC-… is no longer at sort & pretreat (it is now at "queue"), so it cannot be
+changed from this station."* Flag and Hold themselves were verified to work (scenarios 9–10) — they
+were being refused, and the refusal was unreadable.
+
+### 1.6 — DONE (2026-10-07). NEW `tierPricingStaging.js` 33/33. GROUP 1 IS NOW COMPLETE.
+
+Per-item care tier. **This is the one that moved money**, so it has its own harness.
+
+- **NEW `util/itemPricing.js`** — `tierMultiplier` / `tierOfItem` / `priceItems`. The pricing maths
+  existed as **THREE near-identical copies** (bookOrder pay-per-item, bookOrder pay-from-wallet,
+  intake-user staff path) which **had already drifted**: two defaulted a missing tier charge to `|| 1`
+  and the third to `|| 1.5` / `|| 2`, so the same basket priced differently depending on which screen
+  created the order. All three now call the helper; the fallback is **1 (no uplift)** everywhere — an
+  unconfigured setting must never silently charge more.
+- **`items[].serviceTier`** (enum + null default) on `bookOrder.model`. **Absent = follow the order's
+  tier**, which is what keeps every existing order and every existing caller byte-identical. Formula
+  unchanged: `roundToNearestHundred(price × serviceTypeMultiplier) × quantity × tierMultiplier`, with
+  rounding still INSIDE the per-piece unit price.
+- Optional validation `'items.*.serviceTier': 'string|in:classic,premium,vip'` on both booking paths.
+- `pricing` subdoc gained **`tierLines[]` / `tiersUsed[]` / `isMixedTier`**; `tierMultiplier` is
+  **null when tiers are mixed** (no single multiplier describes the order). Swagger updated on the
+  schema AND the booking request body.
+- `util/itemSummary.js` briefs carry `serviceTier`, so the tier rides onto handoff cards, the dispatch
+  tag and every station payload (the brief wants it on the tag and on the card at every station).
+- **TWO REAL BUGS FOUND IN THE BUILD:**
+  1. **Three `ReferenceError`s.** After the three pricing blocks were replaced, the call sites still
+     passed `tierMultiplier: multiplier` — a variable that no longer existed. **`node --check` and a
+     `require()` both passed**; only executing each branch caught it. Same lesson as the `isWashed`
+     hoist on 2026-10-05: loading a service proves nothing about its method bodies.
+  2. **`config/setup.js` seeded the tier charges INVERTED** — `premium: 2, vip: 1.5` against the
+     model's own defaults of premium 1.5 / vip 2, so on a freshly seeded DB **Premium cost MORE than
+     VIP**. Confirmed live: testingdb prices VIP at ×1.5. Seed corrected. **`setup.js` only seeds when
+     the document is MISSING, so existing databases keep the inverted values — CHECK THE LIVE
+     `AdminSetting` before telling the client this is fixed there.**
+- Verified: uniform-tier baskets price identically to the old formula at all three tiers; a mixed
+  basket prices per piece with an attributable uplift; the tier survives the per-piece explosion; the
+  receipt carries the breakdown; the staff path agrees with the customer path to the naira; a bad tier
+  is rejected.
+- **Regression gates all green after the change:** `tierPricingStaging` 33 · `stationFlowStaging` 80 ·
+  `briefCheck` 29 · `dispatchTagStaging` 46. Swagger 55 schemas / 282 paths, 0 bad envelopes.
+
+### 1.5 — DONE (2026-10-07). `stationFlowStaging.js` now 80/80, incl. the client's worked example.
+
+**NEW endpoint `PATCH /api/sort-pretreat/order/:id/items/sort`** (`ROUTE_SORT_AND_PRETREAT_BULK_SORT`
+→ `SortAndPretreatService.bulkSortItems`, `sortAndPretreatAuth`). One call does the sorter's whole
+gesture on ANY subset: `itemIds[]` (or `all:true`), `colorGroup`, `fabricType`,
+`pretreatmentOptions[]`, `damageRiskFlags[]`, `itemNote`, `markSorted` (def. true), `sendToWash`
+(def. true). The old surface only had per-ITEM (`updateItemSortDetails`, `markItemAsSorted`) and
+whole-order (`markAllItemsAsSorted`, which could not set colour/pretreatment at all) — exactly the
+client's complaints 1.5.1 and 1.5.2.
+
+- **Pretreatment is no longer a fixed step.** `['no_pretreatment_needed']` sets
+  `pretreatStatus: 'not_required'`, which ALREADY satisfies `itemCompleteAt` for S2 — so those pieces
+  finish at S2 the instant they are sorted and there is nothing to mark done. The enum value and the
+  `not_required` status both already existed; nothing could ever SET them.
+- **Fabric type applies to white and coloured alike** (the "White fabric type" wording was only an FE
+  label — Bucket C).
+- **Colour group / fabric type / pretreatment are required at the moment a piece is marked sorted**,
+  not when details are saved, so the operator can still work in stages. Errors name how many pieces.
+- `'no_pretreatment_needed'` + another option is refused (it is a choice, not an extra treatment).
+- Selecting a piece that is not at S2 is refused and the response NAMES them (`itemsNotAtStation`).
+- **ASSUMPTION, STATED:** the brief says the 7 sorted pieces "show in the S3 Wash Queue at once" AND
+  that S3 confirms receipt per batch — both are only true if marking sorted also HANDS OVER. So
+  completed pieces are pushed to S3 as a normal handoff. `sendToWash:false` opts out. **Flag this to
+  the client in the reply.**
+- Response carries `itemsLeftAtStation`/`totalItemCount` → the order card's **"3 of 10 left"** line.
+- **`markItemAsPretreated` also hands over now** ("those 3 then join the rest at S3") and — **a real
+  split-flow bug fixed in passing** — its `allItemsSorted`/`allItemsPretreated`/`readyToSend` were
+  computed over EVERY item in the order, so with 7 pieces already at wash `readyToSend` could never
+  turn true for the 3 still here. Now station-scoped via `allAtStation`.
+- Verified against the brief's own worked example (scenario 14): 10 items → select 7, Colored/Light/
+  no-pretreatment → 7 ready, card reads "3 of 10 left", S3 sees a batch of 7 to confirm, S2 shows the
+  3 left, those 3 set White/Delicate/Stain-treatment stay at S2, get pretreated, hand over as a
+  second batch of 3, all 10 meet at S3 and the order leaves the S2 queue with count == list.
+
+**1.1 KEY INSIGHT — 1.1.1 and 1.2 are ONE incident, and the drafts count was telling the TRUTH.**
+`intakeDashboard`'s drafts count and `getDrafts` use byte-identical queries (verified), so 15 staying
+15 means the orders genuinely never left `stage.status: QUEUE`. A push S1→S2 only creates a PENDING
+handoff — items stay at S1 until S2 confirms — and S2's "Accept all" was failing (1.2). So nothing
+moved, and the count was right. **Do not "fix" the drafts count.** Fix the confirm.
+
+**RESOLVED — see above. (Was: needs a DB reproduction, not more reading.)** Original note: Why order
+OSC-20261004-631233 can show at S3 as Washing while an S1→S2 handoff is still pending is not
+derivable from the code alone (only `handoff.service.js:322` ever assigns `currentStation`). Ask the
+user for the testing DB URI and extend `handoffStaging.js` to walk one order S1→S2→S3 asserting list
+AND count membership at every step. **Never edit `.env` (it points at the LIVE `laundrydb`) — pass
+`MONGODB_URL` inline.**
+
+## BUILD TODOS
+
+### Fixes — Group 1 (blocks all their testing)
+- [x] F1.1 — DONE (S3 dashboard list matches its count; stale handoffs superseded + self-healing;
+      DB-verified 50/50). NOT needed after all:  unify station membership on `items[].currentStation`; scope S2's ~15 `stage.status`
+      queries; recompute counts from the list query; void stale pending handoffs.
+- [x] F1.2 — DONE. Root cause was a station-skipping push stranding an earlier handoff; reproduced
+      and fixed. Whole-order gate kept; refusals now explain themselves.
+- [x] F1.4 — DONE (backend half): flag/hold verified to work; the 9 catch-all S2 refusals replaced
+      with explainNotAtSort(). The "show the error in the UI" half stays with the FE (Bucket C).
+- [x] F1.5 — DONE. NEW bulk sort endpoint (`itemIds[]`+colour+fabric+pretreatment) + "no pretreatment
+      needed" goes straight to the S3 wash queue + the three split-order confirmations the client asks
+      about (S3 confirms per batch · S5 doesn't close until every item arrived, shows "7 of 10" ·
+      customer still sees ONE order with ONE status).
+- [x] F1.6 — DONE. Per-item care tier + shared util/itemPricing.js. Own harness tierPricingStaging.js 33/33.
+### Fixes — Group 2  ← NEXT
+- [ ] F2.1 — `DELETE /api/offers/:id` + pause; confirm the draft/active list behaviour.
+- [ ] F2.2 — free pickup/delivery = ₦0 + offer name in the breakdown.
+- [x] F2.3 — wallet adjustment writes a `WalletTransaction` (CONFIRMED BUG). DONE + swagger.
+- [ ] F2.4 — per-role adjustment limits in admin settings + approval queue above the limit.
+- [ ] F2.5 — plan create: true success/failure, no double-create.
+### Fixes — Group 3
+- [ ] F3.1 — diagnose + fix rider assignment (expect: the dispatch-tag gate).
+- [ ] F3.2 — Failed pickups filter.
+- [ ] F3.3 — landmark surfaced on rider + dispatch payloads.
+### Fixes — Group 4
+- [ ] F4.1 — template update: real validation, field-named errors.
+- [ ] F4.2 — keys + target-pages list endpoint (+ the written list for them).
+- [ ] F4.3 — admin notifications on wallet adjustment/request + the event list.
+- [x] F4.4 — holds Active excludes Overdue (CONFIRMED BUG). DONE via NEW `util/holdSla.js`.
+- [ ] F4.5 — blocked on Q2/Q3; answer in §3.
+- [ ] F4.6 — item/station name display form + one phone format (+ backfill).
+### New features
+- [ ] N1 — Quick Booking (count-only booking → rider confirms count + photo → S1 finalises with real
+      items + per-item tier → payment request → processing starts only after payment; <₦4,000 charged
+      pickup+delivery; cancellation refunds full to wallet).
+- [ ] N2 — Recovery/Complaints/Feedback dashboard (month picker + cards, built like Monthly Lead
+      Report). NEW: NPS 0–10 question, max once per 30 days per customer. Cards: NPS, avg rating,
+      feedback received (+ share of delivered), complaints opened/resolved/still-open/avg-time-to-
+      resolve, recoveries given/cost/ordered-again. Plus complaints by type + a list of 1–2★ orders.
+      Their worked example must come out at avg 4.3 · NPS 40 · feedback 10 = 50%.
+### Answers (LAST)
+- [ ] Q1 dashboard figures (avg daily revenue, avg processing time, avg daily revenue per item, hold
+      duration before expiry)
+- [ ] Q2 CRM dashboard figures + their 3 unexplained screen values (First Order 8 vs customers 4;
+      lead revenue ₦19,500 > total ₦18,300; repeat 50% with Active+Loyal both 0)
+- [ ] Q3 customer stages · [ ] Q4 two entry paths · [ ] Q5 lead follow-up scheduling ·
+      [ ] Q6 queue card order · [ ] Q7 offers & orders · [ ] Q8 feedback & complaints today
+- [ ] Assemble the SINGLE copy/paste block (§1 status · §2 status · §3 answers).
+
+**Known traps for the answers:** `totalOrders` counts DELIVERED orders, but a lead moves to stage
+`first-order` at BOOKING (`crm.service.js ~:397`, counter increments ~:428) — that alone explains
+Q2's "First Order 8 vs customers 4". The 2026-07-15 `crmBackfill.js` batch and the absence of a
+profile-origin marker before `leadSource` shipped (2026-09-24) distort historical months. See
+`context/summary.md` + the chuvi-crm-data-caveats memory.
+
+---
+
+# PREVIOUS Feature (DONE 2026-09-29): CHUVI Dispatch Tag (+ 2 carried-over debts)
 
 **STATUS 2026-09-24: ALL THREE PARTS CODE-COMPLETE. Offline-verified 119/119 across three harnesses
 (`tzCheck` 14 · `dispatchTagCheck` 88 · `subRevenueCheck` 17). Swagger 55 schemas / 281 paths, all
