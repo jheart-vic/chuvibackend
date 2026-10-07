@@ -1,4 +1,702 @@
-# Current Feature: CHUVI Dispatch Tag (+ 2 carried-over debts)
+# ███ STATUS BOARD — read this first (updated 2026-10-07) ███
+
+## Where we are
+Working the client PDF **"CHUVI Digital Stack Developer Brief, Oct 6 2026"**: §1 22 fixes, §2 two new
+features, §3 eight questions. **BACKEND ONLY.** Agreed order: **all fixes → new features → answers**,
+with the §3 answers written LAST from shipped code. Final deliverable = **ONE copy/paste block**
+(§1 status · §2 status · §3 answers as rule / exact formula / worked example).
+
+| | Item | State |
+|---|---|---|
+|**G1**| 1.1 cards stay in a queue | ✅ **committed** `8795099` |
+| | 1.2 S1→S2 Accept all does nothing | ✅ committed (was a symptom of 1.1) |
+| | 1.3 S3 "Waiting for confirmation" | ✅ fixed 2026-10-05 and **NOW DEPLOYED** — `mesage-and-alert-fix` was merged into `origin/main` on 7 Oct (PR #239, `f11a05b`) |
+| | 1.4 Flag / Move to Hold do nothing | ✅ backend half committed; UI must SHOW errors (FE) |
+| | 1.5 S2 partial sorting + skip pretreat | ✅ committed |
+| | 1.6 per-item care tier | ✅ committed |
+| | 1.7 bolder tag text · 1.8 Refresh feedback | ⬜ **FE only — not ours** |
+|**G2**| 2.1 offers do not save | ✅ **done, UNCOMMITTED** |
+| | 2.2 free pickup/delivery still charged | ✅ done, UNCOMMITTED (**was a real bug**) |
+| | 2.3 wallet adjustment not in ledger | ✅ committed |
+| | 2.4 per-role limits + approval | ✅ done, UNCOMMITTED |
+| | 2.5 false "cannot create plan" | ✅ code done, UNCOMMITTED (**was a real bug — the plan WAS created**); DB harness pending a URI |
+|**G3**| 3.1 rider assignment does not save | ✅ code done, UNCOMMITTED. **NOT the dispatch-tag gate — that isn't deployed.** Nothing validated the rider id |
+| | 3.2 Failed pickups filter | ✅ code done, UNCOMMITTED (+ the office was never notified at all) |
+| | 3.3 landmark on pickup address | ✅ code done, UNCOMMITTED |
+|**G4**| 4.1 template save returns 400 | ✅ done, UNCOMMITTED — **reproduced: `channels.filter is not a function`** |
+| | 4.2 keys + target pages dropdowns | ✅ backend done (`GET /communication/templates/meta`); written list = `util/commMeta.js` |
+| | 4.3 admin notifications | ✅ done — notice names customer+amount+operator; **event list derived: only 6 of 87 sites reach an admin** |
+| | 4.4 Holds Active/Overdue overlap | ✅ committed |
+| | 4.5 CRM dormant rate 100% | ⛔ blocked on the client's own Q2/Q3 — answer in §3 |
+| | 4.6 names as code text, phone formats | ✅ done, UNCOMMITTED — **`normalizePhone` itself was the profile-splitter** |
+|**§2**| N1 Quick Booking · N2 Recovery dashboard | ⬜ after the fixes |
+|**§3**| Q1–Q8 answers + assemble the deliverable | ⬜ LAST |
+
+## Verification gates — run ALL of these after any change
+```bash
+node briefCheck.js                                   # 101/101  offline, no DB
+STAGING_OK=1 MONGODB_URL="<testing uri>" node planCreateStaging.js      # 39 (2.5)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchStaging.js        # 46 (3.1/3.2/3.3)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node templateStaging.js        # 27 (4.1/4.2)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node botStaging.js             # 11/11 (bot books, so the landmark rule hits it)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node phase12Staging.js         # 14
+STAGING_OK=1 MONGODB_URL="<testing uri>" node subLogisticsStaging.js    # 20
+STAGING_OK=1 MONGODB_URL="<testing uri>" node handoffStaging.js         # 54
+MONGODB_URL="<uri>" node phoneFormatBackfill.js --dry   # 4.6 migration, dry first
+STAGING_OK=1 MONGODB_URL="<testing uri>" node stationFlowStaging.js    # 80/80
+STAGING_OK=1 MONGODB_URL="<testing uri>" node tierPricingStaging.js    # 33/33
+STAGING_OK=1 MONGODB_URL="<testing uri>" node offerAdminStaging.js     # 37/37
+STAGING_OK=1 MONGODB_URL="<testing uri>" node freeLogisticsStaging.js  # 23/23
+STAGING_OK=1 MONGODB_URL="<testing uri>" node walletLimitStaging.js    # 39/39
+STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchTagStaging.js    # 46/46 (older gate)
+```
+Swagger must stay **56 schemas / 285 paths, 0 wrong envelopes**:
+```bash
+node -e "const s=require('swagger-jsdoc')({definition:{openapi:'3.0.0',info:{title:'t',version:'1'},components:{}},apis:['./routes/**/*.js','./swagger/**/*.js']});let bad=[];const w=(n,x)=>{if(!n||typeof n!=='object')return;if(n.properties&&n.properties.success&&n.properties.message)bad.push(x);for(const k of Object.keys(n))w(n[k],x)};for(const[p,o]of Object.entries(s.paths))for(const[m,op]of Object.entries(o))w(op.responses,m+' '+p);console.log(Object.keys(s.components.schemas).length,Object.keys(s.paths).length,bad.length)"
+```
+**NEVER edit `.env`** — it points at the LIVE `laundrydb`. Pass `MONGODB_URL` inline. Every harness
+hard-refuses a DB named `laundrydb`.
+
+## Uncommitted right now (Groups 2, 3 and 4 — all DB-verified)
+NEW: `services/walletAdjustment.service.js`, `models/walletAdjustmentRequest.model.js`,
+`util/{notifyRoles,safeLog,commMeta,displayName}.js`, `phoneFormatBackfill.js`,
+`offerAdminStaging.js`, `freeLogisticsStaging.js`, `walletLimitStaging.js`,
+`planCreateStaging.js`, `dispatchStaging.js`, `templateStaging.js`.
+MODIFIED: `briefCheck.js`, `botStaging.js`, `subLogisticsStaging.js`,
+`services/{admin,auth,bookOrder,communicationAdmin,intake-user,offerApi,rider,subscription,
+walletAdjustment}.service.js`, `services/bot/booking.flow.js`,
+`controllers/{admin,offer,intake-user,communication}.controller.js`,
+`routes/{admin,offer,intake-user,bookOrder,subscription,communication}.js`,
+`models/{adminSetting,bookOrder,customerOffer,plan}.model.js`, `swagger/schemas.js`,
+`util/{constants,page-route,address,helper,itemSummary}.js`, `context/*`.
+
+## ⚠️ LOCAL `main` IS 127 COMMITS BEHIND `origin/main` — ALWAYS CHECK `origin/main`
+**Trap that produced a wrong diagnosis on 2026-10-07 (user caught it).** `git show main:…` says the
+dispatch-tag gate does not exist; `git show origin/main:…` says it does. `mesage-and-alert-fix` was
+merged to `origin/main` on 7 Oct (PR #239, `f11a05b`), which means the dispatch tag, the wash-station
+fixes (1.3) and the Lagos TZ pin ARE deployed. `git fetch` first, and never reason about "what the
+client is running" from the local branch.
+
+## THINGS TO TELL THE CLIENT (don't lose these)
+1. **1.3 is fixed AND now deployed** (merged to `origin/main` 7 Oct). Answer to "what is the system
+   waiting for, and from whom": **nothing** — every item was already confirmed, the screen just wasn't
+   being told. It adds a `canMoveToDrying` flag the FE must key the button on.
+2. **The Thursday 8 Oct deadline cannot cover all 22 + 2.** Say so explicitly; the brief asks to be
+   told early.
+3. **2.1 "offers do not save" — the save was never broken.** A new offer defaults to `status: draft`,
+   so a list filtered to active can't show it. That half is **FE/workflow**, not a lost save.
+4. **1.5 stated assumption:** marking pieces sorted also HANDS THEM OVER to S3 (that is the only way
+   their worked example is self-consistent). `sendToWash:false` opts out. **Get this confirmed.**
+5. **`config/setup.js` seeded the tier charges INVERTED** (premium 2 / vip 1.5 vs the model's 1.5/2),
+   so a freshly seeded DB charged MORE for Premium than VIP. Seed fixed, **but setup.js only seeds
+   when the doc is MISSING — CHECK THE LIVE `AdminSetting` before saying it's fixed in production.**
+6. **1.4 part 3 is FE:** the backend already returns `{success:false, data:{error}}`; the UI isn't
+   displaying it. This sits behind several "nothing happens" reports.
+7. **3.2 — every failed pickup ever recorded lost the rider's reason** (`pickup.note` was not a field
+   on the schema), **and nobody in the office was ever notified** — both failure handlers messaged only
+   the rider who pressed the button. If they have been wondering why failed pickups seem to vanish,
+   that is why. Also: a failed DELIVERY was overwriting the customer's special delivery instruction,
+   which is the line the dispatch tag prints.
+8. **3.3 — the customer app does not ask for a landmark.** Staff intake requires one; customer booking
+   requires only the address. It is now borrowed automatically from the customer's saved address when
+   it matches, and anything still blank is flagged `landmarkMissing`. **Making it mandatory in the app
+   is a one-line backend change — do they want it?**
+9. **4.1 — what the 400 was rejecting: nothing in the template.** It was the *shape* of one field —
+   a channel sent as a single string (`"sms"`) instead of a list, which crashed before any validation
+   ran. Also worth telling them: a template could be saved with a whitespace-only body, which would
+   then send an EMPTY message to customers. Both fixed.
+10. **4.6 — the phone normaliser itself was creating the duplicate profiles.** It never added the
+   leading 0 back to a 10-digit number, so `8031234567` and `08031234567` were two different people to
+   the CRM. Run `phoneFormatBackfill.js --dry` against live first: it lists any customer already split
+   across two profiles. **Merging those is their call, not ours** — it decides which history survives.
+11. **FE shape note (4.6):** item briefs now send the readable name in `name` and the stored slug in a
+   new `rawType`. Anything matching on the slug must switch to `rawType`.
+12. **2.5 — every plan you thought failed was actually created.** The save worked; the activity-log
+   write behind it was rejected and that was reported as the plan failing, which is why the retry then
+   said "Plan title already exists". **Check the plans list for duplicates/strays created during their
+   4–6 Oct testing** — they are real plans. Also tell them `paystackPlanCode` is mandatory to create a
+   plan (the form must collect it), and that `itemPerMonth` is no longer asked for (`monthlyLimits` is
+   the field that counts).
+
+## Hard-won lessons (do not relearn)
+- **`node --check` and `require()` prove NOTHING about method bodies.** Three `ReferenceError`s in
+  1.6 and the `isWashed` hoist both passed both. If you touch a branch, RUN that branch.
+- **Never assume a shape.** `OFFER_TYPE` has no "general"; benefits use **`benefitType`** not `type`
+  (Mongoose reserved word in a subdoc); fees live on **`AdminSetting`**, not `AdminOrderDetails`;
+  `createBookOrder` returns the order at `data.message`, `postBookOrder` at `data.order`.
+- **A green test can be green for the wrong reason.** Two guard-rail assertions "passed" because the
+  request failed earlier for an unrelated missing field. Assert on the SPECIFIC error.
+- Most route files are **CRLF** — strip `\r` before regex-matching source in a harness.
+
+---
+
+# Current Feature: Developer Brief — 6 October 2026 (22 fixes + 2 features + 8 answers)
+
+**SOURCE:** client PDF "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas" — from their own
+testing of the stack 4–6 Oct. Three sections: **§1** 22 fixes/changes in 4 groups, **§2** 2 new
+features (N1 Quick Booking, N2 Recovery/Complaints/Feedback dashboard), **§3** 8 questions about how
+the system works today.
+
+**SCOPE DECISION (user, 2026-10-07): BACKEND ONLY.** The FE team has its own repo and the user is not
+on it. Every item below is tagged with who owns it.
+
+**AGREED ORDER (user, 2026-10-07): fixes → new features → answers.** The §3 answers are written LAST,
+from the shipped code, so they describe what the client will actually be testing.
+
+**FINAL DELIVERABLE:** ONE copy/paste block for the client containing (a) §1 per-item status, (b) §2
+status, (c) the §3 answers in their requested form — *rule in plain words · exact formula/condition in
+the code · one worked example with real numbers*.
+
+**Their deadline was Thu 8 Oct evening (test Fri 9 Oct). 22 items + 2 features is not achievable in
+that window — tell them early (the brief explicitly asks for this).** Proposed split: Group 1 + the
+confirmed data bugs (2.3, 4.4) by Thursday; the rest the following week.
+
+---
+
+## TRIAGE (verified against the code 2026-10-07, not guessed)
+
+### Bucket A — pure backend, FE changes nothing
+FE's existing calls simply start behaving. No new fields, no contract change.
+
+| # | Item | Finding / what to do |
+|---|---|---|
+| 1.1 | Cards stay in a queue after moving | **ROOT CAUSE FOUND: two parallel notions of "where is this order".** S2 `sortAndPretreat.service.js` queries `stage.status === sort-and-pretreat` at ORDER level (~15 sites, e.g. :87, :186, :683); S3/S4 query `items[].currentStation` at ITEM level. `handoff.service.js:351-369` only rewrites `stage.status` when `summaryStatus()` CHANGES — on a partial move it doesn't. So an order legitimately appears in S2's list AND S3's list. Fix = make `currentStation` the single source of truth, scope S2's queries, recompute every count from the SAME query that builds its list, and void stale pending handoffs. ("No manual refresh" half is FE.) |
+| 1.2 | S1→S2 Accept all does nothing | **NOT a separate bug — a symptom of 1.1.** The red text is `handoff.service.js:280` (the CONFIRM-side whole-order gate), firing because the items are no longer all at S1. |
+| 1.4 | Flag / Move to Hold do nothing | Both endpoints EXIST (`sortAndPretreat.service.js:998` markAsFlagged, `:1673` sendToHold). They are refused by the `stage.status` guard (same root cause as 1.1) and the FE doesn't render the refusal. Fix the guard + make the message name the reason. |
+| 2.3 | Wallet adjustment not in ledger | **CONFIRMED BUG.** `intake-user.service.js:867 adjustWallet` does `wallet.balance += amount; wallet.save()` and **never writes a `WalletTransaction`** — the money genuinely has no ledger line. Also BOTH `wallet.save()` and `order.save()` are un-awaited. Route through `WalletCreditService` so every movement writes a line. |
+| 4.4 | Holds Active & Overdue count the same orders | **CONFIRMED BUG.** `admin.service.js:349` `activeHolds` = ALL holds; `:353` `overdueHolds` = holds past SLA — a strict SUBSET. Same filter duplicated at `:1692/:1696`. Fix: Active must exclude the breached set so Active + Overdue = all holds. |
+| 4.1 | Template save returns 400 | `communicationAdmin.service.js updateTemplate` has no explicit 400 path; a model enum rejection (likely `page`) is swallowed into a generic "Failed to update template". Make the handler name the field — that also answers their "what is the 400 rejecting". |
+| 4.6 | Names as code text + phone formats | Backend stores the slug ("Shirts-/-tops-/-blouses") and two phone formats (with/without leading 0). Normalise on write + backfill. |
+| 2.5 | False "cannot create plan" | Repro then fix the create response/validation. |
+| 3.1 | Rider assignment does not save | **It DOES save** (`intake-user.service.js:1340` writes `dispatchDetails.delivery.rider`). Almost certainly the dispatch-tag gate at `:1331` refusing with `needsDispatchTag`, invisible because the FE swallows errors. Confirm live. |
+| 4.3 | Admin notifications | Emit on wallet adjustment + adjustment request; produce the list of events that notify admin today (they asked for it). |
+
+### Bucket B — FE is WAITING on me (ship these early)
+- **1.5** S2 partial sorting — only per-item (`updateItemSortDetails` :276, `markItemAsSorted` :473) and all-items (`markAllItemsAsSorted` :665) endpoints exist; **no bulk endpoint**, which is exactly why "you cannot select a few" and why colour/pretreat can't be set on a multi-selection. NEW bulk endpoint: `itemIds[] + colorGroup + fabricType + pretreatmentOptions`. Model ALREADY has `colorGroup`/`fabricType`/`pretreatmentOptions` and a `not_required` pretreatStatus (bookOrder.model.js:62-94) → the "No pretreatment needed" path is half-built.
+- **1.6** per-item care tier — touches PRICING (`roundToNearestHundred(OrderItem.price × serviceType.pricePerPiece)`, resolved once per order today and reused by booking, bot, offers, subscription draw-down). **Do LAST in Group 1 with its own DB harness** — highest money-bug risk in the brief.
+- **2.1** `DELETE /api/offers/:id` — **genuinely absent** (`util/page-route.js:250-261` has no delete). Create/update code at `offerApi.service.js:125/168` is CORRECT and does persist; the "not there after refresh" is most likely offers defaulting to `status: draft` while the FE list filters to active.
+- **2.2** free pickup/delivery actually ₦0 + offer name in the pricing breakdown.
+- **2.4** per-role wallet-adjustment limits (admin-settable, NOT hardcoded) + approval queue above the limit, modelled on the existing top-up-request flow (`intake-user.service.js:~790`).
+- **3.2** Failed-pickups filter — `PICKUP_STATUS.FAILED` already exists (`util/constants.js:32`).
+- **3.3** landmark on dispatch/rider payloads — field already exists (`user.model.js:10` required; `util/address.js` structured `{label,address,landmark}`; optional on the customer booking path, `bookOrder.service.js:817`).
+- **4.2** keys + target-pages list endpoint (they also want the written list).
+- **N1** Quick Booking · **N2** Recovery/Complaints/Feedback dashboard (N2 needs a NEW NPS 0–10 question with a 30-day per-customer throttle — does not exist today).
+
+### Bucket C — pure FE, nothing for me
+1.7 tag font weight (rendering is FE-side) · 1.8 Refresh pressed/loading state · **1.4 part 3 "a failing button always shows a message"** (backend already returns `{success:false,data:{error}}` — the FE isn't displaying it; this sits behind several "nothing happens" reports) · 1.5 part 4 the "White fabric type" → "Fabric type" label · 2.1's Delete button + create/edit success states.
+
+### Bucket D — blocked on a client answer
+- **4.5 CRM dormant rate 100%** — the client says themselves to answer Q2/Q3 first. The 125% case was already fixed 2026-09-23 (numerator scoped to `totalOrders>=1`); 100% is now mathematically valid and may simply be TRUE for their 4 dormant / 4 converted. **Answer it in §3, do not change the formula on a guess.**
+
+---
+
+## TWO THINGS TO TELL THE CLIENT IMMEDIATELY
+
+1. **1.3 (S3 stuck on "Waiting for confirmation") is ALREADY FIXED in this repo but NOT DEPLOYED.**
+   Fixed 2026-10-05/06: `getActiveWash`/`getActiveDry` were not returning `allItemsConfirmed`, so a
+   shared station card read `undefined` → falsy → a "waiting confirmation" that could never clear.
+   Committed on `mesage-and-alert-fix`; **Render serves `main`.** Same stale-deploy pattern the FE hit
+   on 2026-09-25. It adds a NEW `canMoveToDrying` flag → half Bucket B, the FE must key the button on
+   it. **Merging to main may also change 3.1's behaviour** (the dispatch-tag gate ships in the same
+   branch). Answer to their "what is the system waiting for, and from whom": nothing — every item was
+   already confirmed; the screen just wasn't being told so.
+2. **The Thursday date is not achievable for all 22 + 2.** Say so now; the brief asks to be told early.
+
+---
+
+## PROGRESS (2026-10-07)
+
+**Offline regression gate: `briefCheck.js` at the repo root — `node briefCheck.js` — 29/29 green.**
+(Committed rather than left in the scratchpad on purpose: it is the gate for this whole package and
+must survive a context clear.) Swagger 55 schemas / 281 paths, 0 wrong envelopes.
+
+DONE so far:
+- **1.1 (part — the S3 dashboard half).** `washAndDry.service.js getDashboard`: "Recent Wash Queue"
+  paginated on `{'items.currentStation': HERE}` alone while the `washQueue` COUNT beside it also
+  required `'washDetails.startedAt': {$exists:false}`. That is EXACTLY the client's screenshot — tab
+  reads 0, list still shows two orders already Washing. The list now uses the identical filter and
+  returns the same derived fields (`allItemsConfirmed`/`confirmedItemCount`/`flaggedItemCount`) so the
+  card and the tab cannot disagree.
+- **4.4 holds.** NEW `util/holdSla.js` — ONE breach definition (`breachBranches`), with
+  `overdueHoldsFilter` ($or) and `activeHoldsFilter` ($nor over the SAME branches) as exact
+  complements, plus `isHoldBreached` for rows already in hand. Both call sites in `admin.service.js`
+  (the dashboard counts ~:349 and the Holds Management list ~:1692) now use them, so Active + Overdue
+  always partition the holds. The harness asserts the complement structurally, so the two can never
+  drift apart again.
+- **2.3 wallet ledger.** `intake-user.service.js adjustWallet` rewritten: one atomic `$inc` guarded on
+  sufficient funds for a debit (no overdraw race), then a `WalletTransaction` (`manual-adjustment`,
+  SIGNED amount so the ledger sums to the balance, `reason`, `performedBy`, `balanceAfter`,
+  `relatedOrderId`). **If the ledger write fails the balance change is rolled back** — the ledger is
+  the record, so no silent untraceable movement. Also fixed in passing: both `save()` calls were
+  un-awaited; the audit log attributed the action to the CUSTOMER not the operator; and
+  `order.userId.fullName` was read off an un-populated ref. Response now returns the created row;
+  swagger updated to the new object shape ($ref WalletTransaction).
+
+### 1.1 / 1.2 / 1.4 — ROOT CAUSE FOUND, REPRODUCED AND FIXED (2026-10-07, DB-verified 50/50)
+
+**NEW `stationFlowStaging.js`** (repo root) — walks one order S1→S2→S3 through the REAL services and
+asserts, after every move, that the station it LEFT stops listing it, the station it ENTERED lists it,
+and **every dashboard count equals the length of the list behind it** (the client's literal
+requirement). Run:
+`STAGING_OK=1 MONGODB_URL="<testing uri>" node stationFlowStaging.js` → **50 passed, 0 failed.**
+Safety-gated like the other harnesses (STAGING_OK, NODE_ENV, hard-refuses `laundrydb`); cleans up.
+
+**THE HAPPY PATH WAS NEVER BROKEN.** Scenarios 1–8 pass on clean data: push → pending → confirm moves
+the pieces, counts track lists exactly, a partial release shows 2 at S2 and 3 at S3 with no piece in
+two places, and the order leaves S2 entirely once the last piece goes. So 1.1 was never "the queues
+are wrong in general".
+
+**THE ACTUAL CAUSE (scenario 12 reproduces the client's verbatim error string):**
+`isWholeOrderGate(fromIdx, toIdx)` is `fromIdx === 0 || toIdx === SEQ.length - 1`, and the only
+ordering rule on a push is `toIdx > fromIdx`. **A push may therefore SKIP a station** — which is
+deliberate and must stay (a wash-only order legitimately goes S3→S5). But nothing invalidated an
+earlier pending handoff when the same items left by the new route. So:
+1. push S1→S2 → handoff H1 pending; 2. push S1→S3 → H2; 3. S3 confirms H2, pieces land at S3, the
+order reads "washing"; 4. **H1 is still pending** → still drawn in S2's Incoming handoffs;
+5. S2 taps Accept all → `isWholeAt(INTAKE)` is false → *"intake-and-tag-station →
+sort-and-pretreat-station must move the whole order — all items must still be at
+intake-and-tag-station"*. **That is item 1.2's screenshot exactly, and explains why
+OSC-20261004-631233 showed at S3 Washing while sitting in S2's Incoming list.**
+
+**THE FIX (three parts, all verified):**
+- `HandoffSchema.status` gains **`superseded`** (+ `supersededAt`, `supersededBy`). A new push
+  supersedes any earlier PENDING handoff from the same `fromStation` whose itemIds intersect it, and
+  logs an Activity row. The stale card never reaches the screen.
+- `confirm` checks staleness BEFORE the gates: if every claimed item has left `fromStation`, it marks
+  the handoff superseded and returns a plain sentence naming where the items went, instead of the
+  dead-end gate error. The `status !== 'pending'` guard now distinguishes confirmed / rejected /
+  superseded rather than always saying "already confirmed".
+- `pendingQueue` is **self-healing**: a pending handoff whose items have all left is never listed, and
+  the read persists the supersede. **This clears the client's two already-stranded orders with no
+  migration** — scenario 13 writes the damage straight to Mongo and proves the next read fixes it.
+
+**1.4 ALSO FIXED (the part that was really backend).** S2's nine identical guards all returned
+*"Order not found or not in sort & pretreat stage"* — three different situations behind one
+meaningless sentence, which is exactly the brief's "a button that fails always shows a message that
+says why". NEW `explainNotAtSort(orderId)` in `sortAndPretreat.service.js` does one extra read and
+returns e.g. *"Order OSC-… is no longer at sort & pretreat (it is now at "queue"), so it cannot be
+changed from this station."* Flag and Hold themselves were verified to work (scenarios 9–10) — they
+were being refused, and the refusal was unreadable.
+
+### GROUP 4 — 4.1/4.2/4.3/4.6 DONE (2026-10-07). NEW `templateStaging.js` 27/27.
+Client's Group 4 text re-confirmed against this plan on 2026-10-07: identical, with two details added —
+4.3's test wants the notice to name **customer + amount + operator** (it does), and 4.6 includes
+**station** names as well as item names.
+
+**4.1 — REPRODUCED. The 400 was `post.channels.filter is not a function`.**
+`updateTemplate` (and `createTemplate`) called `.filter` straight on `post.channels`. A channel picker
+that sends a single value as a **string** (`channels: "sms"`) instead of an array throws a TypeError,
+the catch-all turns it into *"Failed to update template"*, and every save looks rejected. **That is the
+answer to "what is the 400 rejecting" — nothing in the template; the shape of one field.**
+- Fixed via `normalizeChannels()` (string or array, de-duped, unknown values named with the valid list).
+- **Found two more by running the client's test:** (a) a whitespace-only `body` SAVED — Mongoose
+  `required` passes on `"   "`, so a template could be blanked and would then render empty to every
+  customer; now refused by field name. (b) `createAuditLog` runs after `template.save()` and rethrows,
+  so an audit problem reported a saved template as failed — the 2.5/3.1 shape again.
+- Model rejections now name the field (`describeTemplateError`), and the PUT of a WHOLE object (the
+  common admin-UI pattern) is proven to save and survive a reopen.
+
+**4.2 — NEW `GET /api/communication/templates/meta`** (adminAuth) backs both dropdowns.
+`util/commMeta.js` holds the written answer the client asked for, **derived from what the code actually
+sends, not invented**: 5 target pages and 13 placeholder keys, each with one line.
+- `{{name}}`/`{{firstName}}` are UNIVERSAL (filled from the user doc by `CommunicationService.render`).
+  **Every other key is supplied by one specific system** for one template key, so each carries
+  `onlyFor` — using it elsewhere prints the raw `{{key}}` to the customer. A key an admin typed that no
+  system supplies comes back `unresolved: true` so the editor can warn.
+- Template keys in use: `offer-available`, `referral-reward`, `referral-level-up`,
+  `referral-monthly-benefit`, `complaint-update`, `generic-announcement`.
+
+**4.3 — the notice already names customer, amount and operator.** The list they asked for, derived by
+scanning all 87 notification call sites: **only 6 reach an admin** — wallet adjusted, wallet adjustment
+request, the two approve/reject notices, plus pickup-failed and delivery-failed (new in 3.2).
+Everything else goes to the customer or to one named staff member/station.
+- **FOUND WHILE ANSWERING IT: `admin.service.js` kept its OWN wallet add/deduct code** —
+  `wallet.balance += amount` after a separate read (the non-atomic overdraw race 2.3 fixed), a ledger
+  line with no `performedBy`/`balanceAfter`/`manual-adjustment` type, and no rollback. Both paths now
+  delegate to `WalletAdjustmentService.applyAdjustment`, so an admin's adjustment and an operator's
+  write identical ledger lines — which was 2.4's whole design point.
+
+**4.6 — the phone normaliser WAS the profile-splitter.** `normalizePhone` only stripped a `234`
+prefix, so the bare 10-digit form `8031234567` came back **unchanged** and did not match `08031234567`.
+CRM links identity by normalised phone, so that one gap is enough to make one person two profiles —
+exactly the client's two orders. Now canonical `0` + 10 digits; all seven real-world forms
+(`0803…`, `803…`, `+234803…`, `234 803…`, `0803-123…`, `00234803…`, `+234 (0) 803…`) normalise
+identically, and it is idempotent. Applied on WRITE at signup, customer booking and staff intake, plus
+NEW `phoneFormatBackfill.js` (idempotent, `--dry`) which also **reports CRM profiles already split**
+across one number — it does not merge them, because choosing which history survives is a business call.
+- Names: NEW `util/displayName.js`. `prettifyName` turns the stored slug into
+  `"Shirts / Tops / Blouses"`, `stationLabel` turns `intake-and-tag-station` into `"Intake & Tag"`.
+  Applied in `util/itemSummary.js`, which is the shared brief builder behind EVERY station card, the
+  dispatch tag and the handoff payloads — so the name reads the same at S1, S2 and S3 (their test).
+  **Shape note for the FE: briefs now carry the readable form in `name` and the stored slug in a new
+  `rawType`.** Anything matching on the slug must read `rawType`.
+
+### GROUP 3 — DONE (2026-10-07). NEW `dispatchStaging.js` 37/37 → 46/46 with the landmark rule.
+
+**3.1 "assigning a rider does not save" — the triage guess (the dispatch-tag gate) was WRONG, and the
+real cause is worse: NOTHING checked that the id in the URL was a rider.**
+`riderId` came off the route param and went straight into `$set` with `runValidators: false`. Two
+failure shapes, and the second is exactly the client's words:
+- not an ObjectId → Mongoose CastError on the `$set` → the catch returns "Failed to assign rider to
+  order" and nothing IS written;
+- **a valid ObjectId that is not a rider** (a customer, a stale/deleted staff id) → **the write
+  SUCCEEDS**, but the queue populates the ref to `null`, so the row comes back reading
+  `needsRider: true` again. The assignment is in the database; the screen cannot show it.
+- **ROOT CAUSE UPSTREAM: there was no endpoint anywhere that listed riders** — `ROLE.RIDER` appeared in
+  NO service, controller or util. The picker had no authoritative source for its ids.
+- FIX: NEW `GET /api/intake-user/riders` (active riders, `?search`, `?includeInactive`, each with
+  `activePickups`/`activeDeliveries`/`activeRuns` so work can be spread); NEW `resolveRider()` refusing
+  by name before any write ("STG Customer is not a rider, so the order cannot be assigned to them.");
+  the assigned rider is RETURNED so the row can be redrawn without a refetch.
+- **Also the 2.5 false-failure class again:** the activity row, the rider's notification and the audit
+  line all run AFTER the write and each rethrows, so any of them failing reported a completed
+  assignment as failed. All three now go through `logSafely`. Both legs (pickup + delivery) fixed.
+- The dispatch-tag gate is UNCHANGED and still refuses with `needsDispatchTag` (harness asserts it).
+  **Since it is now deployed, it IS what they will hit next** — the FE must branch on that flag.
+
+**3.2 Failed pickups — the filter did not exist, and neither did the data behind it.**
+- `legStatus` query filter on both dispatch queues (comma-separated, unknown values **refused** with
+  the valid list rather than silently returning everything), plus `failedCount` beside
+  `needsRiderCount`, and `legStatus`/`failed`/`legNote` on every row. **`legStatus=failed` IS the
+  Failed Pickups view.** A failed pickup keeps its PENDING stage AND its rider, so until now it sat in
+  the queue indistinguishable from a healthy assigned run.
+- **`dispatchDetails.pickup.note` WAS NOT A SCHEMA PATH.** `markPickupAsFailed` wrote it and Mongoose
+  strict mode silently dropped it — **every failed pickup ever recorded lost the rider's reason.**
+  Found by RUNNING the harness, not by reading. NEW `failureNote` on both legs.
+- **And on the delivery leg the reason was overwriting `delivery.note` — the customer's special
+  delivery instruction, which is the line the DISPATCH TAG PRINTS.** A failed delivery would put
+  "customer not at home" on the reprinted tag as an instruction to the next rider. Now separate fields.
+- **Nobody in the office was ever told.** Both failure handlers called
+  `createNotification({ userId })` with the RIDER's own id — the person who just pressed the button —
+  and no one else. Now `notifyRoles([intake-and-tag, customer-experience, admin])`. Harness asserts
+  the office count goes up and the rider's does NOT.
+- `NOTIFICATION_TYPE.DELIVERY_FAILED` did not exist (there was a `PICKUP_FAILED`), so every failed
+  delivery was filed under the default `system`. Added.
+- **NEW `util/notifyRoles.js`** — "notify everyone with role X" existed as three near-identical copies
+  (admin.service's station operators, walletAdjustment's `notifyAdmins`, and this). One implementation
+  now; `notifyAdmins` delegates to it. It can never throw, and it now skips suspended staff.
+
+**3.3 Landmark — the field was always there; one list never shaped it.**
+- `getRiderAssignedPickups`/`getRiderAssignedDeliveries` were the ONLY dispatch lists that never called
+  `normalizeOrderAddresses`, so a legacy string address arrived with no `landmark` key at all — while
+  Active Pickups, the same order one tap later, showed it. Both now normalize, select explicitly, and
+  lift `pickupLandmark`/`deliveryLandmark` onto the row. The S1 queue gained `landmark` too.
+- **ANSWER TO THE USER'S QUESTION: no, the customer is NOT asked for a landmark when booking.**
+  `bookOrder.service` requires only `pickupAddress.address`; label/landmark are optional on the
+  customer path (staff intake requires all three via `validateStructuredAddress`). Hard-requiring it
+  would break every live app build that does not send it, so instead: NEW
+  `enrichFromSavedAddresses()` — when the booked address matches one of the customer's SAVED addresses
+  (where `landmark` IS required on the schema), the landmark and label are borrowed automatically; and
+  rows that still have none carry **`landmarkMissing: true`** so the office can chase them. The
+  booking request body now documents that the app should collect it. **One-line change to make it
+  mandatory once the app sends it — the client's call.**
+
+### 2.5 — DONE (2026-10-07). NEW `planCreateStaging.js` 39/39. **A REAL BUG: the plan WAS created.**
+
+**"It says the plan cannot be created" — and every time, the plan was already in the database.**
+`createPlan` writes the plan, THEN calls `createAuditLog`, which **rethrows** on failure. The audit row
+carried **`category: 'subscription'`** — and **`'subscription'` was never in `AUDIT_LOG_CATEGORIES`**
+(order/payment/wallet/dispatch/system/auth/pressing/qc/rider/user/sort/wash/crm/communication/offer/
+recovery). So Mongoose rejected it with an enum ValidationError, the method's catch returned the
+generic *"Something went wrong. Please try again later"*, and the admin's retry then hit **"Plan title
+already exists"** — a screen that looks completely broken while working perfectly.
+- **A repo-wide scan found exactly four such sites, all in `subscription.service.js`** (createPlan,
+  updatePlan, deletePlan, cancelSubscription — lines 60/99/126/253). Every other `category:` string in
+  the repo is a valid enum member. So update and delete had the identical false failure, and a
+  cancellation reported failure after Paystack had already been told.
+- **FIX 1 — `AUDIT_LOG_CATEGORIES.SUBSCRIPTION`.** The four call sites were right; the enum was
+  incomplete. briefCheck now asserts that **no hardcoded category string remains in the file**, so a
+  fifth call site can't reintroduce it with a new word.
+- **FIX 2 (the structural one) — an audit log may never reverse the outcome the operator is shown.**
+  New `auditSafely()` wrapper: the log failure is printed and swallowed. Applied at all four sites,
+  each with the comment stating that the data is already written past that point. `createAuditLog`
+  itself is **unchanged** — 127 other call sites share it and that is a separate, wider call.
+- **FIX 3 — real failures now NAME themselves.** New `describeDbError()` maps duplicate-key (11000) →
+  *"Plan title already exists"*, ValidationError → the field, CastError → the field and type. The plan
+  write has its own try/catch, so the `title` unique index rejecting (two admins, same title, same
+  moment — the pre-check is a read, not a lock) reads as a conflict instead of a server error.
+- **FIX 4 — the validation rules contradicted the model, in both directions:**
+  **`paystackPlanCode` is `required: true` on `plan.model.js` but was NOT validated**, so omitting it
+  produced the generic error with no clue; now `string|required`. And **`itemPerMonth` was
+  `integer|required` while the model field is COMMENTED OUT** (`monthlyLimits` replaced it) — the
+  screen was being refused over a field the backend then threw away; now optional, and removed from the
+  swagger `Plan` schema and the create-plan required list.
+- **`updatePlan` gained `runValidators: true`** (a negative price or a clashing rename used to save
+  silently or fail generically) and now **returns the saved plan**, so an edit screen can reload the
+  authoritative row — the same gap as 2.1's missing `GET /offers/:id`.
+- Fixed in passing in `cancelSubscription`: `error.response.data.message` threw on a network/timeout
+  failure and landed in the outer catch, which said *"Failed to cancel plan"* — the wrong reason
+  entirely; and that catch's log read `'Create plan error:'` (copy-paste).
+- **Swagger:** create-plan's 400 was a `success`+`error` sibling block → now `$ref ErrorResponse`;
+  update/delete gained real example-filled response shapes. Spec **56 schemas / 285 paths, 0 wrong
+  envelopes**. **FOUND: a 4th envelope variant exists in the docs — 15 blocks with `success` + `error`
+  as SIBLINGS** (the earlier three sweeps only looked for `success`+`message`). Docs-only, pre-existing,
+  listed in session.md; not fixed here.
+- **`planCreateStaging.js`** runs the client's own test plus the regression that matters: with
+  `AuditLogModel.create` stubbed to throw, create/update/delete must STILL report success and the data
+  must be there. Also: missing paystackPlanCode names the field, duplicate titles leave exactly one
+  plan, a bad edit doesn't touch the stored price.
+
+### 2.4 — DONE (2026-10-07). NEW `walletLimitStaging.js` 39/39, running the client's own test.
+
+Per-role wallet adjustment limits with admin approval above them.
+- **NEW `models/walletAdjustmentRequest.model.js`** + `WALLET_ADJUSTMENT_REQUEST_STATUS`
+  (pending|approved|rejected). Stores `requestedByRole` AND **`roleLimitAtRequest`** — the limit AT
+  THE TIME — so changing the setting later never rewrites the history of why approval was needed.
+- **NEW `services/walletAdjustment.service.js` owns ALL manual balance movement.** This is the
+  important design point: an operator adjusting within their limit and an admin APPROVING an
+  over-limit request go through the SAME `applyAdjustment`, so an approved ₦10,000 and an allowed
+  ₦3,000 produce identical ledger lines. A second copy for approval would have quietly undone 2.3.
+  The 2.3 money code (atomic `$inc`, overdraw guard, ledger write, rollback on ledger failure) MOVED
+  here; `intake-user.adjustWallet` now delegates.
+- **Limits live in `AdminSetting.walletAdjustmentLimits`** — a **Map** of role→naira, defaulting
+  intake-and-tag 5000 / customer-experience 10000, i.e. the client's own numbers. A Map, not named
+  fields, so a new role gets a limit by editing settings rather than by a deploy ("It must not be
+  fixed in the code, because we will change it"). `updateAdminSettings` already `$set`s whatever it
+  is given, so no service change was needed. **A role with NO entry gets 0** — everything it does
+  becomes a request, which is safer than inventing a default. **Admin is never limited.**
+- **Over the limit returns SUCCESS, not failure** (`requiresApproval: true` + requestId + the limit).
+  Telling the operator it "failed" would invite a retry and stack duplicate requests.
+- Admin endpoints: `GET /api/admin/wallet-adjustment-requests` (defaults to pending),
+  `POST .../:id/approve`, `POST .../:id/reject` (**note REQUIRED** — a rejection with no reason
+  leaves the operator nothing to act on). Approval **claims the request atomically BEFORE** moving
+  money so two admins can't pay twice, and **returns it to pending if applying fails** rather than
+  leaving it reading as approved. Swagger `WalletAdjustmentRequest` schema added (56 schemas).
+- **Brief 4.3 partly done here too:** admins are now notified of every adjustment AND every request
+  (`notifyAdmins`, fire-and-forget).
+- Verified the client's exact test (₦3,000 goes through at a ₦5,000 limit → ₦10,000 becomes a request
+  with the wallet unchanged → admin approves and it moves → raise the limit in SETTINGS and the same
+  ₦10,000 goes straight through), plus: no double-pay, reject-without-note refused, a role with no
+  limit, an over-balance debit refused at approval with the request returned to pending, and the 2.3
+  invariant **balance == sum of its ledger lines** across every line.
+- **`briefCheck.js` updated** to assert the money guarantees where they now live (34/34).
+
+### 2.2 — DONE (2026-10-07). NEW `freeLogisticsStaging.js` 23/23. **A REAL BUG, now fixed.**
+
+**"Free pickup and delivery is offered, but ₦2,000 is still charged" — root cause found:**
+`bookOrder.service._priceWithOffers` returned EARLY unless the customer had SELECTED an offer:
+```js
+if (!post.customerOfferId && !post.promoOfferId) return { finalTotal: itemsSubtotal + extraDeliveryCost, breakdown: null }
+```
+A **BASELINE** offer (the client's "General") is applied BY RULE with **no linkage and no id for the
+customer to send**, so that early return skipped every one of them. `offer.service.validateAndPrice`
+evaluated baselines correctly all along (`:729-743`) — **booking simply never asked it.** The app
+advertised the offer and then charged the fee. Fix: always call `validateAndPrice`; it already
+tolerates having no personal/promo selection.
+**Finding the terminology mapping (General == BASELINE) is what made this visible** — I had been
+treating the client's offers as promotional, which DO carry an id and so were never affected.
+
+**Second half of 2.2 (the display ask, "with the name of the offer"):** `_buildPricing` built
+`appliedOffers` from `breakdown.personal` and `breakdown.promotion` only — **baselines were missing**,
+so a summary could show "Pickup: Free" with no offer name to explain it. Baselines are now pushed
+first with `type: 'baseline'` (model comment + swagger enum updated; note `pricing.appliedOffers.type`
+is a genuine field name using the explicit `{ type: String }` form to dodge the Mongoose keyword).
+
+Verified against the client's own three cases plus four guards: above threshold → ₦2,100 items-only,
+both legs recorded waived, offer named; below threshold → both fees charged; DRAFT offer → waives
+nothing; archived → fees return (no accidental permanent freebie); pickup-only / delivery-only → only
+the leg actually taken is waived. All four other gates re-run green afterwards (briefCheck 29 ·
+tierPricing 33 · offerAdmin 37 · dispatchTag 46).
+
+**Harness bug worth remembering: the fees live on `AdminSetting`, NOT `AdminOrderDetails`**
+(`adminOrderSetting` in `bookOrder.service.js:865` is `AdminSettingModel`). Reading the wrong model
+compared every total against ₦0 and produced nine meaningless failures.
+
+### TERMINOLOGY — the client's "General" offer IS `OFFER_TYPE.BASELINE` (user-confirmed 2026-10-07)
+`OFFER_TYPE` is `personal | promotional | baseline`. There is **no "general"** in the code. When the
+client or an earlier note says **General**, they mean **BASELINE**: a permanent policy applied BY RULE
+at booking with no per-customer linkage (`offer.service.js:729-743` — active baselines whose window +
+booking rules pass set `freePickup`/`freeDelivery`/discount directly). This is also what
+summary.md's deferred Feature 2 meant by "General/Promo offers only".
+⇒ "Always Free at ₦8,000" and "First Experience" are BASELINE; "Recovery Thank You" is personal/
+promotional. Do not re-derive this.
+
+### 2.1 — DONE (2026-10-07). NEW `offerAdminStaging.js` 37/37, running the client's own test.
+
+**"Offers do not save" was THREE different things, and the save itself was never broken.**
+Create and update at `offerApi.service.js` DID persist — the harness runs the client's exact test
+(create First Experience / Always Free at ₦8,000 / Recovery Thank You, leave, re-list, edit each,
+delete one) and all three survive a re-read. What was actually wrong:
+1. **A new offer defaults to `status: 'draft'`.** A list filtered to `status=active` cannot show it,
+   which is the "created, then gone after refresh" report. **Not a backend bug** — the admin UI needs
+   to either default its filter to all statuses or surface the draft state and an activate action.
+   **Tell the client this one is FE + a workflow question, not a lost save.**
+2. **There was no `GET /offers/:id`** — list/create/update only. An edit screen had nothing
+   authoritative to reload a single offer from, which is the likeliest source of "the offer still
+   holds the old details". **ADDED**, and it also returns `linkages {live,total,deletable}`.
+3. **There was no delete at all** (confirmed: `page-route.js` had no delete route). **ADDED.**
+
+**`DELETE /api/offers/:id` is conditional, because a `CustomerOffer` links back to its offer** —
+hard-deleting one that was handed out would erase the record of a benefit someone actually received:
+- never given to anyone → **really deleted** (their "delete a test offer" case)
+- only finished linkages (redeemed/expired/cancelled) → **archived**, history kept, response says why
+- customers currently hold it → **refused** with `requiresForce:true` + the count; repeat with
+  `?force=true` to cancel those and archive. `ARCHIVED` already existed in `OFFER_STATUS`.
+An archived offer is out of every customer-facing path exactly like a deleted one.
+
+**`CustomerOffer.cancelledAt` added** (user's call, and right): every other terminal state stamps its
+own time, so a cancellation could only be inferred from `updatedAt`, which any later write would
+overwrite. Both cancel paths (`cancelLinkage` and the delete sweep) now stamp it; swagger updated.
+
+**Harness bugs the run found (enum guesses — never assume a shape):** `OFFER_TYPE` is
+personal|promotional|baseline (no "general"); the benefit field is **`benefitType`**, not `type`
+(`type` is Mongoose's reserved keyword inside a subdocument — the same trap already commented in
+`pricing.appliedOffers`). A `|| 'general'` fallback silently produced an invalid value, so the
+harness now hard-fails if fewer than 3 offers are created rather than limping on.
+
+### 1.6 — DONE (2026-10-07). NEW `tierPricingStaging.js` 33/33. GROUP 1 IS NOW COMPLETE.
+
+Per-item care tier. **This is the one that moved money**, so it has its own harness.
+
+- **NEW `util/itemPricing.js`** — `tierMultiplier` / `tierOfItem` / `priceItems`. The pricing maths
+  existed as **THREE near-identical copies** (bookOrder pay-per-item, bookOrder pay-from-wallet,
+  intake-user staff path) which **had already drifted**: two defaulted a missing tier charge to `|| 1`
+  and the third to `|| 1.5` / `|| 2`, so the same basket priced differently depending on which screen
+  created the order. All three now call the helper; the fallback is **1 (no uplift)** everywhere — an
+  unconfigured setting must never silently charge more.
+- **`items[].serviceTier`** (enum + null default) on `bookOrder.model`. **Absent = follow the order's
+  tier**, which is what keeps every existing order and every existing caller byte-identical. Formula
+  unchanged: `roundToNearestHundred(price × serviceTypeMultiplier) × quantity × tierMultiplier`, with
+  rounding still INSIDE the per-piece unit price.
+- Optional validation `'items.*.serviceTier': 'string|in:classic,premium,vip'` on both booking paths.
+- `pricing` subdoc gained **`tierLines[]` / `tiersUsed[]` / `isMixedTier`**; `tierMultiplier` is
+  **null when tiers are mixed** (no single multiplier describes the order). Swagger updated on the
+  schema AND the booking request body.
+- `util/itemSummary.js` briefs carry `serviceTier`, so the tier rides onto handoff cards, the dispatch
+  tag and every station payload (the brief wants it on the tag and on the card at every station).
+- **TWO REAL BUGS FOUND IN THE BUILD:**
+  1. **Three `ReferenceError`s.** After the three pricing blocks were replaced, the call sites still
+     passed `tierMultiplier: multiplier` — a variable that no longer existed. **`node --check` and a
+     `require()` both passed**; only executing each branch caught it. Same lesson as the `isWashed`
+     hoist on 2026-10-05: loading a service proves nothing about its method bodies.
+  2. **`config/setup.js` seeded the tier charges INVERTED** — `premium: 2, vip: 1.5` against the
+     model's own defaults of premium 1.5 / vip 2, so on a freshly seeded DB **Premium cost MORE than
+     VIP**. Confirmed live: testingdb prices VIP at ×1.5. Seed corrected. **`setup.js` only seeds when
+     the document is MISSING, so existing databases keep the inverted values — CHECK THE LIVE
+     `AdminSetting` before telling the client this is fixed there.**
+- Verified: uniform-tier baskets price identically to the old formula at all three tiers; a mixed
+  basket prices per piece with an attributable uplift; the tier survives the per-piece explosion; the
+  receipt carries the breakdown; the staff path agrees with the customer path to the naira; a bad tier
+  is rejected.
+- **Regression gates all green after the change:** `tierPricingStaging` 33 · `stationFlowStaging` 80 ·
+  `briefCheck` 29 · `dispatchTagStaging` 46. Swagger 55 schemas / 282 paths, 0 bad envelopes.
+
+### 1.5 — DONE (2026-10-07). `stationFlowStaging.js` now 80/80, incl. the client's worked example.
+
+**NEW endpoint `PATCH /api/sort-pretreat/order/:id/items/sort`** (`ROUTE_SORT_AND_PRETREAT_BULK_SORT`
+→ `SortAndPretreatService.bulkSortItems`, `sortAndPretreatAuth`). One call does the sorter's whole
+gesture on ANY subset: `itemIds[]` (or `all:true`), `colorGroup`, `fabricType`,
+`pretreatmentOptions[]`, `damageRiskFlags[]`, `itemNote`, `markSorted` (def. true), `sendToWash`
+(def. true). The old surface only had per-ITEM (`updateItemSortDetails`, `markItemAsSorted`) and
+whole-order (`markAllItemsAsSorted`, which could not set colour/pretreatment at all) — exactly the
+client's complaints 1.5.1 and 1.5.2.
+
+- **Pretreatment is no longer a fixed step.** `['no_pretreatment_needed']` sets
+  `pretreatStatus: 'not_required'`, which ALREADY satisfies `itemCompleteAt` for S2 — so those pieces
+  finish at S2 the instant they are sorted and there is nothing to mark done. The enum value and the
+  `not_required` status both already existed; nothing could ever SET them.
+- **Fabric type applies to white and coloured alike** (the "White fabric type" wording was only an FE
+  label — Bucket C).
+- **Colour group / fabric type / pretreatment are required at the moment a piece is marked sorted**,
+  not when details are saved, so the operator can still work in stages. Errors name how many pieces.
+- `'no_pretreatment_needed'` + another option is refused (it is a choice, not an extra treatment).
+- Selecting a piece that is not at S2 is refused and the response NAMES them (`itemsNotAtStation`).
+- **ASSUMPTION, STATED:** the brief says the 7 sorted pieces "show in the S3 Wash Queue at once" AND
+  that S3 confirms receipt per batch — both are only true if marking sorted also HANDS OVER. So
+  completed pieces are pushed to S3 as a normal handoff. `sendToWash:false` opts out. **Flag this to
+  the client in the reply.**
+- Response carries `itemsLeftAtStation`/`totalItemCount` → the order card's **"3 of 10 left"** line.
+- **`markItemAsPretreated` also hands over now** ("those 3 then join the rest at S3") and — **a real
+  split-flow bug fixed in passing** — its `allItemsSorted`/`allItemsPretreated`/`readyToSend` were
+  computed over EVERY item in the order, so with 7 pieces already at wash `readyToSend` could never
+  turn true for the 3 still here. Now station-scoped via `allAtStation`.
+- Verified against the brief's own worked example (scenario 14): 10 items → select 7, Colored/Light/
+  no-pretreatment → 7 ready, card reads "3 of 10 left", S3 sees a batch of 7 to confirm, S2 shows the
+  3 left, those 3 set White/Delicate/Stain-treatment stay at S2, get pretreated, hand over as a
+  second batch of 3, all 10 meet at S3 and the order leaves the S2 queue with count == list.
+
+**1.1 KEY INSIGHT — 1.1.1 and 1.2 are ONE incident, and the drafts count was telling the TRUTH.**
+`intakeDashboard`'s drafts count and `getDrafts` use byte-identical queries (verified), so 15 staying
+15 means the orders genuinely never left `stage.status: QUEUE`. A push S1→S2 only creates a PENDING
+handoff — items stay at S1 until S2 confirms — and S2's "Accept all" was failing (1.2). So nothing
+moved, and the count was right. **Do not "fix" the drafts count.** Fix the confirm.
+
+**RESOLVED — see above. (Was: needs a DB reproduction, not more reading.)** Original note: Why order
+OSC-20261004-631233 can show at S3 as Washing while an S1→S2 handoff is still pending is not
+derivable from the code alone (only `handoff.service.js:322` ever assigns `currentStation`). Ask the
+user for the testing DB URI and extend `handoffStaging.js` to walk one order S1→S2→S3 asserting list
+AND count membership at every step. **Never edit `.env` (it points at the LIVE `laundrydb`) — pass
+`MONGODB_URL` inline.**
+
+## BUILD TODOS
+
+### Fixes — Group 1 (blocks all their testing)
+- [x] F1.1 — DONE (S3 dashboard list matches its count; stale handoffs superseded + self-healing;
+      DB-verified 50/50). NOT needed after all:  unify station membership on `items[].currentStation`; scope S2's ~15 `stage.status`
+      queries; recompute counts from the list query; void stale pending handoffs.
+- [x] F1.2 — DONE. Root cause was a station-skipping push stranding an earlier handoff; reproduced
+      and fixed. Whole-order gate kept; refusals now explain themselves.
+- [x] F1.4 — DONE (backend half): flag/hold verified to work; the 9 catch-all S2 refusals replaced
+      with explainNotAtSort(). The "show the error in the UI" half stays with the FE (Bucket C).
+- [x] F1.5 — DONE. NEW bulk sort endpoint (`itemIds[]`+colour+fabric+pretreatment) + "no pretreatment
+      needed" goes straight to the S3 wash queue + the three split-order confirmations the client asks
+      about (S3 confirms per batch · S5 doesn't close until every item arrived, shows "7 of 10" ·
+      customer still sees ONE order with ONE status).
+- [x] F1.6 — DONE. Per-item care tier + shared util/itemPricing.js. Own harness tierPricingStaging.js 33/33.
+### Fixes — Group 2  ← NEXT
+- [x] F2.1 — DONE. DELETE + GET /offers/:id + CustomerOffer.cancelledAt. offerAdminStaging.js 37/37.
+      Draft-vs-active list behaviour is FE/workflow, not a lost save — say so to the client.
+- [x] F2.2 — DONE. Baselines were skipped at booking (early return in _priceWithOffers) + missing
+      from appliedOffers. freeLogisticsStaging.js 23/23.
+- [x] F2.3 — wallet adjustment writes a `WalletTransaction` (CONFIRMED BUG). DONE + swagger.
+- [x] F2.4 — DONE. AdminSetting.walletAdjustmentLimits (Map) + WalletAdjustmentRequest + shared
+      walletAdjustment.service. walletLimitStaging.js 39/39.
+- [x] F2.5 — DONE (code). The plan WAS being created; the audit log then threw and the catch
+      reported failure. See the section below. NEW `planCreateStaging.js` — needs the testing URI.
+### Fixes — Group 3
+- [x] F3.1 — DONE. **The triage guess was WRONG** — the dispatch-tag gate is not in `main`, so it
+      cannot be what the client hit. Real cause: nothing validated the rider id. NEW
+      `GET /intake-user/riders` + `resolveRider` + non-fatal side effects. See below.
+- [x] F3.2 — DONE. `legStatus` filter + `failedCount` + `failed`/`legNote` on the row, and the
+      failure notification now reaches the OFFICE instead of the rider who pressed the button.
+- [x] F3.3 — DONE. The rider's assigned-pickups/deliveries lists never normalized addresses.
+### Fixes — Group 4
+- [x] F4.1 — DONE. The 400 was `channels.filter is not a function` (a string, not an array). Plus a
+      blankable required field and an audit write that could fail the save.
+- [x] F4.2 — DONE. `GET /communication/templates/meta` + `util/commMeta.js` (the written list).
+- [x] F4.3 — DONE. Notice names customer+amount+operator; event list derived (6 of 87 sites reach an
+      admin); admin.service's own wallet money code routed through the shared mover.
+- [x] F4.4 — holds Active excludes Overdue (CONFIRMED BUG). DONE via NEW `util/holdSla.js`.
+- [ ] F4.5 — blocked on Q2/Q3; answer in §3.
+- [x] F4.6 — DONE. `util/displayName.js` in the shared brief builder; `normalizePhone` fixed (it was
+      the profile-splitter), applied on write, + `phoneFormatBackfill.js` which reports split profiles.
+### New features
+- [ ] N1 — Quick Booking (count-only booking → rider confirms count + photo → S1 finalises with real
+      items + per-item tier → payment request → processing starts only after payment; <₦4,000 charged
+      pickup+delivery; cancellation refunds full to wallet).
+- [ ] N2 — Recovery/Complaints/Feedback dashboard (month picker + cards, built like Monthly Lead
+      Report). NEW: NPS 0–10 question, max once per 30 days per customer. Cards: NPS, avg rating,
+      feedback received (+ share of delivered), complaints opened/resolved/still-open/avg-time-to-
+      resolve, recoveries given/cost/ordered-again. Plus complaints by type + a list of 1–2★ orders.
+      Their worked example must come out at avg 4.3 · NPS 40 · feedback 10 = 50%.
+### Answers (LAST)
+- [ ] Q1 dashboard figures (avg daily revenue, avg processing time, avg daily revenue per item, hold
+      duration before expiry)
+- [ ] Q2 CRM dashboard figures + their 3 unexplained screen values (First Order 8 vs customers 4;
+      lead revenue ₦19,500 > total ₦18,300; repeat 50% with Active+Loyal both 0)
+- [ ] Q3 customer stages · [ ] Q4 two entry paths · [ ] Q5 lead follow-up scheduling ·
+      [ ] Q6 queue card order · [ ] Q7 offers & orders · [ ] Q8 feedback & complaints today
+- [ ] Assemble the SINGLE copy/paste block (§1 status · §2 status · §3 answers).
+
+**Known traps for the answers:** `totalOrders` counts DELIVERED orders, but a lead moves to stage
+`first-order` at BOOKING (`crm.service.js ~:397`, counter increments ~:428) — that alone explains
+Q2's "First Order 8 vs customers 4". The 2026-07-15 `crmBackfill.js` batch and the absence of a
+profile-origin marker before `leadSource` shipped (2026-09-24) distort historical months. See
+`context/summary.md` + the chuvi-crm-data-caveats memory.
+
+---
+
+# PREVIOUS Feature (DONE 2026-09-29): CHUVI Dispatch Tag (+ 2 carried-over debts)
 
 **STATUS 2026-09-24: ALL THREE PARTS CODE-COMPLETE. Offline-verified 119/119 across three harnesses
 (`tzCheck` 14 · `dispatchTagCheck` 88 · `subRevenueCheck` 17). Swagger 55 schemas / 281 paths, all

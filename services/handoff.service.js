@@ -195,7 +195,43 @@ class HandoffService extends BaseService {
                 handoff = order.handoffs[order.handoffs.length - 1]
             }
 
+            // A push to a DIFFERENT destination supersedes any earlier pending
+            // handoff that still claims these items from the same station.
+            //
+            // Client brief 1.1/1.2: the pipeline allows a legitimate skip (a
+            // wash-only order goes S3→S5), so `toIdx > fromIdx` is the only
+            // ordering rule and S1→S3 is a valid push. But the earlier S1→S2
+            // handoff was left pending over items that had gone — it kept
+            // showing in S2's Incoming list, and "Accept all" then failed with
+            // "all items must still be at intake-and-tag-station", because by
+            // then they weren't. Superseding it here is what stops that card
+            // existing in the first place. (Reproduced in stationFlowStaging.js
+            // scenario 12, which asserts the client's exact error string.)
+            const supersededIds = []
+            for (const h of order.handoffs) {
+                if (h === handoff) continue
+                if (h.status !== 'pending') continue
+                if (h.fromStation !== fromStation) continue
+                const claimed = new Set(h.itemIds.map(String))
+                if (!targetIds.some((id) => claimed.has(String(id)))) continue
+                h.status = 'superseded'
+                h.supersededAt = new Date()
+                h.supersededBy = handoff._id
+                supersededIds.push(h._id)
+            }
+
             await order.save({ validateBeforeSave: false })
+
+            if (supersededIds.length) {
+                await ActivityModel.create({
+                    title: 'Handoff Superseded',
+                    description: `Order ${order.oscNumber}: ${supersededIds.length} earlier pending handoff(s) from ${fromStation} were superseded by a push to ${toStation}.`,
+                    type: ACTIVITY_TYPE.ORDER_STATUS_UPDATED,
+                    orderId: order._id,
+                    userId,
+                    reference: order.oscNumber,
+                })
+            }
 
             await ActivityModel.create({
                 title: 'Items Pushed to Next Station',
@@ -217,6 +253,7 @@ class HandoffService extends BaseService {
                     itemIds: handoff.itemIds,
                     items: pushedBriefs,
                     summary: summarize(pushedBriefs),
+                    supersededHandoffIds: supersededIds,
                 },
             })
         } catch (error) {
@@ -248,8 +285,20 @@ class HandoffService extends BaseService {
                 })
             }
             if (handoff.status !== 'pending') {
+                // Say which of the three it was — "already confirmed" on a
+                // superseded or rejected handoff sends staff looking for items
+                // that were never accepted (brief 1.4: a refusal must say why).
+                const explain = {
+                    confirmed: 'This handoff has already been confirmed.',
+                    rejected:
+                        'This handoff was rejected — the items went back to the sending station.',
+                    superseded: `This handoff is out of date: the items already moved on from ${handoff.fromStation} by another route. No action is needed.`,
+                }
                 return BaseService.sendFailedResponse({
-                    error: 'This handoff has already been confirmed',
+                    error:
+                        explain[handoff.status] ||
+                        `This handoff is no longer pending (status: ${handoff.status}).`,
+                    handoffStatus: handoff.status,
                 })
             }
 
@@ -262,6 +311,32 @@ class HandoffService extends BaseService {
                 })
             }
             const accepted = handoffIds.filter((id) => !rejected.includes(id))
+
+            // Staleness check BEFORE the gates. If the items this handoff
+            // claims have already left the source station by another route,
+            // the card is out of date and can never be confirmed — the gate
+            // below would refuse it forever with "all items must still be at
+            // <fromStation>", which is the dead end the client hit (brief 1.2).
+            // Clear it and say so in plain words instead.
+            const stationOfItem = (i) =>
+                i.currentStation || SEQ[0]
+            const claimedItems = handoff.itemIds
+                .map((id) => order.items.id(id))
+                .filter(Boolean)
+            const gone = claimedItems.filter(
+                (i) => stationOfItem(i) !== handoff.fromStation,
+            )
+            if (claimedItems.length && gone.length === claimedItems.length) {
+                const movedTo = stationOfItem(gone[0])
+                handoff.status = 'superseded'
+                handoff.supersededAt = new Date()
+                await order.save({ validateBeforeSave: false })
+                return BaseService.sendFailedResponse({
+                    error: `These items have already moved on to ${movedTo}, so this handoff is out of date. It has been cleared from your incoming list — no action is needed.`,
+                    handoffSuperseded: true,
+                    movedTo,
+                })
+            }
 
             // Hard gates (S1→S2, S4→S5) move the WHOLE order. The push already
             // enforced that; enforce it HERE too, or a partial CONFIRM would
@@ -428,10 +503,35 @@ class HandoffService extends BaseService {
                 .lean()
 
             const queue = []
+            // Handoffs found to be out of date while building the list, cleaned
+            // up in one write afterwards (see below).
+            const stale = []
             for (const o of orders) {
                 for (const h of o.handoffs || []) {
                     if (h.status !== 'pending') continue
                     if (toStation && h.toStation !== toStation) continue
+
+                    // Self-healing read: a handoff whose items have ALL left the
+                    // source station can never be confirmed, so it must not be
+                    // shown as incoming. This is what clears the cards already
+                    // stranded in the client's data (brief 1.1/1.2) without a
+                    // migration — the next time S2 opens the screen, they go.
+                    const claimed = (o.items || []).filter((i) =>
+                        (h.itemIds || []).some(
+                            (id) => String(id) === String(i._id),
+                        ),
+                    )
+                    const allGone =
+                        claimed.length > 0 &&
+                        claimed.every(
+                            (i) =>
+                                (i.currentStation || SEQ[0]) !== h.fromStation,
+                        )
+                    if (allGone) {
+                        stale.push({ orderId: o._id, handoffId: h._id })
+                        continue
+                    }
+
                     const briefs = briefsForIds(o.items, h.itemIds)
                     queue.push({
                         orderId: o._id,
@@ -449,6 +549,38 @@ class HandoffService extends BaseService {
                 }
             }
             queue.sort((a, b) => new Date(a.pushedAt) - new Date(b.pushedAt))
+
+            // Persist the cleanup so the stale cards don't come back, and so a
+            // count taken from this collection agrees with the list above.
+            // Best-effort: a failure here must never fail the read.
+            if (stale.length) {
+                try {
+                    const now = new Date()
+                    await Promise.all(
+                        stale.map(({ orderId, handoffId }) =>
+                            BookOrderModel.updateOne(
+                                {
+                                    _id: orderId,
+                                    handoffs: {
+                                        $elemMatch: {
+                                            _id: handoffId,
+                                            status: 'pending',
+                                        },
+                                    },
+                                },
+                                {
+                                    $set: {
+                                        'handoffs.$.status': 'superseded',
+                                        'handoffs.$.supersededAt': now,
+                                    },
+                                },
+                            ),
+                        ),
+                    )
+                } catch (cleanupError) {
+                    console.log(cleanupError)
+                }
+            }
 
             return BaseService.sendSuccessResponse({ message: queue })
         } catch (error) {

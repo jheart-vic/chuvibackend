@@ -260,6 +260,9 @@ async function scenarioBookingWallet({ itemName, serviceName }) {
         'collect-items': `5 ${itemName}s`,
         'collect-service': serviceName,
         'collect-address': '12 Aroma Street, off Ziks Avenue, Awka',
+        // The landmark is REQUIRED on both legs since brief 3.3, so the guided
+        // booking asks for it right after the address.
+        'collect-landmark': 'opposite the blue mosque',
         'collect-datetime': 'tomorrow morning',
         'collect-speed': 'standard',
         'confirm-qty': 'yes',
@@ -292,6 +295,9 @@ async function scenarioBookingCard({ itemName, serviceName }) {
         'collect-items': `3 ${itemName}s`,
         'collect-service': serviceName,
         'collect-address': '12 Aroma Street, off Ziks Avenue, Awka',
+        // The landmark is REQUIRED on both legs since brief 3.3, so the guided
+        // booking asks for it right after the address.
+        'collect-landmark': 'opposite the blue mosque',
         'collect-datetime': 'tomorrow afternoon',
         'collect-speed': 'standard',
         'confirm-qty': 'yes',

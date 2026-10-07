@@ -10,6 +10,14 @@ class CommunicationController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    async getTemplateMeta(req, res) {
+        const service = new CommunicationAdminService()
+        const result = await service.getTemplateMeta(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
     async createTemplate(req, res) {
         const service = new CommunicationAdminService()
         const result = await service.createTemplate(req)

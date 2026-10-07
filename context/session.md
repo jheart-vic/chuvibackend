@@ -1,7 +1,315 @@
 # Current Session Log
 
+> **CURRENT STATE 2026-10-07 — see `context/feature.md`'s STATUS BOARD at the top for the full
+> picture.** Working the 6 Oct client Developer Brief, backend only, order = fixes → features →
+> answers. **Group 1 COMMITTED (`8795099`). ALL 22 FIXES NOW DONE except 4.5 (blocked on the client's
+> own Q2/Q3) and the FE-only ones (1.7, 1.8, part of 1.4/1.5/2.1). UNCOMMITTED.
+> NEXT = §2 new features: N1 Quick Booking, N2 Recovery/Complaints/Feedback dashboard — then the §3
+> answers LAST.** Every gate green 2026-10-07: briefCheck **101** · stationFlow 80 · tierPricing 33 ·
+> offerAdmin 37 · freeLogistics 23 · walletLimit 39 · dispatchTag 46 · planCreate 39 · dispatch 46 ·
+> template 27 · phase12 14 · subLogistics 20 · handoff 54 · botStaging 11/11. Swagger 56/287, 0 wrong
+> envelopes. Never edit `.env` — pass `MONGODB_URL` inline (testingdb URI supplied by the user).
+
+### GROUP 4 DONE (4.1/4.2/4.3/4.6) — NEW `templateStaging.js` 27/27
+- **4.1 REPRODUCED: the 400 was `post.channels.filter is not a function`.** A channel picker sending a
+  single value as a STRING (`channels: "sms"`) hit `.filter` on a string → TypeError → the catch-all
+  said "Failed to update template". **Nothing in the template was being rejected — the shape of one
+  field was.** Running the client's own test also found: a whitespace-only `body` SAVED (Mongoose
+  `required` passes on `"   "`, so a template could be blanked and then render empty to customers), and
+  the audit write could report a saved template as failed.
+- **4.2** NEW `GET /api/communication/templates/meta` + `util/commMeta.js` = the written list they asked
+  for, derived from what the code actually sends: 5 pages, 13 keys, each with one line. Only
+  `{{name}}`/`{{firstName}}` are universal; every other key belongs to ONE template key (`onlyFor`),
+  and a key no system supplies is flagged `unresolved`.
+- **4.3** The notice already names customer+amount+operator. Scanned all **87** notification call sites:
+  **only 6 reach an admin.** FOUND WHILE DOING IT: `admin.service.js` had its OWN wallet add/deduct code
+  with the pre-2.3 bugs (non-atomic `balance += amount`, weak ledger line, no rollback); both now
+  delegate to `WalletAdjustmentService.applyAdjustment`.
+- **4.6 the phone normaliser ITSELF was the profile-splitter** — it only stripped a `234` prefix, so
+  `8031234567` came back unchanged and never matched `08031234567`. CRM links identity by normalised
+  phone, so that alone makes one person two profiles. Canonical `0`+10 digits now; 7 real-world forms
+  collapse to one; idempotent; applied on write at signup/booking/intake; NEW `phoneFormatBackfill.js`
+  (`--dry`) which also REPORTS already-split CRM profiles without merging them (that is a business call).
+  NEW `util/displayName.js` (`prettifyName`/`stationLabel`) applied in `util/itemSummary.js`, the shared
+  brief builder behind every station card. **FE shape note: briefs now carry the readable form in `name`
+  and the stored slug in a new `rawType`.**
+- **NEW `util/safeLog.js`** — the "a record of the work must never reverse the work" wrapper, now shared
+  by subscription (2.5), intake-user (3.1), communication (4.1) and admin (4.3). Three bug reports in
+  this one brief were that single shape.
+
+### ⚠️ LOCAL `main` IS 127 COMMITS BEHIND `origin/main` — THIS CAUSED A WRONG DIAGNOSIS
+I concluded 3.1 could not be the dispatch-tag gate because `git show main:…` had no `needsDispatchTag`.
+**The user corrected me and was right:** `git show origin/main:…` HAS it — `mesage-and-alert-fix` was
+merged to `origin/main` on 7 Oct (PR #239, `f11a05b`, ~5h before). So the dispatch tag, the 1.3
+wash-station fixes and the Lagos TZ pin ARE deployed. **`git fetch` and read `origin/main` before ever
+reasoning about what the client is running.** (The 3.1 fix stands regardless — see feature.md.)
+
+### GROUP 3 DONE — NEW `dispatchStaging.js` 37/37
+- **3.1: nothing validated the rider id.** A valid ObjectId that is not a rider SAVED and then
+  populated back as `null`, so the row read "needs a rider" again — the client's exact words. Upstream
+  cause: **no endpoint anywhere listed riders** (`ROLE.RIDER` appeared in no service at all), so the
+  picker had no source for its ids. NEW `GET /intake-user/riders` + `resolveRider()` + the assigned
+  rider returned in the response. The three post-write side effects (activity/notification/audit) went
+  through `logSafely` — the same false-failure class as 2.5, on both legs.
+- **3.2: `dispatchDetails.pickup.note` WAS NOT A SCHEMA PATH** — Mongoose silently dropped it, so every
+  failed pickup ever recorded lost the rider's reason. Only RUNNING the harness found it. And the
+  delivery leg wrote its reason into `delivery.note`, **the line the dispatch tag PRINTS as the
+  customer's special instruction**. NEW `failureNote` on both legs. Plus: `legStatus` filter (unknown
+  values refused with the valid list), `failedCount`, `failed`/`legNote` on the row — and **both failure
+  handlers notified only the RIDER who pressed the button**, never the office. `NOTIFICATION_TYPE`
+  had `PICKUP_FAILED` but no `DELIVERY_FAILED`, so failed deliveries were filed as `system`.
+- **NEW `util/notifyRoles.js`** — the third copy of "notify everyone with role X" was about to be
+  written; one implementation now, `notifyAdmins` delegates, suspended staff skipped, never throws.
+- **3.3: the rider's assigned-pickups/deliveries lists were the only dispatch lists that never called
+  `normalizeOrderAddresses`** — a legacy string address reached them with no `landmark` key at all,
+  while Active Pickups (same order, one tap later) showed it.
+- **User asked whether the customer fills in the landmark when booking: NO.** Only `address` is
+  required on the customer path. Rather than hard-require it (that breaks every live app build that
+  doesn't send it), NEW `enrichFromSavedAddresses()` borrows the landmark from the customer's SAVED
+  address when it matches (landmark IS required on `user.addresses`), and rows with none carry
+  `landmarkMissing: true`. Making it mandatory is a one-line change and the client's call.
+- Harness bugs the run found: order ITEMS require `type`, not `name` (a top-level required-path scan
+  does not see subdoc paths), and `ORDER_CHANNEL` is whatsapp|website|office — there is no "walk-in".
+
+### 2.5 DONE — NEW `planCreateStaging.js` (DB run pending a URI). briefCheck 47/47
+**A REAL BUG, and the opposite of the report: the plan WAS created every time.** `createPlan` saves the
+plan, then calls `createAuditLog`, which **rethrows**; the row carried `category: 'subscription'` and
+**`'subscription'` was never in `AUDIT_LOG_CATEGORIES`** → enum ValidationError → the catch returned the
+generic "Something went wrong", and the retry hit "Plan title already exists". A repo-wide scan found
+**exactly four such sites, all in `subscription.service.js`** (create/update/delete plan +
+cancelSubscription) — so update and delete had the same false failure, and a cancellation reported
+failure after Paystack had already been told.
+- Added `AUDIT_LOG_CATEGORIES.SUBSCRIPTION`; briefCheck asserts **no hardcoded category string remains
+  in the file**, so a new call site can't reintroduce it with a different word.
+- **The structural fix: an audit log must never reverse the outcome the operator is shown.** New
+  `auditSafely()` swallows log failures at all four sites. **`createAuditLog` itself left alone** — 127
+  other call sites share it and widening that is a separate call.
+- Real failures now name themselves (`describeDbError`: 11000 → "Plan title already exists",
+  ValidationError → the field, CastError → the field + type); the plan write has its own try/catch so
+  the unique-title index rejecting reads as a conflict.
+- **The validation rules contradicted the model BOTH ways:** `paystackPlanCode` is `required` on the
+  model but wasn't validated (⇒ the generic error), and `itemPerMonth` was `integer|required` while the
+  model field is COMMENTED OUT — the screen was refused over a field the backend discards. Fixed both,
+  plus the swagger `Plan` schema and the required list.
+- `updatePlan` gained `runValidators: true` and now returns the saved plan (same gap as 2.1's missing
+  `GET /offers/:id`). `cancelSubscription`'s `error.response.data.message` threw on a network failure
+  and surfaced as "Failed to cancel plan" — fixed.
+- **FOUND, NOT FIXED: a 4th swagger envelope variant — 15 blocks with `success` + `error` as SIBLINGS**
+  (the three earlier sweeps only hunted `success`+`message`). Failure side this time, docs-only. Sites:
+  `/admin/search-wallet`, `/auth/login|logout|refresh-token`, `/bookOrder/create-book-order`,
+  `/api/user/get-dashboard`, `/users/update-user|initialize-payment|change-password`,
+  `/utils/image-upload-single`, `/wallet/wallet-top-up|pay-with-wallet` (+3 more). Canonical gate still
+  reads 0 because it only checks `success`+`message`.
+
 Update this as work progresses. Newest entries at the top of "Done this
 session". When a session ends/clears, fold anything durable into summary.md.
+
+## Session: 2026-10-07 — Developer Brief (6 Oct) TRIAGED + LOCKED. NO CODE YET.
+
+New client PDF: "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas" — 22 fixes, 2 new
+features, 8 questions, from their own testing 4–6 Oct. **Full plan now lives in `context/feature.md`
+as the CURRENT feature** (dispatch tag demoted to PREVIOUS). Read that first.
+
+- **SCOPE: BACKEND ONLY** (user: the FE team has its own repo, user is not on it). Every item is
+  tagged A (pure backend) / B (FE waiting on me) / C (pure FE, not mine) / D (blocked on an answer).
+- **ORDER AGREED: fixes → new features → answers.** Answers written LAST, from shipped code.
+  Deliverable = ONE copy/paste block (§1 status · §2 status · §3 answers in their
+  rule/formula/worked-example form).
+- **Their Thursday 8 Oct deadline is not achievable for all 22+2 — must tell them early** (the brief
+  explicitly asks for that). Propose Group 1 + 2.3 + 4.4 by Thursday, rest the week after.
+
+### BUILD STARTED same session — 3 items landed, offline-verified 29/29 (`node briefCheck.js`)
+NEW `briefCheck.js` at the repo ROOT (deliberately committed, not left in the scratchpad — it is the
+regression gate for the whole package and must survive a context clear). Swagger 55/281, 0 wrong
+envelopes. All touched services load.
+- **1.1 (S3 dashboard half) DONE.** `washAndDry.getDashboard`'s "Recent Wash Queue" paginated on
+  `{'items.currentStation': HERE}` while the `washQueue` COUNT beside it ALSO required
+  `'washDetails.startedAt': {$exists:false}` — the client's screenshot exactly (tab 0, list showing
+  two orders already Washing). Same filter + same derived fields on both now.
+- **4.4 DONE.** NEW `util/holdSla.js`: one `breachBranches` definition, `overdueHoldsFilter` ($or) and
+  `activeHoldsFilter` ($nor over the SAME branches) as exact complements + `isHoldBreached`. Both
+  `admin.service.js` call sites (dashboard counts, Holds Management list) use it. Harness asserts the
+  complement STRUCTURALLY so they can't drift again.
+- **2.3 DONE.** `adjustWallet` now: atomic `$inc` guarded on funds (no overdraw race) → a
+  `WalletTransaction` (`manual-adjustment`, SIGNED amount, reason, performedBy, balanceAfter,
+  relatedOrderId) → **rollback of the balance if the ledger write fails** (the ledger IS the record).
+  Fixed in passing: two un-awaited `save()`s; the audit log credited the CUSTOMER not the operator;
+  `order.userId.fullName` read off an un-populated ref. Swagger updated to the new object response.
+- **BIG ONE: 1.1.1 and 1.2 are the SAME incident and the drafts count was CORRECT.** The dashboard
+  drafts count and `getDrafts` use byte-identical queries, so 15 staying 15 means the orders never
+  left `stage.status: QUEUE`. A push S1→S2 only creates a PENDING handoff (items stay at S1 until S2
+  confirms) and S2's Accept-all was failing (1.2) — so nothing moved and the number was honest.
+  **Do NOT "fix" the drafts count.** Fix the confirm.
+### 2.4 DONE — NEW `walletLimitStaging.js` 39/39 (the client's own test)
+Per-role wallet limits + admin approval.
+- **KEY DESIGN:** NEW `services/walletAdjustment.service.js` owns ALL manual balance movement, so an
+  operator adjusting within their limit and an admin APPROVING an over-limit request run the SAME
+  `applyAdjustment` — identical ledger lines. A separate copy for approval would have quietly undone
+  2.3. The 2.3 money code moved there; `intake-user.adjustWallet` delegates.
+- Limits in **`AdminSetting.walletAdjustmentLimits` (a Map role→naira)**, defaults intake-and-tag
+  5000 / CX 10000. A Map not named fields, so a new role needs a settings edit not a deploy.
+  `updateAdminSettings` already `$set`s anything, so no service change. **No entry = 0** (everything
+  becomes a request); **admin unlimited**.
+- Over-limit returns **SUCCESS** with `requiresApproval: true` — calling it a failure would invite a
+  retry and stack duplicate requests.
+- `roleLimitAtRequest` stored so changing the setting never rewrites why approval was needed.
+- Approve **claims the request BEFORE** moving money (no double-pay) and **returns it to pending if
+  applying fails**. Reject REQUIRES a note. New admin endpoints + `WalletAdjustmentRequest` schema.
+- Brief **4.3 partly covered**: admins notified of every adjustment AND every request.
+- **briefCheck.js updated** to assert the money guarantees at their new home (34/34). All 5 DB gates
+  re-run green. **NEXT: 2.5 (false "cannot create plan"), then Group 3.**
+
+### 2.2 DONE — a REAL bug. NEW `freeLogisticsStaging.js` 23/23
+**USER CORRECTION THAT CRACKED IT: the client's "General" offer is `OFFER_TYPE.BASELINE`** (there is
+no "general" in the code). I had been testing with `promotional`, which carries an id and so was
+never affected — the bug only bites the type the client actually uses.
+- **ROOT CAUSE:** `_priceWithOffers` returned EARLY unless `post.customerOfferId || post.promoOfferId`.
+  A BASELINE offer applies BY RULE with **no linkage and no id to send**, so every one of them was
+  skipped. `offer.service.validateAndPrice` handled baselines correctly all along (`:729-743`);
+  booking never called it. The app advertised free pickup/delivery and charged ₦2,000 anyway.
+  Fix = always call `validateAndPrice` (it already tolerates no selection).
+- **Second half (the display ask):** `_buildPricing`'s `appliedOffers` was built from personal +
+  promotion ONLY, so a summary could say "Pickup: Free" with no offer name. Baselines now pushed
+  first with `type: 'baseline'`. (`pricing.appliedOffers.type` IS genuinely named `type` — it uses
+  the explicit `{ type: String }` form to dodge the Mongoose keyword, unlike `benefits.benefitType`.)
+- Verified the client's three cases + draft/archived/single-leg guards. All gates re-run green.
+- **Harness bug: the fees are on `AdminSetting`, NOT `AdminOrderDetails`** (`adminOrderSetting` at
+  `bookOrder.service.js:865` is AdminSettingModel). Reading the wrong model compared every total to
+  ₦0 and produced 9 meaningless failures.
+
+### 2.1 DONE — NEW `offerAdminStaging.js` 37/37 (runs the CLIENT'S OWN test)
+**"Offers do not save" was three separate things and the SAVE WAS NEVER BROKEN.** Create+update at
+`offerApi.service.js` persist correctly — proved by replaying their exact test (create the three
+named offers, leave, re-list, edit each, delete one).
+1. A new offer defaults to **`status: 'draft'`** → a list filtered to `status=active` can't show it.
+   That is the "gone after refresh" report, and it is **FE/workflow, not a lost save**. Say so.
+2. **No `GET /offers/:id` existed** (list/create/update only) → an edit screen had nothing to reload
+   one offer from; likeliest source of "still holds the old details". ADDED, returns
+   `linkages {live,total,deletable}`.
+3. **No delete existed at all.** ADDED, conditional: never-given → really deleted; only finished
+   linkages → ARCHIVED (history kept); customers currently hold it → refused with
+   `requiresForce:true`+count, `?force=true` cancels them and archives. `ARCHIVED` was already in
+   `OFFER_STATUS`.
+- **`CustomerOffer.cancelledAt` added at the user's request** — correct call: every other terminal
+  state stamps its own time, so a cancellation could only be inferred from `updatedAt`, which a later
+  write would clobber. Both cancel paths stamp it.
+- **Date-library question answered with evidence:** `moment` appears in only 2 files
+  (`util/lagosDay.js`, `crm.service.js`), both for calendar BUCKETING; **0 places stamp a field with
+  moment**, 64 use `new Date()`. Keep `new Date()` for instants, moment for Lagos boundaries —
+  especially since server.js pins TZ so `new Date()` is already Lagos-correct.
+- **Harness bugs (never assume a shape):** `OFFER_TYPE` is personal|promotional|baseline (no
+  "general"), and the benefit field is **`benefitType`** not `type` (Mongoose reserved keyword in a
+  subdoc — same trap already commented in `pricing.appliedOffers`). A `|| 'general'` fallback quietly
+  produced an invalid value; the harness now hard-fails if setup doesn't complete.
+
+### 1.6 DONE — GROUP 1 COMPLETE. NEW `tierPricingStaging.js` 33/33; all four gates green
+Per-item care tier, the item that moves MONEY, so it got its own harness.
+- **NEW `util/itemPricing.js`.** The maths existed as THREE near-identical copies that had **already
+  drifted** — two defaulted a missing tier charge to `|| 1`, the third to `|| 1.5`/`|| 2`, so the same
+  basket priced differently depending on which screen created the order. One helper now; fallback is
+  **1 (no uplift)** everywhere, because an unconfigured setting must never silently charge more.
+- `items[].serviceTier` (enum + null). **Absent = follow the order's tier** → existing orders and
+  callers are byte-identical. Formula and rounding position unchanged.
+- `pricing` gained `tierLines[]`/`tiersUsed[]`/`isMixedTier`; `tierMultiplier` is **null when mixed**.
+  Swagger updated on the schema AND the booking request body. `itemSummary` briefs carry the tier so
+  it reaches handoff cards / dispatch tag / station payloads.
+- **BUG 1 — three `ReferenceError`s that BOTH `node --check` AND `require()` passed.** The call sites
+  still passed `tierMultiplier: multiplier` after I deleted that variable. Only executing each branch
+  caught it. Exactly the `isWashed`-hoist lesson from 2026-10-05: **loading a service proves nothing
+  about its method bodies** — if you touch a branch, run that branch.
+- **BUG 2 — `config/setup.js` seeded the tier charges INVERTED:** `premium: 2, vip: 1.5` vs the
+  model's own defaults premium 1.5 / vip 2, so a freshly seeded DB charged MORE for Premium than for
+  VIP. Confirmed live (testingdb prices VIP ×1.5). Seed fixed. **setup.js only seeds when the doc is
+  MISSING → existing DBs keep the inverted values. CHECK THE LIVE `AdminSetting` before claiming this
+  is fixed in production.**
+- Gates after the change: tierPricing 33 · stationFlow 80 · briefCheck 29 · dispatchTag 46.
+  Swagger 55/282, 0 bad envelopes. **NEXT: Group 2 (2.1 offer DELETE, 2.2, 2.4, 2.5).**
+
+### 1.5 DONE same session — `stationFlowStaging.js` now 80/80
+NEW **`PATCH /api/sort-pretreat/order/:id/items/sort`** (`bulkSortItems`). Before this the surface was
+per-ITEM or whole-order ONLY, and the whole-order one could not set colour/pretreatment at all —
+literally the client's 1.5.1 and 1.5.2. Takes `itemIds[]`/`all`, colour, fabric, pretreatment,
+damage flags, note, `markSorted`, `sendToWash`.
+- **The "no pretreatment" machinery already existed and nothing could set it:** the enum value
+  `no_pretreatment_needed` and `pretreatStatus: 'not_required'` were both in the model, and
+  `itemCompleteAt` already accepts `not_required` — so choosing it finishes the piece at S2 with no
+  step to mark done. One line of wiring, not a feature.
+- Required-ness is enforced **at mark-sorted time**, not at save time, so the operator can work in
+  stages; messages say how many pieces are missing what.
+- **STATED ASSUMPTION to raise with the client:** the brief wants the 7 to "show in the S3 Wash Queue
+  at once" AND S3 to confirm per batch — only both true if marking sorted also HANDS OVER. So
+  completed pieces auto-push to S3 as a normal handoff; `sendToWash:false` opts out.
+- **`markItemAsPretreated` had a real split-flow bug, fixed in passing:** `allItemsSorted`/
+  `allItemsPretreated`/`readyToSend` were computed over EVERY item, so with 7 pieces already at wash
+  `readyToSend` could never turn true for the 3 left. Now station-scoped. It also hands the piece
+  over now ("those 3 then join the rest at S3").
+- Verified against the brief's OWN worked example (scenario 14), end to end, including the
+  "3 of 10 left" counter and both batches meeting at S3.
+- **Test-design lesson repeated:** two guard-rail assertions "failed" only because they ran after the
+  order had fully moved to S3, so the order-level guard fired first. The behaviour was right and the
+  test was wrong — same class of mistake as the earlier missing-`note` assertion. Guard-rail cases now
+  run against a fresh order still at the station.
+
+### 1.1 / 1.2 / 1.4 ROOT-CAUSED, REPRODUCED AND FIXED same session — DB-verified 50/50
+User supplied the testingdb URI. NEW **`stationFlowStaging.js`** (repo root): walks one order
+S1→S2→S3 through the REAL services asserting, after each move, that the station it LEFT drops it, the
+station it ENTERED lists it, and **every count equals its list**. `STAGING_OK=1 MONGODB_URL="…" node
+stationFlowStaging.js` → **50/50**. Safety-gated, hard-refuses `laundrydb`, cleans up (0 leftovers).
+- **The happy path was NEVER broken** (scenarios 1–8 green on clean data). 1.1 was not "queues are
+  wrong in general" — which is why reading the queue code kept coming up empty.
+- **REAL CAUSE, reproduced verbatim (scenario 12):** `isWholeOrderGate` is
+  `fromIdx === 0 || toIdx === last` and the only ordering rule is `toIdx > fromIdx`, so a push may
+  legitimately SKIP a station (a wash-only order really does go S3→S5 — must stay). Nothing
+  invalidated an EARLIER pending handoff when the same items left by the new route. push S1→S2 (H1)
+  → push S1→S3 (H2) → S3 confirms H2 → pieces at S3, order reads "washing", **H1 still pending** →
+  still drawn in S2's Incoming → Accept all hits `isWholeAt(INTAKE)` false → the client's exact
+  string *"…must move the whole order — all items must still be at intake-and-tag-station"*. That is
+  also how OSC-20261004-631233 was at S3 Washing AND in S2's Incoming list.
+- **FIX:** `HandoffSchema.status` gains `superseded` (+`supersededAt`/`supersededBy`); a new push
+  supersedes intersecting earlier pending handoffs from the same station (+Activity row); `confirm`
+  checks staleness BEFORE the gates and returns a plain sentence; the `status !== 'pending'` guard
+  now distinguishes confirmed/rejected/superseded; **`pendingQueue` is self-healing** and persists the
+  cleanup — **so the client's two already-stranded orders fix themselves on the next read, no
+  migration** (scenario 13 writes the damage straight to Mongo and proves it).
+- **1.4 backend half DONE:** flag + hold were verified to WORK (scenarios 9–10); they were being
+  refused and the refusal was unreadable. S2's NINE identical `'Order not found or not in sort &
+  pretreat stage'` guards now call NEW `explainNotAtSort(orderId)` — one extra read, a sentence that
+  names the order and where it actually is. Swagger `Handoff` schema updated (55/281, 0 bad
+  envelopes). The "display the error" half remains FE (Bucket C).
+- **Harness bugs the run found (worth remembering):** `sendToHold` takes `itemId` as a ROUTE PARAM and
+  requires `assignTo`; `flagItemForReview` requires a `note` — a first draft "passed" a station-guard
+  assertion that was actually failing on a missing note, i.e. the test was green for the wrong reason.
+
+### Verified against the code BEFORE planning (these are findings, not guesses)
+- **1.1 root cause — TWO parallel notions of "where is this order".** S2 `sortAndPretreat.service.js`
+  filters `stage.status === sort-and-pretreat` at ORDER level (~15 sites); S3/S4 filter
+  `items[].currentStation` at ITEM level; `handoff.service.js:351-369` only rewrites `stage.status`
+  when `summaryStatus()` CHANGES, which a partial move doesn't. So an order is legitimately in BOTH
+  lists. This is decision D3 from the split-flow work coming home — S2 was deliberately left on
+  `stage.status` and that is now the bug.
+- **1.2 is NOT its own bug** — the red message is `handoff.service.js:280`, the CONFIRM-side
+  whole-order gate, firing because the items already left S1. Symptom of 1.1.
+- **2.3 CONFIRMED BUG:** `intake-user.service.js:867 adjustWallet` mutates `wallet.balance` and writes
+  NO `WalletTransaction` at all; both `save()` calls un-awaited.
+- **4.4 CONFIRMED BUG:** `admin.service.js:349/:353` — `activeHolds` is ALL holds, `overdueHolds` is a
+  strict SUBSET of it. Duplicated at `:1692/:1696`.
+- **3.1 is probably NOT "doesn't save"** — `intake-user.service.js:1340` really writes the rider. The
+  dispatch-tag gate at `:1331` refuses with `needsDispatchTag` and the FE swallows it.
+- **2.1:** create/update at `offerApi.service.js:125/168` are CORRECT and persist; what is genuinely
+  missing is a DELETE route (`util/page-route.js:250-261`). "Gone after refresh" is most likely
+  offers defaulting to `status: draft` against an active-filtered list.
+- **1.5:** only per-item + all-items endpoints exist (`:276`, `:473`, `:665`) — no bulk endpoint, which
+  is exactly the "cannot select a few" complaint. Model ALREADY has `colorGroup`/`fabricType`/
+  `pretreatmentOptions` + a `not_required` pretreatStatus (bookOrder.model.js:62-94).
+- **3.2/3.3 are cheap:** `PICKUP_STATUS.FAILED` exists (constants.js:32); `landmark` exists on
+  `user.model.js:10` and in `util/address.js`'s structured address.
+- **1.3 IS ALREADY FIXED HERE BUT NOT DEPLOYED** — the 2026-10-05/06 wash-station work is on
+  `mesage-and-alert-fix`; Render serves `main`. Same stale-deploy pattern as 2026-09-25. Merging also
+  ships the dispatch-tag gate, which may change 3.1.
+- **1.6 (per-item care tier) is the money risk** — it moves pricing that booking, the bot, offers and
+  subscription draw-down all share. Scheduled LAST in Group 1 with its own DB harness.
+- **4.5 is blocked on their own Q2/Q3** and the 125% case was already fixed 2026-09-23; 100% may now
+  simply be true. Do NOT change the formula on a guess — answer it in §3.
 
 ## Session: 2026-09-24 (cont.) — Dispatch Tag PLANNED + the 2 flagged debts moved INTO plan (NO CODE)
 

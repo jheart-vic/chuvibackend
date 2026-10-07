@@ -5,14 +5,25 @@
 // Extracted from handoff.service.js so the dispatch tag renders an order's
 // contents with the exact same wording the handoff payloads use.
 
+// Brief 4.6: the stored type is a slug ("Shirts-/-tops-/-blouses"). These briefs
+// ARE the display payload for every station card, the dispatch tag and the
+// handoff screens, so they carry the readable form — with rawType beside it for
+// anything that needs the stored value.
+const { prettifyName } = require('./displayName')
+
 function itemBrief(items, id) {
     const it = (items || []).find((i) => String(i._id) === String(id))
-    if (!it) return { itemId: String(id), name: 'Item', quantity: 1 }
+    if (!it) return { itemId: String(id), name: 'Item', rawType: null, quantity: 1 }
     return {
         itemId: String(it._id),
         tagId: it.tagId || '',
-        name: it.type,
+        name: prettifyName(it.type),
+        rawType: it.type,
         quantity: it.quantity || 1,
+        // Care tier for this piece — the brief asks for the tier to show on the
+        // item's tag and on its card at every station (6 Oct 2026, item 1.6).
+        // null means the piece follows the order's tier.
+        serviceTier: it.serviceTier || null,
     }
 }
 
@@ -25,8 +36,10 @@ function briefsForAll(items) {
     return (items || []).map((it) => ({
         itemId: String(it._id),
         tagId: it.tagId || '',
-        name: it.type,
+        name: prettifyName(it.type),
+        rawType: it.type,
         quantity: it.quantity || 1,
+        serviceTier: it.serviceTier || null,
     }))
 }
 
@@ -40,7 +53,10 @@ function summarize(briefs) {
     }
     return Object.entries(counts)
         .map(([name, c]) => {
-            const label = name.charAt(0).toUpperCase() + name.slice(1)
+            // prettifyName also handles a raw slug, so this reads the same whether
+            // the brief came from itemBrief (already readable) or a caller that
+            // built its own list from the stored type.
+            const label = prettifyName(name) || 'Item'
             return `${c} ${c > 1 && !/s$/i.test(label) ? `${label}s` : label}`
         })
         .join(', ')

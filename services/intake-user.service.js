@@ -7,7 +7,10 @@ const NotificationModel = require('../models/notification.model')
 const PaymentModel = require('../models/payment.model')
 const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
+const WalletTransactionModel = require('../models/walletTransaction.model')
+const WalletAdjustmentService = require('./walletAdjustment.service')
 const {
+    WALLET_TX_TYPE,
     PAYMENT_ORDER_STATUS,
     BILLING_TYPE,
     ORDER_CHANNEL,
@@ -31,7 +34,9 @@ const {
     roundToNearestHundred,
     calculateDueDate,
     getObjectId,
+    normalizePhone,
 } = require('../util/helper')
+const { priceItems } = require('../util/itemPricing')
 const paginate = require('../util/paginate')
 const { presentOrder } = require('../util/orderView')
 const sendSms = require('../util/sendSms')
@@ -52,6 +57,50 @@ const {
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 const BaseService = require('./base.service')
+const mongoose = require('mongoose')
+const { GENERAL_STATUS } = require('../util/constants')
+
+// ── Rider assignment (brief 3.1, "assigning a rider does not save") ──────────
+// NOTHING used to check that the id in the URL was a rider. Two ways that read
+// as "it didn't save":
+//   * a value that isn't an ObjectId → Mongoose CastError on the $set → the
+//     catch returns the generic "Failed to assign rider to order", and nothing
+//     IS written;
+//   * a valid ObjectId that is not a rider (a customer, a deleted staff member,
+//     a stale id) → the write SUCCEEDS, but the queue populates the ref to
+//     `null`, so the row comes back reading `needsRider: true` again. The
+//     assignment really is there; the screen cannot show it.
+// Resolve the rider up front and refuse by name instead.
+async function resolveRider(riderId) {
+    if (!mongoose.Types.ObjectId.isValid(riderId)) {
+        return { ok: false, error: 'That rider id is not valid.' }
+    }
+    const rider = await UserModel.findById(riderId).select(
+        'fullName phoneNumber userType status',
+    )
+    if (!rider) {
+        return { ok: false, error: 'That rider no longer exists.' }
+    }
+    if (rider.userType !== ROLE.RIDER) {
+        return {
+            ok: false,
+            error: `${rider.fullName || 'That account'} is not a rider, so the order cannot be assigned to them.`,
+        }
+    }
+    if (rider.status !== GENERAL_STATUS.ACTIVE) {
+        return {
+            ok: false,
+            error: `${rider.fullName || 'That rider'} is ${rider.status}, so they cannot be assigned a run.`,
+        }
+    }
+    return { ok: true, rider }
+}
+
+// The activity row, the rider's notification and the audit line all run AFTER
+// the assignment is written, and each one rethrows. Any of them failing used to
+// surface as "Failed to assign rider to order" with the rider already assigned —
+// the same false-failure shape as brief items 2.5 and 4.1. See util/safeLog.js.
+const { logSafely } = require('../util/safeLog')
 
 class IntakeUserService extends BaseService {
     async createBookOrder(req, res) {
@@ -86,6 +135,9 @@ class IntakeUserService extends BaseService {
                 'items.*.type': 'string|required',
                 'items.*.price': 'integer|required',
                 'items.*.quantity': 'integer|required',
+                // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
+                // piece is priced at the order's tier, exactly as before.
+                'items.*.serviceTier': 'string|in:classic,premium,vip',
             }
 
             const validateMessage = {
@@ -104,6 +156,10 @@ class IntakeUserService extends BaseService {
                     error: validateResult.data,
                 })
             }
+
+            // Brief 4.6 — one stored phone format, so the same customer is never
+            // two profiles (CRM links identity by the normalised phone).
+            if (post.phoneNumber) post.phoneNumber = normalizePhone(post.phoneNumber)
 
             // Structured addresses (label + landmark required on staff intake).
             if (post.isPickUp) {
@@ -136,35 +192,17 @@ class IntakeUserService extends BaseService {
                 ? matchedService.pricePerPiece
                 : 1
 
-            const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1
-            const VIP = adminOrderSetting.vipServiceTierCharge || 1
-
-            let multiplier = 1
-            if (post.serviceTier === SERVICE_TIERS.PREMIUM) multiplier = PREMIUM
-            if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
-
-            let totalPrice = post.items.reduce((sum, item) => {
-                const price = Number(item.price)
-                const quantity = Number(item.quantity)
-
-                return (
-                    sum +
-                    roundToNearestHundred(price * serviceTypeMultiplier) *
-                        quantity *
-                        multiplier
-                )
-            }, 0)
-
-            // CLASSIC-tier subtotal (multiplier 1) for the receipt's tier-uplift line.
-            const itemsBase = post.items.reduce((sum, item) => {
-                const price = Number(item.price)
-                const quantity = Number(item.quantity)
-                return (
-                    sum +
-                    roundToNearestHundred(price * serviceTypeMultiplier) *
-                        quantity
-                )
-            }, 0)
+            // Per-item care tier (brief 1.6) — same helper the two customer
+            // booking branches use, so a staff-created order prices identically.
+            const priced = priceItems({
+                items: post.items,
+                serviceTypeMultiplier,
+                orderTier: post.serviceTier,
+                adminOrderSetting,
+            })
+            let totalPrice = priced.total
+            // CLASSIC-tier subtotal for the receipt's tier-uplift line.
+            const itemsBase = priced.itemsBase
             const itemsSubtotal = totalPrice
 
             let speedCharge = 0
@@ -229,7 +267,12 @@ class IntakeUserService extends BaseService {
             newOrder.pricing = new BookOrderService()._buildPricing({
                 serviceTier: post.serviceTier,
                 itemsBase,
-                tierMultiplier: multiplier,
+                tierMultiplier: priced.isMixedTier
+                        ? null
+                        : priced.lines[0]?.tierMultiplier ?? 1,
+                    tierLines: priced.lines,
+                    tiersUsed: priced.tiersUsed,
+                    isMixedTier: priced.isMixedTier,
                 itemsSubtotal,
                 speedCharge,
                 pickupFee,
@@ -867,7 +910,8 @@ class IntakeUserService extends BaseService {
     async adjustWallet(req) {
         try {
             const orderId = req.params.id
-            const userId = req.params.userId
+            const userId = req.params.userId // the CUSTOMER whose wallet moves
+            const staffId = req.user?.id // the operator doing it
             const post = req.body
 
             if (!orderId) {
@@ -889,6 +933,12 @@ class IntakeUserService extends BaseService {
                     error: 'User not found',
                 })
             }
+
+            // Who performed it — needed on the ledger line and the audit entry.
+            // Both used to be attributed to the CUSTOMER, which made "who did
+            // it" unanswerable (brief 2.3 asks for exactly that field).
+            const staff = staffId ? await UserModel.findById(staffId) : null
+            const staffName = staff?.fullName || 'staff'
 
             const validateRule = {
                 message: 'string|required',
@@ -915,6 +965,12 @@ class IntakeUserService extends BaseService {
 
             const { type, message, amount } = post
 
+            if (!Number.isFinite(amount) || amount <= 0) {
+                return BaseService.sendFailedResponse({
+                    error: 'Adjustment amount must be greater than zero',
+                })
+            }
+
             const wallet = await WalletModel.findOne({ userId })
 
             if (!wallet) {
@@ -923,45 +979,129 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            if (type === 'credit') {
-                wallet.balance += amount
-                wallet.save()
-            } else {
-                if (wallet.balance < amount) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Insufficient balance',
-                    })
-                }
-                wallet.balance -= amount
-                wallet.save()
+            // Client brief 6 Oct 2026, item 2.4: an operator may adjust up to
+            // their ROLE's limit, which the admin sets in settings. Above it,
+            // NOTHING moves — the adjustment becomes a request for an admin.
+            const roleLimit = await WalletAdjustmentService.getRoleLimit(
+                staff?.userType,
+            )
+            if (amount > roleLimit) {
+                const request = await WalletAdjustmentService.createRequest({
+                    userId,
+                    amount,
+                    type,
+                    reason: message,
+                    requestedBy: staffId,
+                    requestedByRole: staff?.userType,
+                    roleLimit: Number.isFinite(roleLimit) ? roleLimit : 0,
+                    orderId: order._id,
+                    orderRef: order.oscNumber,
+                    customerName: order.fullName,
+                    requestedByName: staffName,
+                })
+                // Deliberately a SUCCESS: the operator did everything right and
+                // their request was recorded. Telling them it "failed" would
+                // invite them to retry and stack duplicate requests.
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        requiresApproval: true,
+                        requestId: request._id,
+                        status: request.status,
+                        type,
+                        amount,
+                        reason: message,
+                        roleLimit: Number.isFinite(roleLimit) ? roleLimit : 0,
+                        balance: wallet.balance, // unchanged
+                        message: `₦${amount} is above your ₦${Number.isFinite(roleLimit) ? roleLimit : 0} limit, so it has been sent to an admin to approve. Nothing has changed in the wallet yet.`,
+                    },
+                })
             }
+
+            // Within the limit: move it now. The money path is shared with
+            // admin approval (walletAdjustment.service) so an approved ₦10,000
+            // and an allowed ₦3,000 produce identical ledger lines (item 2.3).
+            let applied
+            try {
+                applied = await WalletAdjustmentService.applyAdjustment({
+                    userId,
+                    amount,
+                    type,
+                    reason: message,
+                    performedBy: staffId,
+                    performedByName: staffName,
+                    orderId: order._id,
+                    orderRef: order.oscNumber,
+                })
+            } catch (adjustError) {
+                return BaseService.sendFailedResponse({
+                    error: adjustError.message || 'Failed to adjust the wallet',
+                })
+            }
+            const updatedWallet = applied.wallet
+            const ledgerEntry = applied.ledgerEntry
 
             order.adjustWallet.message = message
             order.adjustWallet.amount = amount
-            order.save()
+            await order.save({ validateBeforeSave: false })
 
             await ActivityModel.create({
                 title: 'Wallet Adjustment',
-                description: `${type === 'credit' ? 'Credited' : 'Debited'} ${amount} to wallet of ${order.userId.fullName} with ${order.userId.phoneNumber}. Reason: ${message}`,
+                description: `${type === 'credit' ? 'Credited' : 'Debited'} ₦${amount} ${type === 'credit' ? 'to' : 'from'} the wallet of ${order.fullName} (${order.phoneNumber}) by ${staffName}. Reason: ${message}`,
                 type: ACTIVITY_TYPE.WALLET_ADJUSTMENT,
+                orderId: order._id,
+                userId: getObjectId(staffId),
+                reference: order.oscNumber,
             })
 
             await createNotification({
                 userId,
                 title: `Wallet ${type === 'credit' ? 'Credit' : 'Debit'} Notification`,
-                body: `Your wallet has been ${type === 'credit' ? 'credited' : 'debited'} with ${amount}.`,
+                body: `Your wallet has been ${type === 'credit' ? 'credited' : 'debited'} with ₦${amount}.`,
                 subBody: `Reason: ${message}`,
                 type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
             })
-            await createAuditLog({userId: getObjectId(userId), action: `Adjusted wallet with a ${type} of ₦${amount} for user ${order.userId.fullName} with message: ${message}`, category: 'wallet', orderId: order._id})
+            // Audit the OPERATOR, not the customer — this records who acted.
+            await createAuditLog({
+                userId: getObjectId(staffId),
+                action: `Adjusted wallet (${type} ₦${amount}) for ${order.fullName} (${order.phoneNumber}) on order ${order.oscNumber}. Reason: ${message}. New balance: ₦${updatedWallet.balance}`,
+                category: 'wallet',
+                orderId: order._id,
+            })
+
+            // Brief 4.3: the admin must hear about every adjustment, not only
+            // the ones that needed approving. Fire-and-forget.
+            await WalletAdjustmentService.notifyAdmins({
+                title: 'Wallet adjusted',
+                body: `${staffName} ${type === 'credit' ? 'credited' : 'debited'} ₦${amount} ${type === 'credit' ? 'to' : 'from'} ${order.fullName}. Reason: ${message}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.WALLET_ADJUSTMENT,
+            })
 
             return BaseService.sendSuccessResponse({
-                message: `Wallet ${type} request successful of ${amount} Reason: ${message}`,
+                message: {
+                    requiresApproval: false,
+                    type,
+                    amount,
+                    reason: message,
+                    balance: updatedWallet.balance,
+                    performedBy: staffId,
+                    roleLimit: Number.isFinite(roleLimit) ? roleLimit : null,
+                    // The ledger line this adjustment created — the customer
+                    // and the admin both read the same row (brief 2.3).
+                    transaction: {
+                        id: ledgerEntry._id,
+                        type: ledgerEntry.type,
+                        amount: ledgerEntry.amount,
+                        reason: ledgerEntry.reason,
+                        balanceAfter: ledgerEntry.balanceAfter,
+                        createdAt: ledgerEntry.createdAt,
+                    },
+                },
             })
         } catch (error) {
             console.log(error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to flag order',
+                error: 'Failed to adjust the wallet',
             })
         }
     }
@@ -1011,6 +1151,7 @@ class IntakeUserService extends BaseService {
             search = '',
             needsRider,
             paymentStatus,
+            legStatus,
         } = req.query
 
         const query = { [flag]: true, 'stage.status': stage }
@@ -1018,6 +1159,29 @@ class IntakeUserService extends BaseService {
         if (needsRider === 'false')
             query[`dispatchDetails.${leg}.rider`] = { $ne: null }
         if (paymentStatus) query.paymentStatus = paymentStatus
+        // Brief 3.2 — a failed pickup keeps its stage (still PENDING) and keeps
+        // its rider, so it sat in this queue looking like an ordinary assigned
+        // run with nothing to filter on and no count to notice. `legStatus`
+        // filters the leg's own status; `legStatus=failed` IS the failed-pickups
+        // view. Unknown values are refused rather than silently returning
+        // everything, which would read as "the filter does nothing".
+        const legStatuses = Object.values(
+            leg === 'pickup' ? PICKUP_STATUS : DELIVERY_STATUS,
+        )
+        if (legStatus) {
+            const wanted = String(legStatus)
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            const unknown = wanted.filter((s) => !legStatuses.includes(s))
+            if (unknown.length) {
+                return BaseService.sendFailedResponse({
+                    error: `Unknown ${leg} status: ${unknown.join(', ')}. Valid values: ${legStatuses.join(', ')}.`,
+                })
+            }
+            query[`dispatchDetails.${leg}.status`] =
+                wanted.length === 1 ? wanted[0] : { $in: wanted }
+        }
         if (search) {
             query.$or = [
                 { oscNumber: { $regex: search, $options: 'i' } },
@@ -1054,11 +1218,39 @@ class IntakeUserService extends BaseService {
             )
             const printCount = o.dispatchTag?.printCount || 0
             const tagPrinted = isTagPrinted(o)
+            const legState = o.dispatchDetails?.[leg]?.status || null
             return {
                 ...presentOrder(o),
                 itemCount: (o.items || []).length,
                 needsRider: !o.dispatchDetails?.[leg]?.rider,
                 rider: o.dispatchDetails?.[leg]?.rider || null,
+                // The leg's own status, and whether this run FAILED — a failed
+                // pickup is otherwise indistinguishable from a healthy assigned
+                // one on this screen (3.2). `legNote` carries the rider's reason.
+                legStatus: legState,
+                failed:
+                    legState ===
+                    (leg === 'pickup'
+                        ? PICKUP_STATUS.FAILED
+                        : DELIVERY_STATUS.FAILED),
+                // The failure reason first, then the operational note. A failed
+                // row's reason is what the office needs to act on.
+                legNote:
+                    o.dispatchDetails?.[leg]?.failureNote ||
+                    o.dispatchDetails?.[leg]?.note ||
+                    null,
+                // 3.3 — presentOrder already returns the structured address, so
+                // the landmark was there; this lifts the leg's own one to the top
+                // of the row so a list can show it beside the address.
+                landmark:
+                    (leg === 'pickup' ? o.pickupAddress : o.deliveryAddress)
+                        ?.landmark || null,
+                // The customer app does not ask for a landmark yet (staff intake
+                // does). Orders that still have none are flagged rather than
+                // silently sending a rider to an address with no directions.
+                landmarkMissing: !(leg === 'pickup'
+                    ? o.pickupAddress
+                    : o.deliveryAddress)?.landmark,
                 paid: o.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS,
                 waitingMinutes,
                 waitingDays: Math.floor(waitingMinutes / 1440),
@@ -1081,6 +1273,19 @@ class IntakeUserService extends BaseService {
                     'stage.status': stage,
                     [`dispatchDetails.${leg}.rider`]: null,
                 }),
+                // Counted over the whole queue, NOT the filtered page, so the
+                // tab can show "Failed (3)" while another filter is applied —
+                // the 1.1 lesson about a count and its list disagreeing applies
+                // in reverse here: this count deliberately describes the tab it
+                // belongs to, and `legStatus=failed` returns exactly these rows.
+                failedCount: await BookOrderModel.countDocuments({
+                    [flag]: true,
+                    'stage.status': stage,
+                    [`dispatchDetails.${leg}.status`]:
+                        leg === 'pickup'
+                            ? PICKUP_STATUS.FAILED
+                            : DELIVERY_STATUS.FAILED,
+                }),
                 ...(isDeliveryLeg && {
                     needsTagCount: await BookOrderModel.countDocuments({
                         [flag]: true,
@@ -1090,6 +1295,69 @@ class IntakeUserService extends BaseService {
                 }),
             },
         })
+    }
+
+    // The "assign a rider" screen had NO backend list of riders to choose from —
+    // there was no endpoint anywhere that returned them, which is the likeliest
+    // reason ids that are not riders were reaching the assignment call (3.1).
+    // Active riders only, with what each one is already carrying, so S1 can
+    // spread the work instead of guessing.
+    async getRiders(req) {
+        try {
+            const { search = '', includeInactive } = req.query
+
+            const query = { userType: ROLE.RIDER }
+            if (includeInactive !== 'true') query.status = GENERAL_STATUS.ACTIVE
+            if (search) {
+                query.$or = [
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
+
+            const riders = await UserModel.find(query)
+                .select('fullName phoneNumber email status image')
+                .sort({ fullName: 1 })
+                .lean()
+
+            const rows = await Promise.all(
+                riders.map(async (rider) => {
+                    const [activePickups, activeDeliveries] = await Promise.all([
+                        BookOrderModel.countDocuments({
+                            'dispatchDetails.pickup.rider': rider._id,
+                            'dispatchDetails.pickup.status': {
+                                $in: [
+                                    PICKUP_STATUS.SCHEDULED,
+                                    PICKUP_STATUS.PICKUP_IN_PROGRESS,
+                                ],
+                            },
+                        }),
+                        BookOrderModel.countDocuments({
+                            'dispatchDetails.delivery.rider': rider._id,
+                            'dispatchDetails.delivery.status': {
+                                $in: [
+                                    DELIVERY_STATUS.READY,
+                                    DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                                ],
+                            },
+                        }),
+                    ])
+                    return {
+                        ...rider,
+                        activePickups,
+                        activeDeliveries,
+                        activeRuns: activePickups + activeDeliveries,
+                    }
+                }),
+            )
+
+            return BaseService.sendSuccessResponse({ message: rows })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to get riders',
+            })
+        }
     }
 
     // ── Dispatch Tag ───────────────────────────────────────────────────────────
@@ -1253,10 +1521,11 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            // order.dispatchDetails.delivery.rider = riderId
-            // order.dispatchDetails.delivery.status = DELIVERY_STATUS.READY
-            // order.dispatchDetails.delivery.updatedAt = new Date()
-            // order.save()
+            const resolved = await resolveRider(riderId)
+            if (!resolved.ok) {
+                return BaseService.sendFailedResponse({ error: resolved.error })
+            }
+            const rider = resolved.rider
 
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
@@ -1275,26 +1544,50 @@ class IntakeUserService extends BaseService {
                 { runValidators: false },
             )
 
-            await ActivityModel.create({
-                title: 'Dispach Run Created',
-                description: `Order ${order.oscNumber}: ${order.items.length} assigned for pickup`,
-                type: ACTIVITY_TYPE.ORDER_PICKED,
-                orderId: order._id,
-                userId: riderId,
-                reference: order.oscNumber,
-            })
+            // Past this point the rider IS assigned — see logSafely above.
+            await logSafely(
+                'Pickup assignment activity',
+                ActivityModel.create({
+                    title: 'Dispach Run Created',
+                    description: `Order ${order.oscNumber}: ${order.items.length} assigned for pickup`,
+                    type: ACTIVITY_TYPE.ORDER_PICKED,
+                    orderId: order._id,
+                    userId: riderId,
+                    reference: order.oscNumber,
+                }),
+            )
+            await logSafely(
+                'Pickup assignment notification',
+                createNotification({
+                    userId: riderId,
+                    title: 'New Pickup Assignment',
+                    body: `You have been assigned to pick up order ${order.oscNumber}.`,
+                    subBody: `Please check your dispatch dashboard for details.`,
+                    type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
+                }),
+            )
+            await logSafely(
+                'Pickup assignment audit',
+                createAuditLog({
+                    userId: getObjectId(riderId),
+                    action: `Assigned to pickup for order ${order.oscNumber}`,
+                    category: 'dispatch',
+                    orderId: order._id,
+                }),
+            )
 
-            await createNotification({
-                userId: riderId,
-                title: 'New Pickup Assignment',
-                body: `You have been assigned to pick up order ${order.oscNumber}.`,
-                subBody: `Please check your dispatch dashboard for details.`,
-                type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
-            })
-            await createAuditLog({userId: getObjectId(riderId), action: `Assigned to pickup for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
-
+            // The assigned rider goes back with the response so the row can be
+            // redrawn without a refetch (the old reply said only "successfully",
+            // which is why a failed populate looked like a failed save).
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
+                rider: {
+                    _id: rider._id,
+                    fullName: rider.fullName,
+                    phoneNumber: rider.phoneNumber,
+                },
+                leg: 'pickup',
+                pickupStatus: PICKUP_STATUS.SCHEDULED,
             })
         } catch (error) {
             console.log(error)
@@ -1340,6 +1633,12 @@ class IntakeUserService extends BaseService {
                 })
             }
 
+            const resolved = await resolveRider(riderId)
+            if (!resolved.ok) {
+                return BaseService.sendFailedResponse({ error: resolved.error })
+            }
+            const rider = resolved.rider
+
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
@@ -1357,26 +1656,47 @@ class IntakeUserService extends BaseService {
                 { runValidators: false },
             )
 
-            await ActivityModel.create({
-                title: 'Dispach Run Created',
-                description: `Order ${order.oscNumber}: ${order.items.length} assigned for delivery`,
-                type: ACTIVITY_TYPE.ORDER_DELIVERED,
-                orderId: order._id,
-                userId: riderId,
-                reference: order.oscNumber,
-            })
-
-            await createNotification({
-                userId: riderId,
-                title: 'New Delivery Assignment',
-                body: `You have been assigned to deliver order ${order.oscNumber}.`,
-                subBody: `Please check your dispatch dashboard for details.`,
-                type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
-            })
-            await createAuditLog({userId: getObjectId(riderId), action: `Assigned to delivery for order ${order.oscNumber}`, category: 'dispatch', orderId: order._id})
+            // Past this point the rider IS assigned — see logSafely above.
+            await logSafely(
+                'Delivery assignment activity',
+                ActivityModel.create({
+                    title: 'Dispach Run Created',
+                    description: `Order ${order.oscNumber}: ${order.items.length} assigned for delivery`,
+                    type: ACTIVITY_TYPE.ORDER_DELIVERED,
+                    orderId: order._id,
+                    userId: riderId,
+                    reference: order.oscNumber,
+                }),
+            )
+            await logSafely(
+                'Delivery assignment notification',
+                createNotification({
+                    userId: riderId,
+                    title: 'New Delivery Assignment',
+                    body: `You have been assigned to deliver order ${order.oscNumber}.`,
+                    subBody: `Please check your dispatch dashboard for details.`,
+                    type: NOTIFICATION_TYPE.DISPATCH_ASSIGNMENT,
+                }),
+            )
+            await logSafely(
+                'Delivery assignment audit',
+                createAuditLog({
+                    userId: getObjectId(riderId),
+                    action: `Assigned to delivery for order ${order.oscNumber}`,
+                    category: 'dispatch',
+                    orderId: order._id,
+                }),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Rider successfully assigned to order',
+                rider: {
+                    _id: rider._id,
+                    fullName: rider.fullName,
+                    phoneNumber: rider.phoneNumber,
+                },
+                leg: 'delivery',
+                deliveryStatus: DELIVERY_STATUS.READY,
             })
         } catch (error) {
             console.log(error)

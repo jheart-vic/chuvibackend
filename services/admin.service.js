@@ -12,6 +12,9 @@ const UpdateFundModel = require('../models/updateFund.model')
 const UserModel = require('../models/user.model')
 const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
+const WalletAdjustmentRequestModel = require('../models/walletAdjustmentRequest.model')
+const WalletAdjustmentService = require('./walletAdjustment.service')
+const { logSafely } = require('../util/safeLog')
 const {
     ORDER_STATUS,
     PAYMENT_ORDER_STATUS,
@@ -22,8 +25,13 @@ const {
     DELIVERY_SPEED,
     ROLE,
     ACTIVITY_TYPE,
+    WALLET_ADJUSTMENT_REQUEST_STATUS,
 } = require('../util/constants')
 const { presentOrder } = require('../util/orderView')
+const {
+    activeHoldsFilter,
+    overdueHoldsFilter,
+} = require('../util/holdSla')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const { getObjectId } = require('../util/helper')
@@ -346,36 +354,17 @@ class AdminService extends BaseService {
             })
 
             // ── Holds ───────────────────────────────────────────────────────
-            const activeHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-            })
+            // Active = on hold and still inside its SLA; Overdue = on hold and
+            // past it. The two filters are exact complements ($nor vs $or over
+            // the same branches), so no order is in both and the counts sum to
+            // all holds — client brief 4.4, where both cards showed the same 3.
+            const activeHolds = await BookOrderModel.countDocuments(
+                activeHoldsFilter(now),
+            )
 
-            const overdueHolds = await BookOrderModel.countDocuments({
-                'stage.status': ORDER_STATUS.HOLD,
-                $or: [
-                    {
-                        deliverySpeed: DELIVERY_SPEED.SAME_DAY,
-                        'stage.updatedAt': {
-                            $lt: new Date(now - 2 * 60 * 60 * 1000),
-                        },
-                    },
-                    {
-                        deliverySpeed: DELIVERY_SPEED.EXPRESS,
-                        'stage.updatedAt': {
-                            $lt: new Date(now - 4 * 60 * 60 * 1000),
-                        },
-                    },
-                    {
-                        deliverySpeed: DELIVERY_SPEED.STANDARD,
-                        'stage.updatedAt': {
-                            $lt: new Date(now - 6 * 60 * 60 * 1000),
-                        },
-                    },
-                    {
-                        deliveryDate: { $lt: now },
-                    },
-                ],
-            })
+            const overdueHolds = await BookOrderModel.countDocuments(
+                overdueHoldsFilter(now),
+            )
 
             const expiringTodayHolds = await BookOrderModel.countDocuments({
                 'stage.status': ORDER_STATUS.HOLD,
@@ -1293,6 +1282,66 @@ class AdminService extends BaseService {
             })
         }
     }
+    // ── Wallet adjustment approvals (client brief 2.4) ──────────────────────
+    // Staff adjustments above their role's limit land here and move no money
+    // until an admin decides. Mirrors how top-up requests reach the dashboard.
+    async getWalletAdjustmentRequests(req) {
+        try {
+            const { status, page, limit } = req.query
+            const filter = {}
+            // Default to what needs a decision — the dashboard's job.
+            filter.status = status || WALLET_ADJUSTMENT_REQUEST_STATUS.PENDING
+            if (status === 'all') delete filter.status
+
+            const result = await paginate(
+                WalletAdjustmentRequestModel,
+                filter,
+                {
+                    page,
+                    limit,
+                    sort: { createdAt: -1 },
+                    populate: [
+                        { path: 'userId', select: 'fullName email phoneNumber' },
+                        { path: 'requestedBy', select: 'fullName userType' },
+                        { path: 'decidedBy', select: 'fullName' },
+                        { path: 'orderId', select: 'oscNumber' },
+                    ],
+                    lean: true,
+                },
+            )
+            return BaseService.sendSuccessResponse({ message: result })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch wallet adjustment requests',
+            })
+        }
+    }
+
+    async approveWalletAdjustment(req) {
+        return WalletAdjustmentService.decideRequest({
+            requestId: req.params.id,
+            approve: true,
+            adminId: req.user.id,
+            note: req.body?.note || '',
+        })
+    }
+
+    async rejectWalletAdjustment(req) {
+        const note = req.body?.note || ''
+        if (!note.trim()) {
+            return BaseService.sendFailedResponse({
+                error: 'A note is required when rejecting a wallet adjustment, so the operator knows why.',
+            })
+        }
+        return WalletAdjustmentService.decideRequest({
+            requestId: req.params.id,
+            approve: false,
+            adminId: req.user.id,
+            note,
+        })
+    }
+
     async getPaymentVerificationQueue(req, res) {
         try {
             const result = await paginate(
@@ -1689,37 +1738,14 @@ class AdminService extends BaseService {
             let filter = {}
 
             switch (type) {
+                // Same two filters the dashboard cards count with, so the list
+                // behind each card always matches the number on it (brief 4.4).
                 case 'activeHolds':
-                    filter = { 'stage.status': ORDER_STATUS.HOLD }
+                    filter = activeHoldsFilter(now)
                     break
 
                 case 'overdueHolds':
-                    filter = {
-                        'stage.status': ORDER_STATUS.HOLD,
-                        $or: [
-                            {
-                                deliverySpeed: DELIVERY_SPEED.SAME_DAY,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 2 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliverySpeed: DELIVERY_SPEED.EXPRESS,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 4 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliverySpeed: DELIVERY_SPEED.STANDARD,
-                                'stage.updatedAt': {
-                                    $lt: new Date(now - 6 * 60 * 60 * 1000),
-                                },
-                            },
-                            {
-                                deliveryDate: { $lt: now },
-                            },
-                        ],
-                    }
+                    filter = overdueHoldsFilter(now)
                     break
 
                 case 'expiringToday':
@@ -2092,41 +2118,55 @@ class AdminService extends BaseService {
                 })
             }
 
-            await UpdateFundModel.create({
-                userId,
-                amount,
-                type: 'credit',
-                ...(message && { message }),
-            })
-
-            const wallet = await WalletModel.findOne({ userId })
-
-            if (!wallet) {
+            // Brief 2.3/2.4 (found while answering 4.3): this admin path kept its
+            // OWN copy of the money code — a non-atomic `balance += amount` after a
+            // separate read, and a ledger line with no performedBy, no balanceAfter
+            // and no rollback. That is exactly what 2.3 fixed on the intake path, so
+            // route it through the one shared mover: an admin's adjustment and an
+            // operator's now produce identical ledger lines.
+            let ledger
+            try {
+                ledger = await WalletAdjustmentService.applyAdjustment({
+                    userId,
+                    amount,
+                    type: 'credit',
+                    reason: message || 'Admin added fund to wallet',
+                    performedBy: req.user?.id,
+                    performedByName: 'Admin',
+                })
+            } catch (error) {
                 return BaseService.sendFailedResponse({
-                    error: 'Wallet not found for user',
+                    error: error.message || 'Failed to add fund to wallet',
                 })
             }
-            wallet.balance += amount
-            await wallet.save()
 
-            await WalletTransactionModel.create({
-                userId,
-                type: 'credit',
-                amount,
-                status: 'success',
-                description: message || 'Admin added fund to wallet',
-            })
+            // Kept: the existing UpdateFund row other screens read.
+            await logSafely(
+                'Admin fund-add record',
+                UpdateFundModel.create({
+                    userId,
+                    amount,
+                    type: 'credit',
+                    ...(message && { message }),
+                }),
+            )
 
-            await createNotification({
-                userId: userId,
-                title: 'Wallet addition',
-                body: `${req.body.amount} has been added to your wallet`,
-                // subBody: `Order ID: ${oscNumber}.`,
-                type: NOTIFICATION_TYPE.WALLET_UPDATE,
-            })
+            // The money has moved — telling the customer must not be able to
+            // report the move as a failure (brief 2.5 / 3.1 / 4.1, same shape).
+            await logSafely(
+                'Wallet addition notification',
+                createNotification({
+                    userId: userId,
+                    title: 'Wallet addition',
+                    body: `₦${amount} has been added to your wallet`,
+                    type: NOTIFICATION_TYPE.WALLET_UPDATE,
+                }),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Fund added to wallet successfully',
+                balance: ledger?.wallet?.balance ?? null,
+                transaction: ledger?.ledgerEntry ?? null,
             })
         } catch (error) {
             console.log(error)
@@ -2154,45 +2194,52 @@ class AdminService extends BaseService {
                     error: 'User ID is required to deduct fund from wallet',
                 })
 
-            const wallet = await WalletModel.findOne({ userId })
-            if (!wallet)
-                return BaseService.sendFailedResponse({
-                    error: 'Wallet not found for user',
+            // Same as addFund: the shared mover owns the money. Its overdraw guard
+            // is part of the update itself, so two concurrent deductions cannot
+            // both pass it — the read-then-subtract here could.
+            let ledger
+            try {
+                ledger = await WalletAdjustmentService.applyAdjustment({
+                    userId,
+                    amount,
+                    type: 'debit',
+                    reason: message || 'Admin deducted fund from wallet',
+                    performedBy: req.user?.id,
+                    performedByName: 'Admin',
                 })
-
-            if (wallet.balance < amount) {
+            } catch (error) {
                 return BaseService.sendFailedResponse({
-                    error: 'Insufficient balance in wallet',
+                    error:
+                        /insufficient/i.test(error.message || '')
+                            ? 'Insufficient balance in wallet'
+                            : error.message || 'Failed to deduct fund from wallet',
                 })
             }
 
-            wallet.balance -= amount
-            await wallet.save()
+            await logSafely(
+                'Admin fund-deduct record',
+                UpdateFundModel.create({
+                    userId,
+                    amount,
+                    type: 'debit',
+                    ...(message && { message }),
+                }),
+            )
 
-            await UpdateFundModel.create({
-                userId,
-                amount,
-                type: 'debit',
-                ...(message && { message }),
-            })
-
-            await WalletTransactionModel.create({
-                userId,
-                type: 'debit',
-                amount,
-                status: 'success',
-                description: message || 'Admin deducted fund from wallet',
-            })
-
-            await createNotification({
-                userId,
-                title: 'Wallet deduction',
-                body: `₦${amount} has been deducted from your wallet`,
-                type: NOTIFICATION_TYPE.WALLET_UPDATE,
-            })
+            await logSafely(
+                'Wallet deduction notification',
+                createNotification({
+                    userId,
+                    title: 'Wallet deduction',
+                    body: `₦${amount} has been deducted from your wallet`,
+                    type: NOTIFICATION_TYPE.WALLET_UPDATE,
+                }),
+            )
 
             return BaseService.sendSuccessResponse({
                 message: 'Fund deducted from wallet successfully',
+                balance: ledger?.wallet?.balance ?? null,
+                transaction: ledger?.ledgerEntry ?? null,
             })
         } catch (error) {
             console.log(error)

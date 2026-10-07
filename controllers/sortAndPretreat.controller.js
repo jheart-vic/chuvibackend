@@ -46,6 +46,13 @@ class SortAndPretreatController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    async bulkSortItems(req, res) {
+        const result = await SortAndPretreatService.bulkSortItems(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
     async markAllItemsAsSorted(req, res) {
         const result = await SortAndPretreatService.markAllItemsAsSorted(req)
         return result.success

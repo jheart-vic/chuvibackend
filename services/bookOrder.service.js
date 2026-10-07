@@ -1,7 +1,7 @@
 const BaseService = require('./base.service')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
-const { normalizeAddress } = require('../util/address')
+const { normalizeAddress, enrichFromSavedAddresses } = require('../util/address')
 const { buildPricingFallback, presentOrder, presentOrders } = require('../util/orderView')
 const { explodeItemsToPieces } = require('../util/explodeItems')
 const {
@@ -17,7 +17,9 @@ const {
     roundToNearestHundred,
     calculateDueDate,
     getObjectId,
+    normalizePhone,
 } = require('../util/helper')
+const { priceItems } = require('../util/itemPricing')
 const SubscriptionModel = require('../models/subscription.model')
 const { v4: uuidv4 } = require('uuid')
 const {
@@ -648,9 +650,18 @@ class BookOrderService extends BaseService {
     // to the item subtotal and waives pickup/delivery fees the offer covers.
     // Returns the authoritative charge total plus the validated breakdown.
     async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting }) {
-        if (!post.customerOfferId && !post.promoOfferId) {
-            return { finalTotal: itemsSubtotal + extraDeliveryCost, breakdown: null }
-        }
+        // This used to return early unless the customer had SELECTED an offer:
+        //     if (!post.customerOfferId && !post.promoOfferId) return ...
+        // BASELINE offers (what the client calls "General") are applied BY RULE
+        // and have no linkage and no id for the customer to send — so that
+        // early return skipped them entirely and "Always Free at ₦8,000" never
+        // waived anything, while the app still advertised it. That is client
+        // brief 6 Oct 2026 item 2.2: free pickup and delivery offered, ₦2,000
+        // still charged.
+        //
+        // validateAndPrice already evaluates baselines first and tolerates
+        // having no personal/promo selection (offer.service.js:729), so the
+        // correct behaviour is simply to always ask it.
         const deliveryFee = post.isDelivery ? adminOrderSetting.deliveryFee || 0 : 0
         const pickupFee = post.isPickUp ? adminOrderSetting.pickupFee || 0 : 0
 
@@ -674,6 +685,12 @@ class BookOrderService extends BaseService {
         serviceTier,
         itemsBase,
         tierMultiplier = 1,
+        // Per-item care tiers (brief 1.6). When the order mixes tiers a single
+        // order-level multiplier is meaningless, so callers send null for it
+        // and the receipt shows the per-piece lines instead.
+        tierLines = null,
+        tiersUsed = null,
+        isMixedTier = false,
         itemsSubtotal,
         speedCharge = 0,
         pickupFee = 0,
@@ -689,6 +706,16 @@ class BookOrderService extends BaseService {
         const freeDeliveryWaived = breakdown?.freeDelivery ? deliveryFee : 0
         const freePickupWaived = breakdown?.freePickup ? pickupFee : 0
         const appliedOffers = []
+        // Baselines come first and are the ones most likely to have waived the
+        // fees. They were missing here, so a summary could show "Pickup: Free"
+        // with no offer name to explain it (brief 2.2 asks for the name).
+        for (const b of breakdown?.baseline || []) {
+            appliedOffers.push({
+                offerId: b.offerId,
+                name: b.name,
+                type: 'baseline',
+            })
+        }
         if (breakdown?.personal)
             appliedOffers.push({
                 offerId: breakdown.personal.offerId,
@@ -705,6 +732,9 @@ class BookOrderService extends BaseService {
             itemsBase,
             serviceTier,
             tierMultiplier,
+            tierLines,
+            tiersUsed,
+            isMixedTier,
             tierUplift: itemsSubtotal - itemsBase,
             itemsSubtotal,
             speedCharge,
@@ -792,6 +822,9 @@ class BookOrderService extends BaseService {
                 'items.*.type': 'string|required',
                 'items.*.price': 'integer|required',
                 'items.*.quantity': 'integer|required',
+                // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
+                // piece is priced at the order's tier, exactly as before.
+                'items.*.serviceTier': 'string|in:classic,premium,vip',
             }
 
             const validateMessage = {
@@ -815,8 +848,23 @@ class BookOrderService extends BaseService {
             // Structure addresses (tolerant: accepts a plain string or object).
             // Require an address to be PRESENT when pickup/delivery is requested;
             // label/landmark stay optional on the customer path (back-compat).
-            post.pickupAddress = normalizeAddress(post.pickupAddress)
-            post.deliveryAddress = normalizeAddress(post.deliveryAddress)
+            // Brief 4.6 — store ONE phone format. The same customer appeared with
+            // and without the leading 0 on two different orders, and because CRM
+            // links identity by normalised phone that splits one person into two
+            // profiles.
+            if (post.phoneNumber) post.phoneNumber = normalizePhone(post.phoneNumber)
+
+            // 3.3: when the customer sends an address they already have saved,
+            // borrow its landmark/label — the rider needs the "how do I find the
+            // door" line and the app does not ask for it yet.
+            post.pickupAddress = enrichFromSavedAddresses(
+                post.pickupAddress,
+                user.addresses,
+            )
+            post.deliveryAddress = enrichFromSavedAddresses(
+                post.deliveryAddress,
+                user.addresses,
+            )
             if (post.isPickUp && !post.pickupAddress?.address) {
                 return BaseService.sendFailedResponse({
                     error: 'pickupAddress is required when isPickUp is true',
@@ -825,6 +873,25 @@ class BookOrderService extends BaseService {
             if (post.isDelivery && !post.deliveryAddress?.address) {
                 return BaseService.sendFailedResponse({
                     error: 'deliveryAddress is required when isDelivery is true',
+                })
+            }
+            // Brief 3.3 (client decision 2026-10-07): the LANDMARK is now required
+            // on both legs, because the rider navigates by it — they are going to
+            // an address they have never seen, and a street line alone is not
+            // enough. Staff intake has always demanded it; the customer path used
+            // to let it through empty, which is how orders reached riders with no
+            // directions. Checked AFTER enrichFromSavedAddresses, so a customer
+            // reusing a saved address is never asked twice.
+            if (post.isPickUp && !post.pickupAddress?.landmark) {
+                return BaseService.sendFailedResponse({
+                    error: 'pickupAddress.landmark is required — the rider needs a landmark to find the pickup address.',
+                    field: 'pickupAddress.landmark',
+                })
+            }
+            if (post.isDelivery && !post.deliveryAddress?.landmark) {
+                return BaseService.sendFailedResponse({
+                    error: 'deliveryAddress.landmark is required — the rider needs a landmark to find the delivery address.',
+                    field: 'deliveryAddress.landmark',
                 })
             }
 
@@ -1071,39 +1138,18 @@ class BookOrderService extends BaseService {
                     ? matchedService.pricePerPiece
                     : 1
 
-                const PREMIUM = adminOrderSetting.premiumServiceTierCharge || 1
-                const VIP = adminOrderSetting.vipServiceTierCharge || 1
-
-                let multiplier = 1
-                if (post.serviceTier === SERVICE_TIERS.PREMIUM)
-                    multiplier = PREMIUM
-                if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
-
-                let totalPrice = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-
-                    // Multiply the item subtotal by the selected tier multiplier
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity *
-                            multiplier
-                    )
-                }, 0)
-
-                // Same sum at the CLASSIC tier (multiplier 1) — lets the receipt
-                // show the tier uplift separately. multiplier factors out of each
-                // line, so itemsBase * multiplier === totalPrice exactly.
-                const itemsBase = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity
-                    )
-                }, 0)
+                // Per-item care tier (brief 1.6) via the shared helper, so this
+                // branch, the pay-from-wallet branch and the staff intake path
+                // can never price the same basket differently again.
+                const priced = priceItems({
+                    items: post.items,
+                    serviceTypeMultiplier,
+                    orderTier: post.serviceTier,
+                    adminOrderSetting,
+                })
+                let totalPrice = priced.total
+                // Same items at CLASSIC — lets the receipt show the tier uplift.
+                const itemsBase = priced.itemsBase
 
                 let speedCharge = 0
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
@@ -1188,7 +1234,12 @@ class BookOrderService extends BaseService {
                 newOrder.pricing = this._buildPricing({
                     serviceTier: post.serviceTier,
                     itemsBase,
-                    tierMultiplier: multiplier,
+                    tierMultiplier: priced.isMixedTier
+                        ? null
+                        : priced.lines[0]?.tierMultiplier ?? 1,
+                    tierLines: priced.lines,
+                    tiersUsed: priced.tiersUsed,
+                    isMixedTier: priced.isMixedTier,
                     itemsSubtotal,
                     speedCharge,
                     pickupFee,
@@ -1229,38 +1280,20 @@ class BookOrderService extends BaseService {
                     ? matchedService.pricePerPiece
                     : 1
 
-                const PREMIUM =
-                    adminOrderSetting.premiumServiceTierCharge || 1.5
-                const VIP = adminOrderSetting.vipServiceTierCharge || 2
-
-                let multiplier = 1
-                if (post.serviceTier === SERVICE_TIERS.PREMIUM)
-                    multiplier = PREMIUM
-                if (post.serviceTier === SERVICE_TIERS.VIP) multiplier = VIP
-
-                let totalPrice = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-
-                    // Multiply the item subtotal by the selected tier multiplier
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity *
-                            multiplier
-                    )
-                }, 0)
-
+                // Shared per-item tier pricing (brief 1.6). NOTE: this branch
+                // used to default a missing tier charge to 1.5/2 while the two
+                // other pricing sites used 1 — the same basket priced
+                // differently depending on which screen created the order. The
+                // helper defaults to 1 (no uplift) everywhere.
+                const priced = priceItems({
+                    items: post.items,
+                    serviceTypeMultiplier,
+                    orderTier: post.serviceTier,
+                    adminOrderSetting,
+                })
+                let totalPrice = priced.total
                 // CLASSIC-tier subtotal for the receipt's tier-uplift line.
-                const itemsBase = post.items.reduce((sum, item) => {
-                    const price = Number(item.price)
-                    const quantity = Number(item.quantity)
-                    return (
-                        sum +
-                        roundToNearestHundred(price * serviceTypeMultiplier) *
-                            quantity
-                    )
-                }, 0)
+                const itemsBase = priced.itemsBase
 
                 let speedCharge = 0
                 if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
@@ -1348,7 +1381,12 @@ class BookOrderService extends BaseService {
                 newOrder.pricing = this._buildPricing({
                     serviceTier: post.serviceTier,
                     itemsBase,
-                    tierMultiplier: multiplier,
+                    tierMultiplier: priced.isMixedTier
+                        ? null
+                        : priced.lines[0]?.tierMultiplier ?? 1,
+                    tierLines: priced.lines,
+                    tiersUsed: priced.tiersUsed,
+                    isMixedTier: priced.isMixedTier,
                     itemsSubtotal,
                     speedCharge,
                     pickupFee,

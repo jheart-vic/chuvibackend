@@ -6,6 +6,40 @@ const BaseService = require('./base.service')
 const paystackAxios = require('./paystack.client.service')
 const createAuditLog = require('../util/createAuditLog')
 const { getObjectId } = require('../util/helper')
+const { AUDIT_LOG_CATEGORIES } = require('../util/constants')
+
+// Brief 2.5 — "cannot create plan" when the plan was actually created.
+// createAuditLog RETHROWS, and every plan write logs AFTER the data is already
+// saved, so any audit-log problem turned a completed action into a generic
+// failure (and the retry then hit "Plan title already exists"). The audit trail
+// must never be able to reverse the outcome the operator is shown.
+// Shared with intake-user (3.1) and communication (4.1) via util/safeLog.js.
+const { logSafely } = require('../util/safeLog')
+const auditSafely = (payload) => logSafely('Audit log', createAuditLog(payload))
+
+// Turn a Mongoose write error into a sentence that names the field, instead of
+// the catch-all "Something went wrong" that hid 2.5 for so long.
+const describeDbError = (error, fallback) => {
+    if (error?.code === 11000) {
+        const field = Object.keys(error.keyPattern || error.keyValue || {})[0]
+        if (field === 'title') return 'Plan title already exists'
+        return field
+            ? `A plan with this ${field} already exists`
+            : 'A plan with these details already exists'
+    }
+    if (error?.name === 'ValidationError') {
+        const first = Object.values(error.errors || {})[0]
+        if (first) {
+            return first.kind === 'required'
+                ? `${first.path} is required`
+                : first.message
+        }
+    }
+    if (error?.name === 'CastError' && error.path) {
+        return `${error.path} must be a valid ${error.kind}`
+    }
+    return fallback
+}
 
 class SubscriptionService extends BaseService {
     async createPlan(req) {
@@ -17,17 +51,24 @@ class SubscriptionService extends BaseService {
                 title: 'string|required',
                 description: 'string|required',
                 duration: 'string|required',
-                itemPerMonth: 'integer|required',
                 price: 'integer|required',
                 monthlyLimits: 'integer|required',
                 features: 'array|required',
-                freePickupDeliveryPerWeek: 'integer',
+                // Required on the model, so leaving it out used to fail with the
+                // generic server error instead of naming the missing field.
+                paystackPlanCode: 'string|required',
+                // NOT required: `itemPerMonth` is commented out on plan.model.js
+                // (monthlyLimits replaced it), so demanding it made the screen
+                // reject a plan over a field the backend then threw away.
+                itemPerMonth: 'integer',
+                freePickupDeliveryPerWeek: 'integer|min:0',
             }
 
             const validateMessage = {
                 required: ':attribute is required',
                 integer: ':attribute must be an integer.',
                 array: ':attribute must be an array.',
+                min: ':attribute cannot be negative.',
             }
 
             const validateResult = validateData(
@@ -51,13 +92,23 @@ class SubscriptionService extends BaseService {
                 })
             }
 
-            const newPlan = await PlanModel.create(post)
+            let newPlan
+            try {
+                newPlan = await PlanModel.create(post)
+            } catch (error) {
+                // The title index can also reject here (two admins, same title,
+                // same moment) — the pre-check above is a read, not a lock.
+                console.log('Create plan write failed:', error)
+                return BaseService.sendFailedResponse({
+                    error: describeDbError(error, 'Could not create the plan'),
+                })
+            }
 
-            await createAuditLog({
+            // Past this point the plan EXISTS. Nothing below may report failure.
+            await auditSafely({
                 userId: getObjectId(userId),
-                description: 'subscription',
-                action: `Created a new plan with title ${post.title}`,
-                category: 'subscription',
+                action: `Created a new plan with title ${newPlan.title}`,
+                category: AUDIT_LOG_CATEGORIES.SUBSCRIPTION,
             })
 
             return BaseService.sendSuccessResponse({
@@ -86,21 +137,33 @@ class SubscriptionService extends BaseService {
                 })
             }
 
-            const updatedPlan = await PlanModel.findByIdAndUpdate(
-                planId,
-                post,
-                {
+            let updatedPlan
+            try {
+                updatedPlan = await PlanModel.findByIdAndUpdate(planId, post, {
                     new: true,
-                },
-            )
+                    // Without this an invalid edit (negative price, renaming a
+                    // plan onto an existing title) saved silently or failed with
+                    // the generic message.
+                    runValidators: true,
+                })
+            } catch (error) {
+                console.log('Update plan write failed:', error)
+                return BaseService.sendFailedResponse({
+                    error: describeDbError(error, 'Could not update the plan'),
+                })
+            }
 
-            await createAuditLog({
+            // The plan is already updated — an audit problem must not undo that.
+            await auditSafely({
                 userId: getObjectId(userId),
-                category: 'subscription',
+                category: AUDIT_LOG_CATEGORIES.SUBSCRIPTION,
                 action: `Updated plan with title ${updatedPlan.title}`,
             })
             return BaseService.sendSuccessResponse({
                 message: 'Plan updated successfully',
+                // Returned so an edit screen can reload the authoritative row
+                // instead of keeping whatever it had on screen.
+                data: updatedPlan,
             })
         } catch (error) {
             console.log('Error in:', error)
@@ -121,9 +184,11 @@ class SubscriptionService extends BaseService {
             }
 
             await PlanModel.findByIdAndDelete(planId)
-            await createAuditLog({
+            // The plan is gone — an audit problem must not report a failure the
+            // operator would act on by deleting again.
+            await auditSafely({
                 userId: getObjectId(req.user.id),
-                category: 'subscription',
+                category: AUDIT_LOG_CATEGORIES.SUBSCRIPTION,
                 action: `Deleted plan with title ${plan.title}`,
             })
             return BaseService.sendSuccessResponse({
@@ -238,8 +303,11 @@ class SubscriptionService extends BaseService {
                     )
                 }
             } catch (error) {
-                const message = error.response.data.message
-                console.log(message, 'error from paystack')
+                // `error.response` is absent on a network/timeout failure, and
+                // reading through it threw into the outer catch, which then said
+                // "Failed to cancel plan" — the wrong reason entirely.
+                const message = error?.response?.data?.message
+                console.log(message || error?.message, 'error from paystack')
                 return BaseService.sendFailedResponse({
                     error:
                         message ||
@@ -248,9 +316,11 @@ class SubscriptionService extends BaseService {
             }
 
             await SubscriptionModel.findByIdAndDelete(subscription._id)
-            await createAuditLog({
+            // Paystack has already been told and the record is gone; an audit
+            // problem must not report this as a failed cancellation.
+            await auditSafely({
                 userId: getObjectId(userId),
-                category: 'subscription',
+                category: AUDIT_LOG_CATEGORIES.SUBSCRIPTION,
                 action: `Cancelled subscription with code ${sub_code}`,
             })
 
@@ -261,9 +331,9 @@ class SubscriptionService extends BaseService {
                         : 'You have already cancelled your subscription',
             })
         } catch (error) {
-            console.error('Create plan error:', error)
+            console.error('Cancel subscription error:', error)
             return BaseService.sendFailedResponse({
-                error: 'Failed to cancel plan',
+                error: 'Failed to cancel the subscription',
             })
         }
     }

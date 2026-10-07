@@ -14,8 +14,6 @@
  *           type: string
  *         duration:
  *           type: string
- *         itemPerMonth:
- *           type: integer
  *         price:
  *           type: integer
  *         monthlyLimits:
@@ -427,9 +425,24 @@
  *         time with `reconstructed:true` and unknown figures set to null.
  *       properties:
  *         itemsBase: { type: number, description: Item subtotal before the tier multiplier, example: 4000 }
- *         serviceTier: { type: string, enum: [classic, premium, vip], example: premium }
- *         tierMultiplier: { type: number, nullable: true, description: Multiplier applied for the chosen tier (null on reconstructed), example: 1.5 }
- *         tierUplift: { type: number, nullable: true, description: itemsSubtotal - itemsBase, example: 2000 }
+ *         serviceTier: { type: string, enum: [classic, premium, vip], description: "The ORDER's care tier. Individual items may override it — see tierLines.", example: premium }
+ *         tierMultiplier: { type: number, nullable: true, description: "Multiplier applied for the tier. NULL when the order mixes tiers (no single multiplier describes it) or on a reconstructed receipt — read tierLines instead.", example: 1.5 }
+ *         isMixedTier: { type: boolean, description: "True when the items are not all on one care tier. Show the per-item breakdown rather than a single tier badge.", example: true }
+ *         tiersUsed: { type: array, items: { type: string, enum: [classic, premium, vip] }, description: Every care tier present on the order., example: [classic, vip] }
+ *         tierLines:
+ *           type: array
+ *           description: "One line per booked item line, priced at that item's own care tier (falling back to the order's). linePrice = basePrice x tierMultiplier."
+ *           items:
+ *             type: object
+ *             properties:
+ *               type: { type: string, description: Item name, example: shirt }
+ *               quantity: { type: number, example: 2 }
+ *               serviceTier: { type: string, enum: [classic, premium, vip], example: vip }
+ *               unitPrice: { type: number, description: Per-piece price after the service-type multiplier and rounding, example: 1000 }
+ *               basePrice: { type: number, description: unitPrice x quantity, at CLASSIC, example: 2000 }
+ *               tierMultiplier: { type: number, example: 2 }
+ *               linePrice: { type: number, description: What this line actually costs, example: 4000 }
+ *         tierUplift: { type: number, nullable: true, description: itemsSubtotal - itemsBase — what the tier upgrades added, example: 2000 }
  *         itemsSubtotal: { type: number, description: Item subtotal after the tier multiplier, example: 6000 }
  *         speedCharge: { type: number, nullable: true, description: Express / same-day surcharge, example: 1000 }
  *         pickupFee: { type: number, nullable: true, example: 500 }
@@ -446,7 +459,7 @@
  *             properties:
  *               offerId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
  *               name: { type: string, example: "Weekend 10% off" }
- *               type: { type: string, enum: [personal, promotion], example: personal }
+ *               type: { type: string, enum: [baseline, personal, promotion], description: "baseline = a standing policy the client calls a General offer, applied by rule with no selection.", example: baseline }
  *         creditApplied: { type: number, nullable: true, description: Wallet reward credit used, example: 1000 }
  *         orderTotal: { type: number, description: Amount the order was billed after offers and credit (== order.amount), example: 5700 }
  *         youSaved: { type: number, nullable: true, description: offerDiscount + waived fees + creditApplied, example: 2300 }
@@ -532,6 +545,27 @@
  *               reversed: { type: boolean, example: false }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
+ *
+ *     WalletAdjustmentRequest:
+ *       type: object
+ *       description: "A staff wallet adjustment that exceeded the operator's role limit and is waiting for an admin. Nothing moves in the wallet until it is approved; approval then runs the same code path as a within-limit adjustment, so it produces an identical ledger line."
+ *       properties:
+ *         _id: { type: string, example: 64d3c9c0f1b2a8e9d0f12345 }
+ *         userId: { type: string, description: The customer whose wallet would move (populated on list), example: 64d3c9c0f1b2a8e9d0f54321 }
+ *         amount: { type: integer, description: Always positive; the direction is in `type`., example: 10000 }
+ *         type: { type: string, enum: [credit, debit], example: credit }
+ *         reason: { type: string, example: "Refund for a damaged shirt" }
+ *         requestedBy: { type: string, description: The operator who asked (populated on list), example: 64d3c9c0f1b2a8e9d0f99999 }
+ *         requestedByRole: { type: string, enum: [intake-and-tag, customer-experience, qc, press, wash-and-dry, sort-and-pretreat, rider, admin], example: intake-and-tag }
+ *         roleLimitAtRequest: { type: integer, description: "The role's limit AT THE TIME, stored so changing the setting later never rewrites why approval was needed.", example: 5000 }
+ *         orderId: { type: string, nullable: true, example: 64d3c9c0f1b2a8e9d0f11111 }
+ *         status: { type: string, enum: [pending, approved, rejected], example: pending }
+ *         decidedBy: { type: string, nullable: true, example: 64d3c9c0f1b2a8e9d0f22222 }
+ *         decidedAt: { type: string, format: date-time, nullable: true, example: "2026-10-07T12:05:00.000Z" }
+ *         decisionNote: { type: string, nullable: true, example: "Approved — matches the complaint record." }
+ *         walletTransactionId: { type: string, nullable: true, description: The ledger line the approval produced., example: 64d3c9c0f1b2a8e9d0f33333 }
+ *         balanceAfter: { type: integer, nullable: true, example: 12500 }
+ *         createdAt: { type: string, format: date-time, example: "2026-10-07T11:40:00.000Z" }
  *
  *     WalletTransaction:
  *       type: object
@@ -668,6 +702,7 @@
  *         viewedAt: { type: string, format: date-time, nullable: true }
  *         attachedAt: { type: string, format: date-time, nullable: true }
  *         redeemedAt: { type: string, format: date-time, nullable: true }
+ *         cancelledAt: { type: string, format: date-time, nullable: true, description: Set when the offer was cancelled, whether manually or because its offer was deleted., example: "2026-10-07T11:42:00.000Z" }
  *         displayRules: { type: array, items: { type: string }, description: "Display-ready rule summary (my-offers rewards only).", example: ["Minimum order ₦2,000", "One use per customer"] }
  *         expiresInDays: { type: integer, nullable: true, description: "Whole days until this linkage expires, rounded up; 0 if past (my-offers rewards only).", example: 5 }
  *         remainingUses: { type: integer, nullable: true, description: "GLOBAL uses left on the underlying offer; null = unlimited (my-offers rewards only)." }
@@ -1016,13 +1051,15 @@
  *
  *     Handoff:
  *       type: object
- *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count."
+ *       description: "A confirmed record of items moving from one station to the next (split production flow). Created 'pending' by the pushing station; the receiving station confirms the exact count. A pending handoff becomes 'superseded' when the same items leave the source station by another route (e.g. a later push to a different station) — it can never be confirmed, so it stops being listed as incoming and clears itself on the next read of the incoming queue."
  *       properties:
  *         handoffId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1a0 }
  *         fromStation: { type: string, example: sort-and-pretreat-station }
  *         toStation: { type: string, example: wash-and-dry-station }
  *         count: { type: number, description: "Number of physical pieces in the handoff.", example: 3 }
- *         status: { type: string, enum: [pending, confirmed, rejected], example: pending }
+ *         status: { type: string, enum: [pending, confirmed, rejected, superseded], example: pending }
+ *         supersededAt: { type: string, format: date-time, nullable: true, description: "Set when this handoff was overtaken; it is no longer actionable.", example: "2026-10-07T09:15:00.000Z" }
+ *         supersededBy: { type: string, nullable: true, description: "The handoff that overtook this one, when it was superseded by a new push.", example: 64d1f9a2e3c3b4a1d2f1c1b7 }
  *         summary: { type: string, description: "Readable roll-up by item name.", example: "2 Shirts, 1 Trouser" }
  *         items:
  *           type: array
@@ -1109,6 +1146,29 @@
  *             itemCount: { type: integer, example: 3 }
  *             waitingMinutes: { type: integer, example: 95 }
  *             waitingDays: { type: integer, example: 0 }
+ *             legStatus:
+ *               type: string
+ *               nullable: true
+ *               description: "This leg's own status (`dispatchDetails.<leg>.status`). Filter the queue on it with `?legStatus=`."
+ *               example: scheduled
+ *             failed:
+ *               type: boolean
+ *               description: "True when this leg's status is `failed`. A failed run keeps its stage and its rider, so without this flag it is indistinguishable from a healthy assigned one."
+ *               example: false
+ *             legNote:
+ *               type: string
+ *               nullable: true
+ *               description: The rider's note for this leg — on a failed run, why it failed.
+ *               example: "Customer not at home, phone switched off"
+ *             landmark:
+ *               type: string
+ *               nullable: true
+ *               description: "This leg's address landmark, lifted out of the structured address so a row can show it beside the street."
+ *               example: "Opposite the blue mosque"
+ *             landmarkMissing:
+ *               type: boolean
+ *               description: "True when this leg's address has no landmark. The customer app does not ask for one yet (staff intake does), so a customer-placed order can reach the rider with no directions; where the address matches one the customer has saved, the landmark is borrowed from it automatically."
+ *               example: false
  *             tagPrinted:
  *               type: boolean
  *               description: "DELIVERY queue only. Whether the dispatch tag has been printed. Absent on the pickup queue — pickups are never tagged."

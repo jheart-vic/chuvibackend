@@ -32,8 +32,8 @@ const router = require("express").Router();
  *               - description
  *               - duration
  *               - paystackPlanCode
- *               - itemPerMonth
  *               - price
+ *               - monthlyLimits
  *               - features
  *             properties:
  *               title:
@@ -47,16 +47,19 @@ const router = require("express").Router();
  *                 example: monthly
  *               paystackPlanCode:
  *                 type: string
+ *                 description: Required — the plan's Paystack plan code. The plan cannot be created without it.
  *                 example: PLN_dzkt60m83znaydt
- *               itemPerMonth:
- *                 type: integer
- *                 example: 30
  *               price:
  *                 type: integer
  *                 example: 5000
  *               monthlyLimits:
  *                 type: integer
+ *                 description: Items covered per month.
  *                 example: 45
+ *               freePickupDeliveryPerWeek:
+ *                 type: integer
+ *                 description: Free pickup/delivery legs per rolling week. Optional, defaults to 0.
+ *                 example: 4
  *               features:
  *                 type: array
  *                 items:
@@ -85,18 +88,10 @@ const router = require("express").Router();
  *                     data:
  *                       $ref: '#/components/schemas/Plan'
  *       400:
- *         description: Validation error or plan already exists
+ *         description: Validation error, or a plan with that title already exists. The message names the field or the conflict.
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 error:
- *                   type: string
- *                   example: Plan title already exists
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
@@ -205,19 +200,40 @@ router.get(ROUTE_GET_PLAN + "/:id", [auth], async (req, res) => {
  *                 type: string
  *               duration:
  *                 type: string
- *               itemPerMonth:
- *                 type: integer
  *               price:
  *                 type: integer
+ *               monthlyLimits:
+ *                 type: integer
+ *               freePickupDeliveryPerWeek:
+ *                 type: integer
+ *               paystackPlanCode:
+ *                 type: string
  *               features:
  *                 type: array
  *                 items:
  *                   type: string
  *     responses:
  *       200:
- *         description: Plan updated successfully
- *       404:
- *         description: Plan not found
+ *         description: Plan updated. Returns the saved plan so an edit screen can reload the authoritative row.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Plan updated successfully
+ *                     data:
+ *                       $ref: '#/components/schemas/Plan'
+ *       400:
+ *         description: Plan not found, or the edit was rejected (the message names the field or the conflicting title).
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
@@ -243,8 +259,23 @@ router.put(ROUTE_UPDATE_PLAN + "/:id", [adminAuth], async (req, res) => {
  *     responses:
  *       200:
  *         description: Plan deleted successfully
- *       404:
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Plan deleted successfully
+ *       400:
  *         description: Plan not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */

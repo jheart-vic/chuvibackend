@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { ROLE } = require('../util/constants')
 
 const ServiceTypeSchema = new mongoose.Schema(
     {
@@ -65,6 +66,27 @@ const adminSettingSchema = new mongoose.Schema(
         // threshold, escalate by email after the second.
         unassignedDispatchAlertMinutes: { type: Number, default: 30 },
         unassignedDispatchEscalateMinutes: { type: Number, default: 60 },
+
+        // How much each ROLE may move in one wallet adjustment without an
+        // admin approving it. Client brief 6 Oct 2026, item 2.4: "A limit for
+        // each role, which the admin sets in settings. It must not be fixed in
+        // the code, because we will change it."
+        //
+        // A Map (role name → naira) rather than named fields, so a new role
+        // gets a limit by editing settings instead of by a deploy. A role with
+        // no entry has NO self-service allowance: every adjustment it makes
+        // becomes a request. Admin is unlimited and never checked.
+        // Updated through the normal admin-settings endpoint, which $sets
+        // whatever it is given.
+        walletAdjustmentLimits: {
+            type: Map,
+            of: Number,
+            default: () =>
+                new Map([
+                    [ROLE.INTAKE_AND_TAG, 5000], // client: "Intake and Tag starts at ₦5,000"
+                    [ROLE.CUSTOMER_EXPERIENCE, 10000], // client: "₦10,000 for refunds by CX"
+                ]),
+        },
     },
     { timestamps: true },
 )

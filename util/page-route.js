@@ -108,6 +108,9 @@ exports.ROUTE_SORT_AND_PRETREAT_UPDATE_ITEM = "/order/:id/items/:itemId/sort-det
 exports.ROUTE_SORT_AND_PRETREAT_MARK_ITEM_SORTED = "/order/:id/items/:itemId/mark-sorted";
 exports.ROUTE_SORT_AND_PRETREAT_UNMARK_SORTED_ITEM = "/order/:id/items/:itemId/undo-sorted";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_ALL_AS_SORTED = "/order/:id/mark-all-sorted";
+// Bulk: sort ANY subset of the items at S2 in one call (client brief 1.5 — the
+// sorter could previously act on one item or on all of them, never on a few).
+exports.ROUTE_SORT_AND_PRETREAT_BULK_SORT = "/order/:id/items/sort";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_PRETREATED = "/order/:id/items/:itemId/mark-pretreated";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_UNDO_PRETREATED = "/order/:id/items/:itemId/undo-pretreated";
 exports.ROUTE_SORT_AND_PRETREAT_MARK_AS_FLAGGED = "/order/:id/items/:itemId/flag";
@@ -166,6 +169,11 @@ exports.ROUTE_GET_ADMIN_SETTING = '/get-admin-setting'
 exports.ROUTE_UPDATE_ADMIN_SETTING = '/update-admin-setting'
 exports.ROUTE_ADMIN_ORDER_ORDERID = '/order/:id'
 exports.ROUTE_ADMIN_PAYMENT_VERIFICATION_QUEUE = '/payment-verification-queue'
+// Staff wallet adjustments above their role limit, awaiting an admin decision
+// (client brief 6 Oct 2026, item 2.4).
+exports.ROUTE_ADMIN_WALLET_ADJUSTMENT_REQUESTS = '/wallet-adjustment-requests'
+exports.ROUTE_ADMIN_WALLET_ADJUSTMENT_APPROVE = '/wallet-adjustment-requests/:id/approve'
+exports.ROUTE_ADMIN_WALLET_ADJUSTMENT_REJECT = '/wallet-adjustment-requests/:id/reject'
 exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT = '/payment/:id/accept'
 exports.ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT = '/payment/:id/reject'
 exports.ROUTE_ADMIN_ORDER_BY_STATE = '/orders/by-state'
@@ -216,6 +224,9 @@ exports.ROUTE_ADJUST_WALLET = '/adjust-wallet/:id/:userId'
 exports.ROUTE_GET_USER_WALLET_ID = '/get-user-wallet/:id'
 exports.ROUTE_PICKABLE_ORDERS = '/pickable-orders'
 exports.ROUTE_DELIVERABLE_ORDERS = '/deliverable-orders'
+// The riders available to assign a run to. There was no such endpoint anywhere,
+// so the assignment screen had no authoritative source for its list.
+exports.ROUTE_RIDERS = '/riders'
 // Dispatch tag — one per order, rider deliveries only. Printed by S1 at the
 // moment they hand the bagged order to the rider, and a printed tag is required
 // before ROUTE_ASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID will accept an assignment.
@@ -313,6 +324,10 @@ exports.ROUTE_RECOVERY_CASE_MESSAGES = "/cases/:id/messages"
 
 // communication layer (admin)
 exports.ROUTE_COMM_TEMPLATES = "/templates"
+// Everything the template editor needs for its dropdowns: placeholder keys and
+// target pages, each with a description (brief 4.2). Declared BEFORE
+// /templates/:id so "meta" is never read as an id.
+exports.ROUTE_COMM_TEMPLATE_META = "/templates/meta"
 exports.ROUTE_COMM_TEMPLATE_BY_ID = "/templates/:id"
 exports.ROUTE_COMM_LOGS = "/logs"
 exports.ROUTE_COMM_RETRY_FAILED = "/retry-failed"

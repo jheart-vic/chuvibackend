@@ -58,10 +58,17 @@ const {
  *                 example: "+2348151128383"
  *               pickupAddress:
  *                 oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ]
- *                 description: "Structured { label, address, landmark } or a plain string (stored as { label:'', address, landmark:'' })."
+ *                 description: >
+ *                   Structured { label, address, landmark } or a plain string (stored as
+ *                   { label:'', address, landmark:'' }). Only `address` is required here —
+ *                   but PLEASE COLLECT `landmark`: the rider navigates by it and staff
+ *                   intake already demands it. When the address matches one the customer
+ *                   has saved, the landmark and label are borrowed from that saved address
+ *                   automatically; otherwise the order reaches the dispatch queue flagged
+ *                   `landmarkMissing: true` (brief 3.3).
  *               deliveryAddress:
  *                 oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ]
- *                 description: "Structured { label, address, landmark } or a plain string."
+ *                 description: "Structured { label, address, landmark } or a plain string. Same landmark guidance as pickupAddress."
  *               pickupDate:
  *                 type: string
  *                 format: date
@@ -158,6 +165,19 @@ const {
  *                     quantity:
  *                       type: integer
  *                       example: 5
+ *                     serviceTier:
+ *                       type: string
+ *                       enum: [classic, premium, vip]
+ *                       nullable: true
+ *                       description: |
+ *                         OPTIONAL care tier for THIS item. One stained shirt can be
+ *                         VIP while the rest of the order stays Classic, and each item
+ *                         is priced at its own tier. Omit it and the item is priced at
+ *                         the order-level `serviceTier`, exactly as before — so an
+ *                         existing client that never sends this field is unaffected.
+ *                         The resulting breakdown is in the response's
+ *                         `pricing.tierLines` / `pricing.isMixedTier`.
+ *                       example: vip
  *     responses:
  *       200:
  *         description: Order created successfully

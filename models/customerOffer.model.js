@@ -34,6 +34,10 @@ const customerOfferSchema = new mongoose.Schema(
         viewedAt: { type: Date },
         attachedAt: { type: Date },
         redeemedAt: { type: Date },
+        // Completes the status timeline: every other terminal state stamps its
+        // own time, so a cancellation had to be inferred from `updatedAt` —
+        // which any later write would have overwritten.
+        cancelledAt: { type: Date },
     },
     { timestamps: true },
 )

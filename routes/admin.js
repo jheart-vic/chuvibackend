@@ -6,6 +6,9 @@ const {
     ROUTE_ADMIN_ORDER_MANAGEMENT,
     ROUTE_ADMIN_ORDER_ORDERID,
     ROUTE_ADMIN_PAYMENT_VERIFICATION_QUEUE,
+    ROUTE_ADMIN_WALLET_ADJUSTMENT_REQUESTS,
+    ROUTE_ADMIN_WALLET_ADJUSTMENT_APPROVE,
+    ROUTE_ADMIN_WALLET_ADJUSTMENT_REJECT,
     ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT,
     ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT,
     ROUTE_ADMIN_ORDER_BY_STATE,
@@ -961,6 +964,177 @@ router.get(ROUTE_ADMIN_ORDER_ORDERID, adminAuth, (req, res)=>{
 router.get(ROUTE_ADMIN_PAYMENT_VERIFICATION_QUEUE, adminAuth, (req, res)=>{
     const adminController = new AdminController();
     return adminController.getPaymentVerificationQueue(req, res);
+});
+
+/**
+ * @swagger
+ * /admin/wallet-adjustment-requests:
+ *   get:
+ *     summary: Wallet adjustments waiting for an admin decision
+ *     description: |
+ *       Staff may adjust a customer's wallet up to their ROLE's limit, which the
+ *       admin sets in settings (`walletAdjustmentLimits`). Anything above it
+ *       moves NO money and lands here instead, the same way top-up requests
+ *       reach the dashboard. Defaults to `pending` — pass `status=approved`,
+ *       `status=rejected` or `status=all` to see the rest.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [pending, approved, rejected, all], example: pending }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *     responses:
+ *       200:
+ *         description: Paginated requests
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/WalletAdjustmentRequest' }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 3 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_WALLET_ADJUSTMENT_REQUESTS, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.getWalletAdjustmentRequests(req, res);
+});
+
+/**
+ * @swagger
+ * /admin/wallet-adjustment-requests/{id}/approve:
+ *   post:
+ *     summary: Approve a wallet adjustment request
+ *     description: |
+ *       Applies the adjustment through the SAME code path a within-limit
+ *       adjustment uses, so the resulting ledger line is identical: a
+ *       `manual-adjustment` WalletTransaction with a signed amount, the reason,
+ *       who approved it and the balance after. The request is claimed before
+ *       the money moves, so two admins cannot pay it twice; if applying fails
+ *       the request returns to `pending` rather than reading as approved.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               note: { type: string, example: "Agreed with the operator." }
+ *     responses:
+ *       200:
+ *         description: Approved and applied
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         request: { $ref: '#/components/schemas/WalletAdjustmentRequest' }
+ *                         balance: { type: integer, description: The customer's wallet balance after approval, example: 12500 }
+ *                         transaction: { $ref: '#/components/schemas/WalletTransaction' }
+ *       400:
+ *         description: Already decided, insufficient balance for a debit, or the ledger write failed (no money moved)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Request not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ADMIN_WALLET_ADJUSTMENT_APPROVE, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.approveWalletAdjustment(req, res);
+});
+
+/**
+ * @swagger
+ * /admin/wallet-adjustment-requests/{id}/reject:
+ *   post:
+ *     summary: Reject a wallet adjustment request
+ *     description: |
+ *       Moves no money and notifies the operator who asked. A `note` is
+ *       REQUIRED — a rejection without a reason leaves the operator with
+ *       nothing to act on.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [note]
+ *             properties:
+ *               note: { type: string, example: "Ask the customer to send proof of payment first." }
+ *     responses:
+ *       200:
+ *         description: Rejected
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/WalletAdjustmentRequest' }
+ *       400:
+ *         description: Missing note, or the request was already decided
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       404:
+ *         description: Request not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ADMIN_WALLET_ADJUSTMENT_REJECT, adminAuth, (req, res)=>{
+    const adminController = new AdminController();
+    return adminController.rejectWalletAdjustment(req, res);
 });
 
 /**

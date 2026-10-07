@@ -15,6 +15,7 @@ const {
   ROUTE_DISPATCH_TAG,
   ROUTE_DISPATCH_TAG_PRINT,
   ROUTE_PICKABLE_ORDERS,
+  ROUTE_RIDERS,
   ROUTE_GET_BOOK_ORDER_ID,
   ROUTE_GET_PENDING_ORDERS,
   ROUTE_INTAKE_USER_DASHBOARD_STATS,
@@ -848,7 +849,12 @@ router.post(ROUTE_SEND_TOP_UP_REQUEST_ID, [intakeUserAuth], (req, res) => {
  *                 example: credit
  *     responses:
  *       200:
- *         description: Wallet adjustment successful
+ *         description: |
+ *           Wallet adjusted. Every adjustment now also writes a WalletTransaction
+ *           ledger line (type `manual-adjustment`, signed amount, reason, the
+ *           operator who did it and the balance after), which the customer and
+ *           the admin both read — so the wallet balance always equals the sum of
+ *           its ledger lines. The created row is returned as `transaction`.
  *         content:
  *           application/json:
  *             schema:
@@ -859,30 +865,32 @@ router.post(ROUTE_SEND_TOP_UP_REQUEST_ID, [intakeUserAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     message:
- *                       type: string
- *                       example: "Wallet credit request successful of 2000 Reason: Refund for damaged item"
+ *                       type: object
+ *                       properties:
+ *                         type: { type: string, enum: [credit, debit], example: credit }
+ *                         amount: { type: integer, example: 2000, description: Always positive; the direction is in `type` }
+ *                         reason: { type: string, example: "Refund for damaged item" }
+ *                         balance: { type: integer, example: 7500, description: The wallet's cash balance after this adjustment }
+ *                         performedBy: { type: string, nullable: true, example: "64d3c9c0f1b2a8e9d0f99999", description: Staff user who made the adjustment }
+ *                         transaction: { $ref: '#/components/schemas/WalletTransaction' }
  *       400:
- *         description: Validation error or insufficient balance
+ *         description: |
+ *           Validation error, a non-positive amount, insufficient balance on a
+ *           debit, or the ledger line could not be written (in which case no
+ *           money was moved — the balance change is rolled back).
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Insufficient balance"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       404:
  *         description: Order, user, or wallet not found
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Wallet not found"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(ROUTE_ADJUST_WALLET, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
@@ -974,6 +982,16 @@ router.get(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
  *         name: paymentStatus
  *         description: Optional filter; unpaid orders are NOT hidden by default, they carry `paid:false`.
  *         schema: { type: string, enum: [success, pending, failed] }
+ *       - in: query
+ *         name: legStatus
+ *         description: >
+ *           Filter on `dispatchDetails.pickup.status`
+ *           (pending · scheduled · pickup-in-progress · picked-up · failed).
+ *           Comma-separate for several. **`legStatus=failed` is the Failed Pickups
+ *           view (brief 3.2)** — a failed pickup keeps its `pending` stage and its
+ *           rider, so until now it sat here looking like an ordinary assigned run.
+ *           An unknown value is refused with 400 rather than silently ignored.
+ *         schema: { type: string, example: failed }
  *     responses:
  *       200:
  *         description: Paginated pickup queue
@@ -997,6 +1015,10 @@ router.get(ROUTE_GET_USER_WALLET_ID, [intakeUserAuth], (req, res) => {
  *                           type: integer
  *                           description: Total across the whole queue with no rider assigned (not just this page).
  *                           example: 12
+ *                         failedCount:
+ *                           type: integer
+ *                           description: "Failed pickups in this queue, counted over the WHOLE queue rather than the filtered page. `legStatus=failed` returns exactly these rows."
+ *                           example: 2
  *       500:
  *         description: Server error
  */
@@ -1043,6 +1065,13 @@ router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *       - in: query
  *         name: paymentStatus
  *         schema: { type: string, enum: [success, pending, failed] }
+ *       - in: query
+ *         name: legStatus
+ *         description: >
+ *           Filter on `dispatchDetails.delivery.status`. Comma-separate for several.
+ *           `legStatus=failed` is the failed-deliveries view. An unknown value is
+ *           refused with 400 rather than silently ignored.
+ *         schema: { type: string, example: failed }
  *     responses:
  *       200:
  *         description: Paginated delivery queue
@@ -1063,6 +1092,10 @@ router.get(ROUTE_PICKABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *                           items: { $ref: '#/components/schemas/DispatchQueueOrder' }
  *                         pagination: { $ref: '#/components/schemas/PaginationMeta' }
  *                         needsRiderCount: { type: integer, example: 3 }
+ *                         failedCount:
+ *                           type: integer
+ *                           description: "Failed runs in this queue, counted over the WHOLE queue rather than the filtered page, so a \"Failed (n)\" tab stays correct while another filter is applied. `legStatus=failed` returns exactly these rows."
+ *                           example: 1
  *                         needsTagCount:
  *                           type: integer
  *                           description: "Ready delivery orders whose dispatch tag has not been printed — each one is blocked from rider assignment."
@@ -1080,6 +1113,16 @@ router.get(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
  * /intake-user/assign-rider/{riderId}/pickup-order/{id}:
  *   post:
  *     summary: Assign a rider to a pickup order
+ *     description: >
+ *       `riderId` must be an ACTIVE user whose `userType` is `rider`. Anything
+ *       else is refused by name — previously any id was written straight in, so a
+ *       non-rider id saved successfully and then populated back as `null`, which
+ *       is why assignment looked like it "did not save" (brief 3.1). Get the id
+ *       from `GET /intake-user/riders`.
+ *
+ *       The response carries the assigned `rider` so the row can be redrawn
+ *       without a refetch. The activity row, the rider's notification and the
+ *       audit line are written after the assignment and can no longer fail it.
  *     tags:
  *       - Intake User
  *     parameters:
@@ -1112,32 +1155,86 @@ router.get(ROUTE_DELIVERABLE_ORDERS, [intakeUserAuth], (req, res) => {
  *                     message:
  *                       type: string
  *                       example: "Rider successfully assigned to order"
+ *                     rider:
+ *                       type: object
+ *                       properties:
+ *                         _id: { type: string, example: "64d3c9c0f1b2a8e9d0f54321" }
+ *                         fullName: { type: string, example: "Musa Bello" }
+ *                         phoneNumber: { type: string, example: "08031234567" }
+ *                     leg: { type: string, example: pickup }
+ *                     pickupStatus: { type: string, example: scheduled }
  *       400:
- *         description: Validation error or missing parameters
+ *         description: >
+ *           Missing parameters, the order was not found, or `riderId` is not an
+ *           active rider ("… is not a rider, so the order cannot be assigned to
+ *           them."). Nothing is written when it refuses.
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Rider ID is required"
- *       404:
- *         description: Order not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Order not found"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
 router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, res) => {
   const bookOrderController = new IntakeUserController();
   return bookOrderController.assignRiderTopPickupOrder(req, res);
+});
+
+/**
+ * @swagger
+ * /intake-user/riders:
+ *   get:
+ *     summary: Riders available to take a run
+ *     description: >
+ *       The list to populate the "assign a rider" picker from. There was no such
+ *       endpoint before, so the id being sent to the assignment calls had no
+ *       authoritative source — and assignment now REFUSES an id that is not an
+ *       active rider, so pick from here.
+ *
+ *       Active riders only unless `includeInactive=true`. Each row carries what
+ *       the rider is already carrying (`activePickups`, `activeDeliveries`,
+ *       `activeRuns`) so work can be spread rather than guessed at.
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         description: Match on fullName or phoneNumber
+ *         schema: { type: string, example: "Musa" }
+ *       - in: query
+ *         name: includeInactive
+ *         description: Include suspended/inactive riders (they still cannot be assigned).
+ *         schema: { type: string, enum: ['true', 'false'] }
+ *     responses:
+ *       200:
+ *         description: Riders, sorted by name
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id: { type: string, example: "64d3c9c0f1b2a8e9d0f54321" }
+ *                           fullName: { type: string, example: "Musa Bello" }
+ *                           phoneNumber: { type: string, example: "08031234567" }
+ *                           email: { type: string, example: "musa@chuvi.ng" }
+ *                           status: { type: string, enum: [active, inactive, suspended], example: active }
+ *                           activePickups: { type: integer, example: 2 }
+ *                           activeDeliveries: { type: integer, example: 1 }
+ *                           activeRuns: { type: integer, example: 3 }
+ *       500:
+ *         description: Server error
+ */
+router.get(ROUTE_RIDERS, [intakeUserAuth], (req, res) => {
+  const bookOrderController = new IntakeUserController();
+  return bookOrderController.getRiders(req, res);
 });
 
 /**
@@ -1152,6 +1249,9 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
  *       leaves the building without a tag. Nothing is written when it refuses.
  *       The delivery queue exposes `needsTag` per row so blocked orders are visible
  *       before anyone tries.
+ *
+ *       `riderId` must also be an ACTIVE user whose `userType` is `rider` — see
+ *       the pickup equivalent and `GET /intake-user/riders` (brief 3.1).
  *     tags:
  *       - Intake User
  *     parameters:
@@ -1184,32 +1284,24 @@ router.post(ROUTE_ASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req, re
  *                     message:
  *                       type: string
  *                       example: "Rider successfully assigned to order"
+ *                     rider:
+ *                       type: object
+ *                       properties:
+ *                         _id: { type: string, example: "64d3c9c0f1b2a8e9d0f54321" }
+ *                         fullName: { type: string, example: "Musa Bello" }
+ *                         phoneNumber: { type: string, example: "08031234567" }
+ *                     leg: { type: string, example: delivery }
+ *                     deliveryStatus: { type: string, example: ready }
  *       400:
  *         description: >
- *           Missing parameters, or the dispatch tag has not been printed yet
- *           (`needsDispatchTag: true`). Nothing is written in either case.
+ *           Missing parameters, the order was not found, `riderId` is not an active
+ *           rider, or the dispatch tag has not been printed yet. Only the untagged
+ *           case carries `needsDispatchTag: true` (beside `error`, under `data`),
+ *           so the UI can route straight to the print action. Nothing is written in
+ *           any of these cases.
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Print the dispatch tag for order OSC-20260428-321782 before assigning a rider."
- *                 needsDispatchTag:
- *                   type: boolean
- *                   description: Present and true only for the untagged-order refusal.
- *                   example: true
- *       404:
- *         description: Order not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Order not found"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */

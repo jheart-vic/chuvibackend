@@ -28,6 +28,15 @@ const ItemSchema = new mongoose.Schema(
         quantity: { type: Number, required: true },
         // Optional: name of the Set this piece was selected from (traceability).
         fromSet: { type: String },
+        // Care tier for THIS piece (client brief 6 Oct 2026, item 1.6): one
+        // stained item can be VIP while the rest stay Classic. Absent means
+        // "use the order's tier", which is how every pre-existing order and
+        // every caller that doesn't set it keeps its current price.
+        serviceTier: {
+            type: String,
+            enum: [...Object.values(SERVICE_TIERS), null],
+            default: null,
+        },
         // Split-flow: the station this item is currently sitting at. Items can be
         // at different stations at once (some washing while others still pressing).
         currentStation: {
@@ -188,9 +197,15 @@ const HandoffSchema = new mongoose.Schema(
         count: { type: Number, default: 0 },
         status: {
             type: String,
-            enum: ['pending', 'confirmed', 'rejected'],
+            // 'superseded' = this handoff was overtaken: the same items left the
+            // source station by a different route before it was confirmed, so
+            // it can never be confirmed and must stop showing as incoming.
+            // (Client brief 6 Oct 2026, items 1.1/1.2.)
+            enum: ['pending', 'confirmed', 'rejected', 'superseded'],
             default: 'pending',
         },
+        supersededAt: { type: Date },
+        supersededBy: { type: mongoose.Schema.Types.ObjectId },
         pushedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         pushedAt: { type: Date, default: Date.now },
         confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -263,8 +278,24 @@ const bookOrderSchema = new mongoose.Schema(
         pricing: {
             type: {
                 itemsBase: Number, // item subtotal before the tier multiplier
-                serviceTier: String,
-                tierMultiplier: Number,
+                serviceTier: String, // the ORDER's tier (per-item fallback)
+                tierMultiplier: Number, // null when the order mixes tiers
+                // Per-item care tiers (client brief 6 Oct 2026, item 1.6). When
+                // pieces carry different tiers a single order-level multiplier
+                // says nothing, so the receipt shows the per-piece lines.
+                tierLines: [
+                    {
+                        type: { type: String }, // item name; `type` is reserved
+                        quantity: { type: Number },
+                        serviceTier: { type: String },
+                        unitPrice: { type: Number },
+                        basePrice: { type: Number },
+                        tierMultiplier: { type: Number },
+                        linePrice: { type: Number },
+                    },
+                ],
+                tiersUsed: [String],
+                isMixedTier: Boolean,
                 tierUplift: Number, // itemsSubtotal - itemsBase
                 itemsSubtotal: Number, // item subtotal after the tier multiplier
                 speedCharge: Number, // express / same-day surcharge
@@ -282,7 +313,7 @@ const bookOrderSchema = new mongoose.Schema(
                         // in the shorthand form and mis-casts the array to [String].
                         offerId: { type: mongoose.Schema.Types.ObjectId },
                         name: { type: String },
-                        type: { type: String }, // personal | promotion
+                        type: { type: String }, // baseline | personal | promotion
                     },
                 ],
                 creditApplied: Number, // wallet reward credit used
@@ -433,6 +464,15 @@ const bookOrderSchema = new mongoose.Schema(
                 isVerified: { type: Boolean, default: false },
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
+                // Why a run did not happen, in the rider's words. The pickup leg
+                // had NO note field at all, so markPickupAsFailed wrote
+                // `pickup.note` and Mongoose silently dropped it on every failed
+                // pickup — the office saw a failure with no reason (brief 3.2).
+                // Kept separate from the delivery `note`, which is the customer's
+                // special delivery instruction and is printed on the dispatch tag:
+                // writing a failure reason into that would put "customer not at
+                // home" on the tag as an instruction to the next rider.
+                failureNote: { type: String },
                 // Unassigned-dispatch sweep guards (fire once per stage).
                 alertedAt: { type: Date },
                 escalatedAt: { type: Date },
@@ -444,7 +484,10 @@ const bookOrderSchema = new mongoose.Schema(
                     default: DELIVERY_STATUS.READY,
                 },
                 rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+                // The customer's special delivery instruction — this is the line
+                // the dispatch tag prints. NOT the place for a failure reason.
                 note: { type: String },
+                failureNote: { type: String },
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
                 alertedAt: { type: Date },

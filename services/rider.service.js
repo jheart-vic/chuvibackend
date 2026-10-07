@@ -11,8 +11,10 @@ const {
     PICKUP_DURATION_MINUTES,
     DELIVERY_DURATION_MINUTES,
     ORDER_SERVICE_TYPE,
+    ROLE,
 } = require('../util/constants')
 const paginate = require('../util/paginate')
+const { notifyRoles } = require('../util/notifyRoles')
 const { normalizeOrderAddresses } = require('../util/orderView')
 
 const BaseService = require('./base.service')
@@ -40,11 +42,24 @@ class RiderService extends BaseService {
                 'dispatchDetails.delivery.status': DELIVERY_STATUS.READY,
             }
 
-            const result = await paginate(BookOrderModel, query, {
+            // Same gap as the pickup list (3.3): never normalized, so no landmark.
+            const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
+                select: 'oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails dispatchTag createdAt',
+                lean: true,
             })
-            return BaseService.sendSuccessResponse({ message: result })
+            const rows = data.map((order) => {
+                normalizeOrderAddresses(order)
+                return {
+                    ...order,
+                    itemCount: (order.items || []).length,
+                    deliveryLandmark: order.deliveryAddress?.landmark || null,
+                }
+            })
+            return BaseService.sendSuccessResponse({
+                message: { data: rows, pagination },
+            })
         } catch (error) {
             console.error('Error in getRiderAssignedDeliveries:', error)
             return BaseService.sendFailedResponse({
@@ -84,6 +99,7 @@ class RiderService extends BaseService {
 
                 return {
                     ...order,
+                    deliveryLandmark: order.deliveryAddress?.landmark || null,
                     dispatchDetails: {
                         ...order.dispatchDetails,
                         delivery: {
@@ -266,15 +282,23 @@ class RiderService extends BaseService {
 
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.FAILED
             order.dispatchDetails.delivery.updatedAt = new Date()
-            order.dispatchDetails.delivery.note = note
+            // Was overwriting `delivery.note` — the customer's special delivery
+            // instruction, and the line the dispatch tag PRINTS. A failed delivery
+            // would therefore put "customer not at home" on the reprinted tag as
+            // an instruction to the next rider.
+            order.dispatchDetails.delivery.failureNote = note
             order.markModified('dispatchDetails.delivery')
             await order.save()
 
-            await createNotification({
-                userId: userId,
-                title: 'Delivery Update',
-                body: `Delivery for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
+            // Same as the pickup case: the rider was notifying themselves, and
+            // the office heard nothing. (This one also had no `type` at all, so
+            // every failed delivery was filed under the default `system`.)
+            await notifyRoles({
+                roles: [ROLE.INTAKE_AND_TAG, ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN],
+                title: 'Delivery Failed',
+                body: `Delivery for order ${order.oscNumber} was marked as failed${note ? `. Note: ${note}` : ''}`,
                 subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.DELIVERY_FAILED,
             })
             await createAuditLog({
                 userId: getObjectId(userId),
@@ -305,11 +329,32 @@ class RiderService extends BaseService {
                 'dispatchDetails.pickup.status': PICKUP_STATUS.SCHEDULED,
             }
 
-            const result = await paginate(BookOrderModel, query, {
+            // Brief 3.3 — the landmark was missing from the one screen that needs
+            // it most. This list (the runs a rider is about to go out on) was the
+            // only dispatch list that never ran the addresses through
+            // normalizeOrderAddresses, so an older order's address came back as a
+            // bare string with no `landmark` key at all, while Active Pickups —
+            // the same order, one tap later — showed it. Nothing was missing from
+            // the data; this list just wasn't shaping it.
+            const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
+                select: 'oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails createdAt',
+                lean: true,
             })
-            return BaseService.sendSuccessResponse({ message: result })
+            const rows = data.map((order) => {
+                normalizeOrderAddresses(order)
+                return {
+                    ...order,
+                    itemCount: (order.items || []).length,
+                    // Lifted out of the address object so a list row can show the
+                    // "how do I find the door" line without digging.
+                    pickupLandmark: order.pickupAddress?.landmark || null,
+                }
+            })
+            return BaseService.sendSuccessResponse({
+                message: { data: rows, pagination },
+            })
         } catch (error) {
             console.error('Error in getRiderAssignedPickups:', error)
             return BaseService.sendFailedResponse({
@@ -349,6 +394,7 @@ class RiderService extends BaseService {
 
                 return {
                     ...order,
+                    pickupLandmark: order.pickupAddress?.landmark || null,
                     dispatchDetails: {
                         ...order.dispatchDetails,
                         pickup: {
@@ -629,14 +675,21 @@ class RiderService extends BaseService {
 
             order.dispatchDetails.pickup.status = PICKUP_STATUS.FAILED
             order.dispatchDetails.pickup.updatedAt = new Date()
-            order.dispatchDetails.pickup.note = note
+            // `pickup.note` was not a schema path, so this reason was silently
+            // discarded on every failed pickup (3.2). It has its own field now.
+            order.dispatchDetails.pickup.failureNote = note
             order.markModified('dispatchDetails.pickup')
             await order.save()
 
-            await createNotification({
-                userId: userId,
-                title: 'Pickup Update',
-                body: `Pickup for order ${order.oscNumber} has been marked as failed. Note: ${note}`,
+            // Brief 3.2 — this used to notify `userId`, i.e. the RIDER who just
+            // pressed the button, and nobody in the office. A failed pickup also
+            // keeps its stage and its rider, so the order looked like a healthy
+            // assigned run: nothing on any screen said it had failed and nobody
+            // was told. The staff who have to re-book it get the message now.
+            await notifyRoles({
+                roles: [ROLE.INTAKE_AND_TAG, ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN],
+                title: 'Pickup Failed',
+                body: `Pickup for order ${order.oscNumber} was marked as failed${note ? `. Note: ${note}` : ''}`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.PICKUP_FAILED,
             })
