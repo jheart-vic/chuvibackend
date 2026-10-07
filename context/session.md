@@ -153,7 +153,89 @@ load; every touched file `node --check` clean.
   the wrong path, the field is `userId`, so `sub.user.email` throws on the first expired subscription
   and the catch swallows it nightly; (2) `sendEmail` requires `html` (emailService.js:54 returns false
   without it) but the cron passes `text`.
-- **STATUS: all three parts CODE-COMPLETE. Only DB verification (A8, C5-live) outstanding.**
+### 2026-09-25/29 — TWO FOLLOW-UPS: swagger envelope fixed repo-wide + dispatch tag DB-VERIFIED
+
+**1. FE reported "nothing is live", then found a real docs bug.**
+- **"Not live" was a stale DEPLOY, not missing code.** The symptom pattern gave it away: 2 endpoints
+  entirely absent, 3 present but on their OLD shape = the server was running an older commit. Locally
+  everything was there (281 paths). All the work sits on `mesage-and-alert-fix`; Render serves `main`.
+  Fix = merge + redeploy, no code change. FE later confirmed live round-trips.
+- **Related trap recorded:** `swagger/swagger.js` hardcodes `servers` to the deployed Render URL, so
+  "Try it out" from ANY `/api-docs` (even local) hits PRODUCTION.
+- **THE REAL BUG — the success envelope was documented one level too shallow.** Wire shape is
+  `{success, data:{message}}` (service returns `sendSuccessResponse({message})`, controller nests
+  `result.data` under its own `data`). Docs said `{success, message}`. Payload is at **`data.message`**.
+  FE had to find this with a network capture.
+  - **112 response blocks across 27 route files**, in TWO variants: 104 with `success`+`message` as
+    siblings, and 8 with `success`+`message`+`data` as siblings (services returning an extra key, e.g.
+    `addAddress` → `{message, data}` — BOTH belong under the outer `data`). Fixed with a structural
+    sweep (rule: `success` and `message` may never be siblings), idempotent, verified 141 correct / 0 wrong.
+  - **ROOT CAUSE was the pattern in CLAUDE.md itself**, so every endpoint written to the house style
+    inherited it. Fixed there FIRST, with a verification snippet, so it can't regrow.
+  - **Why it survived:** `ErrorResponse` was always correct (`{success, data:{error}}`). Failures
+    nested, successes didn't, and nobody compares the two.
+  - **DOCS ONLY — no FE change needed.** Proved it: stripped all comments from the 17 changed route
+    files and diffed against HEAD → executable code IDENTICAL in every one; route registrations
+    identical (16/10/4/8/33); all 8 worried-about endpoints still registered in the live router; 294
+    routes as before; 119/119 runtime checks still pass. The docs were changed to match the code, NOT
+    the reverse — the reverse would have broken every FE call.
+- **A CRLF trap in the sweep script:** the first pass found only 9 sites because `properties:\r` never
+  matched `'properties:'`. Most route files are CRLF; the \r must be stripped before comparing and
+  restored when writing.
+
+**2. Dispatch tag DB-VERIFIED — NEW `dispatchTagStaging.js`, 46/46 GREEN against `testingdb`.**
+User supplied the testing URI. Details in `context/feature.md` A8. Headlines: the print record really
+PERSISTS; Activity + AuditLog written and the reprint audited as "REPRINTED (print #2)"; the rider gate
+refuses with `needsDispatchTag` writing NOTHING then allows after printing with the rider actually
+stored; the queue returns `needsTag`/`needsTagCount` from a real query; the payment flag correct across
+paid/unpaid/subscription; `itemCount` = 5 pieces from a real 3+2 booking. All probe data removed.
+- **Harness hard-refuses a DB named `laundrydb`** (the older harnesses don't) — `.env` still points at
+  the LIVE db, so always pass `MONGODB_URL` inline.
+- **Two harness bugs the run found:** booking payload was missing required `fullName`; and
+  `postBookOrder` returns `{ message: <string>, order, offer }` — the order is a SIBLING of `message`,
+  so the id is at `data.order._id` (another instance of the multi-key-under-data shape).
+- **testingdb was seeded** (AdminSetting 4 serviceTypes, AdminOrderDetails, one OrderItem `shirt` with
+  price as a MULTIPLIER of 1 — not naira, per the earlier botStaging lesson).
+
+### 2026-10-05/06 — WASH STATION fixes (from an FE screenshot) + envelope variant 3
+
+**Trigger: a screenshot of Active Wash — every card stuck on "Waiting confirmation", Est. Finish wrong.**
+
+- **9a — the stuck button WAS a backend gap, not just FE labelling.** I first said it was FE-only; the
+  code says otherwise. `allItemsConfirmed`/`confirmedItemCount` are returned by the QUEUE endpoints
+  (washAndDry :164-165, :209-218) but NOT by `getActiveWash`/`getActiveDry`. A shared station card
+  keyed on `allItemsConfirmed` reads `undefined` there → falsy → "waiting confirmation" that can NEVER
+  clear. Added `allItemsConfirmed` + `confirmedItemCount` + a new **`canMoveToDrying`** (the genuinely
+  actionable flag) to both lists.
+  - The underlying logic was always right: `washDetails.startedAt` is stamped ONLY when every item at
+    the station is confirmed (updateOrderItemsStage :90-111) and active-wash selects on it — so an order
+    on that screen has nothing left to confirm. The backend just wasn't saying so.
+  - **`isWashed` had to be hoisted to module scope** — it was local to `getWashQueue`, so using it in the
+    other two methods would have thrown ReferenceError at runtime. `node --check` AND `require()` both
+    passed it; only running the code caught it. Worth remembering: loading a service proves nothing
+    about method bodies.
+- **9b — Est. Finish was a flat default everywhere. THREE compounding bugs:**
+  1. `deliverySpeed` was never in any station projection → the lookup always read `undefined`. Added to
+     **18 selects** across wash/press/qc.
+  2. Duration tables keyed `same_day` but the stored enum value is **`same-day`** (hyphen) — same-day
+     orders never matched even once the field was there.
+  3. `pressAndIron :546` indexed a SPEED-keyed table by `serviceTier` (classic/premium/vip) → never
+     matched, every press order read 30 min.
+  Fallbacks now resolve to each table's own `.standard` instead of unrelated constants (60/30/20).
+  **DB-verified 20/20: express 45 / standard 65 / same-day 25 — three different estimates where there
+  was one.** (That harness lived in the scratchpad and was cleared by the session rollover; the
+  committed `dispatchTagStaging.js` re-ran 46/46 green as the regression gate.)
+- **ENVELOPE VARIANT 3 — 138 MORE blocks.** While documenting the above I found response schemas with
+  `{message}` and NO `success` wrapper at all (my earlier sweep required `success` to be present). Same
+  bug. Fixed with a second structural pass anchored on `schema:` → `type: object` → `properties:` so it
+  can't touch nested blocks. **Running total: 250 blocks corrected; spec now 277 correct / 0 wrong.**
+  Also: 8 station endpoints documented their payload key as `orders` when the services return `data`
+  (CRM's `orders` is genuine — left alone).
+- Docs-only proof repeated for this pass: 13 route files changed, executable code IDENTICAL in all.
+
+- **STATUS: all parts CODE-COMPLETE + DB-VERIFIED. Part C's live check (C5) is the only gap and needs a
+  real subscription to exist.** UNCOMMITTED before this commit: the two envelope sweeps, CLAUDE.md, the
+  wash/press/qc duration + flag fixes, changelog §8-9, and `dispatchTagStaging.js`.
 - **NEXT:** on go-ahead — R1-R4 relocation, A6+A6b+A6c, Part C, then A8/C5 DB verify. Monthly Lead
   Reporting is STILL UNCOMMITTED underneath all of this.
 

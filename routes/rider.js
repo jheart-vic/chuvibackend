@@ -50,97 +50,101 @@ const router = require('express').Router()
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "08123456789"
- *                           pickupAddress:
- *                             type: string
- *                             example: "12 Allen Avenue, Ikeja"
- *                           pickupDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-13"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           deliverySpeed:
- *                             type: string
- *                             example: "express"
- *                           amount:
- *                             type: number
- *                             example: 1500
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               pickup:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "pending"
- *                                   rider:
- *                                     type: string
- *                                     example: "64d3c9c0f1b2a8e9d0f99999"
- *                                   isVerified:
- *                                     type: boolean
- *                                     example: false
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                               delivery:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "ready"
- *                                   rider:
- *                                     type: string
- *                                     example: "64d3c9c0f1b2a8e9d0f99999"
- *                                   note:
- *                                     type: string
- *                                     example: "Handle with care"
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 25
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         pages:
- *                           type: integer
- *                           example: 3
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08123456789"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "12 Allen Avenue, Ikeja"
+ *                               pickupDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-13"
+ *                               deliveryDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-15"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               deliverySpeed:
+ *                                 type: string
+ *                                 example: "express"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 1500
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   pickup:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "pending"
+ *                                       rider:
+ *                                         type: string
+ *                                         example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                       isVerified:
+ *                                         type: boolean
+ *                                         example: false
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "ready"
+ *                                       rider:
+ *                                         type: string
+ *                                         example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                       note:
+ *                                         type: string
+ *                                         example: "Handle with care"
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 25
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             pages:
+ *                               type: integer
+ *                               example: 3
  *       401:
  *         description: Unauthorized - Rider not authenticated
  *       500:
@@ -176,156 +180,160 @@ router.get(ROUTE_RIDER_ASSIGNED_DELIVERIES, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f12345"
- *                     userId:
+ *                     message:
  *                       type: object
  *                       properties:
  *                         _id:
  *                           type: string
- *                           example: "64d3c9c0f1b2a8e9d0f54321"
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         userId:
+ *                           type: object
+ *                           properties:
+ *                             _id:
+ *                               type: string
+ *                               example: "64d3c9c0f1b2a8e9d0f54321"
+ *                             fullName:
+ *                               type: string
+ *                               example: "John Doe"
+ *                             email:
+ *                               type: string
+ *                               example: "johndoe@example.com"
+ *                             phoneNumber:
+ *                               type: string
+ *                               example: "08123456789"
  *                         fullName:
  *                           type: string
  *                           example: "John Doe"
- *                         email:
- *                           type: string
- *                           example: "johndoe@example.com"
  *                         phoneNumber:
  *                           type: string
  *                           example: "08123456789"
- *                     fullName:
- *                       type: string
- *                       example: "John Doe"
- *                     phoneNumber:
- *                       type: string
- *                       example: "08123456789"
- *                     pickupAddress:
- *                       type: string
- *                       example: "12 Allen Avenue, Ikeja"
- *                     pickupDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-13"
- *                     deliveryDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-15"
- *                     pickupTime:
- *                       type: string
- *                       example: "10am-12pm"
- *                     serviceType:
- *                       type: string
- *                       example: "wash-and-iron"
- *                     serviceTier:
- *                       type: string
- *                       example: "premium"
- *                     deliverySpeed:
- *                       type: string
- *                       example: "express"
- *                     amount:
- *                       type: number
- *                       example: 1500
- *                     deliveryAmount:
- *                       type: number
- *                       example: 500
- *                     paymentMethod:
- *                       type: string
- *                       example: "paystack"
- *                     paymentStatus:
- *                       type: string
- *                       example: "pending"
- *                     oscNumber:
- *                       type: string
- *                       example: "OSC123456"
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f77777"
- *                           type:
- *                             type: string
- *                             example: "shirt"
- *                           price:
- *                             type: number
- *                             example: 500
- *                           quantity:
- *                             type: number
- *                             example: 3
- *                           tagId:
- *                             type: string
- *                             example: "TAG123"
- *                           tagStatus:
- *                             type: string
- *                             example: "pending"
- *                           sortStatus:
- *                             type: string
- *                             example: "pending"
- *                           washStatus:
- *                             type: string
- *                             example: "pending"
- *                           ironStatus:
- *                             type: string
- *                             example: "pending"
- *                     stage:
- *                       type: object
- *                       properties:
- *                         status:
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "12 Allen Avenue, Ikeja"
+ *                         pickupDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-13"
+ *                         deliveryDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-15"
+ *                         pickupTime:
+ *                           type: string
+ *                           example: "10am-12pm"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "premium"
+ *                         deliverySpeed:
+ *                           type: string
+ *                           example: "express"
+ *                         amount:
+ *                           type: number
+ *                           example: 1500
+ *                         deliveryAmount:
+ *                           type: number
+ *                           example: 500
+ *                         paymentMethod:
+ *                           type: string
+ *                           example: "paystack"
+ *                         paymentStatus:
  *                           type: string
  *                           example: "pending"
- *                         note:
+ *                         oscNumber:
  *                           type: string
- *                           example: "Order created"
- *                         updatedAt:
- *                           type: string
- *                           format: date-time
- *                     dispatchDetails:
- *                       type: object
- *                       properties:
- *                         pickup:
+ *                           example: "OSC123456"
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f77777"
+ *                               type:
+ *                                 type: string
+ *                                 example: "shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 500
+ *                               quantity:
+ *                                 type: number
+ *                                 example: 3
+ *                               tagId:
+ *                                 type: string
+ *                                 example: "TAG123"
+ *                               tagStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               sortStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               washStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               ironStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                         stage:
  *                           type: object
  *                           properties:
  *                             status:
  *                               type: string
  *                               example: "pending"
- *                             rider:
- *                               type: string
- *                               example: "64d3c9c0f1b2a8e9d0f99999"
- *                             isVerified:
- *                               type: boolean
- *                               example: false
- *                             updatedAt:
- *                               type: string
- *                               format: date-time
- *                         delivery:
- *                           type: object
- *                           properties:
- *                             status:
- *                               type: string
- *                               example: "ready"
- *                             rider:
- *                               type: string
- *                               example: "64d3c9c0f1b2a8e9d0f99999"
  *                             note:
  *                               type: string
- *                               example: "Handle with care"
+ *                               example: "Order created"
  *                             updatedAt:
  *                               type: string
  *                               format: date-time
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T12:34:56.789Z"
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T13:00:00.123Z"
+ *                         dispatchDetails:
+ *                           type: object
+ *                           properties:
+ *                             pickup:
+ *                               type: object
+ *                               properties:
+ *                                 status:
+ *                                   type: string
+ *                                   example: "pending"
+ *                                 rider:
+ *                                   type: string
+ *                                   example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                 isVerified:
+ *                                   type: boolean
+ *                                   example: false
+ *                                 updatedAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                             delivery:
+ *                               type: object
+ *                               properties:
+ *                                 status:
+ *                                   type: string
+ *                                   example: "ready"
+ *                                 rider:
+ *                                   type: string
+ *                                   example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                 note:
+ *                                   type: string
+ *                                   example: "Handle with care"
+ *                                 updatedAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T12:34:56.789Z"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Order ID is required
  *       401:
@@ -372,75 +380,79 @@ router.get(ROUTE_RIDER_ORDER_ID, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "08123456789"
- *                           pickupAddress:
- *                             type: string
- *                             example: "12 Allen Avenue, Ikeja"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           amount:
- *                             type: number
- *                             example: 1500
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               delivery:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "picked_up"
- *                                   rider:
- *                                     type: string
- *                                     example: "64d3c9c0f1b2a8e9d0f99999"
- *                                   note:
- *                                     type: string
- *                                     example: "On the way"
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 12
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         pages:
- *                           type: integer
- *                           example: 2
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08123456789"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "12 Allen Avenue, Ikeja"
+ *                               deliveryDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-15"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 1500
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "picked_up"
+ *                                       rider:
+ *                                         type: string
+ *                                         example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                       note:
+ *                                         type: string
+ *                                         example: "On the way"
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 12
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             pages:
+ *                               type: integer
+ *                               example: 2
  *       401:
  *         description: Unauthorized - Rider not authenticated
  *       500:
@@ -477,9 +489,13 @@ router.get(ROUTE_RIDER_ACTIVE_DELIVERIES, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Delivery started successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Delivery started successfully"
  *       400:
  *         description: Validation or business logic error
  *         content:
@@ -549,9 +565,13 @@ router.put(ROUTE_START_DELIVERY_ID, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order marked as delivered successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order marked as delivered successfully"
  *       400:
  *         description: Validation or business logic error
  *         content:
@@ -639,9 +659,13 @@ router.put(ROUTE_RIDER_MARK_DELIVERED_ID, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order marked as failed successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order marked as failed successfully"
  *       400:
  *         description: Validation or business logic error
  *         content:
@@ -912,97 +936,101 @@ router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "08123456789"
- *                           pickupAddress:
- *                             type: string
- *                             example: "12 Allen Avenue, Ikeja"
- *                           pickupDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-13"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           deliverySpeed:
- *                             type: string
- *                             example: "express"
- *                           amount:
- *                             type: number
- *                             example: 1500
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               pickup:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "pending"
- *                                   rider:
- *                                     type: string
- *                                     example: "64d3c9c0f1b2a8e9d0f99999"
- *                                   isVerified:
- *                                     type: boolean
- *                                     example: false
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                               delivery:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "ready"
- *                                   rider:
- *                                     type: string
- *                                     example: "64d3c9c0f1b2a8e9d0f99999"
- *                                   note:
- *                                     type: string
- *                                     example: "Handle with care"
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 25
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         pages:
- *                           type: integer
- *                           example: 3
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08123456789"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "12 Allen Avenue, Ikeja"
+ *                               pickupDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-13"
+ *                               deliveryDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-15"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               deliverySpeed:
+ *                                 type: string
+ *                                 example: "express"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 1500
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   pickup:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "pending"
+ *                                       rider:
+ *                                         type: string
+ *                                         example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                       isVerified:
+ *                                         type: boolean
+ *                                         example: false
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "ready"
+ *                                       rider:
+ *                                         type: string
+ *                                         example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                       note:
+ *                                         type: string
+ *                                         example: "Handle with care"
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 25
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             pages:
+ *                               type: integer
+ *                               example: 3
  *       401:
  *         description: Unauthorized - Rider not authenticated
  *       500:
@@ -1045,75 +1073,79 @@ router.get(ROUTE_RIDER_ASSIGNED_PICKUPS, [riderAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "08123456789"
- *                           pickupAddress:
- *                             type: string
- *                             example: "12 Allen Avenue, Ikeja"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           amount:
- *                             type: number
- *                             example: 1500
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               delivery:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "picked_up"
- *                                   rider:
- *                                     type: string
- *                                     example: "64d3c9c0f1b2a8e9d0f99999"
- *                                   note:
- *                                     type: string
- *                                     example: "On the way"
- *                                   updatedAt:
- *                                     type: string
- *                                     format: date-time
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 12
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         pages:
- *                           type: integer
- *                           example: 2
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "08123456789"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "12 Allen Avenue, Ikeja"
+ *                               deliveryDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-15"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 1500
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "picked_up"
+ *                                       rider:
+ *                                         type: string
+ *                                         example: "64d3c9c0f1b2a8e9d0f99999"
+ *                                       note:
+ *                                         type: string
+ *                                         example: "On the way"
+ *                                       updatedAt:
+ *                                         type: string
+ *                                         format: date-time
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 12
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             pages:
+ *                               type: integer
+ *                               example: 2
  *       401:
  *         description: Unauthorized - Rider not authenticated
  *       500:
@@ -1163,9 +1195,13 @@ router.get(ROUTE_RIDER_ACTIVE_PICKUPS, [riderAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Pickup started successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Pickup started successfully"
  *       400:
  *         description: Validation or business logic error
  *         content:
@@ -1244,9 +1280,13 @@ router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Pickup marked as picked up successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Pickup marked as picked up successfully"
  *       400:
  *         description: Validation or business logic error
  *         content:
@@ -1328,9 +1368,13 @@ router.put(ROUTE_RIDER_MARK_PICKUP_ID, riderAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Pickup marked as failed successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Pickup marked as failed successfully"
  *       400:
  *         description: Validation or business logic error
  *         content:

@@ -217,11 +217,93 @@ Why it went unnoticed: `ErrorResponse` was always documented CORRECTLY
 (`{success, data:{error}}`). Failures nested, successes didn't — and nobody
 compares the two side by side.
 
-Now: 141 correct envelopes, 0 wrong, asserted by a check over the built spec.
+A THIRD variant turned up while documenting the wash fixes: 138 more blocks
+documented `{ message: ... }` with no `success` wrapper at all. Same bug, same
+fix. Final tally across all three variants: **250 response blocks corrected**.
+
+Now: 277 correct envelopes, 0 wrong, asserted by a check over the built spec.
+
+Also corrected: 8 station list endpoints documented their payload key as
+`orders`, when the services return `data`. (`orders` in the CRM customer payload
+is genuine and was left alone.)
 
 ### FE action
 NONE. Your code already targets the real shape. This only means the docs now
 agree with it, and the next person won't have to reverse-engineer it.
+
+═══════════════════════════════════════════════════════════════════════════════
+9. FIXED — Wash station: stuck "Waiting confirmation", and wrong Est. Finish
+═══════════════════════════════════════════════════════════════════════════════
+
+Raised from a screenshot of the Active Wash screen: every card showed
+"Waiting confirmation" and the Est. Finish times were wrong. Two separate causes.
+
+## 9a. The stuck "Waiting confirmation" button
+By the time an order appears on Active Wash, confirmation is ALREADY DONE.
+`washDetails.startedAt` is stamped only when EVERY item at the wash station is
+confirmed, and the Active Wash list selects on that field — so an order on that
+screen has nothing left to confirm.
+
+The bug was ours: `allItemsConfirmed` / `confirmedItemCount` were returned by the
+QUEUE endpoints but NOT by Active Wash or Active Dry. A shared station card
+keying off `allItemsConfirmed` reads `undefined` there → falsy → renders
+"waiting confirmation", and nothing can ever clear it.
+
+`GET /intake-user`-style station lists now agree. Active Wash and Active Dry rows
+gained:
+
+  allItemsConfirmed    always true on these two lists (see above)
+  confirmedItemCount   how many of this station's pieces are confirmed
+  canMoveToDrying      THE actionable flag — true on Active Wash, false once drying
+
+### FE action
+Drive the Active Wash button from `canMoveToDrying`, not `allItemsConfirmed`:
+
+  PATCH /api/wash-dry/order/active-wash/{id}/move-to-drying
+
+For reference, the full wash-station sequence:
+
+  GET   /api/wash-dry/orders/queue                              work waiting
+  PATCH /api/wash-dry/order/queue/{id}/items/confirm-washing    body:
+          { "allItems": true }   or   { "itemIds": ["<id>", ...] }
+  GET   /api/wash-dry/orders/active-wash                        (after the LAST
+                                                                 confirm)
+  PATCH /api/wash-dry/order/active-wash/{id}/move-to-drying
+  GET   /api/wash-dry/orders/active-dry
+  POST  /api/orders/{id}/handoff                                push to press
+  POST  /api/orders/{id}/handoff/{hid}/confirm                  press confirms
+
+The handoff is the ONE place a real "waiting confirmation" state exists — a
+`pending` handoff awaiting the receiving station. If that is the state the card
+was built for, it belongs there, not on Active Wash.
+
+Undo is available: PATCH /api/wash-dry/order/queue/{id}/items/undo-washing
+
+## 9b. Est. Finish was the same number for every order
+Three compounding bugs, all fixed:
+
+  1. `deliverySpeed` was never included in the station queries' field projection,
+     so the duration lookup always read `undefined` and fell through to a default.
+     Added to 18 projections across wash, press and QC.
+  2. The duration tables were keyed `same_day` (underscore) while the stored value
+     is `same-day` (hyphen) — so same-day orders never matched even once the field
+     was available.
+  3. Press indexed a SPEED-keyed table by `serviceTier` (classic/premium/vip), so
+     it never matched at all and every pressing order read 30 minutes.
+
+Fallbacks now resolve to each table's own `standard` value instead of an
+unrelated constant, so an order with a missing speed is estimated as standard.
+
+Verified live — wash now returns three different estimates where there was one:
+
+  express    45 min
+  standard   65 min
+  same-day   25 min
+
+### FE action
+If the screen computes its own estimate, switch to the backend's
+`washDetails.estimatedFinish` / `durationMinutes` (and the press/QC equivalents)
+— they are now correct per order, and your local figure will disagree with them.
 
 ═══════════════════════════════════════════════════════════════════════════════
 SWAGGER (updated)
@@ -232,7 +314,9 @@ SWAGGER (updated)
 version of this changelog showed a shallower example, this is the correct one.
 
 New:      DispatchTag
-Updated:  DispatchQueueOrder (+ tagPrinted / needsTag / printCount / reprintFlagged)
+Updated:  StationScopedOrder (+ allItemsConfirmed / confirmedItemCount /
+            canMoveToDrying, with which lists carry them)
+          DispatchQueueOrder (+ tagPrinted / needsTag / printCount / reprintFlagged)
           MonthlyLeadReport (+ subscriptionConversions / subscriptionDrawDownOrders,
             and the first-payment-only rule in the description)
           GET /intake-user/deliverable-orders (+ needsTagCount)
@@ -250,3 +334,9 @@ FE CHECKLIST (additions)
   [ ] Surface reprintFlagged for review                                  (§5)
   [ ] Nothing to do for subscription conversions unless you show a
       revenue breakdown                                                  (§6)
+  [ ] Nothing to do for the timezone change                              (§7)
+  [ ] Nothing to do for the Swagger envelope fix — docs only             (§8)
+  [ ] Drive the Active Wash button from canMoveToDrying, not
+      allItemsConfirmed                                                 (§9a)
+  [ ] Use the backend's estimatedFinish / durationMinutes instead of a
+      locally computed estimate                                         (§9b)

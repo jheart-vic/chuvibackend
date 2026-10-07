@@ -1232,6 +1232,30 @@
  *               description: "Piece counts at every OTHER station, keyed by station."
  *               additionalProperties: { type: integer }
  *               example: { "sort-and-pretreat-station": 7 }
+ *             allItemsConfirmed:
+ *               type: boolean
+ *               description: >
+ *                 Every piece AT THIS STATION is confirmed. Returned by the queue
+ *                 lists AND by Active Wash / Active Dry. On those two it is always
+ *                 true — an order only reaches them once the last piece is
+ *                 confirmed (that confirmation is what stamps
+ *                 `washDetails.startedAt`, which those lists select on). It is sent
+ *                 anyway so a shared station card never reads it as undefined and
+ *                 renders a "waiting confirmation" state that cannot clear.
+ *               example: true
+ *             confirmedItemCount:
+ *               type: integer
+ *               description: "How many of this station's pieces are confirmed."
+ *               example: 3
+ *             canMoveToDrying:
+ *               type: boolean
+ *               description: >
+ *                 WASH & DRY only. The actionable next step on Active Wash: true
+ *                 until the order is moved to drying, then false (and it appears on
+ *                 Active Dry instead). Drive the button from this, not from
+ *                 allItemsConfirmed — confirmation is already done by then.
+ *                 Target: PATCH /wash-dry/order/active-wash/{id}/move-to-drying
+ *               example: true
  *
  *     DispatchTag:
  *       type: object

@@ -157,20 +157,24 @@ router.post(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     role:
- *                       type: string
- *                       example: "press"
- *                     reasons:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["item_missing", "item_mismatched", "fabric_damage_risk", "delicate_requires_attention", "other"]
- *                     note:
- *                       type: string
- *                       example: "You may type a custom reason if yours is not listed."
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         role:
+ *                           type: string
+ *                           example: "press"
+ *                         reasons:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                           example: ["item_missing", "item_mismatched", "fabric_damage_risk", "delicate_requires_attention", "other"]
+ *                         note:
+ *                           type: string
+ *                           example: "You may type a custom reason if yours is not listed."
  *       400:
  *         description: |
  *           Invalid or missing role.
@@ -243,9 +247,13 @@ router.get(ROUTE_GET_HOLD_REASONS, auth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Delivery issue reported successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Delivery issue reported successfully"
  *       400:
  *         description: |
  *           - Order ID is required

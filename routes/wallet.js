@@ -238,77 +238,81 @@ router.post(ROUTE_PAY_WITH_WALLET, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: 64a8f4b6c3d3f3b2e7a1f2d1
- *                           userId:
- *                             type: string
- *                             example: 64a8f4b6c3d3f3b2e7a1f2c0
- *                           amount:
- *                             type: number
- *                             example: 500
- *                           reference:
- *                             type: string
- *                             example: TXN123456
- *                           type:
- *                             type: string
- *                             enum: [order, subscription, wallet-top-up]
- *                             example: wallet-top-up
- *                           subscription:
- *                             type: string
- *                             example: 64a8f4b6c3d3f3b2e7a1f2b0
- *                           order:
- *                             type: string
- *                             example: 64a8f4b6c3d3f3b2e7a1f2a0
- *                           status:
- *                             type: string
- *                             enum: [pending, success, failed]
- *                             example: success
- *                           channel:
- *                             type: string
- *                             example: card
- *                           alertType:
- *                             type: string
- *                             enum: [credit, debit]
- *                             example: credit
- *                           paidAt:
- *                             type: string
- *                             format: date-time
- *                             example: 2026-01-13T12:34:56.789Z
- *                           metadata:
- *                             type: object
- *                             additionalProperties: true
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: 2026-01-13T12:34:56.789Z
- *                           updatedAt:
- *                             type: string
- *                             format: date-time
- *                             example: 2026-01-13T12:34:56.789Z
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 100
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         pages:
- *                           type: integer
- *                           example: 10
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: 64a8f4b6c3d3f3b2e7a1f2d1
+ *                               userId:
+ *                                 type: string
+ *                                 example: 64a8f4b6c3d3f3b2e7a1f2c0
+ *                               amount:
+ *                                 type: number
+ *                                 example: 500
+ *                               reference:
+ *                                 type: string
+ *                                 example: TXN123456
+ *                               type:
+ *                                 type: string
+ *                                 enum: [order, subscription, wallet-top-up]
+ *                                 example: wallet-top-up
+ *                               subscription:
+ *                                 type: string
+ *                                 example: 64a8f4b6c3d3f3b2e7a1f2b0
+ *                               order:
+ *                                 type: string
+ *                                 example: 64a8f4b6c3d3f3b2e7a1f2a0
+ *                               status:
+ *                                 type: string
+ *                                 enum: [pending, success, failed]
+ *                                 example: success
+ *                               channel:
+ *                                 type: string
+ *                                 example: card
+ *                               alertType:
+ *                                 type: string
+ *                                 enum: [credit, debit]
+ *                                 example: credit
+ *                               paidAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: 2026-01-13T12:34:56.789Z
+ *                               metadata:
+ *                                 type: object
+ *                                 additionalProperties: true
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: 2026-01-13T12:34:56.789Z
+ *                               updatedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: 2026-01-13T12:34:56.789Z
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 100
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             pages:
+ *                               type: integer
+ *                               example: 10
  *       400:
  *         description: Validation error
  *       500:

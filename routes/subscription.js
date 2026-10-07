@@ -398,13 +398,17 @@ router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: Subscription state retrieved successfully
- *                 subscription:
- *                   allOf:
- *                     - $ref: '#/components/schemas/Subscription'
- *                   nullable: true
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Subscription state retrieved successfully
+ *                     subscription:
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/Subscription'
+ *                       nullable: true
  *       500:
  *         description: Server error
  */

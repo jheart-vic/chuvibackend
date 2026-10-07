@@ -54,131 +54,135 @@ const router = require("express").Router();
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     totalActiveOrders:
- *                       type: integer
- *                       example: 120
- *                     totalRevenue:
- *                       type: integer
- *                       example: 120
- *                     revenueTodayVerified:
- *                       type: number
- *                       example: 50000
- *                     revenueTodayChange:
- *                       type: number
- *                       description: Percentage change compared to yesterday
- *                       example: 12.5
- *                     avgProcessingTime:
- *                       type: number
- *                       description: Average processing time in milliseconds
- *                       example: 3600000
- *                     overdueOrders:
- *                       type: integer
- *                       example: 15
- *                     dueToday:
- *                       type: integer
- *                       example: 20
- *                     bottleNeckStation:
+ *                     message:
  *                       type: object
- *                       nullable: true
  *                       properties:
- *                         _id:
- *                           type: string
- *                           example: "washing"
- *                         count:
+ *                         totalActiveOrders:
  *                           type: integer
- *                           example: 45
- *                     readyAndWaiting:
- *                       type: integer
- *                       example: 10
- *                     pendingPayment:
- *                       type: integer
- *                       example: 8
- *                     activeHolds:
- *                       type: integer
- *                       example: 5
- *                     overdueHolds:
- *                       type: integer
- *                       example: 2
- *                     deliveryIssues:
- *                       type: integer
- *                       example: 3
- *                     avgCostPerItem7Days:
- *                       type: number
- *                       example: 250
- *                     totalSubscribers:
- *                       type: integer
- *                       example: 300
- *                     monthlyRevenueAgg:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
+ *                           example: 120
+ *                         totalRevenue:
+ *                           type: integer
+ *                           example: 120
+ *                         revenueTodayVerified:
+ *                           type: number
+ *                           example: 50000
+ *                         revenueTodayChange:
+ *                           type: number
+ *                           description: Percentage change compared to yesterday
+ *                           example: 12.5
+ *                         avgProcessingTime:
+ *                           type: number
+ *                           description: Average processing time in milliseconds
+ *                           example: 3600000
+ *                         overdueOrders:
+ *                           type: integer
+ *                           example: 15
+ *                         dueToday:
+ *                           type: integer
+ *                           example: 20
+ *                         bottleNeckStation:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             _id:
+ *                               type: string
+ *                               example: "washing"
+ *                             count:
+ *                               type: integer
+ *                               example: 45
+ *                         readyAndWaiting:
+ *                           type: integer
+ *                           example: 10
+ *                         pendingPayment:
+ *                           type: integer
+ *                           example: 8
+ *                         activeHolds:
+ *                           type: integer
+ *                           example: 5
+ *                         overdueHolds:
+ *                           type: integer
+ *                           example: 2
+ *                         deliveryIssues:
+ *                           type: integer
+ *                           example: 3
+ *                         avgCostPerItem7Days:
+ *                           type: number
+ *                           example: 250
+ *                         totalSubscribers:
+ *                           type: integer
+ *                           example: 300
+ *                         monthlyRevenueAgg:
+ *                           type: array
+ *                           items:
  *                             type: object
  *                             properties:
- *                               year:
+ *                               _id:
+ *                                 type: object
+ *                                 properties:
+ *                                   year:
+ *                                     type: integer
+ *                                     example: 2026
+ *                                   month:
+ *                                     type: integer
+ *                                     example: 4
+ *                               totalRevenue:
+ *                                 type: number
+ *                                 example: 250000
+ *                               totalSubscriptions:
  *                                 type: integer
- *                                 example: 2026
- *                               month:
+ *                                 example: 120
+ *                         planDistributionAgg:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               planId:
+ *                                 type: string
+ *                                 example: "abc123"
+ *                               title:
+ *                                 type: string
+ *                                 example: "Premium"
+ *                               count:
  *                                 type: integer
- *                                 example: 4
- *                           totalRevenue:
- *                             type: number
- *                             example: 250000
- *                           totalSubscriptions:
- *                             type: integer
- *                             example: 120
- *                     planDistributionAgg:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           planId:
- *                             type: string
- *                             example: "abc123"
- *                           title:
- *                             type: string
- *                             example: "Premium"
- *                           count:
- *                             type: integer
- *                             example: 80
- *                           percentage:
- *                             type: number
- *                             example: 66.67
- *                     graphResult:
- *                       type: array
- *                       description: Orders trend for the last 12 hours (2-hour intervals)
- *                       items:
- *                         type: object
- *                         properties:
- *                           time:
- *                             type: string
- *                             example: "08:00"
- *                           newOrders:
- *                             type: integer
- *                             example: 20
- *                           completedOrders:
- *                             type: integer
- *                             example: 10
- *                     activities:
- *                       type: array
- *                       description: Latest system activities
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           message:
- *                             type: string
- *                             example: "Order created"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
+ *                                 example: 80
+ *                               percentage:
+ *                                 type: number
+ *                                 example: 66.67
+ *                         graphResult:
+ *                           type: array
+ *                           description: Orders trend for the last 12 hours (2-hour intervals)
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               time:
+ *                                 type: string
+ *                                 example: "08:00"
+ *                               newOrders:
+ *                                 type: integer
+ *                                 example: 20
+ *                               completedOrders:
+ *                                 type: integer
+ *                                 example: 10
+ *                         activities:
+ *                           type: array
+ *                           description: Latest system activities
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               message:
+ *                                 type: string
+ *                                 example: "Order created"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
  *       500:
  *         description: Server error
  */
@@ -224,89 +228,93 @@ router.get(ROUTE_ADMIN_DASHBOARD_STATS, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "+1234567890"
- *                           pickupAddress:
- *                             type: string
- *                             example: "123 Main Street"
- *                           pickupDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-13"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           amount:
- *                             type: number
- *                             example: 150
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           stage:
- *                             type: object
- *                             properties:
- *                               status:
- *                                 type: string
- *                                 example: "washing"
- *                               note:
- *                                 type: string
- *                                 example: "Processing started"
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               pickup:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "pending"
- *                               delivery:
- *                                 type: object
- *                                 properties:
- *                                   status:
- *                                     type: string
- *                                     example: "ready"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 50
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         totalPages:
- *                           type: integer
- *                           example: 5
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "+1234567890"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "123 Main Street"
+ *                               pickupDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-13"
+ *                               deliveryDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-15"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 150
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "washing"
+ *                                   note:
+ *                                     type: string
+ *                                     example: "Processing started"
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   pickup:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "pending"
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status:
+ *                                         type: string
+ *                                         example: "ready"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 50
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             totalPages:
+ *                               type: integer
+ *                               example: 5
  *       400:
  *         description: Invalid type supplied
  *       500:
@@ -764,93 +772,97 @@ router.put(ROUTE_UPDATE_ADMIN_SETTING, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: "64d3c9c0f1b2a8e9d0f12345"
- *                     fullName:
- *                       type: string
- *                       example: "John Doe"
- *                     phoneNumber:
- *                       type: string
- *                       example: "+1234567890"
- *                     pickupAddress:
- *                       type: string
- *                       example: "123 Main Street"
- *                     pickupDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-13"
- *                     deliveryDate:
- *                       type: string
- *                       format: date
- *                       example: "2026-01-15"
- *                     serviceType:
- *                       type: string
- *                       example: "wash-and-iron"
- *                     serviceTier:
- *                       type: string
- *                       example: "premium"
- *                     deliverySpeed:
- *                       type: string
- *                       example: "express"
- *                     amount:
- *                       type: number
- *                       example: 150
- *                     paymentStatus:
- *                       type: string
- *                       example: "pending"
- *                     stage:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         status:
+ *                         _id:
  *                           type: string
- *                           example: "washing"
- *                         note:
+ *                           example: "64d3c9c0f1b2a8e9d0f12345"
+ *                         fullName:
  *                           type: string
- *                           example: "Processing started"
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           type:
- *                             type: string
- *                             example: "shirt"
- *                           price:
- *                             type: number
- *                             example: 50
- *                           quantity:
- *                             type: number
- *                             example: 2
- *                           tagStatus:
- *                             type: string
- *                             example: "pending"
- *                     dispatchDetails:
- *                       type: object
- *                       properties:
- *                         pickup:
+ *                           example: "John Doe"
+ *                         phoneNumber:
+ *                           type: string
+ *                           example: "+1234567890"
+ *                         pickupAddress:
+ *                           type: string
+ *                           example: "123 Main Street"
+ *                         pickupDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-13"
+ *                         deliveryDate:
+ *                           type: string
+ *                           format: date
+ *                           example: "2026-01-15"
+ *                         serviceType:
+ *                           type: string
+ *                           example: "wash-and-iron"
+ *                         serviceTier:
+ *                           type: string
+ *                           example: "premium"
+ *                         deliverySpeed:
+ *                           type: string
+ *                           example: "express"
+ *                         amount:
+ *                           type: number
+ *                           example: 150
+ *                         paymentStatus:
+ *                           type: string
+ *                           example: "pending"
+ *                         stage:
  *                           type: object
  *                           properties:
  *                             status:
  *                               type: string
- *                               example: "pending"
- *                         delivery:
+ *                               example: "washing"
+ *                             note:
+ *                               type: string
+ *                               example: "Processing started"
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               type:
+ *                                 type: string
+ *                                 example: "shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 50
+ *                               quantity:
+ *                                 type: number
+ *                                 example: 2
+ *                               tagStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                         dispatchDetails:
  *                           type: object
  *                           properties:
- *                             status:
- *                               type: string
- *                               example: "ready"
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T12:34:56.789Z"
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-01-13T13:00:00.123Z"
+ *                             pickup:
+ *                               type: object
+ *                               properties:
+ *                                 status:
+ *                                   type: string
+ *                                   example: "pending"
+ *                             delivery:
+ *                               type: object
+ *                               properties:
+ *                                 status:
+ *                                   type: string
+ *                                   example: "ready"
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T12:34:56.789Z"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2026-01-13T13:00:00.123Z"
  *       400:
  *         description: Order ID is required
  *       404:
@@ -892,53 +904,57 @@ router.get(ROUTE_ADMIN_ORDER_ORDERID, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     total:
- *                       type: integer
- *                       example: 120
- *                     page:
- *                       type: integer
- *                       example: 1
- *                     limit:
- *                       type: integer
- *                       example: 10
- *                     totalPages:
- *                       type: integer
- *                       example: 12
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           reference:
- *                             type: string
- *                             example: "PAY-REF-123456"
- *                           amount:
- *                             type: number
- *                             example: 150
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           paymentMethod:
- *                             type: string
- *                             example: "paystack"
- *                           paymentDate:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
- *                           updatedAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T13:00:00.123Z"
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                           example: 120
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         limit:
+ *                           type: integer
+ *                           example: 10
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 12
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               reference:
+ *                                 type: string
+ *                                 example: "PAY-REF-123456"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 150
+ *                               paymentStatus:
+ *                                 type: string
+ *                                 example: "pending"
+ *                               paymentMethod:
+ *                                 type: string
+ *                                 example: "paystack"
+ *                               paymentDate:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
+ *                               updatedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T13:00:00.123Z"
  *       500:
  *         description: Server error
  */
@@ -970,9 +986,13 @@ router.get(ROUTE_ADMIN_PAYMENT_VERIFICATION_QUEUE, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Payment verified successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Payment verified successfully"
  *       400:
  *         description: Payment ID is required
  *       404:
@@ -1010,9 +1030,13 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Payment rejected successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Payment rejected successfully"
  *       400:
  *         description: Payment ID is required
  *       404:
@@ -1075,42 +1099,46 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_REJECT, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:          { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
- *                           fullName:     { type: string, example: "John Doe" }
- *                           phoneNumber:  { type: string, example: "+1234567890" }
- *                           pickupAddress: { type: string, example: "123 Main Street" }
- *                           deliveryDate: { type: string, format: date }
- *                           stage:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
  *                             type: object
  *                             properties:
- *                               status: { type: string, example: "out-for-delivery" }
- *                           dispatchDetails:
- *                             type: object
- *                             properties:
- *                               pickup:
- *                                 type: object
- *                                 properties:
- *                                   status: { type: string, example: "scheduled" }
- *                               delivery:
+ *                               _id:          { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *                               fullName:     { type: string, example: "John Doe" }
+ *                               phoneNumber:  { type: string, example: "+1234567890" }
+ *                               pickupAddress: { type: string, example: "123 Main Street" }
+ *                               deliveryDate: { type: string, format: date }
+ *                               stage:
  *                                 type: object
  *                                 properties:
  *                                   status: { type: string, example: "out-for-delivery" }
- *                           createdAt: { type: string, format: date-time }
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         total:      { type: integer, example: 120 }
- *                         page:       { type: integer, example: 1 }
- *                         limit:      { type: integer, example: 10 }
- *                         totalPages: { type: integer, example: 12 }
+ *                               dispatchDetails:
+ *                                 type: object
+ *                                 properties:
+ *                                   pickup:
+ *                                     type: object
+ *                                     properties:
+ *                                       status: { type: string, example: "scheduled" }
+ *                                   delivery:
+ *                                     type: object
+ *                                     properties:
+ *                                       status: { type: string, example: "out-for-delivery" }
+ *                               createdAt: { type: string, format: date-time }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:      { type: integer, example: 120 }
+ *                             page:       { type: integer, example: 1 }
+ *                             limit:      { type: integer, example: 10 }
+ *                             totalPages: { type: integer, example: 12 }
  *       400:
  *         description: Invalid or missing type parameter
  *       500:
@@ -1155,48 +1183,52 @@ router.get(ROUTE_ADMIN_ORDER_BY_STATE, adminAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     range:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         from: { type: string, format: date-time }
- *                         to:   { type: string, format: date-time }
- *                     totals:
- *                       type: object
- *                       properties:
- *                         pendingPickupOrders: { type: integer, example: 5 }
- *                         scheduledPickups:    { type: integer, example: 8 }
- *                         inProgressPickups:   { type: integer, example: 3 }
- *                         pickedUpToday:       { type: integer, example: 12 }
- *                         outForDelivery:      { type: integer, example: 6 }
- *                         deliveredToday:      { type: integer, example: 20 }
- *                         deliveryFailed:      { type: integer, example: 1 }
- *                     dayBreakdown:
- *                       type: object
- *                       properties:
- *                         pickedUp:
- *                           type: array
- *                           items:
- *                             type: object
- *                             properties:
- *                               _id:   { type: string, example: "2026-05-28" }
- *                               count: { type: integer, example: 4 }
- *                         delivered:
- *                           type: array
- *                           items:
- *                             type: object
- *                             properties:
- *                               _id:   { type: string, example: "2026-05-28" }
- *                               count: { type: integer, example: 7 }
- *                         failed:
- *                           type: array
- *                           items:
- *                             type: object
- *                             properties:
- *                               _id:   { type: string, example: "2026-05-28" }
- *                               count: { type: integer, example: 1 }
+ *                         range:
+ *                           type: object
+ *                           properties:
+ *                             from: { type: string, format: date-time }
+ *                             to:   { type: string, format: date-time }
+ *                         totals:
+ *                           type: object
+ *                           properties:
+ *                             pendingPickupOrders: { type: integer, example: 5 }
+ *                             scheduledPickups:    { type: integer, example: 8 }
+ *                             inProgressPickups:   { type: integer, example: 3 }
+ *                             pickedUpToday:       { type: integer, example: 12 }
+ *                             outForDelivery:      { type: integer, example: 6 }
+ *                             deliveredToday:      { type: integer, example: 20 }
+ *                             deliveryFailed:      { type: integer, example: 1 }
+ *                         dayBreakdown:
+ *                           type: object
+ *                           properties:
+ *                             pickedUp:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   _id:   { type: string, example: "2026-05-28" }
+ *                                   count: { type: integer, example: 4 }
+ *                             delivered:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   _id:   { type: string, example: "2026-05-28" }
+ *                                   count: { type: integer, example: 7 }
+ *                             failed:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   _id:   { type: string, example: "2026-05-28" }
+ *                                   count: { type: integer, example: 1 }
  *       500:
  *         description: Server error
  */
@@ -1241,59 +1273,63 @@ router.get(ROUTE_ADMIN_DISPATCH_DATA_COUNT, adminAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "+1234567890"
- *                           pickupAddress:
- *                             type: string
- *                             example: "123 Main Street"
- *                           deliveryDate:
- *                             type: string
- *                             format: date
- *                             example: "2026-01-15"
- *                           stage:
- *                             type: object
- *                             properties:
- *                               status:
- *                                 type: string
- *                                 example: "hold"
- *                           userId:
- *                             type: string
- *                             description: Populated user reference
- *                             example: "64d3c9c0f1b2a8e9d0f54321"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
- *                     pagination:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         total:
- *                           type: integer
- *                           example: 30
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         totalPages:
- *                           type: integer
- *                           example: 3
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "+1234567890"
+ *                               pickupAddress:
+ *                                 type: string
+ *                                 example: "123 Main Street"
+ *                               deliveryDate:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2026-01-15"
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "hold"
+ *                               userId:
+ *                                 type: string
+ *                                 description: Populated user reference
+ *                                 example: "64d3c9c0f1b2a8e9d0f54321"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               example: 30
+ *                             page:
+ *                               type: integer
+ *                               example: 1
+ *                             limit:
+ *                               type: integer
+ *                               example: 10
+ *                             totalPages:
+ *                               type: integer
+ *                               example: 3
  *       400:
  *         description: Invalid type supplied
  *       500:
@@ -1352,9 +1388,13 @@ router.get(ROUTE_HOLD_ORDERS, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order placed on hold successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order placed on hold successfully"
  *       400:
  *         description: Missing reason, assignTo, or invalid assignTo value
  *       404:
@@ -1420,9 +1460,13 @@ router.patch(ROUTE_ADMIN_SEND_TO_HOLD_ORDERS, adminAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order OSC-20260528-123456 hold reassigned to intake-and-tag-station"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order OSC-20260528-123456 hold reassigned to intake-and-tag-station"
  *       400:
  *         description: |
  *           - Order is not currently on hold
@@ -1497,9 +1541,13 @@ router.put(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order OSC-20260528-123456 hold resolved. Returned to qc-station"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order OSC-20260528-123456 hold resolved. Returned to qc-station"
  *       400:
  *         description: |
  *           - Order is not currently on hold
@@ -1553,9 +1601,13 @@ router.patch(ROUTE_ADMIN_RESOLVE_ORDER_HOLD, adminAuth, (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Fund added to wallet successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Fund added to wallet successfully"
  *       400:
  *         description: Invalid input (missing or invalid amount/userId)
  *       404:
@@ -1606,9 +1658,13 @@ router.put(ROUTE_ADMIN_WALLET_ID_ADD_FUND, adminAuth, (req, res)=>{
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Fund deducted from wallet successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Fund deducted from wallet successfully"
  *       400:
  *         description: Invalid input (missing amount, insufficient balance, or invalid userId)
  *       404:
@@ -2024,9 +2080,13 @@ router.get(ROUTE_SEARCH_ORDER_DETAIL, [adminAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order item updated successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order item updated successfully"
  *       400:
  *         description: Invalid input (missing or invalid amount/userId)
  *       404:
@@ -2077,9 +2137,13 @@ router.post(ROUTE_ADD_ORDER_ITEM, [adminAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order item updated successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order item updated successfully"
  *       400:
  *         description: Invalid input (missing or invalid amount/userId)
  *       404:
@@ -2108,23 +2172,27 @@ router.put(ROUTE_UPDATE_ORDER_ITEM_ID, [adminAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           name:
- *                             type: string
- *                             example: "Shirt"
- *                           price:
- *                             type: number
- *                             example: 400
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               name:
+ *                                 type: string
+ *                                 example: "Shirt"
+ *                               price:
+ *                                 type: number
+ *                                 example: 400
  *       400:
  *         description: Invalid type supplied
  *       500:
@@ -2151,15 +2219,19 @@ router.get(ROUTE_GET_ORDER_ITEMS, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     name:
- *                       type: string
- *                       example: Shirt
- *                     price:
- *                       type: number
- *                       example: 500
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         name:
+ *                           type: string
+ *                           example: Shirt
+ *                         price:
+ *                           type: number
+ *                           example: 500
  *       500:
  *         description: Server error
  */
@@ -2191,9 +2263,13 @@ router.get(ROUTE_GET_ORDER_ITEM_ID, [auth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: "Order item deleted successfully"
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Order item deleted successfully"
  *       400:
  *         description: Invalid input (missing or invalid amount/userId)
  *       404:

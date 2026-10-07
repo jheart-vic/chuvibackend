@@ -82,10 +82,14 @@ const STATION_STATUS = {
     RIDER_STATION: 'rider-station',
 }
 
-const WASH_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
-const DRY_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
-const PRESS_DURATION_MINUTES = { standard: 65, express: 45, same_day: 25 }
-const QC_DURATION_MINUTES = { standard: 25, express: 15, same_day: 10 }
+// Keyed by DELIVERY_SPEED. The stored value is 'same-day' with a HYPHEN
+// (DELIVERY_SPEED.SAME_DAY) — these tables previously used `same_day`, so every
+// same-day order silently missed its entry and fell through to the caller's
+// default duration.
+const WASH_DURATION_MINUTES = { standard: 65, express: 45, 'same-day': 25 }
+const DRY_DURATION_MINUTES = { standard: 65, express: 45, 'same-day': 25 }
+const PRESS_DURATION_MINUTES = { standard: 65, express: 45, 'same-day': 25 }
+const QC_DURATION_MINUTES = { standard: 25, express: 15, 'same-day': 10 }
 const PICKUP_DURATION_MINUTES = 30  // flat estimate — no tier variation
 const DELIVERY_DURATION_MINUTES = 45
 

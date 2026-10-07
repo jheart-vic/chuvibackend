@@ -34,19 +34,23 @@ const {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     stats:
+ *                     message:
  *                       type: object
  *                       properties:
- *                         washQueue:      { type: integer, example: 2 }
- *                         activeWash:     { type: integer, example: 0 }
- *                         activeDry:      { type: integer, example: 0 }
- *                         completedToday: { type: integer, example: 0 }
- *                     recentQueue:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         stats:
+ *                           type: object
+ *                           properties:
+ *                             washQueue:      { type: integer, example: 2 }
+ *                             activeWash:     { type: integer, example: 0 }
+ *                             activeDry:      { type: integer, example: 0 }
+ *                             completedToday: { type: integer, example: 0 }
+ *                         recentQueue:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
  *       500:
  *         description: Server error
  */
@@ -85,14 +89,18 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -121,10 +129,14 @@ router.get(ROUTE_WASH_AND_DRY_QUEUE, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order: { $ref: '#/components/schemas/StationScopedOrder' }
  *       404:
  *         description: Order not found or not in washing stage
  *       500:
@@ -198,11 +210,15 @@ router.get(ROUTE_WASH_AND_DRY_QUEUE_SINGLE, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     message:           { type: string, example: "3 item(s) confirmed for washing" }
- *                     allItemsConfirmed: { type: boolean, example: true }
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         message:           { type: string, example: "3 item(s) confirmed for washing" }
+ *                         allItemsConfirmed: { type: boolean, example: true }
  *       400:
  *         description: No valid items found, or neither itemIds nor allItems provided
  *       404:
@@ -244,7 +260,11 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item wash confirmation undone" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item wash confirmation undone" }
  *       404:
  *         description: Order or item not found
  *       500:
@@ -310,7 +330,11 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Item placed on hold successfully" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Item placed on hold successfully" }
  *       400:
  *         description: reason or assignTo missing or invalid
  *       404:
@@ -347,14 +371,18 @@ router.patch(ROUTE_WASH_AND_DRY_HOLD, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -388,7 +416,11 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Order ORD-2024-002 has been transferred to the dryer" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Order ORD-2024-002 has been transferred to the dryer" }
  *       404:
  *         description: Order not found or not currently being washed
  *       500:
@@ -426,14 +458,18 @@ router.patch(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/StationScopedOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/StationScopedOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -475,37 +511,41 @@ router.get(ROUTE_WASH_AND_ACTIVE_DRYING, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           orderId:       { type: string }
- *                           oscNumber:     { type: string, example: "OSC-20260428-321782" }
- *                           fullName:      { type: string, example: "Jude Victor" }
- *                           holdType:      { type: string, enum: [raised_by_us], example: "raised_by_us" }
- *                           holdReason:    { type: string, example: "item_missing" }
- *                           holdTime:      { type: string, format: date-time }
- *                           stationStatus: { type: string, example: "sort-and-pretreat-station" }
- *                           operator:      { type: string, example: "Victor Jp", nullable: true }
- *                           flaggedItems:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 itemId:        { type: string }
- *                                 tagId:         { type: string, example: "Tag-2024-001-01" }
- *                                 type:          { type: string, example: "shirt" }
- *                                 flagNote:      { type: string }
- *                                 holdReason:    { type: string, example: "item_missing" }
- *                                 assignTo:      { type: string, example: "sort-and-pretreat" }
- *                                 heldByStation: { type: string, example: "wash-and-dry-station" }
- *                                 heldAt:        { type: string, format: date-time }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId:       { type: string }
+ *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
+ *                               fullName:      { type: string, example: "Jude Victor" }
+ *                               holdType:      { type: string, enum: [raised_by_us], example: "raised_by_us" }
+ *                               holdReason:    { type: string, example: "item_missing" }
+ *                               holdTime:      { type: string, format: date-time }
+ *                               stationStatus: { type: string, example: "sort-and-pretreat-station" }
+ *                               operator:      { type: string, example: "Victor Jp", nullable: true }
+ *                               flaggedItems:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     itemId:        { type: string }
+ *                                     tagId:         { type: string, example: "Tag-2024-001-01" }
+ *                                     type:          { type: string, example: "shirt" }
+ *                                     flagNote:      { type: string }
+ *                                     holdReason:    { type: string, example: "item_missing" }
+ *                                     assignTo:      { type: string, example: "sort-and-pretreat" }
+ *                                     heldByStation: { type: string, example: "wash-and-dry-station" }
+ *                                     heldAt:        { type: string, format: date-time }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -534,7 +574,11 @@ router.get(ROUTE_WASH_AND_DRY_GET_HOLD, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string, example: "Order released from hold and returned to wash queue" }
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: "Order released from hold and returned to wash queue" }
  *       404:
  *         description: Order not found or not on hold
  *       500:
@@ -577,14 +621,18 @@ router.patch(ROUTE_WASH_AND_DRY_RELEASE, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     orders:
- *                       type: array
- *                       items: { $ref: '#/components/schemas/BookOrder' }
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       500:
  *         description: Server error
  */
@@ -617,32 +665,36 @@ router.get(ROUTE_WASH_AND_DRY_HISTORY, [washAndDryAuth], (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 success: { type: boolean, example: true }
+ *                 data:
  *                   type: object
  *                   properties:
- *                     order:
- *                       allOf:
- *                         - $ref: '#/components/schemas/TimelineOrder'
- *                         - type: object
- *                           properties:
- *                             washDetails:
- *                               type: object
- *                               nullable: true
- *                               description: Wash/dry timings (this station only).
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         order:
+ *                           allOf:
+ *                             - $ref: '#/components/schemas/TimelineOrder'
+ *                             - type: object
  *                               properties:
- *                                 startedAt: { type: string, format: date-time, nullable: true }
- *                                 movedToDryingAt: { type: string, format: date-time, nullable: true }
- *                                 dryingCompletedAt: { type: string, format: date-time, nullable: true }
- *                                 operatorId: { type: string, nullable: true }
- *                     pipeline:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key:       { type: string, example: "washed" }
- *                           label:     { type: string, example: "Washed" }
- *                           completed: { type: boolean, example: true }
- *                           timestamp: { type: string, format: date-time, nullable: true }
+ *                                 washDetails:
+ *                                   type: object
+ *                                   nullable: true
+ *                                   description: Wash/dry timings (this station only).
+ *                                   properties:
+ *                                     startedAt: { type: string, format: date-time, nullable: true }
+ *                                     movedToDryingAt: { type: string, format: date-time, nullable: true }
+ *                                     dryingCompletedAt: { type: string, format: date-time, nullable: true }
+ *                                     operatorId: { type: string, nullable: true }
+ *                         pipeline:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               key:       { type: string, example: "washed" }
+ *                               label:     { type: string, example: "Washed" }
+ *                               completed: { type: boolean, example: true }
+ *                               timestamp: { type: string, format: date-time, nullable: true }
  *       404:
  *         description: Order not found
  *       500:

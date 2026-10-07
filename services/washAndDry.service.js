@@ -31,6 +31,11 @@ const {
 // Split-flow: this station only ever sees/act on the items sitting at it.
 const HERE = STATION_STATUS.WASH_AND_DRY_STATION
 
+// "Confirmed for washing" — the single definition used by the queue, the
+// active-wash list and the active-dry list, so the three screens can never
+// disagree about what counts as confirmed.
+const isWashed = (i) => i.washStatus === 'complete'
+
 class WashAndDryService extends BaseService {
     // GET DASHBOARD STATS
     async getDashboard(req) {
@@ -90,7 +95,7 @@ class WashAndDryService extends BaseService {
                         page: 1,
                         limit: 5,
                         sort: { 'stage.updatedAt': 1 },
-                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage createdAt washDetails',
+                        select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage createdAt washDetails',
                         lean: true,
                     },
                 ),
@@ -146,14 +151,13 @@ class WashAndDryService extends BaseService {
                 page,
                 limit,
                 sort: { 'stage.updatedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt washDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
                 lean: true,
             })
 
             // Counts are scoped to THIS station: an order can have 3 items here
             // and 7 still at sort, and "all confirmed" must mean all 3 — that's
             // the gate the S3→S4 push button reads.
-            const isWashed = (i) => i.washStatus === 'complete'
             const ordersWithMeta = data.map((o) => ({
                 ...scopeOrderToStation(o, HERE),
                 flaggedItemCount: countAtStation(
@@ -604,14 +608,14 @@ class WashAndDryService extends BaseService {
                 page,
                 limit,
                 sort: { 'washDetails.startedAt': 1 },
-                select: 'oscNumber fullName phoneNumber items serviceType serviceTier stage stationStatus createdAt washDetails',
+                select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
                 lean: true,
             })
 
             const ordersWithMeta = data.map((order) => {
                 const startedAt = order.washDetails?.startedAt
                 const durationMinutes =
-                    WASH_DURATION_MINUTES[order.deliverySpeed] ?? 60
+                    WASH_DURATION_MINUTES[order.deliverySpeed] ?? WASH_DURATION_MINUTES.standard
                 const estimatedFinish = startedAt
                     ? new Date(
                           new Date(startedAt).getTime() +
@@ -622,6 +626,18 @@ class WashAndDryService extends BaseService {
                 return {
                     ...scopeOrderToStation(order, HERE),
                     itemCount: itemsAtStation(order, HERE).length,
+                    // An order only reaches Active Wash once EVERY item at this
+                    // station is confirmed — washDetails.startedAt is stamped by
+                    // that last confirmation (util/updateOrderItemsStage) and this
+                    // list selects on it. So this is always true here. It is
+                    // returned anyway because the QUEUE endpoints expose it and the
+                    // station screens share a card: without it the flag reads
+                    // undefined, and the card renders a "waiting confirmation"
+                    // state that can never clear. The real next step is
+                    // move-to-drying, which `canMoveToDrying` states outright.
+                    allItemsConfirmed: allAtStation(order, HERE, isWashed),
+                    confirmedItemCount: countAtStation(order, HERE, isWashed),
+                    canMoveToDrying: !order.washDetails?.movedToDryingAt,
                     washDetails: {
                         ...order.washDetails,
                         estimatedFinish,
@@ -744,13 +760,13 @@ class WashAndDryService extends BaseService {
                 page,
                 limit,
                 sort: { 'washDetails.movedToDryingAt': 1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount items stage stationStatus stageHistory washDetails createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items stage stationStatus stageHistory washDetails createdAt updatedAt',
                 lean: true,
             })
             const ordersWithMeta = data.map((order) => {
                 const startedAt = order.washDetails?.movedToDryingAt
                 const durationMinutes =
-                    DRY_DURATION_MINUTES[order.deliverySpeed] ?? 30
+                    DRY_DURATION_MINUTES[order.deliverySpeed] ?? DRY_DURATION_MINUTES.standard
                 const estimatedFinish = startedAt
                     ? new Date(
                           new Date(startedAt).getTime() +
@@ -761,6 +777,14 @@ class WashAndDryService extends BaseService {
                 return {
                     ...scopeOrderToStation(order, HERE),
                     itemCount: itemsAtStation(order, HERE).length,
+                    // Same reason as Active Wash above: the shared station card
+                    // keys off these flags, so omitting them leaves it stuck on a
+                    // "waiting confirmation" state. Drying is a within-station
+                    // sub-phase — the items are already confirmed and washed; from
+                    // here the order is pushed to press via the handoff engine.
+                    allItemsConfirmed: allAtStation(order, HERE, isWashed),
+                    confirmedItemCount: countAtStation(order, HERE, isWashed),
+                    canMoveToDrying: false,
                     washDetails: {
                         ...order.washDetails,
                         estimatedFinish,
@@ -826,7 +850,7 @@ class WashAndDryService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
                     populate: {
                         path: 'washDetails.operatorId',
                         select: 'fullName',
@@ -1031,7 +1055,7 @@ class WashAndDryService extends BaseService {
                 page,
                 limit,
                 sort: { updatedAt: -1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus stageHistory washDetails createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory washDetails createdAt updatedAt',
                 lean: true,
             })
 
