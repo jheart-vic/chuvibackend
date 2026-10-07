@@ -603,6 +603,60 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     StaffAccount:
+ *       type: object
+ *       description: A non-customer account and whether they can currently work.
+ *       properties:
+ *         _id: { type: string, example: 64d3c9c0f1b2a8e9d0f99999 }
+ *         fullName: { type: string, example: "Emma Okay" }
+ *         email: { type: string, example: emma@chuvi.com }
+ *         phoneNumber: { type: string, nullable: true, example: "08081299759" }
+ *         userType:
+ *           type: string
+ *           enum: [admin, intake-and-tag, sort-and-pretreat, wash-and-dry, press, qc, rider, customer-experience]
+ *           example: rider
+ *         role:
+ *           type: string
+ *           description: Same value as userType, under the name the UI uses.
+ *           example: rider
+ *         status:
+ *           type: string
+ *           enum: [active, inactive, pending, suspended]
+ *           example: suspended
+ *         canWork:
+ *           type: boolean
+ *           example: false
+ *           description: True only when status is 'active'. Anyone else cannot sign in or be assigned work.
+ *         statusReason: { type: string, nullable: true, example: "Left the company on 6 October." }
+ *         statusChangedAt: { type: string, format: date-time, nullable: true }
+ *         image: { type: string, nullable: true }
+ *         createdAt: { type: string, format: date-time }
+ *
+ *     AdminWalletTransaction:
+ *       description: >
+ *         A ledger line as the ADMIN ledger returns it — the WalletTransaction plus the
+ *         customer and the operator resolved to names, so the Money page needs no second
+ *         lookup. `userId` and `performedBy` stay plain ids beside them.
+ *       allOf:
+ *         - $ref: '#/components/schemas/WalletTransaction'
+ *         - type: object
+ *           properties:
+ *             customer:
+ *               type: object
+ *               nullable: true
+ *               properties:
+ *                 _id: { type: string, example: 64d3c9c0f1b2a8e9d0f12345 }
+ *                 fullName: { type: string, example: "Ikechukwu Ijeomah" }
+ *                 phoneNumber: { type: string, example: "08081299759" }
+ *             operator:
+ *               type: object
+ *               nullable: true
+ *               description: Who moved the money. Null for automatic/system movements.
+ *               properties:
+ *                 _id: { type: string, example: 64d3c9c0f1b2a8e9d0f99999 }
+ *                 fullName: { type: string, example: "Emma Okay" }
+ *                 role: { type: string, example: intake-and-tag }
+ *
  *     # ── Offer System ─────────────────────────────────────────────────────
  *     OfferBenefit:
  *       type: object
@@ -929,11 +983,109 @@
  *         orderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
  *         type: { type: string, enum: [satisfied, neutral, complaint], example: complaint }
  *         rating: { type: integer, minimum: 1, maximum: 5, nullable: true, example: 2 }
+ *         npsScore: { type: integer, minimum: 0, maximum: 10, nullable: true, example: 9, description: "The 0-10 recommend answer. Null when the question was not asked on this order (it is throttled to once per customer per 30 days). 0 is a real answer, not an absence." }
+ *         npsAskedAt: { type: string, format: date-time, nullable: true }
+ *         npsAnsweredAt: { type: string, format: date-time, nullable: true, description: "Set only when a score actually came back." }
  *         comment: { type: string, nullable: true, example: "Two shirts came back with the stain still there." }
  *         status: { type: string, enum: [pending, completed], example: completed }
  *         complaintCaseId: { type: string, nullable: true, example: 665f1c2ab9e77a0012d4e400 }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
+ *
+ *     FeedbackPrompt:
+ *       type: object
+ *       description: What the feedback screen should ask for one delivered order. The backend owns the NPS throttle.
+ *       properties:
+ *         bookOrderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *         oscNumber: { type: string, example: OSC-20261004-631233 }
+ *         askRating: { type: boolean, example: true }
+ *         ratingScale:
+ *           type: object
+ *           properties:
+ *             min: { type: integer, example: 1 }
+ *             max: { type: integer, example: 5 }
+ *         askNps: { type: boolean, example: true, description: "False when this customer was already asked inside the window." }
+ *         npsQuestion: { type: string, nullable: true, example: "How likely are you to recommend CHUVI to a friend?" }
+ *         npsScale:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             min: { type: integer, example: 0 }
+ *             max: { type: integer, example: 10 }
+ *         npsSkippedReason: { type: string, nullable: true, example: "Already asked within the last 30 days" }
+ *         askComment: { type: boolean, example: true }
+ *
+ *     RecoveryMonthlyReport:
+ *       type: object
+ *       description: The §2 N2 admin dashboard for one Lagos month.
+ *       properties:
+ *         month: { type: string, example: '2026-10' }
+ *         from: { type: string, format: date-time, description: Inclusive start of the Lagos month }
+ *         to: { type: string, format: date-time, description: EXCLUSIVE end (start of the next Lagos month) }
+ *         feedback:
+ *           type: object
+ *           properties:
+ *             npsScore: { type: integer, minimum: -100, maximum: 100, example: 40, description: "Share of 9-10 answers minus the share of 0-6 answers." }
+ *             npsResponses: { type: integer, example: 10, description: "Number of 0-10 answers. NOT the same as feedbackReceived — the NPS question is throttled." }
+ *             npsBreakdown:
+ *               type: object
+ *               properties:
+ *                 promoters: { type: integer, example: 6 }
+ *                 passives: { type: integer, example: 2 }
+ *                 detractors: { type: integer, example: 2 }
+ *             averageRating: { type: number, example: 4.3 }
+ *             ratingResponses: { type: integer, example: 10 }
+ *             feedbackReceived: { type: integer, example: 10 }
+ *             deliveredOrders: { type: integer, example: 20 }
+ *             feedbackSharePct: { type: integer, example: 50 }
+ *         complaints:
+ *           type: object
+ *           properties:
+ *             complaintsOpened: { type: integer, example: 7 }
+ *             resolved: { type: integer, example: 5 }
+ *             stillOpen: { type: integer, example: 3, description: "Open at the END of the chosen month, so past months stay meaningful." }
+ *             averageTimeToResolveHours: { type: number, example: 31.5 }
+ *             averageTimeToResolveLabel: { type: string, nullable: true, example: "1.3 days" }
+ *         recovery:
+ *           type: object
+ *           properties:
+ *             recoveriesGiven: { type: integer, example: 6 }
+ *             recoveryBreakdown:
+ *               type: object
+ *               properties:
+ *                 offers: { type: integer, example: 2 }
+ *                 credits: { type: integer, example: 3 }
+ *                 refunds: { type: integer, example: 1 }
+ *             recoveryCost: { type: integer, example: 12500, description: "Naira value of credits and cash refunds. Offers carry no naira until redeemed." }
+ *             recoveryCostBreakdown:
+ *               type: object
+ *               properties:
+ *                 credits: { type: integer, example: 9500 }
+ *                 refunds: { type: integer, example: 3000 }
+ *             customersRecovered: { type: integer, example: 5 }
+ *             orderedAgainAfterRecovery: { type: integer, example: 3 }
+ *         complaintsByType:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               complaintTypeId: { type: string, nullable: true, example: 665f1c2ab9e77a0012d4e350 }
+ *               name: { type: string, example: "Stain Remains" }
+ *               count: { type: integer, example: 4 }
+ *         lowRatedOrders:
+ *           type: array
+ *           description: Orders rated 1 or 2 stars, with the phone number, so the office can call them.
+ *           items:
+ *             type: object
+ *             properties:
+ *               bookOrderId: { type: string, example: 64b9a7f6e3c3b4a1d2f1c9b0 }
+ *               oscNumber: { type: string, nullable: true, example: OSC-20261004-631233 }
+ *               customerName: { type: string, nullable: true, example: "Ikechukwu Ijeomah" }
+ *               phoneNumber: { type: string, nullable: true, example: "08081299759" }
+ *               rating: { type: integer, example: 2 }
+ *               comment: { type: string, nullable: true, example: "Two shirts came back with the stain still there." }
+ *               ratedAt: { type: string, format: date-time }
+ *               hasComplaint: { type: boolean, example: true }
  *
  *     ComplaintType:
  *       type: object

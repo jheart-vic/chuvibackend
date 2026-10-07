@@ -46,6 +46,16 @@ ok('every delivery speed has an SLA',
     JSON.stringify(HOLD_SLA_HOURS))
 ok('a past deliveryDate is also a breach branch',
     O.$or.some((b) => b.deliveryDate && b.deliveryDate.$lt))
+// The row badge used its OWN hardcoded 120/240/360 minutes and ignored the
+// delivery-date branch, so a row counted as Overdue could still render "not
+// breached". Badge and bucket must read the same definition.
+const adminSrcHolds = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+ok('the Holds list badge uses the shared breach definition',
+    /const slaBreached = isHoldBreached\(order, now\)/.test(adminSrcHolds))
+ok('…and its displayed threshold comes from the shared SLA table',
+    /HOLD_SLA_HOURS\[order\.deliverySpeed\]/.test(adminSrcHolds))
+ok('no hardcoded minute thresholds left in the holds list',
+    !/\? 120\s*:/.test(adminSrcHolds) && !/: 360 \/\/ standard/.test(adminSrcHolds))
 
 // The client's exact test: 3 breached holds and no others → Active 0, Overdue 3.
 const HOUR = 3600 * 1000

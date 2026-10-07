@@ -21,6 +21,7 @@ const {
     ROUTE_RECOVERY_CASE_RECOVERY_ORDER,
     ROUTE_RECOVERY_CASE_DASHBOARD,
     ROUTE_RECOVERY_CASE_MESSAGES,
+    ROUTE_RECOVERY_MONTHLY_REPORT,
 } = require('../util/page-route')
 
 /**
@@ -824,6 +825,50 @@ router.get(ROUTE_RECOVERY_CASE_MESSAGES, [customerExperienceAuth], (req, res) =>
 )
 router.post(ROUTE_RECOVERY_CASE_MESSAGES, [customerExperienceAuth], (req, res) =>
     new FeedbackController().staffPostMessage(req, res),
+)
+
+// ── admin: the monthly Recovery / Complaints / Feedback dashboard ──
+/**
+ * @swagger
+ * /recovery/reports/monthly:
+ *   get:
+ *     summary: Recovery, Complaints and Feedback dashboard for one month (admin)
+ *     description: >
+ *       The §2 N2 dashboard: a month picker and a set of cards, built like the Monthly
+ *       Lead Report. Months are LAGOS months and the range is half-open — `from`
+ *       inclusive, `to` exclusive. "Delivered in the month" is read from the DELIVERED
+ *       entry in the order's stageHistory, not from the order's updatedAt.
+ *       Note that `npsResponses` is NOT the same as `feedbackReceived`: the stars are
+ *       asked after every delivered order while the NPS question is throttled to once
+ *       per customer per 30 days.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         schema: { type: string, example: '2026-10' }
+ *         description: Lagos month in YYYY-MM. Defaults to the current Lagos month.
+ *     responses:
+ *       200:
+ *         description: The month's cards, complaints by type, and the 1-2 star order list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/RecoveryMonthlyReport' }
+ *       400:
+ *         description: month was not a valid YYYY-MM
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_RECOVERY_MONTHLY_REPORT, [adminAuth], (req, res) =>
+    new FeedbackController().monthlyRecoveryReport(req, res),
 )
 
 module.exports = router

@@ -106,6 +106,8 @@ async function main() {
         const customer = await UserModel.create({
             email: `wl_cust_${stamp}@example.com`,
             fullName: 'Wallet Limit Customer',
+            // the admin ledger shows this so the Money page can call them
+            phoneNumber: `0805${String(stamp).slice(-7)}`,
             userType: ROLE.USER,
         })
         const operator = await UserModel.create({
@@ -288,6 +290,95 @@ async function main() {
         const backToPending = await WalletAdjustmentRequestModel.findById(bigDebitId).lean()
         ok(backToPending?.status === WALLET_ADJUSTMENT_REQUEST_STATUS.PENDING,
             'and the request returned to pending rather than reading as approved')
+
+        // ── 11 ── the ADMIN half of 2.3 ─────────────────────────────────────
+        // The client's test is "both lines show in the customer app AND in
+        // admin". The customer half existed; nothing on the admin side listed
+        // wallet movements at all, so this is the endpoint that makes their
+        // test answerable. Driven like every other admin service: it returns an
+        // envelope and never touches `res`.
+        console.log('\n[11] the admin wallet ledger (2.3, admin half)')
+        const ledger = async (query) => {
+            const res = await adminSvc.listWalletTransactions({ query })
+            if (!res?.success) throw new Error(`ledger refused: ${JSON.stringify(res?.data)}`)
+            return res.data?.message
+        }
+
+        const mine = await ledger({ userId: String(customer._id), limit: 100 })
+        ok(Array.isArray(mine?.data), 'the admin ledger responds with rows')
+        ok(
+            mine.data.length === lines.length,
+            `it shows every line the customer has (${mine.data.length} vs ${lines.length})`,
+        )
+        ok(
+            mine.data.every((l) => String(l.userId) === String(customer._id)),
+            'scoped to the customer asked for',
+        )
+        const adjLine = mine.data.find((l) => l.type === 'manual-adjustment')
+        ok(!!adjLine?.operator?.fullName,
+            'an adjustment line names the OPERATOR who did it, not just an id')
+        // the User field is `userType`; selecting `role` gave a populated doc
+        // with the name present and the role undefined — green on fullName, wrong
+        ok(adjLine?.operator?.role === ROLE.INTAKE_AND_TAG,
+            `and their ROLE, read from userType (got ${adjLine?.operator?.role})`)
+        ok(!!adjLine?.customer?.phoneNumber,
+            'and the customer, with a phone number the Money page can show')
+        ok(typeof adjLine?.reason === 'string' && adjLine.reason.length > 0,
+            'and the reason it was given')
+
+        // totals must describe the whole filtered set, and a manual adjustment
+        // stores a SIGNED amount — so a deduction has to land on the debit side
+        // by its sign, never by its type.
+        const signedSum = lines.reduce((t, l) => t + (l.amount || 0), 0)
+        ok(
+            mine.totals.credit - mine.totals.debit === signedSum,
+            `totals net to the signed ledger sum (₦${mine.totals.credit} - ₦${mine.totals.debit} == ₦${signedSum})`,
+        )
+        const hasNegative = lines.some((l) => (l.amount || 0) < 0)
+        ok(
+            !hasNegative || mine.totals.debit > 0,
+            'a negative adjustment is counted as money OUT, not as money in',
+        )
+
+        const byName = await ledger({ search: customer.fullName, limit: 100 })
+        ok(byName.data.length === lines.length,
+            'the same rows are findable by customer name')
+        const nobody = await ledger({ search: `no-such-person-${Date.now()}` })
+        ok(nobody.data.length === 0 && nobody.pagination.total === 0,
+            'an unmatched search returns an empty page, not everyone')
+        const filtered = await ledger({
+            userId: String(customer._id),
+            type: 'manual-adjustment',
+            limit: 100,
+        })
+        ok(filtered.data.every((l) => l.type === 'manual-adjustment'),
+            'the type filter actually filters')
+        const badType = await adminSvc.listWalletTransactions({
+            query: { type: 'not-a-type' },
+        })
+        ok(badType.success === false,
+            'an unknown type is refused with the valid list, not silently ignored')
+        const badId = await adminSvc.listWalletTransactions({
+            query: { userId: 'not-an-id' },
+        })
+        ok(badId.success === false, 'and a malformed userId is refused, not treated as no filter')
+        const future = await ledger({
+            userId: String(customer._id),
+            from: '2031-01-01',
+            to: '2031-01-31',
+        })
+        ok(future.data.length === 0, 'a date window with nothing in it returns nothing')
+        const today = new Date().toISOString().slice(0, 10)
+        const todayRows = await ledger({
+            userId: String(customer._id),
+            from: today,
+            to: today,
+            limit: 100,
+        })
+        ok(
+            todayRows.data.length === lines.length,
+            '`to` is inclusive through the end of the Lagos day (same-day from/to finds today\'s lines)',
+        )
     } catch (e) {
         FAIL++
         console.log('\n  ✗ THREW:', e && e.stack ? e.stack.split('\n').slice(0, 5).join('\n') : e)

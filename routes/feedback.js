@@ -4,6 +4,7 @@ const auth = require('../middlewares/auth')
 const {
     ROUTE_FEEDBACK_SUBMIT,
     ROUTE_FEEDBACK_FOR_ORDER,
+    ROUTE_FEEDBACK_PROMPT,
     ROUTE_FEEDBACK_COMPLAINT_TYPES,
     ROUTE_FEEDBACK_MY_COMPLAINTS,
     ROUTE_FEEDBACK_COMPLAINT,
@@ -382,6 +383,44 @@ router.post(ROUTE_FEEDBACK_COMPLAINT_MESSAGES, [auth], (req, res) =>
  */
 router.get(ROUTE_FEEDBACK_FOR_ORDER, [auth], (req, res) =>
     new FeedbackController().getFeedbackForOrder(req, res),
+)
+
+/**
+ * @swagger
+ * /feedback/order/{bookOrderId}/prompt:
+ *   get:
+ *     summary: What to ask the customer about this delivered order
+ *     description: >
+ *       Returns the questions for the feedback screen. The 1-5 star rating is always
+ *       asked; the NPS question ("How likely are you to recommend CHUVI to a friend?",
+ *       0-10) is only included when this customer has not been asked within the
+ *       configured window (CrmSetting.thresholds.npsAskIntervalDays, default 30 days).
+ *       Calling this endpoint STAMPS the ask, so the FE must render exactly what comes
+ *       back rather than deciding the throttle itself.
+ *     tags: [Feedback & Recovery]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: bookOrderId, required: true, schema: { type: string }, description: The BookOrder id }]
+ *     responses:
+ *       200:
+ *         description: The questions to render
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/FeedbackPrompt' }
+ *       400:
+ *         description: Order not found, not delivered, or already has feedback
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_FEEDBACK_PROMPT, [auth], (req, res) =>
+    new FeedbackController().getFeedbackPrompt(req, res),
 )
 
 module.exports = router

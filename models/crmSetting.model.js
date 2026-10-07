@@ -130,6 +130,10 @@ const crmSettingSchema = new mongoose.Schema(
             prospectBroadcastDays: { type: Number, default: 14 },
             // days between churn broadcasts
             churnBroadcastDays: { type: Number, default: 30 },
+            // §2 N2: days that must pass before the same customer is asked the
+            // NPS (0-10 recommend) question again. The brief says 30; it lives
+            // here rather than in code because every other cadence does.
+            npsAskIntervalDays: { type: Number, default: 30, min: 1 },
         },
     },
     { timestamps: true },

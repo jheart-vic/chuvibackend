@@ -1,5 +1,6 @@
 const FeedbackService = require('../services/feedback.service')
 const RecoveryApiService = require('../services/recoveryApi.service')
+const RecoveryReportService = require('../services/recoveryReport.service')
 const BaseController = require('./base.controller')
 
 const send = (res, result) =>
@@ -14,6 +15,13 @@ class FeedbackController extends BaseController {
     }
     async getFeedbackForOrder(req, res) {
         return send(res, await new FeedbackService().getFeedbackForOrder(req))
+    }
+    async getFeedbackPrompt(req, res) {
+        return send(res, await new FeedbackService().getFeedbackPrompt(req))
+    }
+    // §2 N2 admin dashboard
+    async monthlyRecoveryReport(req, res) {
+        return send(res, await new RecoveryReportService().monthlyReport(req))
     }
     async listFeedback(req, res) {
         return send(res, await new FeedbackService().listFeedback(req))

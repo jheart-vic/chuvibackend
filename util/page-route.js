@@ -186,6 +186,11 @@ exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/:id/add-fund'
 exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/:id/deduct-fund'
 exports.ROUTE_ADMIN_AUDIT_LITE = '/audit-lite'
 exports.ROUTE_SEARCH_WALLET = '/search-wallet'
+// admin-side wallet ledger (brief 2.3 — "both the customer and the admin can see it")
+exports.ROUTE_ADMIN_WALLET_TRANSACTIONS = '/wallet-transactions'
+// staff suspend / reinstate — the only thing that writes User.status
+exports.ROUTE_ADMIN_STAFF = '/staff'
+exports.ROUTE_ADMIN_STAFF_STATUS = '/staff/:id/status'
 exports.ROUTE_SEARCH_ORDERS = '/search-orders'
 exports.ROUTE_SEARCH_ORDER_DETAIL = '/search-orders/:id'
 exports.ROUTE_ADD_ORDER_ITEM = '/add-order-item'
@@ -294,6 +299,9 @@ exports.ROUTE_REFERRAL_RESET = "/reset-code"
 // feedback & recovery — customer
 exports.ROUTE_FEEDBACK_SUBMIT = "/"
 exports.ROUTE_FEEDBACK_FOR_ORDER = "/order/:bookOrderId"
+// §2 N2: what to ask for this order (stars always, NPS only when the 30-day
+// window is clear) — the FE must not decide the throttle for itself
+exports.ROUTE_FEEDBACK_PROMPT = "/order/:bookOrderId/prompt"
 exports.ROUTE_FEEDBACK_COMPLAINT_TYPES = "/complaint-types"
 exports.ROUTE_FEEDBACK_MY_COMPLAINTS = "/my-complaints"
 exports.ROUTE_FEEDBACK_COMPLAINT = "/complaints/:id"
@@ -304,6 +312,8 @@ exports.ROUTE_FEEDBACK_COMPLAINT_MESSAGES = "/complaints/:id/messages"
 
 // feedback & recovery — staff/admin
 exports.ROUTE_RECOVERY_FEEDBACK_LIST = "/feedback"
+// §2 N2: the admin Recovery/Complaints/Feedback dashboard (month picker)
+exports.ROUTE_RECOVERY_MONTHLY_REPORT = "/reports/monthly"
 exports.ROUTE_RECOVERY_COMPLAINT_TYPES = "/complaint-types"
 exports.ROUTE_RECOVERY_COMPLAINT_TYPE_BY_ID = "/complaint-types/:id"
 exports.ROUTE_RECOVERY_CASES = "/cases"

@@ -26,15 +26,114 @@ with the §3 answers written LAST from shipped code. Final deliverable = **ONE c
 |**G4**| 4.1 template save returns 400 | ✅ done, UNCOMMITTED — **reproduced: `channels.filter is not a function`** |
 | | 4.2 keys + target pages dropdowns | ✅ backend done (`GET /communication/templates/meta`); written list = `util/commMeta.js` |
 | | 4.3 admin notifications | ✅ done — notice names customer+amount+operator; **event list derived: only 6 of 87 sites reach an admin** |
-| | 4.4 Holds Active/Overdue overlap | ✅ committed |
-| | 4.5 CRM dormant rate 100% | ⛔ blocked on the client's own Q2/Q3 — answer in §3 |
+| | 4.4 Holds Active/Overdue overlap | ✅ committed, **now DB-VERIFIED** (`holdsStaging.js` 22/22, their literal test) + **2 MORE SLA copies found and unified** |
+| | 4.5 CRM dormant rate 100% | ✅ **ANSWERED** in `context/CLIENT-ANSWERS-oct2026.md` — figure is correct, 1 decision needed from the client |
 | | 4.6 names as code text, phone formats | ✅ done, UNCOMMITTED — **`normalizePhone` itself was the profile-splitter** |
-|**§2**| N1 Quick Booking · N2 Recovery dashboard | ⬜ after the fixes |
-|**§3**| Q1–Q8 answers + assemble the deliverable | ⬜ LAST |
+|**§2**| N1 Quick Booking | ⏸ **BLOCKED on 5 client questions** (sent 2026-10-07 — counts mismatch · who picks service+speed · payment-request direction · cancellation rules · the ₦4,000 line). Build on the stated defaults if no reply |
+| | N2 Recovery/Complaints/Feedback dashboard | 🔨 **IN PROGRESS** — started 2026-10-07 |
+|**§3**| Q1–Q8 answers | ✅ **ALL EIGHT WRITTEN** — `context/CLIENT-ANSWERS-oct2026.md` (+ 7 decisions we need back) |
+| | FE changelog | ✅ `context/FE-CHANGELOG-2026-10-07.md` — 15 endpoint claims verified against the spec |
+| | Assemble the single §1+§2+§3 client block | ⬜ after §2 features |
+
+## STAFF SUSPENSION — BUILT 2026-10-07 (FE: "no endpoint to suspend a rider")
+**The FE was right, and the gap was narrower and worse than it looked: every READER of
+`User.status` was already built and NOTHING COULD EVER WRITE IT.** `resolveRider` refuses a
+non-active rider on BOTH assignment legs, `getRiders` hides them, `notifyRoles` skips them — but
+`status` was `'active'` from signup forever, so the entire suspension path was dead code.
+- NEW **`GET /api/admin/staff`** (list, filter by role/status/search, `canWork`, counts per status)
+  and **`PATCH /api/admin/staff/:id/status`** (`adminAuth`) — the only writer of `User.status`.
+- NEW on `User`: `statusReason`, `statusChangedAt`, `statusChangedBy`.
+- **`auth.service._handleLogin` now refuses a non-active account.** Without it suspension was
+  decoration — the rider could still sign in and work the jobs already assigned to them. That one
+  function is the chokepoint for customer, staff, admin AND Google login, so one check closes all.
+- Guards against locking everyone out: can't suspend **yourself**, can't suspend the **last active
+  admin**, can't suspend a **customer** from a staff screen (different decision, different blast
+  radius). Reason REQUIRED for anything but `active`; cleared on reinstate. Idempotent —
+  re-suspending returns `changed:false` and writes no second audit line.
+- Deliberately does NOT reassign their existing work; the response says so in `effect`.
+- NEW **`staffStatusStaging.js` 38/38** — proves suspension BITES in all three places (sign-in,
+  assignment, the riders list), not just that a string changed.
+- **BUG THE HARNESS CAUGHT, and it is a trap for everyone: `logSafely(label, work)` took a PROMISE,
+  and I passed a thunk.** `await someFunction` resolves to the function — the call never happens,
+  nothing throws, and the caller sees a clean success with no audit row and no notification. Silent.
+  `util/safeLog.js` now accepts **either** form rather than leaving the trap for the next caller.
+
+## FE-RAISED GAPS — 2 FIXED, 2 ARE ANSWERS (2026-10-07)
+1. **`walletAdjustmentLimits` was never documented** — the model has it (`adminSetting.model.js:81`,
+   a Map role→naira) and `updateAdminSettings` `$set`s whatever you send, so it ALWAYS worked; the
+   `PUT /admin/update-admin-setting` swagger body just didn't list it, which blocked the admin limits
+   screen. **Documented.** Two traps now spelled out there: **`$set` replaces the whole Map**, so a
+   partial send silently zeroes the roles you left out; and that route's RESPONSE doc was wrong too
+   (`message: string` + a sibling `data`; the service returns the saved document AS `message`).
+   The envelope gate never caught it because it only hunts `success`+`message` siblings.
+2. **No admin-side wallet ledger existed** — the customer could see their own lines
+   (`/wallet/fetch-user-transactions`, scoped to `req.user`), `searchWallet` returns balances only,
+   and nothing listed movements for staff. **So the client's own 2.3 test ("both lines show in the
+   customer app AND in admin") could not pass.** NEW **`GET /api/admin/wallet-transactions`**
+   (`adminAuth`): filters `userId`/`search`/`type`/`status`/`from`/`to` (Lagos days, `to` inclusive
+   through end of day), customer + operator resolved to names, and `totals {credit,debit,net}` over
+   the WHOLE filtered set — **a manual adjustment stores a SIGNED amount, so the totals split it by
+   sign rather than by type.** NEW swagger `AdminWalletTransaction`.
+   **DB-VERIFIED** as scenario [11] in `walletLimitStaging.js` (now **55/55**).
+   **BUG THE RUN CAUGHT: the role field on `User` is `userType`, NOT `role`.** The first cut populated
+   `select: 'fullName role'`, which returns a populated doc with the NAME filled in and the role
+   silently `undefined` — so every operator would have shown a blank role on the Money page, and an
+   assertion on `fullName` alone was green for the wrong reason. The harness now asserts the role value.
+3. **Split orders (answer, no code):** S3 confirms **per batch** already — the whole-order gate is
+   `fromIdx === 0 || toIdx === SEQ.length-1`, so only handoffs OUT of intake or INTO QC must move
+   everything. **S5 can therefore never show "7 of 10 arrived": a partial handoff into QC is refused
+   outright**, which is a stronger guarantee than the brief asked for but not the display it asked
+   for. Needs a client decision — see THINGS TO TELL THE CLIENT.
+4. **Offer message editor (answer, no code):** offers already message the customer via the shared
+   template key **`offer-available`** (`offer.service.js:298`, placeholder `{{offerName}}`), editable
+   in the template editor today. A PER-OFFER custom message is new work and a client call.
+
+## §2 N2 — Recovery/Complaints/Feedback dashboard (BUILT 2026-10-07, DB RUN PENDING A URI)
+**NEW `GET /api/recovery/reports/monthly?month=YYYY-MM` (`adminAuth`)** →
+`services/recoveryReport.service.js`, via `FeedbackController.monthlyRecoveryReport`.
+**NEW `GET /api/feedback/order/:bookOrderId/prompt` (`auth`)** — the backend owns the NPS throttle; the
+FE renders exactly what comes back.
+- **The NPS 0–10 question did not exist** (Q8's gap). NEW on `Feedback`: `npsScore` (0–10, NO default —
+  **0 is a real answer**, so every test is `!= null`, never falsiness), `npsAskedAt`, `npsAnsweredAt`.
+- **The throttle has TWO clocks on purpose.** *Asked* governs whether the question is SHOWN (the
+  brief's rule); *answered* governs whether a score is STORED. A prompt the customer ignores leaves no
+  Feedback row to stamp, so the ask is also recorded on **`CrmProfile.lastNpsAskedAt`** — without it the
+  "once in 30 days" rule would only throttle people who actually answer. Interval is admin-editable at
+  **`CrmSetting.thresholds.npsAskIntervalDays`** (default 30), like every other CRM cadence.
+- **A throttled score is DROPPED, never fatal** — the stars and any complaint still save, and the
+  response carries `npsThrottled: true`. Failing the whole submission would lose the part we asked for.
+- **`npsResponses` ≠ `feedbackReceived`** and the swagger says so. Stars are asked after every delivered
+  order, the NPS question once per customer per 30 days. The client's worked example has both at 10, so
+  **their own test cannot expose this** — tell them.
+- **"Delivered in the month" is read off the DELIVERED entry in `stageHistory`**, NOT the order's
+  `updatedAt`. That is deliberately not repeating the flaw we flagged in §3 Q1 (editing an old order
+  drags it into today's figures).
+- Lagos months via `util/lagosDay.monthRange`, half-open `[from, to)`.
+- `stillOpen` = open **at the end of the chosen month** (`createdAt < to` AND not closed before `to`),
+  so a past month stays meaningful instead of reporting "open right now".
+- Recovery: only **APPROVED** compensations count (a pending request has given the customer nothing);
+  legacy pre-§7 `recoveryCredit` included so old months aren't under-reported; **offers are counted but
+  carry ₦0 cost** — a percentage discount is not money spent until it is redeemed.
+- **STATED ASSUMPTION (tell the client): "ordered again after recovery"** = a non-cancelled,
+  non-recovery order placed AFTER the first recovery that customer received that month, counted as
+  distinct customers, with no closing window. If they want "within 30/60 days", it is a one-line change.
+- NEW swagger schemas `FeedbackPrompt` + `RecoveryMonthlyReport`. Spec now **58 schemas / 289 paths,
+  0 wrong envelopes**. `briefCheck.js` 104/104.
+- **NEW `recoveryReportStaging.js` — DB-VERIFIED 49/49.** Runs the client's literal test
+  (20 delivered / 10 feedback / five 5s three 4s two 3s / six promoters two passives two detractors)
+  and it comes out **4.3 · NPS 40 · 10 = 50%**, their three numbers exactly — plus the throttle, the
+  0-is-a-detractor case, the Lagos boundary (23:30 UTC 28 Feb = March in Lagos), the
+  pending-compensation exclusion and the 1–2★ call list.
+- **HARNESS BUG WORTH REMEMBERING: `createdAt` is IMMUTABLE under Mongoose timestamps.**
+  `Model.updateOne({$set:{createdAt}})` is silently DROPPED — no error, no write. The first run
+  backdated nothing, every fixture stayed in the real month, and the report honestly returned 0 for
+  14 assertions. Backdate through the **raw driver** (`Model.collection.updateOne`). Also: an `Offer`
+  requires at least one `benefits[]` entry, and the field inside it is `benefitType`, not `type`.
 
 ## Verification gates — run ALL of these after any change
 ```bash
-node briefCheck.js                                   # 101/101  offline, no DB
+node briefCheck.js                                   # 104/104  offline, no DB
+STAGING_OK=1 MONGODB_URL="<testing uri>" node recoveryReportStaging.js  # 49/49 (N2)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node planCreateStaging.js      # 39 (2.5)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchStaging.js        # 46 (3.1/3.2/3.3)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node templateStaging.js        # 27 (4.1/4.2)
@@ -47,7 +146,8 @@ STAGING_OK=1 MONGODB_URL="<testing uri>" node stationFlowStaging.js    # 80/80
 STAGING_OK=1 MONGODB_URL="<testing uri>" node tierPricingStaging.js    # 33/33
 STAGING_OK=1 MONGODB_URL="<testing uri>" node offerAdminStaging.js     # 37/37
 STAGING_OK=1 MONGODB_URL="<testing uri>" node freeLogisticsStaging.js  # 23/23
-STAGING_OK=1 MONGODB_URL="<testing uri>" node walletLimitStaging.js    # 39/39
+STAGING_OK=1 MONGODB_URL="<testing uri>" node walletLimitStaging.js    # 55/55 (incl. [11] the admin ledger)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node staffStatusStaging.js    # 38/38 (suspend/reinstate)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchTagStaging.js    # 46/46 (older gate)
 ```
 Swagger must stay **56 schemas / 285 paths, 0 wrong envelopes**:
@@ -57,7 +157,16 @@ node -e "const s=require('swagger-jsdoc')({definition:{openapi:'3.0.0',info:{tit
 **NEVER edit `.env`** — it points at the LIVE `laundrydb`. Pass `MONGODB_URL` inline. Every harness
 hard-refuses a DB named `laundrydb`.
 
+## ✅ MERGE STATE 2026-10-07 — Groups 1–4 are ON `origin/main`, ONE COMMIT IS NOT
+**PR #240 (`2084e07`) merged `feature/fix` → `origin/main` up to `c6629a5` ("group 4 done").**
+**`cc8ef2c` ("all done") is on `origin/feature/fix` ONLY and is NOT on main.** It is not just docs —
+it carries the **4.4 follow-up in `services/admin.service.js`**: the per-row "SLA Breached" badge
+(`getHoldOrders`) and the order-detail `holdMeta` each still had their own hardcoded 120/240/360
+thresholds, so a row can contradict the card above it. **4.4 is not fully live until `cc8ef2c` is
+merged too.** (Also in it: `holdsStaging.js`, `briefCheck.js` +10, the §3 answers + FE changelog.)
+
 ## Uncommitted right now (Groups 2, 3 and 4 — all DB-verified)
+*(superseded — see MERGE STATE above; the list below is kept for the file manifest)*
 NEW: `services/walletAdjustment.service.js`, `models/walletAdjustmentRequest.model.js`,
 `util/{notifyRoles,safeLog,commMeta,displayName}.js`, `phoneFormatBackfill.js`,
 `offerAdminStaging.js`, `freeLogisticsStaging.js`, `walletLimitStaging.js`,
@@ -277,6 +386,41 @@ says why". NEW `explainNotAtSort(orderId)` in `sortAndPretreat.service.js` does 
 returns e.g. *"Order OSC-… is no longer at sort & pretreat (it is now at "queue"), so it cannot be
 changed from this station."* Flag and Hold themselves were verified to work (scenarios 9–10) — they
 were being refused, and the refusal was unreadable.
+
+### 4.4 DB-VERIFIED + 4.5 ANSWERED (2026-10-07). NEW `holdsStaging.js` 22/22.
+4.4's fix was only ever verified STRUCTURALLY (the filters are exact complements). Running it against
+the real endpoints proved the client's literal test — **3 breached holds and nothing else → Active 0,
+Overdue 3** — and that each card's list length equals the card.
+- **IT ALSO FOUND TWO MORE COPIES OF THE SLA TABLE.** `util/holdSla.js` was created for 4.4 as the ONE
+  definition, but the per-row **"SLA Breached" badge** in `getHoldOrders` AND the **order-detail**
+  `holdMeta` each kept their own hardcoded `120/240/360` minutes — and **both ignored the
+  past-delivery-date branch**. So the same order could be counted Overdue by the card and rendered
+  "not breached" on its row and on its detail screen. That IS part of the client's screenshot
+  (a row badged SLA Breached sitting under Active). All three now call `isHoldBreached`; briefCheck
+  asserts no hardcoded minute threshold survives anywhere in `admin.service.js`.
+- The harness PARKS any pre-existing holds for the run and restores them, so "and no others" is
+  literally true without damaging the target DB.
+- **4.5 needed no code change.** `dormantRate = count(stage=dormant AND totalOrders>=1) ÷ count(totalOrders>=1)`
+  = 4÷4 = 100%, which is arithmetically valid and TRUE: every delivered customer has been quiet >30
+  days. Answered in full, with the one decision the client must make (keep "share of customers" and
+  rename the card, vs switch to a pipeline measure over all profiles) — plus whether 30 days is right.
+
+### §3 ANSWERS — Q1, Q2, Q3 WRITTEN (`context/CLIENT-ANSWERS-oct2026.md`)
+All three in the client's requested form (rule in plain words · exact condition · worked example).
+**The two facts that explain all three of their "unexplained" CRM values:** (1) `totalOrders` counts
+DELIVERED orders, while the STAGE moves at BOOKING; (2) the 30-day dormancy scan OVERRIDES the
+count-based stage, so a repeat customer who goes quiet leaves Active/Loyal entirely.
+- **First Order 8 vs Customers 4** → 8 have booked, 4 have been delivered to. Both right.
+- **Lead revenue ₦19,500 > total ₦18,300** → the lead report counts BOOKED value, the CRM dashboard
+  accrues on DELIVERY. Booked always runs ahead. (Plus the lead report excludes cancelled/recovery and
+  zeroes subscription draw-downs.)
+- **Repeat 50% with Active+Loyal 0** → repeat is counted from `totalOrders`; Active/Loyal are STAGES,
+  and all 4 customers are in Dormant.
+- **Q1 flagged three things worth the client's decision:** avg daily revenue divides by *days that had
+  revenue*, not 7 (so it is "an average trading day"); avg daily revenue per item is an average of
+  DAILY RATES, not total÷total (the two differ: ₦1,750 vs ₦1,636 on the worked example); and
+  **avg processing time's day filter is "record last modified today", so editing an old delivered order
+  pulls it into today's average — we called that a flaw, not a design choice.**
 
 ### GROUP 4 — 4.1/4.2/4.3/4.6 DONE (2026-10-07). NEW `templateStaging.js` 27/27.
 Client's Group 4 text re-confirmed against this plan on 2026-10-07: identical, with two details added —
