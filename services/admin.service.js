@@ -31,6 +31,8 @@ const { presentOrder } = require('../util/orderView')
 const {
     activeHoldsFilter,
     overdueHoldsFilter,
+    isHoldBreached,
+    HOLD_SLA_HOURS,
 } = require('../util/holdSla')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
@@ -1005,20 +1007,18 @@ class AdminService extends BaseService {
                 const heldMinutes = heldSince
                     ? Math.floor((now - new Date(heldSince)) / 60000)
                     : null
+                // Third copy of the SLA table, found by the harness that asserts
+                // there is only one. The order-detail screen said "SLA Breached"
+                // from its own thresholds, so it could disagree with both the
+                // Holds list and the dashboard cards on the SAME order.
                 const slaThresholdMinutes =
-                    order.deliverySpeed === DELIVERY_SPEED.SAME_DAY
-                        ? 120
-                        : order.deliverySpeed === DELIVERY_SPEED.EXPRESS
-                          ? 240
-                          : 360
+                    (HOLD_SLA_HOURS[order.deliverySpeed] ??
+                        HOLD_SLA_HOURS[DELIVERY_SPEED.STANDARD]) * 60
                 holdMeta = {
                     heldSince,
                     heldMinutes,
                     slaThresholdMinutes,
-                    slaBreached:
-                        heldMinutes !== null
-                            ? heldMinutes > slaThresholdMinutes
-                            : false,
+                    slaBreached: isHoldBreached(order, now),
                     stationStatus: order.stationStatus,
                     holdNote: order.stage?.note,
                 }
@@ -1775,17 +1775,17 @@ class AdminService extends BaseService {
                     ? Math.floor((now - new Date(heldSince)) / 60000)
                     : null
 
+                // Brief 4.4 — this row badge used to carry its OWN hardcoded copy
+                // of the SLA (120/240/360 minutes) which also ignored the
+                // past-delivery-date branch. So a hold counted as Overdue could
+                // still render "not breached" on its row, and the thresholds could
+                // drift from the filters the cards count with. Both now come from
+                // the single definition in util/holdSla.js.
                 const slaThresholdMinutes =
-                    order.deliverySpeed === DELIVERY_SPEED.SAME_DAY
-                        ? 120
-                        : order.deliverySpeed === DELIVERY_SPEED.EXPRESS
-                          ? 240
-                          : 360 // standard
+                    (HOLD_SLA_HOURS[order.deliverySpeed] ??
+                        HOLD_SLA_HOURS[DELIVERY_SPEED.STANDARD]) * 60
 
-                const slaBreached =
-                    heldMinutes !== null
-                        ? heldMinutes > slaThresholdMinutes
-                        : false
+                const slaBreached = isHoldBreached(order, now)
 
                 return {
                     ...order,

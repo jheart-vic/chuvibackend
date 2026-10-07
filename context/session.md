@@ -10,6 +10,42 @@
 > template 27 · phase12 14 · subLogistics 20 · handoff 54 · botStaging 11/11. Swagger 56/287, 0 wrong
 > envelopes. Never edit `.env` — pass `MONGODB_URL` inline (testingdb URI supplied by the user).
 
+### §3 Q1–Q8 ALL ANSWERED + FE CHANGELOG WRITTEN (2026-10-07)
+- **`context/CLIENT-ANSWERS-oct2026.md`** — all eight questions in the client's requested form, ending
+  with **7 decisions we need back** (dormancy window + card name; avg-revenue divisor; per-item average
+  of rates vs total÷total; the processing-time day filter we flagged as a flaw; queue sort direction;
+  whether hold limits move to settings; landmark now required).
+- **Q6 found a real inconsistency:** the stations disagree on sort direction — **Sort & Pretreat shows
+  NEWEST first (`updatedAt: -1`) while Wash, Press and the dispatch queues show OLDEST first.** Same
+  three orders, opposite order, one screen apart. Recommended oldest-first everywhere (or by delivery
+  deadline) but did NOT change it — it changes what staff see first, so it is the client's call.
+- **`context/FE-CHANGELOG-2026-10-07.md`** — every FE-affecting change in one block. **3 BREAKING:**
+  landmark required on customer booking; item-brief `name` is now the readable form with the slug moved
+  to new `rawType`; rider assignment rejects a non-rider id (pick from `GET /intake-user/riders`).
+  All 15 endpoint claims were verified against the built spec before publishing, and the one vague
+  path (`/rider/...assigned-pickups`) was replaced with the real one.
+
+### 4.4 DB-VERIFIED + 4.5 ANSWERED + §3 Q1/Q2/Q3 WRITTEN (2026-10-07)
+NEW `holdsStaging.js` **22/22** — the client's literal test (3 breached holds, nothing else → Active 0,
+Overdue 3) against the REAL endpoints, plus card-length == list-length both ways.
+- **IT FOUND TWO MORE COPIES OF THE SLA TABLE.** `util/holdSla.js` was built for 4.4 as the one
+  definition, but the per-row **"SLA Breached" badge** (`getHoldOrders`) and the **order-detail**
+  `holdMeta` each kept hardcoded `120/240/360` minutes AND ignored the past-delivery-date branch — so
+  one order could be counted Overdue while its row and its detail page said "not breached". That is part
+  of the client's screenshot. All three unified on `isHoldBreached`; briefCheck now fails if any
+  hardcoded minute threshold reappears in `admin.service.js` (that assertion is what caught the third).
+- **Harness design note:** `getDashboardStats`/`getHoldOrders` are declared `(req, res)` but RETURN an
+  envelope and never touch `res`. A res-capturing wrapper produced `undefined` for every figure and two
+  assertions then "passed" against empty arrays — green for the wrong reason, again.
+- **4.5 needed NO code change** and is answered: 4÷4 = 100% is valid and true (every delivered customer
+  quiet >30 days). One decision for the client: keep "share of customers" + rename the card, or switch
+  to a pipeline measure over all profiles; and whether 30 days is the right window.
+- **NEW `context/CLIENT-ANSWERS-oct2026.md`** — Q1/Q2/Q3 in the client's requested form. Two facts
+  explain all three of their "unexplained" CRM numbers: `totalOrders` counts DELIVERED orders while the
+  STAGE moves at BOOKING; and the 30-day dormancy scan OVERRIDES the count-based stage. Q1 raises three
+  judgement calls, incl. **avg processing time filtering on "record modified today", so editing an old
+  delivered order drags it into today's average — flagged as a flaw, not a design choice.**
+
 ### GROUP 4 DONE (4.1/4.2/4.3/4.6) — NEW `templateStaging.js` 27/27
 - **4.1 REPRODUCED: the 400 was `post.channels.filter is not a function`.** A channel picker sending a
   single value as a STRING (`channels: "sms"`) hit `.filter` on a string → TypeError → the catch-all

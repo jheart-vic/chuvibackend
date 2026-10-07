@@ -26,11 +26,13 @@ with the §3 answers written LAST from shipped code. Final deliverable = **ONE c
 |**G4**| 4.1 template save returns 400 | ✅ done, UNCOMMITTED — **reproduced: `channels.filter is not a function`** |
 | | 4.2 keys + target pages dropdowns | ✅ backend done (`GET /communication/templates/meta`); written list = `util/commMeta.js` |
 | | 4.3 admin notifications | ✅ done — notice names customer+amount+operator; **event list derived: only 6 of 87 sites reach an admin** |
-| | 4.4 Holds Active/Overdue overlap | ✅ committed |
-| | 4.5 CRM dormant rate 100% | ⛔ blocked on the client's own Q2/Q3 — answer in §3 |
+| | 4.4 Holds Active/Overdue overlap | ✅ committed, **now DB-VERIFIED** (`holdsStaging.js` 22/22, their literal test) + **2 MORE SLA copies found and unified** |
+| | 4.5 CRM dormant rate 100% | ✅ **ANSWERED** in `context/CLIENT-ANSWERS-oct2026.md` — figure is correct, 1 decision needed from the client |
 | | 4.6 names as code text, phone formats | ✅ done, UNCOMMITTED — **`normalizePhone` itself was the profile-splitter** |
 |**§2**| N1 Quick Booking · N2 Recovery dashboard | ⬜ after the fixes |
-|**§3**| Q1–Q8 answers + assemble the deliverable | ⬜ LAST |
+|**§3**| Q1–Q8 answers | ✅ **ALL EIGHT WRITTEN** — `context/CLIENT-ANSWERS-oct2026.md` (+ 7 decisions we need back) |
+| | FE changelog | ✅ `context/FE-CHANGELOG-2026-10-07.md` — 15 endpoint claims verified against the spec |
+| | Assemble the single §1+§2+§3 client block | ⬜ after §2 features |
 
 ## Verification gates — run ALL of these after any change
 ```bash
@@ -277,6 +279,41 @@ says why". NEW `explainNotAtSort(orderId)` in `sortAndPretreat.service.js` does 
 returns e.g. *"Order OSC-… is no longer at sort & pretreat (it is now at "queue"), so it cannot be
 changed from this station."* Flag and Hold themselves were verified to work (scenarios 9–10) — they
 were being refused, and the refusal was unreadable.
+
+### 4.4 DB-VERIFIED + 4.5 ANSWERED (2026-10-07). NEW `holdsStaging.js` 22/22.
+4.4's fix was only ever verified STRUCTURALLY (the filters are exact complements). Running it against
+the real endpoints proved the client's literal test — **3 breached holds and nothing else → Active 0,
+Overdue 3** — and that each card's list length equals the card.
+- **IT ALSO FOUND TWO MORE COPIES OF THE SLA TABLE.** `util/holdSla.js` was created for 4.4 as the ONE
+  definition, but the per-row **"SLA Breached" badge** in `getHoldOrders` AND the **order-detail**
+  `holdMeta` each kept their own hardcoded `120/240/360` minutes — and **both ignored the
+  past-delivery-date branch**. So the same order could be counted Overdue by the card and rendered
+  "not breached" on its row and on its detail screen. That IS part of the client's screenshot
+  (a row badged SLA Breached sitting under Active). All three now call `isHoldBreached`; briefCheck
+  asserts no hardcoded minute threshold survives anywhere in `admin.service.js`.
+- The harness PARKS any pre-existing holds for the run and restores them, so "and no others" is
+  literally true without damaging the target DB.
+- **4.5 needed no code change.** `dormantRate = count(stage=dormant AND totalOrders>=1) ÷ count(totalOrders>=1)`
+  = 4÷4 = 100%, which is arithmetically valid and TRUE: every delivered customer has been quiet >30
+  days. Answered in full, with the one decision the client must make (keep "share of customers" and
+  rename the card, vs switch to a pipeline measure over all profiles) — plus whether 30 days is right.
+
+### §3 ANSWERS — Q1, Q2, Q3 WRITTEN (`context/CLIENT-ANSWERS-oct2026.md`)
+All three in the client's requested form (rule in plain words · exact condition · worked example).
+**The two facts that explain all three of their "unexplained" CRM values:** (1) `totalOrders` counts
+DELIVERED orders, while the STAGE moves at BOOKING; (2) the 30-day dormancy scan OVERRIDES the
+count-based stage, so a repeat customer who goes quiet leaves Active/Loyal entirely.
+- **First Order 8 vs Customers 4** → 8 have booked, 4 have been delivered to. Both right.
+- **Lead revenue ₦19,500 > total ₦18,300** → the lead report counts BOOKED value, the CRM dashboard
+  accrues on DELIVERY. Booked always runs ahead. (Plus the lead report excludes cancelled/recovery and
+  zeroes subscription draw-downs.)
+- **Repeat 50% with Active+Loyal 0** → repeat is counted from `totalOrders`; Active/Loyal are STAGES,
+  and all 4 customers are in Dormant.
+- **Q1 flagged three things worth the client's decision:** avg daily revenue divides by *days that had
+  revenue*, not 7 (so it is "an average trading day"); avg daily revenue per item is an average of
+  DAILY RATES, not total÷total (the two differ: ₦1,750 vs ₦1,636 on the worked example); and
+  **avg processing time's day filter is "record last modified today", so editing an old delivered order
+  pulls it into today's average — we called that a flaw, not a design choice.**
 
 ### GROUP 4 — 4.1/4.2/4.3/4.6 DONE (2026-10-07). NEW `templateStaging.js` 27/27.
 Client's Group 4 text re-confirmed against this plan on 2026-10-07: identical, with two details added —
