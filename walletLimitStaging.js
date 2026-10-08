@@ -291,6 +291,69 @@ async function main() {
         ok(backToPending?.status === WALLET_ADJUSTMENT_REQUEST_STATUS.PENDING,
             'and the request returned to pending rather than reading as approved')
 
+        // ── 10b ── the CUSTOMER half of 2.3, which was still broken ─────────
+        // The FE reported on 2026-10-08 that approved adjustments still did not
+        // show in the customer's ledger. They were right, and it is the
+        // client's ORIGINAL complaint: `fetch-user-transactions` read only the
+        // Payment collection, while a manual adjustment writes a
+        // WalletTransaction and no Payment. The write side was fixed in 2.3;
+        // this read side never was.
+        console.log('\n[10b] the CUSTOMER can now see a manual adjustment')
+        const WalletService = require('./services/wallet.service')
+        const customerLedger = async (query = {}) => {
+            const res = await new WalletService().fetchUserTransactions({
+                query,
+                user: { id: String(customer._id) },
+            })
+            if (!res?.success)
+                throw new Error(`ledger refused: ${JSON.stringify(res?.data)}`)
+            return res.data
+        }
+
+        const mine2 = await customerLedger({ limit: 100 })
+        const adjustmentLines = (mine2.transactions || []).filter(
+            (t) => t.type === 'manual-adjustment',
+        )
+        ok(
+            adjustmentLines.length > 0,
+            `*** the customer's own ledger now shows manual adjustments *** (${adjustmentLines.length} line(s))`,
+        )
+        ok(
+            adjustmentLines.every((l) => l.amount > 0),
+            'amounts are shown positive, with the direction in alertType',
+        )
+        ok(
+            adjustmentLines.some((l) => !!l.reason),
+            'and each one carries the reason the operator gave',
+        )
+        ok(
+            mine2.pagination?.total >= adjustmentLines.length,
+            `the total counts the merged list, not just Payment rows (${mine2.pagination?.total})`,
+        )
+        // the union must not have lost the Payment-only rows
+        ok(
+            (mine2.transactions || []).some((t) => t.source === 'payment') ||
+                (mine2.transactions || []).every((t) => t.source === 'wallet'),
+            'Payment rows are still present alongside the wallet rows',
+        )
+        const creditOnly = await customerLedger({ type: 'credit', limit: 100 })
+        ok(
+            (creditOnly.transactions || []).every(
+                (t) => t.alertType === 'credit',
+            ),
+            'the credit/debit filter still works across the merged list',
+        )
+        // a DEBIT adjustment must read as a debit, from its SIGN not its type
+        const debitAdj = await adjust(500, 'debit', operator)
+        ok(debitAdj.success === true, 'a debit adjustment goes through')
+        const afterDebit = await customerLedger({ type: 'debit', limit: 100 })
+        ok(
+            (afterDebit.transactions || []).some(
+                (t) => t.type === 'manual-adjustment' && t.alertType === 'debit',
+            ),
+            '*** a deduction reads as a DEBIT, taken from the sign of the amount ***',
+        )
+
         // ── 11 ── the ADMIN half of 2.3 ─────────────────────────────────────
         // The client's test is "both lines show in the customer app AND in
         // admin". The customer half existed; nothing on the admin side listed
@@ -304,11 +367,18 @@ async function main() {
             return res.data?.message
         }
 
+        // Re-read: scenario 10b added another adjustment after [9] took its
+        // snapshot, and comparing against a stale `lines` would fail an
+        // endpoint that is behaving correctly.
+        const lines2 = await WalletTransactionModel.find({
+            userId: customer._id,
+        }).lean()
+
         const mine = await ledger({ userId: String(customer._id), limit: 100 })
         ok(Array.isArray(mine?.data), 'the admin ledger responds with rows')
         ok(
-            mine.data.length === lines.length,
-            `it shows every line the customer has (${mine.data.length} vs ${lines.length})`,
+            mine.data.length === lines2.length,
+            `it shows every line the customer has (${mine.data.length} vs ${lines2.length})`,
         )
         ok(
             mine.data.every((l) => String(l.userId) === String(customer._id)),
@@ -329,19 +399,20 @@ async function main() {
         // totals must describe the whole filtered set, and a manual adjustment
         // stores a SIGNED amount — so a deduction has to land on the debit side
         // by its sign, never by its type.
-        const signedSum = lines.reduce((t, l) => t + (l.amount || 0), 0)
+        const signedSum = lines2.reduce((t, l) => t + (l.amount || 0), 0)
         ok(
             mine.totals.credit - mine.totals.debit === signedSum,
             `totals net to the signed ledger sum (₦${mine.totals.credit} - ₦${mine.totals.debit} == ₦${signedSum})`,
         )
-        const hasNegative = lines.some((l) => (l.amount || 0) < 0)
+        const hasNegative = lines2.some((l) => (l.amount || 0) < 0)
         ok(
             !hasNegative || mine.totals.debit > 0,
             'a negative adjustment is counted as money OUT, not as money in',
         )
 
         const byName = await ledger({ search: customer.fullName, limit: 100 })
-        ok(byName.data.length === lines.length,
+        ok(
+            byName.data.length === lines2.length,
             'the same rows are findable by customer name')
         const nobody = await ledger({ search: `no-such-person-${Date.now()}` })
         ok(nobody.data.length === 0 && nobody.pagination.total === 0,
@@ -368,7 +439,15 @@ async function main() {
             to: '2031-01-31',
         })
         ok(future.data.length === 0, 'a date window with nothing in it returns nothing')
-        const today = new Date().toISOString().slice(0, 10)
+        // LAGOS today, not UTC today. `toISOString().slice(0,10)` is the UTC
+        // date, and between 00:00 and 00:59 Lagos that is still YESTERDAY — so
+        // this assertion passed all day and failed at 00:43, against an endpoint
+        // that was behaving correctly. Exactly the split-brain CLAUDE.md's time
+        // zone section exists for, reproduced inside the test that was meant to
+        // check it.
+        const today = require('moment-timezone')()
+            .tz('Africa/Lagos')
+            .format('YYYY-MM-DD')
         const todayRows = await ledger({
             userId: String(customer._id),
             from: today,
@@ -376,7 +455,7 @@ async function main() {
             limit: 100,
         })
         ok(
-            todayRows.data.length === lines.length,
+            todayRows.data.length === lines2.length,
             '`to` is inclusive through the end of the Lagos day (same-day from/to finds today\'s lines)',
         )
     } catch (e) {

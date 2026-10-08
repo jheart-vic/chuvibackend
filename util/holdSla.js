@@ -12,9 +12,25 @@
 // it lives here instead of being spelled out at each call site (it was
 // previously duplicated in two places in admin.service.js and could drift).
 
+// ── Hold TYPES (client brief reply, section B, 2026-10-07) ──────────────────
+// "The limit should depend on the kind of hold, not on the speed of the order."
+// Quick Booking creates PAYMENT holds that legitimately last a day or more, and
+// under the speed table every one of them would read Overdue within hours.
+//
+// So a hold now resolves its limit in this order:
+//   1. its hold type's own `slaHours`, if the admin has set one;
+//   2. otherwise the delivery-speed table below — today's behaviour, unchanged.
+// Every operational type is seeded with slaHours = null, so NOTHING changes for
+// the stations until the admin sets a limit. Only `payment` ships with its own
+// (48h) and with judgeByOwnLimitOnly, which keeps the delivery-date rule off it.
+//
+// The partition property from 4.4 still holds: Overdue is an $or of branches and
+// Active is the $nor of the SAME branches, so every hold matches exactly one.
+
 const { ORDER_STATUS, DELIVERY_SPEED } = require('./constants')
 
 // How long an order may sit on hold before it has breached, by delivery speed.
+// Still the DEFAULT, now only the fallback when the hold's type has no limit.
 const HOLD_SLA_HOURS = {
     [DELIVERY_SPEED.SAME_DAY]: 2,
     [DELIVERY_SPEED.EXPRESS]: 4,
@@ -23,45 +39,175 @@ const HOLD_SLA_HOURS = {
 
 const HOUR = 60 * 60 * 1000
 
-// The breach clause on its own, as an array of $or branches: held longer than
-// its speed allows, OR already past its promised delivery date.
-const breachBranches = (now = new Date()) => [
-    ...Object.entries(HOLD_SLA_HOURS).map(([speed, hours]) => ({
-        deliverySpeed: speed,
-        'stage.updatedAt': { $lt: new Date(now.getTime() - hours * HOUR) },
-    })),
-    { deliveryDate: { $lt: now } },
-]
+// Load the admin-configured types into a plain lookup. Kept OUT of the pure
+// functions below so a query builder never has to await a database read in the
+// middle of composing a filter, and so the whole module stays testable offline.
+async function loadHoldRules() {
+    // required lazily: util/ must not pull a model in at require time, or the
+    // offline harnesses that only want the pure maths would need a connection
+    const HoldTypeModel = require('../models/holdType.model')
+    const AdminSettingModel = require('../models/adminSetting.model')
+    const [types, setting] = await Promise.all([
+        HoldTypeModel.find({ active: true })
+            .select('key name slaHours judgeByOwnLimitOnly escalateToAdmin')
+            .lean(),
+        AdminSettingModel.findOne().select('holdSlaHoursBySpeed').lean(),
+    ])
+    const byKey = {}
+    for (const t of types) byKey[t.key] = t
+
+    // Client 2026-10-08: the three speed limits became admin-editable. Anything
+    // the admin has not set falls back to the code default, so a partial or
+    // absent setting can never leave a speed with no limit at all.
+    const raw = setting?.holdSlaHoursBySpeed
+    const configured = raw instanceof Map ? Object.fromEntries(raw) : raw || {}
+    const speedHours = { ...HOLD_SLA_HOURS }
+    for (const [speed, hours] of Object.entries(configured)) {
+        const n = Number(hours)
+        if (Object.prototype.hasOwnProperty.call(speedHours, speed) && n > 0) {
+            speedHours[speed] = n
+        }
+    }
+
+    return { byKey, types, speedHours }
+}
+
+// The breach clause, as $or branches. Without `rules` this is byte-identical to
+// what 4.4 shipped, which is why every existing caller keeps working.
+const breachBranches = (now = new Date(), rules = null) => {
+    // admin-edited limits when present, code defaults otherwise
+    const speedTable = rules?.speedHours || HOLD_SLA_HOURS
+    const speedBranches = Object.entries(speedTable).map(
+        ([speed, hours]) => ({
+            deliverySpeed: speed,
+            'stage.updatedAt': { $lt: new Date(now.getTime() - hours * HOUR) },
+        }),
+    )
+
+    if (!rules || !rules.types?.length) {
+        return [...speedBranches, { deliveryDate: { $lt: now } }]
+    }
+
+    const typed = rules.types.filter((t) => t.slaHours > 0)
+    const typedKeys = typed.map((t) => t.key)
+    // Types with their own limit get their own branch…
+    const typedBranches = typed.map((t) => ({
+        'orderHold.holdTypeKey': t.key,
+        'stage.updatedAt': {
+            $lt: new Date(now.getTime() - t.slaHours * HOUR),
+        },
+    }))
+    // …and everything else (no type, or a type with no limit) falls back to the
+    // speed table. Scoped with $nin so a typed hold is judged ONCE, by its own
+    // limit, and can never also be caught by the speed branch.
+    const fallbackBranches = typedKeys.length
+        ? speedBranches.map((b) => ({
+              ...b,
+              'orderHold.holdTypeKey': { $nin: typedKeys },
+          }))
+        : speedBranches
+
+    // The promised delivery date still overrides — except for types the admin
+    // marked "judged only by its own limit" (the payment hold), where on a Quick
+    // Booking there is no real delivery date yet at all.
+    const ownLimitOnly = rules.types
+        .filter((t) => t.judgeByOwnLimitOnly)
+        .map((t) => t.key)
+    const dateBranch = ownLimitOnly.length
+        ? {
+              deliveryDate: { $lt: now },
+              'orderHold.holdTypeKey': { $nin: ownLimitOnly },
+          }
+        : { deliveryDate: { $lt: now } }
+
+    return [...typedBranches, ...fallbackBranches, dateBranch]
+}
 
 // Holds that have breached their SLA.
-const overdueHoldsFilter = (now = new Date()) => ({
+const overdueHoldsFilter = (now = new Date(), rules = null) => ({
     'stage.status': ORDER_STATUS.HOLD,
-    $or: breachBranches(now),
+    $or: breachBranches(now, rules),
 })
 
 // Holds that have NOT breached. $nor is the exact complement of the $or above,
 // so activeHoldsFilter and overdueHoldsFilter partition the holds between them:
 // every order on hold matches exactly one, and the two counts always sum to the
 // total. That is the property item 4.4 asks for.
-const activeHoldsFilter = (now = new Date()) => ({
+const activeHoldsFilter = (now = new Date(), rules = null) => ({
     'stage.status': ORDER_STATUS.HOLD,
-    $nor: breachBranches(now),
+    $nor: breachBranches(now, rules),
 })
 
+// How many hours THIS hold is allowed, and why. Also what the Holds screen
+// should print beside the countdown.
+const holdLimitHours = (order, rules = null) => {
+    const key = order?.orderHold?.holdTypeKey
+    const type = key && rules?.byKey?.[key]
+    if (type && type.slaHours > 0) {
+        return { hours: type.slaHours, source: 'type', typeName: type.name }
+    }
+    const speedTable = rules?.speedHours || HOLD_SLA_HOURS
+    return {
+        hours:
+            speedTable[order?.deliverySpeed] ??
+            speedTable[DELIVERY_SPEED.STANDARD],
+        source: 'delivery-speed',
+        typeName: type?.name || null,
+    }
+}
+
 // Is this already-loaded order a breached hold? Used where a document is in
-// hand rather than a query (list rows flagging "SLA Breached").
-const isHoldBreached = (order, now = new Date()) => {
+// hand rather than a query (list rows flagging "SLA Breached"). MUST agree with
+// the filters above — a row contradicting its own card is what 4.4's follow-up
+// had to fix, so the limit comes from the same resolver either way.
+const isHoldBreached = (order, now = new Date(), rules = null) => {
     if (!order || order.stage?.status !== ORDER_STATUS.HOLD) return false
-    if (order.deliveryDate && new Date(order.deliveryDate) < now) return true
-    const hours = HOLD_SLA_HOURS[order.deliverySpeed]
+    const key = order?.orderHold?.holdTypeKey
+    const type = key && rules?.byKey?.[key]
+    // a payment hold is judged ONLY by its own clock
+    if (!type?.judgeByOwnLimitOnly) {
+        if (order.deliveryDate && new Date(order.deliveryDate) < now) return true
+    }
+    const { hours } = holdLimitHours(order, rules)
     if (!hours || !order.stage?.updatedAt) return false
     return new Date(order.stage.updatedAt) < new Date(now.getTime() - hours * HOUR)
 }
 
+// May this station raise this hold type? Client 2026-10-08 §3.4: "Each station
+// can only raise the reasons on its own list. For a new problem, the station
+// chooses Other and writes the details in the note."
+//
+// Returns null when it is allowed, or the sentence to refuse with.
+async function checkStationMayRaise(holdTypeKey, role) {
+    if (!holdTypeKey) return null // untyped hold: nothing to check (legacy path)
+    const HoldTypeModel = require('../models/holdType.model')
+    const type = await HoldTypeModel.findOne({ key: holdTypeKey }).lean()
+    if (!type) {
+        return `"${holdTypeKey}" is not a hold reason. Pick one from the list, or use "Other" and explain in the note.`
+    }
+    if (!type.active) {
+        return `"${type.name}" is no longer in use. Pick another reason, or use "Other" and explain in the note.`
+    }
+    // Admin is never restricted — they are the escalation path.
+    const { ROLE } = require('./constants')
+    if (role === ROLE.ADMIN) return null
+    if (type.systemRaisedOnly) {
+        return `"${type.name}" is raised by the system, not by a person.`
+    }
+    // An empty station list means "any station", per the model.
+    if (type.stations?.length && !type.stations.includes(role)) {
+        return `"${type.name}" is not one of your station's reasons. Use "Other" and describe the problem in the note.`
+    }
+    return null
+}
+
 module.exports = {
     HOLD_SLA_HOURS,
+    loadHoldRules,
+    checkStationMayRaise,
     breachBranches,
     overdueHoldsFilter,
     activeHoldsFilter,
+    holdLimitHours,
     isHoldBreached,
 }

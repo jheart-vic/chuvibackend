@@ -224,16 +224,20 @@ class ReferralService {
             amount = Math.min(amount, remaining)
         }
 
-        // pause gate: referrer with an unresolved complaint → defer
-        const profile = await CrmProfileModel.findOne({
-            userId: referral.referrerId,
-        }).lean()
-        if (profile?.referralPaused) {
-            referral.rewardAmount = amount
-            referral.rewardStatus = REFERRAL_REWARD_STATUS.DEFERRED
-            await referral.save()
-            return referral
-        }
+        // CLIENT DECISION (2026-10-08, section 4.2): REMOVED — "please remove
+        // the rule that holds a reward while the referrer has an open complaint
+        // of their own."
+        //
+        // What used to be here: a referrer with `referralPaused` (set when they
+        // open a complaint, cleared when it closes) had their reward DEFERRED
+        // rather than granted. The reasoning was that we should not reward
+        // someone mid-dispute; the client's view is that the referral is their
+        // friend's business and has nothing to do with their own complaint.
+        //
+        // `referralPaused` itself is left in place and still maintained by the
+        // Recovery flow — `processDeferredRewards` still releases anything that
+        // was deferred under the old rule, so rewards already sitting in
+        // DEFERRED are not stranded by this change.
 
         const { credit } = await WalletCreditService.grantCredit({
             userId: referral.referrerId,
@@ -267,6 +271,88 @@ class ReferralService {
 
         // recompute the referrer's advocacy level → notify + activate perks
         await this.recomputeLevel(referral.referrerId)
+        return referral
+    }
+
+    // CLIENT DECISION (2026-10-08, section 4.3): "build the reversal, but only
+    // when the WHOLE order is refunded. A partial refund keeps the reward.
+    // Never take a wallet below zero: take back what the wallet has, up to the
+    // reward, and show any part not taken back on an admin report."
+    //
+    // Until now the reward was granted when the referred customer's first order
+    // was delivered and NOTHING took it back if that order was later refunded —
+    // the gap their own sentence exposed.
+    //
+    // Three things this deliberately does NOT do:
+    //  - it does not touch a PARTIAL refund (their rule, and the right one: the
+    //    friend did place and receive a real order);
+    //  - it never overdraws. A referrer who has already spent the credit keeps
+    //    what they spent; the unrecovered part is reported, not forced;
+    //  - it never deletes the referral. The relationship happened; only the
+    //    money is pulled back, and the record says so.
+    async reverseRewardForRefundedOrder(orderId, { fullRefund, performedBy } = {}) {
+        if (!orderId) return null
+        // A partial refund keeps the reward — explicit, because the caller
+        // passing nothing must NOT be read as "full".
+        if (fullRefund !== true) return null
+
+        const referral = await ReferralModel.findOne({ firstOrderId: orderId })
+        if (!referral) return null
+        if (referral.rewardStatus !== REFERRAL_REWARD_STATUS.GRANTED) {
+            // nothing was ever paid out — a deferred or absent reward just
+            // stops being payable
+            if (referral.rewardStatus === REFERRAL_REWARD_STATUS.DEFERRED) {
+                referral.rewardStatus = REFERRAL_REWARD_STATUS.NONE
+                referral.rewardAmount = 0
+                referral.rewardReversedAt = new Date()
+                referral.rewardReversalNote =
+                    'Referred order fully refunded before the reward was released'
+                await referral.save()
+            }
+            return referral
+        }
+
+        const owed = referral.rewardAmount || 0
+        if (owed <= 0) return referral
+
+        // Take back from the CREDIT it was granted as, not from cash — the
+        // reward was never withdrawable cash, so clawing it out of the cash
+        // balance would take money the customer put in themselves.
+        const recovered = await WalletCreditService.clawBackCredit({
+            creditId: referral.rewardCreditId,
+            userId: referral.referrerId,
+            amount: owed,
+            reason: 'Referred order was fully refunded',
+            performedBy,
+        })
+
+        referral.rewardStatus = REFERRAL_REWARD_STATUS.NONE
+        referral.rewardReversedAt = new Date()
+        referral.rewardReversedAmount = recovered
+        referral.rewardShortfall = Math.max(0, owed - recovered)
+        referral.rewardReversalNote =
+            referral.rewardShortfall > 0
+                ? `Referred order fully refunded. ₦${recovered.toLocaleString()} of ₦${owed.toLocaleString()} recovered; ₦${referral.rewardShortfall.toLocaleString()} had already been spent and is NOT clawed back.`
+                : `Referred order fully refunded. Full ₦${owed.toLocaleString()} recovered.`
+        await referral.save()
+
+        // The client asked for the unrecovered part to reach an admin rather
+        // than disappear. One notice per reversal, not a silent ledger line.
+        if (referral.rewardShortfall > 0) {
+            try {
+                const { notifyRoles } = require('../util/notifyRoles')
+                const { ROLE, NOTIFICATION_TYPE } = require('../util/constants')
+                await notifyRoles({
+                    roles: [ROLE.ADMIN],
+                    title: 'Referral reward could not be fully recovered',
+                    body: `A referred order was fully refunded. ₦${referral.rewardShortfall.toLocaleString()} of the ₦${owed.toLocaleString()} reward had already been spent and could not be taken back.`,
+                    type: NOTIFICATION_TYPE.WALLET_UPDATE,
+                })
+            } catch (err) {
+                console.warn('referral shortfall notice failed:', err.message)
+            }
+        }
+
         return referral
     }
 

@@ -45,6 +45,7 @@ require('./crons/creditExpiry.js')
 require('./crons/offerExpiry.js')
 require('./crons/complaintSla.js')
 require('./crons/unassignedDispatchScan.js')
+require('./crons/holdSlaScan.js')
 
 
 const port = process.env.PORT || 7001;

@@ -1458,6 +1458,8 @@ class CrmService {
             const pct = (part, whole) =>
                 whole > 0 ? Math.round((part / whole) * 10000) / 100 : 0
             const totalRevenue = revenueAgg[0]?.total || 0
+            // read for the dormancy window on the card label (A1)
+            const settings = await getCrmSettings()
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -1466,6 +1468,15 @@ class CrmService {
                     leadConversionRate: pct(converted, totalProfiles),
                     repeatCustomerRate: pct(repeat, converted),
                     dormantRate: pct(dormant, converted),
+                    // CLIENT DECISION A1 (2026-10-07): keep the figure and the
+                    // 30-day window exactly as they are, rename the card to
+                    // "Dormant share of customers" so the 100% cannot be read as
+                    // a pipeline number. The label ships from here rather than
+                    // being hard-coded in the UI, so the next rename is a
+                    // one-line change and the two can never disagree.
+                    dormantRateLabel: 'Dormant share of customers',
+                    dormantRateBasis: 'customers we have delivered to at least once',
+                    dormantWindowDays: settings?.thresholds?.dormantDays ?? 30,
                     reactivatedRate: pct(reactivated, everDormant),
                     revenuePerCustomer:
                         converted > 0

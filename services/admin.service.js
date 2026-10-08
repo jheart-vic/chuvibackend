@@ -35,6 +35,9 @@ const {
     activeHoldsFilter,
     overdueHoldsFilter,
     isHoldBreached,
+    holdLimitHours,
+    loadHoldRules,
+    checkStationMayRaise,
     HOLD_SLA_HOURS,
 } = require('../util/holdSla')
 const createAuditLog = require('../util/createAuditLog')
@@ -170,21 +173,22 @@ class AdminService extends BaseService {
                 })
             }
 
-            // running average — only over days that actually had revenue
-            // today with no sales yet doesn't count as a zero day
-            let revenueRunningSum = 0
-            let avgDailyRevenue7Days = 0
-            let daysWithRevenue = 0
-
-            allRevenueDays.forEach((day) => {
-                if (day.dailyTotal > 0) {
-                    revenueRunningSum += day.dailyTotal
-                    daysWithRevenue++
-                    avgDailyRevenue7Days = Math.round(
-                        revenueRunningSum / daysWithRevenue,
-                    )
-                }
-            })
+            // CLIENT DECISION A2 (2026-10-07): "Divide by all 7 days of the week."
+            // It used to divide only by the days that actually took money, which
+            // made the card "an average TRADING day" rather than an average day —
+            // we flagged that in §3 Q1 and they chose the plain reading.
+            // Expect the number to DROP: on 3 trading days in 7 it is now 3/7ths
+            // of what the card used to show.
+            const revenueRunningSum = allRevenueDays.reduce(
+                (t, d) => t + d.dailyTotal,
+                0,
+            )
+            const daysWithRevenue = allRevenueDays.filter(
+                (d) => d.dailyTotal > 0,
+            ).length
+            const avgDailyRevenue7Days = Math.round(
+                revenueRunningSum / allRevenueDays.length,
+            )
 
             // ── Total all-time revenue ──────────────────────────────────────
             const totalRevenueAgg = await PaymentModel.aggregate([
@@ -198,47 +202,50 @@ class AdminService extends BaseService {
             ])
             const totalRevenue = totalRevenueAgg[0]?.total || 0
 
-            // ── Avg processing time (today's delivered orders) ──────────────
+            // ── Avg processing time ─────────────────────────────────────────
+            // CLIENT DECISION A4, as CORRECTED by them on 2026-10-08:
+            //   start  = when the order was CLEARED FOR PRODUCTION — clothes at
+            //            Intake AND the money complete, whichever came LAST
+            //            (`productionStartedAt`, see util/productionClock.js).
+            //            Their first answer said "at tagging"; they changed it,
+            //            because an order can sit tagged-but-unpaid for days.
+            //   stop   = when S5 marked it Ready (`qcDetails.packCompletedAt`)
+            //   window = orders that became READY TODAY
+            //
+            // What it used to do, and why they changed it: it measured from the
+            // order being CREATED to it being DELIVERED, over orders whose
+            // RECORD was last modified today. That meant a customer who booked
+            // on Monday for a Thursday pickup added three idle days to the
+            // "processing" figure, and editing any old delivered order dragged
+            // it into today's average. We flagged the second as a flaw in §3 Q1.
+            //
+            // Orders tagged before this shipped have no `productionStartedAt`
+            // and are EXCLUDED, not guessed at — so the card reads 0 on day one
+            // and fills up from there. That is deliberate: a fabricated start
+            // time would look like data.
             const avgProcessingTimeAgg = await BookOrderModel.aggregate([
                 {
                     $match: {
-                        'stage.status': ORDER_STATUS.DELIVERED,
-                        updatedAt: { $gte: todayStart, $lte: todayEnd },
+                        productionStartedAt: { $exists: true, $ne: null },
+                        'qcDetails.packCompletedAt': {
+                            $gte: todayStart,
+                            $lte: todayEnd,
+                        },
                     },
                 },
                 {
                     $project: {
                         processingTime: {
                             $subtract: [
-                                {
-                                    $let: {
-                                        vars: {
-                                            deliveredEntry: {
-                                                $arrayElemAt: [
-                                                    {
-                                                        $filter: {
-                                                            input: '$stageHistory',
-                                                            as: 'h',
-                                                            cond: {
-                                                                $eq: [
-                                                                    '$$h.status',
-                                                                    ORDER_STATUS.DELIVERED,
-                                                                ],
-                                                            },
-                                                        },
-                                                    },
-                                                    0,
-                                                ],
-                                            },
-                                        },
-                                        in: '$$deliveredEntry.updatedAt',
-                                    },
-                                },
-                                '$createdAt',
+                                '$qcDetails.packCompletedAt',
+                                '$productionStartedAt',
                             ],
                         },
                     },
                 },
+                // A negative gap would mean the two stamps are out of order —
+                // never average it in, it would silently drag the figure down.
+                { $match: { processingTime: { $gte: 0 } } },
                 {
                     $group: {
                         _id: null,
@@ -247,8 +254,31 @@ class AdminService extends BaseService {
                     },
                 },
             ])
-            const avgProcessingTime = avgProcessingTimeAgg[0]?.avgTime || 0
             const ordersProcessedToday = avgProcessingTimeAgg[0]?.count || 0
+            // CLIENT (2026-10-08): "let the card show 'Not enough data yet'
+            // instead of 0 until there are orders to measure." A zero here is
+            // indistinguishable from an instant turnaround, and on day one
+            // EVERY order is unmeasurable — so send null plus a reason the
+            // screen can print, rather than a number that is not one.
+            const avgProcessingTime = ordersProcessedToday
+                ? avgProcessingTimeAgg[0].avgTime
+                : null
+            const processingTimeNote = ordersProcessedToday
+                ? null
+                : 'Not enough data yet'
+            // So the screen can say "based on 4 orders" instead of implying the
+            // whole day's work sits behind a figure built from one order.
+            const ordersReadyTodayAwaitingStamp =
+                await BookOrderModel.countDocuments({
+                    'qcDetails.packCompletedAt': {
+                        $gte: todayStart,
+                        $lte: todayEnd,
+                    },
+                    $or: [
+                        { productionStartedAt: { $exists: false } },
+                        { productionStartedAt: null },
+                    ],
+                })
 
             // ── Avg cost per item 7-day (running average with zero-fill) ────
             const avgCostPerItem7DaysAgg = await BookOrderModel.aggregate([
@@ -309,20 +339,43 @@ class AdminService extends BaseService {
                 })
             }
 
-            // running average
-            let costRunningSum = 0
-            let avgCostPerItem7Days = 0
-            let costDaysWithData = 0
-
-            allCostDays.forEach((day) => {
-                if (day.dailyCostPerItem > 0) {
-                    costRunningSum += day.dailyCostPerItem
-                    costDaysWithData++
-                    avgCostPerItem7Days = Math.round(
-                        costRunningSum / costDaysWithData,
-                    )
-                }
-            })
+            // CLIENT DECISION A3 (2026-10-07): "Total money divided by total
+            // items." It used to average the DAILY per-item rates, which gives
+            // a quiet day the same weight as a busy one — ₦1,500/garment on 40
+            // garments and ₦2,000/garment on 15 averaged to ₦1,750, where the
+            // true rate across all 55 garments is ₦1,636. Both readings are
+            // defensible; they picked the plain one. Flagged in §3 Q1.
+            const sevenDayTotals = await BookOrderModel.aggregate([
+                {
+                    $match: {
+                        paymentDate: { $gte: sevenDaysAgo, $lte: todayEnd },
+                        paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+                    },
+                },
+                {
+                    $group: {
+                        _id: null,
+                        revenue: { $sum: '$amount' },
+                        items: {
+                            $sum: {
+                                $reduce: {
+                                    input: '$items',
+                                    initialValue: 0,
+                                    in: { $add: ['$$value', '$$this.quantity'] },
+                                },
+                            },
+                        },
+                    },
+                },
+            ])
+            const totalItems7Days = sevenDayTotals[0]?.items || 0
+            const totalRevenue7Days = sevenDayTotals[0]?.revenue || 0
+            const avgCostPerItem7Days = totalItems7Days
+                ? Math.round(totalRevenue7Days / totalItems7Days)
+                : 0
+            const costDaysWithData = allCostDays.filter(
+                (d) => d.dailyCostPerItem > 0,
+            ).length
             // cost trend — compare last 3 days vs prior 4 days
             const recent3 = allCostDays.slice(-3)
             const prior4 = allCostDays.slice(0, 4)
@@ -363,12 +416,18 @@ class AdminService extends BaseService {
             // past it. The two filters are exact complements ($nor vs $or over
             // the same branches), so no order is in both and the counts sum to
             // all holds — client brief 4.4, where both cards showed the same 3.
+            // The limit now comes from the hold's TYPE where the admin has set
+            // one, and falls back to the delivery-speed table where they have
+            // not (client section B). Loaded once and handed to both filters so
+            // the two cards cannot be computed against different rules.
+            const holdRules = await loadHoldRules()
+
             const activeHolds = await BookOrderModel.countDocuments(
-                activeHoldsFilter(now),
+                activeHoldsFilter(now, holdRules),
             )
 
             const overdueHolds = await BookOrderModel.countDocuments(
-                overdueHoldsFilter(now),
+                overdueHoldsFilter(now, holdRules),
             )
 
             const expiringTodayHolds = await BookOrderModel.countDocuments({
@@ -794,11 +853,32 @@ class AdminService extends BaseService {
                     revenueTodayChange,
                     avgDailyRevenue7Days,
                     avgDailyRevenue7DayBreakdown: allRevenueDays,
+                    // A2: the divisor is now all 7 days. Sent so the screen can
+                    // say "3 of 7 days took money" rather than leaving a figure
+                    // that halved overnight looking like a bug.
+                    revenueDaysWithSales: daysWithRevenue,
+                    revenueDaysCounted: allRevenueDays.length,
+                    // null when nothing is measurable yet — print
+                    // `processingTimeNote` instead of rendering a 0.
                     avgProcessingTime,
+                    processingTimeNote,
                     ordersProcessedToday,
+                    // Orders that became Ready today but started production
+                    // before this measurement existed, so they cannot be
+                    // included. Published so the card can explain itself.
+                    ordersReadyTodayAwaitingStamp,
+                    // A3: the client asked us to correct the naming — this is
+                    // REVENUE per garment, not cost. `avgCostPerItem7Days` is
+                    // kept as a duplicate for one release so the existing screen
+                    // does not go blank on deploy; drop it once the FE reads the
+                    // new key.
+                    avgRevenuePerItem7Days: avgCostPerItem7Days,
                     avgCostPerItem7Days,
+                    totalItems7Days,
                     costTrend,
+                    revenuePerItemTrend: costTrend,
                     avgCostPerItem7DayBreakdown: allCostDays,
+                    avgRevenuePerItem7DayBreakdown: allCostDays,
                     pendingVerification,
                     pendingPayment,
                     activeHolds,
@@ -1014,14 +1094,19 @@ class AdminService extends BaseService {
                 // there is only one. The order-detail screen said "SLA Breached"
                 // from its own thresholds, so it could disagree with both the
                 // Holds list and the dashboard cards on the SAME order.
-                const slaThresholdMinutes =
-                    (HOLD_SLA_HOURS[order.deliverySpeed] ??
-                        HOLD_SLA_HOURS[DELIVERY_SPEED.STANDARD]) * 60
+                const holdRules = await loadHoldRules()
+                const limit = holdLimitHours(order, holdRules)
+                const slaThresholdMinutes = limit.hours * 60
                 holdMeta = {
                     heldSince,
                     heldMinutes,
                     slaThresholdMinutes,
-                    slaBreached: isHoldBreached(order, now),
+                    slaBreached: isHoldBreached(order, now, holdRules),
+                    // so the screen can say "Awaiting payment — 48h" rather than
+                    // leaving staff to guess why this hold has a longer clock
+                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    holdTypeName: limit.typeName,
+                    slaSource: limit.source,
                     stationStatus: order.stationStatus,
                     holdNote: order.stage?.note,
                 }
@@ -1744,11 +1829,11 @@ class AdminService extends BaseService {
                 // Same two filters the dashboard cards count with, so the list
                 // behind each card always matches the number on it (brief 4.4).
                 case 'activeHolds':
-                    filter = activeHoldsFilter(now)
+                    filter = activeHoldsFilter(now, await loadHoldRules())
                     break
 
                 case 'overdueHolds':
-                    filter = overdueHoldsFilter(now)
+                    filter = overdueHoldsFilter(now, await loadHoldRules())
                     break
 
                 case 'expiringToday':
@@ -1772,6 +1857,10 @@ class AdminService extends BaseService {
                 lean: true,
             })
 
+            // One read for the whole page — the rows must be judged by exactly
+            // the same rules as the filter that selected them.
+            const listHoldRules = await loadHoldRules()
+
             const enriched = result.data.map((order) => {
                 const heldSince = order.stage?.updatedAt
                 const heldMinutes = heldSince
@@ -1784,11 +1873,13 @@ class AdminService extends BaseService {
                 // still render "not breached" on its row, and the thresholds could
                 // drift from the filters the cards count with. Both now come from
                 // the single definition in util/holdSla.js.
-                const slaThresholdMinutes =
-                    (HOLD_SLA_HOURS[order.deliverySpeed] ??
-                        HOLD_SLA_HOURS[DELIVERY_SPEED.STANDARD]) * 60
+                // …and now the limit itself comes from the hold's TYPE where one
+                // is set, through the same resolver the filters use, so a
+                // 48-hour payment hold cannot render against a 6-hour badge.
+                const limit = holdLimitHours(order, listHoldRules)
+                const slaThresholdMinutes = limit.hours * 60
 
-                const slaBreached = isHoldBreached(order, now)
+                const slaBreached = isHoldBreached(order, now, listHoldRules)
 
                 return {
                     ...order,
@@ -1797,6 +1888,9 @@ class AdminService extends BaseService {
                         heldMinutes,
                         slaThresholdMinutes,
                         slaBreached,
+                        holdTypeKey: order.orderHold?.holdTypeKey || null,
+                        holdTypeName: limit.typeName,
+                        slaSource: limit.source,
                     },
                 }
             })
@@ -2356,6 +2450,277 @@ class AdminService extends BaseService {
                 error: 'Failed to search wallet',
             })
         }
+    }
+
+    // ── Hold types (client section B, 2026-10-07) ────────────────────────────
+    // "The admin can create hold types and choose which stations can raise each
+    // type. Each hold type has one time limit, and the admin can edit it."
+    async listHoldTypes(req) {
+        try {
+            const HoldTypeModel = require('../models/holdType.model')
+            const { includeInactive } = req.query || {}
+            const query = includeInactive === 'true' ? {} : { active: true }
+            const types = await HoldTypeModel.find(query)
+                .sort({ isSystem: -1, name: 1 })
+                .lean()
+
+            // How many holds are sitting on each type right now, so the admin
+            // can see what a limit change will actually affect before saving.
+            const counts = await BookOrderModel.aggregate([
+                { $match: { 'stage.status': ORDER_STATUS.HOLD } },
+                { $group: { _id: '$orderHold.holdTypeKey', total: { $sum: 1 } } },
+            ])
+            const onHold = new Map(counts.map((c) => [c._id, c.total]))
+
+            return BaseService.sendSuccessResponse({
+                message: types.map((t) => ({
+                    ...t,
+                    // null is not "no limit" — it means this type still follows
+                    // the order's delivery speed, which is what every seeded
+                    // operational type does until an admin sets a number.
+                    effectiveLimit:
+                        t.slaHours > 0
+                            ? `${t.slaHours} hours`
+                            : `Follows the order's delivery speed (${HOLD_SLA_HOURS[DELIVERY_SPEED.SAME_DAY]}h same-day / ${HOLD_SLA_HOURS[DELIVERY_SPEED.EXPRESS]}h express / ${HOLD_SLA_HOURS[DELIVERY_SPEED.STANDARD]}h standard)`,
+                    ordersOnHoldNow: onHold.get(t.key) || 0,
+                })),
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to list hold types',
+            })
+        }
+    }
+
+    async createHoldType(req) {
+        try {
+            const HoldTypeModel = require('../models/holdType.model')
+            const { name, description, slaHours, stations, escalateToAdmin } =
+                req.body || {}
+
+            if (!String(name || '').trim()) {
+                return BaseService.sendFailedResponse({
+                    error: 'A hold type needs a name.',
+                })
+            }
+            const check = this._validateHoldTypeFields({ slaHours, stations })
+            if (check) return BaseService.sendFailedResponse({ error: check })
+
+            // Derived from the name, so the admin never has to invent an id —
+            // and immutable afterwards, because orders store the key.
+            const key = String(name)
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+            if (!key) {
+                return BaseService.sendFailedResponse({
+                    error: 'That name has no letters or numbers in it.',
+                })
+            }
+            if (await HoldTypeModel.findOne({ key })) {
+                return BaseService.sendFailedResponse({
+                    error: `A hold type called "${name}" already exists.`,
+                })
+            }
+
+            const created = await HoldTypeModel.create({
+                key,
+                name: String(name).trim(),
+                description,
+                slaHours: slaHours == null || slaHours === '' ? null : Number(slaHours),
+                stations: stations || [],
+                escalateToAdmin: escalateToAdmin !== false,
+            })
+            await logSafely('hold type audit', () =>
+                createAuditLog({
+                    userId: getObjectId(req.user?.id),
+                    action: `created hold type "${created.name}" (limit: ${created.slaHours ? created.slaHours + 'h' : "the order's delivery speed"})`,
+                    category: 'order',
+                }),
+            )
+            return BaseService.sendSuccessResponse({ message: created })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to create that hold type',
+            })
+        }
+    }
+
+    async updateHoldType(req) {
+        try {
+            const HoldTypeModel = require('../models/holdType.model')
+            const type = await HoldTypeModel.findById(req.params?.id)
+            if (!type) {
+                return BaseService.sendFailedResponse({
+                    error: 'That hold type no longer exists.',
+                })
+            }
+            const { name, description, slaHours, stations, escalateToAdmin, active } =
+                req.body || {}
+
+            const check = this._validateHoldTypeFields({ slaHours, stations })
+            if (check) return BaseService.sendFailedResponse({ error: check })
+
+            // A system type may have its limit and stations tuned but must not
+            // be renamed out of recognition or switched off — the payment flow
+            // looks it up by key and would have nowhere to put a payment hold.
+            if (type.isSystem && active === false) {
+                return BaseService.sendFailedResponse({
+                    error: `"${type.name}" is used by the system and cannot be switched off. You can change its limit instead.`,
+                })
+            }
+
+            const before = type.slaHours
+            if (name !== undefined && !type.isSystem) type.name = String(name).trim()
+            if (description !== undefined) type.description = description
+            if (slaHours !== undefined)
+                type.slaHours =
+                    slaHours === null || slaHours === '' ? null : Number(slaHours)
+            if (stations !== undefined) type.stations = stations || []
+            if (escalateToAdmin !== undefined)
+                type.escalateToAdmin = escalateToAdmin !== false
+            if (active !== undefined && !type.isSystem) type.active = active !== false
+            await type.save()
+
+            await logSafely('hold type audit', () =>
+                createAuditLog({
+                    userId: getObjectId(req.user?.id),
+                    action: `updated hold type "${type.name}" — limit ${before ? before + 'h' : "delivery speed"} → ${type.slaHours ? type.slaHours + 'h' : "delivery speed"}`,
+                    category: 'order',
+                }),
+            )
+            return BaseService.sendSuccessResponse({ message: type })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to update that hold type',
+            })
+        }
+    }
+
+    async deleteHoldType(req) {
+        try {
+            const HoldTypeModel = require('../models/holdType.model')
+            const type = await HoldTypeModel.findById(req.params?.id)
+            if (!type) {
+                return BaseService.sendFailedResponse({
+                    error: 'That hold type no longer exists.',
+                })
+            }
+            if (type.isSystem) {
+                return BaseService.sendFailedResponse({
+                    error: `"${type.name}" is used by the system and cannot be deleted.`,
+                })
+            }
+            // Deleting a type that orders are sitting on would silently move
+            // them back onto the delivery-speed clock, which for a long hold
+            // means instantly Overdue. Deactivate instead — it stops new holds
+            // using it while the existing ones keep their limit.
+            const inUse = await BookOrderModel.countDocuments({
+                'stage.status': ORDER_STATUS.HOLD,
+                'orderHold.holdTypeKey': type.key,
+            })
+            if (inUse > 0) {
+                type.active = false
+                await type.save()
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        deleted: false,
+                        deactivated: true,
+                        ordersOnHoldNow: inUse,
+                        note: `${inUse} order(s) are on hold under "${type.name}", so it has been switched off for new holds instead of deleted. Those orders keep their current limit.`,
+                    },
+                })
+            }
+            await HoldTypeModel.deleteOne({ _id: type._id })
+            await logSafely('hold type audit', () =>
+                createAuditLog({
+                    userId: getObjectId(req.user?.id),
+                    action: `deleted hold type "${type.name}"`,
+                    category: 'order',
+                }),
+            )
+            return BaseService.sendSuccessResponse({
+                message: { deleted: true, deactivated: false },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to delete that hold type',
+            })
+        }
+    }
+
+    // Client B.3: an overdue hold is escalated to the admin. Driven by
+    // crons/holdSlaScan.js every 20 minutes.
+    //
+    // ONCE per breach, never per sweep: `orderHold.escalatedAt` is the latch,
+    // and it is cleared when the hold is raised, so the same order escalating
+    // again after a release and a fresh hold is correct rather than suppressed.
+    async escalateOverdueHolds() {
+        const { notifyRoles } = require('../util/notifyRoles')
+        const now = new Date()
+        const rules = await loadHoldRules()
+
+        const overdue = await BookOrderModel.find({
+            ...overdueHoldsFilter(now, rules),
+            'orderHold.escalatedAt': { $exists: false },
+        })
+            .select('oscNumber stage holdDetails deliverySpeed deliveryDate')
+            .lean()
+
+        let escalated = 0
+        for (const order of overdue) {
+            const key = order.orderHold?.holdTypeKey
+            const type = key ? rules.byKey[key] : null
+            // A type the admin switched escalation off for is still Overdue on
+            // the card — it just does not interrupt anyone.
+            if (type && type.escalateToAdmin === false) continue
+
+            const { hours, typeName } = holdLimitHours(order, rules)
+            const heldHours = order.stage?.updatedAt
+                ? Math.floor((now - new Date(order.stage.updatedAt)) / 3600000)
+                : null
+
+            await logSafely('hold escalation notice', () =>
+                notifyRoles({
+                    roles: [ROLE.ADMIN],
+                    title: 'Hold is overdue',
+                    body: `${order.oscNumber} has been on hold${typeName ? ` (${typeName})` : ''} for ${heldHours ?? '?'} hours, past its ${hours}-hour limit.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                }),
+            )
+            await BookOrderModel.updateOne(
+                { _id: order._id },
+                { $set: { 'orderHold.escalatedAt': now } },
+            )
+            escalated++
+        }
+        return escalated
+    }
+
+    _validateHoldTypeFields({ slaHours, stations }) {
+        if (slaHours !== undefined && slaHours !== null && slaHours !== '') {
+            const n = Number(slaHours)
+            if (!Number.isFinite(n) || n < 0.25) {
+                return 'The time limit must be a number of hours, at least 0.25 (15 minutes). Leave it empty to follow the order\'s delivery speed.'
+            }
+        }
+        if (stations !== undefined && stations !== null) {
+            if (!Array.isArray(stations)) {
+                return 'stations must be a list of roles.'
+            }
+            const allowed = Object.values(ROLE).filter((r) => r !== ROLE.USER)
+            const bad = stations.filter((s) => !allowed.includes(s))
+            if (bad.length) {
+                return `Unknown station(s): ${bad.join(', ')}. Valid: ${allowed.join(', ')}`
+            }
+        }
+        return null
     }
 
     // ── Staff status: suspend / reinstate ────────────────────────────────────
@@ -3121,6 +3486,19 @@ class AdminService extends BaseService {
             const holdNote = note ? `${reason}: ${note}` : reason
             const now = new Date()
 
+            // Client 2026-10-08 §3.4: a station may only raise its own reasons.
+            // Admin is exempt (they are the escalation path), but the check
+            // still runs so a typo or a retired reason is refused with a
+            // sentence rather than silently stored as an unknown type.
+            const holdTypeKey = req.body?.holdTypeKey || reason
+            const refusal = await checkStationMayRaise(
+                holdTypeKey,
+                user.userType,
+            )
+            if (refusal) {
+                return BaseService.sendFailedResponse({ error: refusal })
+            }
+
             await BookOrderModel.findByIdAndUpdate(
                 orderId,
                 {
@@ -3129,7 +3507,16 @@ class AdminService extends BaseService {
                         'stage.note': holdNote,
                         'stage.updatedAt': now,
                         stationStatus: stationMap[assignTo],
+                        // The reason doubles as the hold type's key — the seeded
+                        // types come straight from the reasons these screens
+                        // already send, so an existing client keeps working and
+                        // the hold immediately picks up that type's limit.
+                        'orderHold.holdTypeKey': holdTypeKey,
                     },
+                    // A fresh hold has not been escalated yet. Clearing the latch
+                    // means a released-then-re-held order can escalate again on
+                    // its own merits instead of being silently suppressed.
+                    $unset: { 'orderHold.escalatedAt': '' },
                     $push: {
                         stageHistory: {
                             status: ORDER_STATUS.HOLD,

@@ -12,6 +12,7 @@ const {
     PRESS_DURATION_MINUTES,
     ORDER_SERVICE_TYPE,
 } = require('../util/constants')
+const { QUEUE_SORT } = require('../util/queueSort')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
@@ -79,7 +80,7 @@ class PressAndIronService extends BaseService {
                         {
                             page: 1,
                             limit: 5,
-                            sort: { 'stage.updatedAt': 1 },
+                            sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                             select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt pressDetails',
                             lean: true,
                         },
@@ -128,7 +129,7 @@ class PressAndIronService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'stage.updatedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt pressDetails',
                 lean: true,
             })
@@ -535,7 +536,7 @@ class PressAndIronService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'pressDetails.startedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt pressDetails',
                 lean: true,
             })

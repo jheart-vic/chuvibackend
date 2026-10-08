@@ -189,6 +189,38 @@ class AdminController extends BaseController {
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)
     }
+    async listHoldTypes(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.listHoldTypes(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async createHoldType(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.createHoldType(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async updateHoldType(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.updateHoldType(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+    async deleteHoldType(req, res) {
+        const adminService = new AdminService()
+        const result = await adminService.deleteHoldType(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async listStaff(req, res) {
         const adminService = new AdminService()
         const result = await adminService.listStaff(req)

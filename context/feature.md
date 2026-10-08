@@ -1,4 +1,144 @@
-# ███ STATUS BOARD — read this first (updated 2026-10-07) ███
+# ███ STATUS BOARD — read this first (updated 2026-10-08) ███
+
+## ███ TO BUILD — THE ONLY LIST THAT MATTERS. SURVIVES A CONTEXT CLEAR. ███
+Everything above the line is DONE and committed (`d10d2d9`, 3 commits ahead of `origin/main` —
+`cc8ef2c` + `368fe96` + `d10d2d9` all still need pushing + a PR before anything is live).
+
+**ONE BIG THING, then seven small ones.**
+
+### 1. N1 QUICK BOOKING + client item #7 (order editing) — THE ONLY LARGE PIECE
+Build these TOGETHER. #7 *is* N1's intake step; split them and the bill-recalculation gets
+written twice. Locked spec is in "CLIENT REPLY #2" and "N1 SPEC" below. Shape:
+- booking captures count + service + speed + address/landmark + window (no payment)
+- rider records the TRUE count, reason required when it differs → flag, SMS, never blocks
+- Intake confirms the rider count → **mismatch raises the `count_differs_from_rider` hold
+  (already seeded, `requiresAdminApproval: true`) and only an admin clears it**
+- Intake enters real items → bill computed by the system (staff can NEVER type an amount)
+- → **payment hold** (`HoldTypeModel.PAYMENT_HOLD_KEY`, 48h, already built) + SMS + Paystack link
+- Paystack clears it alone; bank transfer approved by Intake or admin (every Intake approval
+  notifies admin + lands on a daily bank-check list)
+- reminders 6h / 24h, admin alerted 48h
+- **tags NEVER print before payment**; on payment → tags print → S2
+- admin can WAIVE a hold with a reason → processes unpaid, **STOPPED AT DISPATCH**
+  (`paymentWaivedAt/By/Reason` fields already exist and already count as money-complete for the
+  production clock)
+- cancellation: before tagging only; before pickup free; after pickup ₦1,000 + ₦1,000 even if a
+  free-pickup offer applied; after payment the laundry fee returns to wallet, both fees kept
+- #7 also applies to NORMAL bookings: total up → payment hold, total down → wallet, every change
+  records who/why + SMS, **after tagging only an admin may edit**
+- admin can rename delivery speeds / service types / care tiers (display name only)
+
+### 2. Client item #10 — notification switches (~40 call sites, mechanical)
+ADD to admin: order cancelled · cancellation requested · order flagged AND item flagged · item
+placed on hold (any station) · payment proof uploaded · new complaint opened · payment
+approved/rejected by Intake.
+SWITCH OFF the 31 operator self-receipts EXCEPT: "order in tagging queue"; "adjustment request
+approved/rejected"; and the three hold ones **only when someone ELSE acted** (we recommended this —
+send to the station AFFECTED, never to the actor). Switch off for customers: "handoff confirmed"
+and "order flagged". On-screen confirmation + order history must survive.
+**BLOCKED on the client confirming our recommendation — question sent 2026-10-08.**
+
+### 3. Client item #1 — "registered but never booked" CRM sequence
+New workflow beside the lead one: welcome now · +24h · +48h · **+66h** · day 7 → prospect list.
+Stops on first booking. Timings AND texts admin-editable like the lead sequence.
+**The three message texts are verbatim in the client's 2026-10-08 reply — copy them exactly.**
+Today `handleUserRegistered` CANCELS the lead sequence and leaves them with nothing; this replaces
+that silence.
+
+### 4. Client item #2 — First Experience offer
+Mostly configuration (first-order trigger + ₦4,000 minimum + the ₦1,000 on-delivery credit with a
+30-day life are all offer settings, no new code). The one code question: should it be auto-granted
+at REGISTRATION for everyone, so the 3-day window and the +66h message agree?
+**BLOCKED on the client — question sent 2026-10-08.** Today a lead YOU enter starts their 3 days
+on the day you typed the number, which is why the +66h timing would be wrong for them.
+
+### 5. Client item #6 — offers at checkout
+(a) checkout prompt, exact wording "You have a first time offer. Tap to use it." (FE renders it —
+backend just needs to surface that the customer holds one); (b) Quick Booking auto-applies the
+offer worth MORE on that bill, the other survives; (c) **they asked us to CONFIRM every offer is
+re-validated at attach time and the bill says why one was refused** — verify, then answer.
+
+### 6. Client item #8 — counter payment from the wallet
+Staff pick cash / POS / transfer / wallet; wallet debits with a real ledger line; short wallet →
+rest another way. Today `intake-user.createBookOrder` just stamps `paymentStatus: SUCCESS` and
+never touches the wallet. **The client will not mark ANY counter order as wallet-paid until this
+is live**, so it is blocking them operationally. Small: point it at `WalletService.payWithWallet`,
+the same path the bot already uses correctly.
+
+### 7. Client item #9 — phone-split profiles
+Send the REPORT first (`phoneFormatBackfill.js --dry` already lists the pairs). Then merge into the
+OLDER card, carrying orders + wallet balance + messages from both, **keeping the referral code from
+the account card**, and flagging anything that cannot be combined BEFORE merging.
+
+### 8. Smaller / housekeeping
+- `GET|POST|PUT|DELETE /api/admin/hold-types` CRUD has no harness coverage (the SLA maths does, 34/34)
+- Tell the FE their two "missing endpoint" reports were a STALE DEPLOY, and point them at
+  `context/CLIENT-ANSWERS-oct2026.md` for the dormant-rate + Q1–Q8 answers they asked for again
+- Assemble the single §1+§2+§3 client block (the original deliverable, still not assembled)
+
+
+
+## ⚠️ CLIENT ANSWERED EVERYTHING 2026-10-07 — N1 SPEC CHANGED, PLUS A–F OF NEW WORK
+**N1 Quick Booking: the client REJECTED 3 of our 5 proposals. Do NOT build the "as proposed" version.**
+Locked N1 spec now:
+- **Booking captures service type AND delivery speed AND landmark AND pickup window AND the count**
+  (not just a count — our proposal #2 is overruled). Same capacity gates as a normal booking, using
+  the customer's count. Copy on screen: every piece counts as one item; bill by SMS before washing;
+  cancel after pickup = ₦1,000 pickup + ₦1,000 return.
+- **No rider photo.** Rider RECORDS the count; if it differs from the customer's he must change it and
+  give a reason → flag "count changed at pickup", does NOT stop the order, customer gets an SMS with
+  the rider's count.
+- **If INTAKE's count differs from the RIDER's, the order STOPS and goes on hold — admin-only
+  approval.** (Our proposal said never block. Overruled.)
+- **The delivery clock starts when PAYMENT IS CONFIRMED** — not at booking, not at intake. Real
+  delivery date then goes out by SMS + in-app.
+- **Payment: tags NEVER print before payment.** Intake's 4 steps = confirm rider count → enter items
+  (system computes total, intake CANNOT type an amount) → **payment hold in the Holds section** with
+  SMS + in-app Paystack link → on payment, tags print and the order goes to S2.
+  Paystack clears the hold automatically; a bank transfer is approved by Intake OR admin, every
+  Intake approval notifies admin + lands on a daily bank-check list. Reminders at 6h and 24h,
+  admin alerted at 48h. **A normal unpaid booking follows the same rule: intake yes, tag no.**
+  **Admin can WAIVE a payment hold with a reason → order processes unpaid but is STOPPED AT DISPATCH.**
+- **Cancellation:** customer or admin, any time **before tagging begins**; once tagged, never.
+  Before pickup = free. After pickup, before payment = customer pays ₦1,000 + ₦1,000 before the
+  clothes go back, **even if a free-pickup offer applied**. After payment, before tagging = laundry
+  fee returns to wallet, both logistics fees kept.
+- **₦4,000 line = the existing offers** (our reading confirmed). 3-day window checked on the Quick
+  Booking date; the amount is checked **on the bill**.
+- **Admin must be able to rename delivery speeds / service types / care tiers** (display name only).
+
+**Also newly committed by the client (sections A–D of their reply):**
+- A1 dormant rate stays, 30 days stays, **rename card → "Dormant share of customers"**.
+- A2 average daily revenue → **divide by all 7 days** (will drop the figure sharply — they know).
+- A3 revenue per item → **total ÷ total**, and fix the "cost" naming.
+- A4 processing time → **start when the order is TAGGED and pushed to S2** (after payment clears or an
+  admin waiver), **stop when S5 marks READY**, average over orders that became Ready **today**.
+  ⚠️ NO SUCH TIMESTAMP EXISTS TODAY — needs a stored `taggedAt`/`readyAt`, and historical orders
+  cannot be backfilled, so the figure starts from the deploy.
+- A5 **every production queue sorts by DELIVERY DEADLINE, earliest first**, tie → older first.
+  (Supersedes the Q6 oldest-first recommendation.)
+- A6 → section B. A7 landmark required on BOTH legs + **"delivery address same as pickup" tick box**
+  on normal AND quick booking.
+- **B — HOLD TYPES, a real re-architecture of 4.4 we just shipped.** Admin-created hold types, each
+  with its own editable time limit and a list of stations allowed to raise it; overdue escalates to
+  admin. **Payment hold is its own type, starting at 48h.** The limit now depends on the TYPE, not on
+  the order's delivery speed — so the 2h/4h/6h table in `util/holdSla.js` stops being the rule.
+- **C — referral: "remove the rating condition".** ⚠️ **THERE IS NO RATING CONDITION.**
+  `handleReferredOrderDelivered` → `grantReferrerReward` has no feedback gate; the only gate is
+  `referralPaused` (an UNRESOLVED COMPLAINT by the referrer). The client is reacting to OUR OWN Q8
+  sentence "only a satisfied rating makes the customer eligible", which described the
+  `referralEligible` flag in the feedback response — that flag only tells the app whether to SHOW a
+  "refer a friend" prompt. Correct this, don't "fix" it. Genuinely missing: **no reversal if a
+  delivered order is later cancelled/refunded** — the reward is already granted.
+- **D — personal offers:** normal booking keeps manual selection + a checkout prompt; **Quick Booking
+  auto-applies the eligible offer.** ⚠️ Needs a tie-break rule — "one personal offer per order" and
+  nobody is there to choose. Propose highest-value-to-customer.
+
+**Delivered to them 2026-10-07:** the 87-notification inventory (F1) and the hold reasons per station
+(F2), plus re-answers to their Q4 (leads) and Q7 (offers). **CORRECTION ISSUED: our earlier "6 of 87
+reach an admin" was wrong** — "request approved"/"request rejected" go to the OPERATOR, and we had
+missed "delivery issue reported by a customer" and "support conversation escalated". Still 6 events,
+different 6.
 
 ## Where we are
 Working the client PDF **"CHUVI Digital Stack Developer Brief, Oct 6 2026"**: §1 22 fixes, §2 two new
@@ -34,6 +174,120 @@ with the §3 answers written LAST from shipped code. Final deliverable = **ONE c
 |**§3**| Q1–Q8 answers | ✅ **ALL EIGHT WRITTEN** — `context/CLIENT-ANSWERS-oct2026.md` (+ 7 decisions we need back) |
 | | FE changelog | ✅ `context/FE-CHANGELOG-2026-10-07.md` — 15 endpoint claims verified against the spec |
 | | Assemble the single §1+§2+§3 client block | ⬜ after §2 features |
+
+## ⚠️ CLIENT REPLY #2 — 2026-10-08. TEN ITEMS. ONE REVERSES WHAT WE JUST SHIPPED.
+1. **NEW CRM sequence for REGISTERED-BUT-NEVER-BOOKED** (keep the lead sequence as-is for numbers
+   we enter). Welcome now · +24h msg1 · +48h msg2 · **+66h msg3** (6h before the 3-day first-order
+   offer ends) · **day 7 → prospect list**. Stops the moment they book. Timings AND texts editable
+   in CRM settings. **The three message texts are in the client's message — copy them verbatim.**
+2. **First Experience offer** — they want it as a PERSONAL offer, 3-day customer window, free
+   pickup+delivery on a first order from ₦4,000. Three questions: (a) is it granted automatically
+   at REGISTRATION so the 3 days run from then — if not, make it so; (b) how to set "first order
+   only" + the ₦4,000 minimum; (c) the ₦1,000 second-order credit should land ON DELIVERY of the
+   first order and live 30 days.
+3. **HOLD LIMITS — they chose the option our default already implements.** Station holds KEEP
+   2/4/6 by delivery speed, **but the three numbers become admin-editable**. Payment hold 48h,
+   editable, never follows delivery speed. Overdue → escalate to admin. Keep the F2 reason list;
+   **a station may only raise its OWN reasons**; "Other" + a note covers anything new; admin can add
+   reasons to any station. **NEW Intake reason "Count differs from rider count" — admin must approve
+   before the order moves.** Payment holds are system-raised only.
+4. **Referral:** nothing to remove re: ratings (our correction accepted). **DO remove the
+   open-complaint pause.** **DO build the reversal — only on a FULL refund** (partial keeps the
+   reward); **never take a wallet below zero** — claw back what is there, and report the shortfall
+   on an admin report.
+5. **⚠️ PROCESSING-TIME CLOCK — THEY CORRECTED THEMSELVES, AND IT REVERSES A4 AS BUILT.**
+   NOT at tagging. It starts when the order is **cleared for production = clothes at Intake AND the
+   money is complete (payment cleared or admin credit), whichever happens LAST.**
+   (a) paid in app + count matches → when Intake confirms the count; (b) extra items + top-up
+   request → when the top-up is paid / credit applied; (c) Quick Booking → when payment clears.
+   Stops at S5 Ready. They accept new orders only, but the card must read **"Not enough data yet"**
+   rather than 0.
+6. **Personal offers:** normal booking keeps selection + the checkout prompt (their exact wording:
+   "You have a first time offer. Tap to use it."). Quick Booking auto-applies **the one worth more
+   on that bill**, the other survives for next time. **They ask us to CONFIRM every offer is
+   re-validated at attach time** and that the bill says why one was refused.
+7. **Real item count + editing an order (applies to BOTH booking types).** Rider records the true
+   count with a reason when it differs; Intake confirms it and enters the actual items; the bill is
+   RECALCULATED through the same pricing + offers; **total up → the difference becomes a payment
+   hold** (same SMS + Paystack link), **total down → the difference goes to the wallet**; every
+   change records who and why + an SMS with the new bill; **after tagging only an admin may edit.**
+   This is the "no way to edit an order" gap from our Q7.3 answer, now specified.
+8. **Counter payment from the wallet — build it.** Staff pick cash / POS / transfer / wallet;
+   wallet debits with a ledger line; short wallet → the rest another way. **They will not mark any
+   counter order as wallet-paid until this is live.**
+9. **Phone-split profiles: send the REPORT first.** Then merge into the OLDER card, bringing orders,
+   wallet balance and messages from both; **keep the referral code from the account card**; flag
+   anything that cannot be combined BEFORE merging.
+10. **Notifications.** ADD to admin: order cancelled · cancellation requested · order flagged AND
+    item flagged for review · item placed on hold (any station) · payment proof uploaded · new
+    complaint opened · payment approved/rejected by Intake & Tag.
+    **SWITCH OFF the operator self-receipts**, except: keep "order in tagging queue"; keep
+    "adjustment request approved/rejected"; for "hold reassigned" + the two "released from hold",
+    **keep only when someone ELSE did it — they asked us which, so answer it.**
+    Switch off for customers: "Handoff confirmed between stations" and "Order flagged".
+    On-screen confirmation and order history must survive the switch-off.
+
+## SECTION A (A1–A5, A7) — BUILT + DB-VERIFIED 2026-10-08 (`dashboardDecisionsStaging.js` 32/32)
+All six need no further client input. **Three of them make a number the client looks at GO DOWN —
+say so before they see it.**
+- **A2 average daily revenue now divides by ALL 7 days.** On 2 trading days in 7 the card falls from
+  ₦45,000 to ₦12,857 on the same money. Payload gained `revenueDaysWithSales` + `revenueDaysCounted`
+  so the screen can say "2 of 7 days took money" instead of looking broken.
+- **A3 revenue per item is now total ÷ total** (₦90,000 ÷ 55 = ₦1,636), not the average of daily
+  rates (₦1,750). NEW key **`avgRevenuePerItem7Days`** + `totalItems7Days` +
+  `avgRevenuePerItem7DayBreakdown`; **the old `avgCostPerItem7Days` is kept as a mirror for one
+  release** so the live screen does not go blank on deploy — drop it once the FE moves.
+- **A4 processing time rebuilt: `productionStartedAt` → `qcDetails.packCompletedAt`, over orders
+  READY TODAY.** The start moment did not exist — `completeTagging` only wrote an activity row — so
+  NEW `productionStartedAt`, stamped on the first handoff OUT of Intake & Tag (which can only happen
+  once every piece is tagged) and **set once**, so a re-tagged straggler cannot restart a running
+  clock. **Orders tagged before this shipped are EXCLUDED, not guessed at**, and counted separately
+  as `ordersReadyTodayAwaitingStamp` so the card can explain itself. Expect 0 on day one.
+- **A5 every production queue sorts by delivery deadline, earliest first**, tie → older first.
+  NEW `util/queueSort.js` (`QUEUE_SORT`), applied to 16 queue/active lists across the four stations.
+  **This closes the §3 Q6 inconsistency** — Sort & Pretreat was showing NEWEST first while every
+  other station showed oldest first. History, hold and flagged lists deliberately untouched.
+  Safe because `deliveryDate` is set on all three booking paths; note a missing one would sort FIRST.
+- **A1 dormant rate: figure and 30-day window unchanged**, card renamed. The label now ships from
+  the backend (`dormantRateLabel` / `dormantRateBasis` / `dormantWindowDays`) so UI and API cannot
+  disagree about what the number means.
+- **A7 `deliverySameAsPickup: true`** on booking copies the pickup address (landmark included, which
+  is what satisfies the delivery-landmark rule without asking twice) and defaults `isDelivery`.
+  **BUG CAUGHT BY THE HARNESS: the first cut applied it AFTER validation**, so a customer ticking the
+  box and sending nothing else was refused "isDelivery is required". `isDelivery` is now defaulted
+  BEFORE the validator and the address copied after. Swagger for the booking body also corrected —
+  it still described `landmark` as optional when the code has required it since 2026-10-07.
+
+## SECTION B — HOLD TYPES: BUILT + DB-VERIFIED 2026-10-08 (holdsStaging 34/34)
+Started while the client confirms the open points, because **N1's payment hold depends on it.**
+- NEW `models/holdType.model.js` + seeded in `config/setup.js` from the hard-coded per-station hold
+  reasons, so the admin edits a list that already matches what the stations show.
+- **THE KEY DESIGN — `slaHours: null` means "follow the order's delivery speed".** Every operational
+  type seeds that way, so **this change alters NOTHING on the floor** until an admin sets a number,
+  and whichever way the client answers Correction 2 ("all operational holds keep 2/4/6" vs per-type
+  limits) we are already built. Only `payment` ships with a limit: 48h + `judgeByOwnLimitOnly`.
+- `util/holdSla.js` now resolves: type limit → else speed table. **Signatures stayed backward
+  compatible** (`rules` is an optional trailing arg), so nothing that already called it broke, and
+  **the 4.4 partition property survives — Active is still the exact `$nor` of Overdue's `$or`.**
+  Typed holds are excluded from the speed branches with `$nin` so a hold is judged exactly once.
+- `judgeByOwnLimitOnly` keeps the past-delivery-date rule OFF the payment hold — on a Quick Booking
+  that date does not exist yet, because the clock starts at payment.
+- NEW admin CRUD `GET/POST /api/admin/hold-types`, `PUT/DELETE /api/admin/hold-types/:id`
+  (+ swagger `HoldType`). Deleting a type orders are sitting on **deactivates** instead — deleting
+  would drop those holds back onto the speed clock and make them instantly Overdue.
+- NEW `crons/holdSlaScan.js` every 20 min → `escalateOverdueHolds()` notifies admins ONCE per breach
+  (`orderHold.escalatedAt` latch, cleared when a hold is raised). 20 min because the shortest limit
+  is 2h and an hourly sweep could miss half its lifetime.
+- **BUG FOUND MID-BUILD, the 3.2 shape again: `holdDetails` is on the ITEM, not the order.** The
+  order has NO `holdDetails` path, so the first cut's `$set: {'holdDetails.holdTypeKey': …}` was
+  **silently dropped by Mongoose** and every payment hold still read against the 6-hour clock —
+  green code, no error, wrong answer. The order-level block is now **`orderHold`** and the harness
+  proves the value persists. (Worth knowing generally: an item hold does NOT set `stage.status:
+  hold`, so Holds Management is driven entirely by order-level holds.)
+- **HARNESS BUG, and it is the one CLAUDE.md's time zone section is about:** `walletLimitStaging`
+  derived "today" with `new Date().toISOString().slice(0,10)` — the UTC date. It passed all day and
+  failed at 00:43 Lagos, because 00:00–00:59 Lagos is still yesterday in UTC. The endpoint was
+  right. Test now takes the Lagos date.
 
 ## STAFF SUSPENSION — BUILT 2026-10-07 (FE: "no endpoint to suspend a rider")
 **The FE was right, and the gap was narrower and worse than it looked: every READER of
@@ -132,7 +386,7 @@ FE renders exactly what comes back.
 
 ## Verification gates — run ALL of these after any change
 ```bash
-node briefCheck.js                                   # 104/104  offline, no DB
+node briefCheck.js                                   # 106/106  offline, no DB
 STAGING_OK=1 MONGODB_URL="<testing uri>" node recoveryReportStaging.js  # 49/49 (N2)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node planCreateStaging.js      # 39 (2.5)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchStaging.js        # 46 (3.1/3.2/3.3)
@@ -148,6 +402,7 @@ STAGING_OK=1 MONGODB_URL="<testing uri>" node offerAdminStaging.js     # 37/37
 STAGING_OK=1 MONGODB_URL="<testing uri>" node freeLogisticsStaging.js  # 23/23
 STAGING_OK=1 MONGODB_URL="<testing uri>" node walletLimitStaging.js    # 55/55 (incl. [11] the admin ledger)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node staffStatusStaging.js    # 38/38 (suspend/reinstate)
+STAGING_OK=1 MONGODB_URL="<testing uri>" node dashboardDecisionsStaging.js # 32/32 (A1-A5, A7)
 STAGING_OK=1 MONGODB_URL="<testing uri>" node dispatchTagStaging.js    # 46/46 (older gate)
 ```
 Swagger must stay **56 schemas / 285 paths, 0 wrong envelopes**:

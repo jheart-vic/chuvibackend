@@ -11,7 +11,7 @@ const  mongoose = require("mongoose");
 const paginate = require("../util/paginate");
 const { generateReferenceId, getObjectId } = require("../util/helper");
 const createNotification = require("../util/createNotification");
-const { NOTIFICATION_TYPE } = require("../util/constants");
+const { NOTIFICATION_TYPE, WALLET_TX_TYPE } = require("../util/constants");
 const createAuditLog = require("../util/createAuditLog");
 const WalletCreditService = require("./walletCredit.service");
 
@@ -247,20 +247,102 @@ async fetchUserTransactions(req) {
       dateFilter = { createdAt: { $gte: thirtyDaysAgo, $lte: now } };
     }
 
-    // Build filter – only apply alertType if it's 'credit' or 'debit'
-    const filter = { userId, ...dateFilter };
-    if (alertType === "credit") filter.alertType = "credit";
-    if (alertType === "debit")  filter.alertType = "debit";
+    // ── Brief item 2.3, the half that was still missing ──────────────────
+    // This endpoint read ONLY the Payment collection. Manual wallet
+    // adjustments write a WalletTransaction and no Payment, so a ₦5,000
+    // credit from Intake & Tag never appeared here — which is the customer's
+    // original complaint ("the money has no record"), still true after the
+    // write side was fixed. The admin ledger built on 2026-10-07 reads
+    // WalletTransaction; this one now reads both.
+    //
+    // It unions rather than replaces, because the two collections overlap:
+    // top-ups, card payments and refunds exist in BOTH, and swapping sources
+    // would have lost the Payment-only rows (proof of payment, card refs).
+    // So only the WalletTransaction kinds that have no Payment twin are taken:
+    // manual adjustments, reversals, credit expiry and credit movements.
+    const WALLET_ONLY_TYPES = [
+      WALLET_TX_TYPE.MANUAL_ADJUSTMENT,
+      WALLET_TX_TYPE.REVERSAL,
+      WALLET_TX_TYPE.EXPIRY,
+    ];
 
-    const transactions = await PaymentModel.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const userObjectId = getObjectId(userId);
+    const walletMatch = {
+      userId: userObjectId,
+      ...dateFilter,
+      $or: [
+        { type: { $in: WALLET_ONLY_TYPES } },
+        // credit grants/spends are wallet-only too (offers, referral, recovery)
+        { creditType: { $exists: true, $ne: null } },
+      ],
+    };
 
-    const total = await PaymentModel.countDocuments(filter);
+    // One pipeline over both collections so paging and totals stay correct —
+    // merging two separately-paged lists in JS would drop rows at the seam.
+    const pipeline = [
+      { $match: { userId: userObjectId, ...dateFilter } },
+      {
+        $project: {
+          amount: 1,
+          reference: 1,
+          status: 1,
+          createdAt: 1,
+          description: { $ifNull: ["$adminNote", "$type"] },
+          type: 1,
+          alertType: 1,
+          paymentMethod: 1,
+          proofOfPayment: 1,
+          source: { $literal: "payment" },
+        },
+      },
+      {
+        $unionWith: {
+          coll: "wallettransactions",
+          pipeline: [
+            { $match: walletMatch },
+            {
+              $project: {
+                // a manual adjustment stores a SIGNED amount; the customer's
+                // list shows a positive figure with a direction beside it
+                amount: { $abs: "$amount" },
+                reference: 1,
+                status: 1,
+                createdAt: 1,
+                description: { $ifNull: ["$description", "$reason"] },
+                type: 1,
+                // direction comes from the SIGN, never from the type — a
+                // manual adjustment can be either way
+                alertType: {
+                  $cond: [{ $lt: ["$amount", 0] }, "debit", "credit"],
+                },
+                reason: 1,
+                balanceAfter: 1,
+                creditType: 1,
+                source: { $literal: "wallet" },
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    if (alertType === "credit" || alertType === "debit") {
+      pipeline.push({ $match: { alertType } });
+    }
+
+    const [rows, counted] = await Promise.all([
+      PaymentModel.aggregate([
+        ...pipeline,
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+      ]),
+      PaymentModel.aggregate([...pipeline, { $count: "total" }]),
+    ]);
+    const total = counted[0]?.total || 0;
 
     return BaseService.sendSuccessResponse({
-      transactions,           // ✅ direct array, no nested 'message'
+      transactions: rows,     // ✅ direct array, no nested 'message'
       pagination: {
         total,
         page,

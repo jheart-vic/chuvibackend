@@ -101,6 +101,7 @@ async function resolveRider(riderId) {
 // surface as "Failed to assign rider to order" with the rider already assigned —
 // the same false-failure shape as brief items 2.5 and 4.1. See util/safeLog.js.
 const { logSafely } = require('../util/safeLog')
+const { markProductionClearedIfReady } = require('../util/productionClock')
 
 class IntakeUserService extends BaseService {
     async createBookOrder(req, res) {
@@ -280,6 +281,15 @@ class IntakeUserService extends BaseService {
                 orderTotal: totalPrice,
             })
             await newOrder.save()
+
+            // A counter order arrives with the clothes already here AND already
+            // paid, so both conditions are met at creation and the clock starts
+            // immediately. Non-fatal.
+            try {
+                await markProductionClearedIfReady(newOrder._id)
+            } catch (err) {
+                console.error('production clock (counter order) failed:', err?.message)
+            }
 
             crmOnOrderCreated(newOrder)
             referralOnOrderCreated(newOrder)
@@ -621,6 +631,15 @@ class IntakeUserService extends BaseService {
             order.stationStatus = STATION_STATUS.INTAKE_AND_TAG_STATION
 
             await order.save()
+
+            // Processing clock (client correction 2026-10-08): Intake has the
+            // clothes. If the money is already complete this is the LATER of
+            // the two events and the clock starts here. Non-fatal.
+            try {
+                await markProductionClearedIfReady(order._id)
+            } catch (err) {
+                console.error('production clock (intake receive) failed:', err?.message)
+            }
 
             await ActivityModel.create({
                 title: 'Order moved to tag and queue',
