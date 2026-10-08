@@ -1198,7 +1198,18 @@
  *                 credits: { type: integer, example: 9500 }
  *                 refunds: { type: integer, example: 3000 }
  *             customersRecovered: { type: integer, example: 5 }
- *             orderedAgainAfterRecovery: { type: integer, example: 3 }
+ *             orderedAgainAfterRecovery:
+ *               type: integer
+ *               example: 3
+ *               description: >
+ *                 Distinct customers who received a recovery this month and then placed a real order
+ *                 (not cancelled, never a recovery order itself) WITHIN `orderedAgainWindowDays` of it.
+ *                 Client decision 2026-10-08: the window is 60 days. The order itself may fall outside
+ *                 the report month — it is the RECOVERY that must be in the month.
+ *             orderedAgainWindowDays:
+ *               type: integer
+ *               example: 60
+ *               description: The window the figure above was measured over, so the card can state it.
  *         complaintsByType:
  *           type: array
  *           items:

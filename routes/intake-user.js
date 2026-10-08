@@ -55,6 +55,7 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *               - isDelivery
  *               - isPickUp
  *               - items
+ *               - paymentMethod
  *             properties:
  *               fullName:
  *                 type: string
@@ -120,8 +121,9 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                 enum: [cash, pos, bank-transfer, wallet]
  *                 example: wallet
  *                 description: >
- *                   How the counter order was paid (client item #8). OPTIONAL — omitted means `cash`,
- *                   which is what a counter order was implicitly treated as before. "transfer" and
+ *                   How the counter order was paid (client item #8). **REQUIRED** since 2026-10-08 —
+ *                   staff must state how the money arrived. Pre-select `cash` on the screen (that is a UI
+ *                   default, not a server fallback: there is no fallback). "transfer" and
  *                   "card" are accepted as aliases for `bank-transfer` and `pos`. `paystack` is NOT a
  *                   counter tender. With `wallet` the customer's balance is really debited and a
  *                   WalletTransaction ledger line is written; the customer must have an account

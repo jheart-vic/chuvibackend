@@ -1,5 +1,9 @@
 const mongoose = require('mongoose')
-const { CRM_MESSAGE_TYPE } = require('../util/constants')
+const {
+    CRM_MESSAGE_TYPE,
+    CRM_SCHEDULE_ANCHOR,
+    CRM_SEND_SLOT,
+} = require('../util/constants')
 
 // Single-document settings for the CRM: message templates (admin-editable)
 // and the thresholds behind the automatic tags. Seeded with defaults in
@@ -13,6 +17,19 @@ const DEFAULT_TEMPLATES = {
         "Still here for you, {{firstName}}! Your free first pickup with Chuvi Laundry is ready whenever you are — book in a couple of taps.",
     [CRM_MESSAGE_TYPE.LEAD_CLOSE]:
         "Hello {{firstName}}! Life gets busy — let Chuvi Laundry take laundry off your plate. Your welcome offer is still available. 😊",
+    // ── Registered but never booked (client item #1, texts supplied verbatim
+    // 2026-10-08 and revised the same day to drop "in a pickup window" so the
+    // sequence can go live BEFORE window booking). COPIED EXACTLY, with one
+    // substitution: the client writes `{name}` and says it is the first name,
+    // which is this system's existing `{{firstName}}` placeholder. Do not
+    // re-word these; the client edits them in CRM settings themselves once
+    // window booking ships. Full record: context/CRM-REGISTERED-NOT-BOOKED-TEXTS.md
+    [CRM_MESSAGE_TYPE.REG_NOT_BOOKED_1]:
+        'Hello {{firstName}}, this is CHUVI. Your first order offer is still open: book any order from ₦4,000 and we pick up and deliver for free. After your first wash, we also add ₦1,000 to your CHUVI wallet for your next order.\nTo book: go to www.chuvilaundry.com, tap Book, choose your items and pick a pickup time.\nFor example, one duvet and two bedsheets come to ₦4,000.\nReply here if you want us to help you book.',
+    [CRM_MESSAGE_TYPE.REG_NOT_BOOKED_2]:
+        'Hello {{firstName}}, your free pickup and delivery ends tomorrow.\nIs there a duvet, bedsheets or white clothes you have been planning to give out? Book any order from ₦4,000 and we will come for it and bring it back clean, at no transport cost.\nBook here: www.chuvilaundry.com\nOr reply here and we will help you book.',
+    [CRM_MESSAGE_TYPE.REG_NOT_BOOKED_3]:
+        'Hello {{firstName}}, today is the last day of your free pickup and delivery.\nBook any order from ₦4,000 today and we pick up and deliver for free, plus ₦1,000 in your CHUVI wallet for your next wash.\nBook here: www.chuvilaundry.com\nAfter today, pickup and delivery are free only on orders from ₦8,000.',
     [CRM_MESSAGE_TYPE.ORDER_READY]:
         'Hi {{firstName}}, good news — your Chuvi Laundry order is clean, pressed and ready. 🧺 We\'ll be on our way to you shortly!',
     [CRM_MESSAGE_TYPE.DELIVERY_CONFIRMATION]:
@@ -91,9 +108,70 @@ const scheduleStepSchema = new mongoose.Schema(
         delayMinutes: { type: Number, default: 0, min: 0 },
         // drop this step if the customer books/converts before it fires
         cancelIfOrdered: { type: Boolean, default: true },
+        // ── Added 2026-10-08 for the registered-not-booked sequence ──────────
+        // Both are OPTIONAL and absent on every existing schedule, so the lead,
+        // post-delivery and reactivation sequences behave exactly as before.
+        //
+        // `anchor` says what delayMinutes is measured from. `offer-end` means
+        // the step is positioned relative to the customer's First Experience
+        // offer EXPIRY instead — the client tied messages 2 and 3 to the offer's
+        // end so that changing its length from 3 days to 7 moves them with it.
+        anchor: {
+            type: String,
+            enum: Object.values(CRM_SCHEDULE_ANCHOR),
+            default: CRM_SCHEDULE_ANCHOR.WORKFLOW_START,
+        },
+        // Which of the two daily send windows this step belongs in. The client
+        // pinned message 2 to the evening and message 3 to the morning.
+        preferSlot: {
+            type: String,
+            enum: Object.values(CRM_SEND_SLOT),
+            default: CRM_SEND_SLOT.ANY,
+        },
     },
     { _id: false },
 )
+
+// Client item #1 (2026-10-08). Only step 1 is a plain delay; steps 2 and 3 are
+// positioned from the OFFER's end, and the terminal step is the day-7 move to
+// the prospect list (an action, not a message).
+const DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE = [
+    {
+        messageType: CRM_MESSAGE_TYPE.REG_NOT_BOOKED_1,
+        enabled: true,
+        delayMinutes: 1440, // +24h from registration, then the next send window
+        anchor: CRM_SCHEDULE_ANCHOR.WORKFLOW_START,
+        preferSlot: CRM_SEND_SLOT.ANY,
+        cancelIfOrdered: true,
+    },
+    {
+        messageType: CRM_MESSAGE_TYPE.REG_NOT_BOOKED_2,
+        enabled: true,
+        // the EVENING window the day before the offer ends; the exact instant is
+        // computed by util/crmSendWindow.offerEndSchedule, which also handles the
+        // client's "offer ends before 8am" shift.
+        delayMinutes: 0,
+        anchor: CRM_SCHEDULE_ANCHOR.OFFER_END,
+        preferSlot: CRM_SEND_SLOT.EVENING,
+        cancelIfOrdered: true,
+    },
+    {
+        messageType: CRM_MESSAGE_TYPE.REG_NOT_BOOKED_3,
+        enabled: true,
+        delayMinutes: 0,
+        anchor: CRM_SCHEDULE_ANCHOR.OFFER_END,
+        preferSlot: CRM_SEND_SLOT.MORNING,
+        cancelIfOrdered: true,
+    },
+    {
+        messageType: CRM_MESSAGE_TYPE.REG_NOT_BOOKED_MARK_PROSPECT,
+        enabled: true,
+        delayMinutes: 10080, // day 7 from registration
+        anchor: CRM_SCHEDULE_ANCHOR.WORKFLOW_START,
+        preferSlot: CRM_SEND_SLOT.ANY,
+        cancelIfOrdered: true,
+    },
+]
 
 const crmSettingSchema = new mongoose.Schema(
     {
@@ -113,6 +191,20 @@ const crmSettingSchema = new mongoose.Schema(
         reactivationSchedule: {
             type: [scheduleStepSchema],
             default: DEFAULT_REACTIVATION_SCHEDULE,
+        },
+        registeredNotBookedSchedule: {
+            type: [scheduleStepSchema],
+            default: DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE,
+        },
+        // Client ruling 2026-10-08: every follow-up and offer message may only
+        // leave in one of these two windows; anything due outside waits for the
+        // next one. Hours are LAGOS wall-clock (server.js pins the process TZ).
+        // Order/payment messages are exempt — see CRM_WINDOWED_WORKFLOWS.
+        sendWindows: {
+            morningStartHour: { type: Number, default: 6, min: 0, max: 23 },
+            morningEndHour: { type: Number, default: 8, min: 1, max: 24 },
+            eveningStartHour: { type: Number, default: 18, min: 0, max: 23 },
+            eveningEndHour: { type: Number, default: 20, min: 1, max: 24 },
         },
         // "Order Ready" fires on its own trigger (order ready), so it's a single
         // configurable delay (minutes) from that event rather than a sequence.
@@ -146,3 +238,5 @@ module.exports.DEFAULT_TEMPLATES = DEFAULT_TEMPLATES
 module.exports.DEFAULT_LEAD_SCHEDULE = DEFAULT_LEAD_SCHEDULE
 module.exports.DEFAULT_POST_DELIVERY_SCHEDULE = DEFAULT_POST_DELIVERY_SCHEDULE
 module.exports.DEFAULT_REACTIVATION_SCHEDULE = DEFAULT_REACTIVATION_SCHEDULE
+module.exports.DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE =
+    DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE

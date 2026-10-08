@@ -19,6 +19,7 @@ const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
 const createNotification = require('../util/createNotification')
+const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
 const { crmOnOrderReady } = require('../util/crmHooks')
@@ -370,7 +371,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item(s) QC Passed',
                 body: `${updatedCount} item(s) on order ${order.oscNumber} have passed quality control.`,
@@ -475,7 +476,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item QC Status Undone',
                 body: `${targetItems.length} item(s) on order ${order.oscNumber} have had their QC status undone.`,
@@ -549,7 +550,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId: userId,
                 title: 'Your order passed QC',
                 body: `Order ${order.oscNumber} has passed quality control and is now being prepared for packing and sealing.`,
@@ -918,12 +919,33 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'An item on your order has been placed on hold',
                 body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been placed on hold.${note ? ` Note: ${note}.` : ''} Please contact support for more details.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+            // ADDED for the CUSTOMER (client decision 2026-10-08). The operator
+            // copy above never reached them.
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'An item on your order is on hold',
+                    body: `An item on your order ${order.oscNumber} has been placed on hold.${note ? ` Note: ${note}.` : ''} We are working to resolve this as quickly as possible.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                })
+            }
+            // ADDED for admin (client section 10: any station). A hold at QC is
+            // the last one before dispatch, so it is the most urgent of the three.
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ITEM_ON_HOLD,
+                title: 'Item Placed on Hold',
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} was placed on hold at QC.${note ? ` Note: ${note}.` : ''}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                recordId: order._id,
             })
             await createAuditLog({
                 userId: getObjectId(userId),

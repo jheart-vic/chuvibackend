@@ -426,6 +426,44 @@ const CRM_WORKFLOW = {
     POST_DELIVERY: 'post-delivery',
     REACTIVATION: 'reactivation',
     BROADCAST: 'broadcast',
+    // Client item #1 (2026-10-08): people who REGISTERED but never booked. The
+    // lead sequence is for numbers WE enter and pushes them to register, so it
+    // is cancelled the moment they do — which used to leave them with nothing
+    // at all. This replaces that silence. Kept as its own workflow so the lead
+    // sequence stays exactly as it is for the numbers reps type in.
+    REGISTERED_NOT_BOOKED: 'registered-not-booked',
+}
+
+// Which workflows obey the global send windows (client 2026-10-08: "all follow
+// up and offer messages go out only between 6-8am or 6-8pm").
+//
+// Their list was "leads, registered but not booked, prospects and reactivation".
+// Deliberately NOT included: post-delivery (delivery confirmation, feedback
+// request) and order-ready — those are the "order and payment messages" that
+// their rule says still go out at once. Holding a "your order is ready" until
+// 6pm would be a real harm, not a kindness.
+const CRM_WINDOWED_WORKFLOWS = [
+    CRM_WORKFLOW.LEAD,
+    CRM_WORKFLOW.REGISTERED_NOT_BOOKED,
+    CRM_WORKFLOW.REACTIVATION,
+    CRM_WORKFLOW.BROADCAST,
+]
+
+// What a scheduled step is measured FROM. `registration` keeps the existing
+// behaviour (delayMinutes from the workflow's anchor); `offer-end` is new and
+// counts BACKWARDS from the customer's First Experience offer expiry, because
+// the client tied messages 2 and 3 to the offer's end rather than to fixed
+// delays — so changing the offer from 3 days to 7 moves the messages with it.
+const CRM_SCHEDULE_ANCHOR = {
+    WORKFLOW_START: 'workflow-start',
+    OFFER_END: 'offer-end',
+}
+
+// Which of the two daily send windows a step prefers.
+const CRM_SEND_SLOT = {
+    MORNING: 'morning',
+    EVENING: 'evening',
+    ANY: 'any',
 }
 
 const CRM_MESSAGE_TYPE = {
@@ -437,6 +475,15 @@ const CRM_MESSAGE_TYPE = {
     LEAD_REMINDER_1: 'lead-reminder-1',
     LEAD_REMINDER_2: 'lead-reminder-2',
     LEAD_MARK_PROSPECT: 'lead-mark-prospect', // internal action, no message sent
+    // registered-but-never-booked workflow (client item #1, 2026-10-08).
+    // 1 → first send window 24h after registration
+    // 2 → evening window the day BEFORE the first-order offer ends
+    // 3 → morning window ON the day it ends
+    // then day 7 → prospect list (internal action, no message)
+    REG_NOT_BOOKED_1: 'reg-not-booked-1',
+    REG_NOT_BOOKED_2: 'reg-not-booked-2',
+    REG_NOT_BOOKED_3: 'reg-not-booked-3',
+    REG_NOT_BOOKED_MARK_PROSPECT: 'reg-not-booked-mark-prospect',
     // order lifecycle: order-ready (pre-delivery trigger) → delivery-confirmation → feedback-request
     ORDER_READY: 'order-ready',
     DELIVERY_CONFIRMATION: 'delivery-confirmation',
@@ -458,6 +505,10 @@ const CRM_MESSAGE_TYPE = {
 const CRM_INTERNAL_ACTIONS = [
     CRM_MESSAGE_TYPE.LEAD_MARK_PROSPECT,
     CRM_MESSAGE_TYPE.REACTIVATION_MARK_CHURNED,
+    // Day 7 of the registered-not-booked sequence: move them to the prospect
+    // list. An action, not a message — so it must NOT be held back by the send
+    // windows, and must not try to render a template it does not have.
+    CRM_MESSAGE_TYPE.REG_NOT_BOOKED_MARK_PROSPECT,
 ]
 
 const CRM_MESSAGE_STATUS = {
@@ -812,6 +863,9 @@ module.exports = {
     CRM_MANUAL_TAGS,
     CRM_LEAD_SOURCE,
     CRM_WORKFLOW,
+    CRM_WINDOWED_WORKFLOWS,
+    CRM_SCHEDULE_ANCHOR,
+    CRM_SEND_SLOT,
     CRM_MESSAGE_TYPE,
     CRM_INTERNAL_ACTIONS,
     CRM_MESSAGE_STATUS,

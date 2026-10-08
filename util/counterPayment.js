@@ -37,6 +37,13 @@ const { generateReferenceId } = require('./helper')
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
 
+// The tender the counter screen should PRE-SELECT (client decision 2026-10-08:
+// "make it mandatory" + "make cash the default"). Those two only coexist as a
+// required field with a pre-selected choice — a server-side default would be
+// the silent assumption that "mandatory" exists to prevent. Exported so the
+// screen and the docs take it from one place.
+const DEFAULT_COUNTER_METHOD = PAYMENT_METHOD.CASH
+
 // Accepts what the counter screen is likely to send ("transfer", "Cash",
 // "POS", "card") and returns the stored value, or null if it isn't a tender a
 // counter order can use (e.g. `paystack` — that is the customer's own app).
@@ -266,6 +273,7 @@ async function settleCounterPayment({ order, plan, customerId, staffId }) {
 }
 
 module.exports = {
+    DEFAULT_COUNTER_METHOD,
     normalizeCounterMethod,
     methodLabel,
     methodList,

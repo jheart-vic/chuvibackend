@@ -42,6 +42,11 @@ const {
 } = require('../util/holdSla')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
+const {
+    notifyAffectedStation,
+    notifyAdminEvent,
+    ADMIN_EVENT,
+} = require('../util/notifyPolicy')
 const { getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
@@ -1990,14 +1995,10 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            // notify admin who performed the action
-            await createNotification({
-                userId,
-                title: 'Hold Reassigned',
-                body: `Order ${order.oscNumber} hold has been reassigned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATED,
-            })
-
+            // CLIENT SECTION 10: the receipt to the person who performed the
+            // action is switched off — they already know, the screen confirmed
+            // it, and the audit line below is the lasting record. Only the
+            // AFFECTED station is told (just after the audit log).
             await createAuditLog({
                 userId: getObjectId(userId),
                 orderId,
@@ -2005,23 +2006,17 @@ class AdminService extends BaseService {
                 action: `Order ${order.oscNumber}  has been assigned to ${type} ${note ? ` Note: ${note}.` : ''}`,
             })
 
-            // notify all operators at the target station
-            const stationOperators = await UserModel.find({
-                userType: target.role,
-                status: 'active',
-            }).select('_id')
-
-            await Promise.all(
-                stationOperators.map((operator) =>
-                    createNotification({
-                        userId: operator._id,
-                        title: 'Hold Order Assigned to Your Station',
-                        body: `Order ${order.oscNumber} has been reassigned to your station for resolution. Note: ${note}`,
-                        subBody: `Order ID: ${order.oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
-                    }),
-                ),
-            )
+            // The AFFECTED station is told — this is the only way they learn a
+            // held order is now their problem. `actorId` excludes whoever
+            // performed the reassignment, even if they work at that station.
+            await notifyAffectedStation({
+                role: target.role,
+                actorId: userId,
+                title: 'Hold Order Assigned to Your Station',
+                body: `Order ${order.oscNumber} has been reassigned to your station for resolution. Note: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold reassigned to ${type}`,
@@ -2137,31 +2132,18 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            // notify admin who performed the action
-            await createNotification({
-                userId,
-                title: 'Hold Resolved',
-                body: `Order ${order.oscNumber} hold has been resolved and returned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
+            // CLIENT SECTION 10: no receipt to whoever resolved it. Only the
+            // station the order RETURNS to is told, because that is the only
+            // way they learn a job they could not touch is live again — and
+            // never the actor, even if they work at that station.
+            await notifyAffectedStation({
+                role: target.role,
+                actorId: userId,
+                title: 'Order Returned to Your Station',
+                body: `Order ${order.oscNumber} hold has been resolved and returned to your station. Note: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-
-            // notify all operators at the target station
-            const stationOperators = await UserModel.find({
-                userType: target.role,
-                status: 'active',
-            }).select('_id')
-
-            await Promise.all(
-                stationOperators.map((operator) =>
-                    createNotification({
-                        userId: operator._id,
-                        title: 'Order Returned to Your Station',
-                        body: `Order ${order.oscNumber} hold has been resolved and returned to your station. Note: ${note}`,
-                        subBody: `Order ID: ${order.oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
-                    }),
-                ),
-            )
 
             // notify customer if linked account exists
             if (order.userId) {
@@ -3553,22 +3535,15 @@ class AdminService extends BaseService {
                 action: `Order ${order.oscNumber} has been placed on hold for reason: ${reason}, assigned to ${assignTo} ${note ? ` Note: ${note}.` : ''}`,
             })
 
-            const stationOperators = await UserModel.find({
-                userType: assignTo,
-                status: 'active',
-            }).select('_id')
-
-            await Promise.all(
-                stationOperators.map((operator) =>
-                    createNotification({
-                        userId: operator._id,
-                        title: 'Hold Order Assigned to Your Station',
-                        body: `Order ${order.oscNumber} has been placed on hold by admin and assigned to your station for resolution. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
-                        subBody: `Order ID: ${order.oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
-                    }),
-                ),
-            )
+            // Affected station only, never the actor (client section 10).
+            await notifyAffectedStation({
+                role: assignTo,
+                actorId: userId,
+                title: 'Hold Order Assigned to Your Station',
+                body: `Order ${order.oscNumber} has been placed on hold by admin and assigned to your station for resolution. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order placed on hold successfully',

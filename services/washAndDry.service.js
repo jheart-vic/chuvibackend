@@ -19,6 +19,7 @@ const { QUEUE_SORT } = require('../util/queueSort')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const createNotification = require('../util/createNotification')
+const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
 const {
@@ -318,7 +319,7 @@ class WashAndDryService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item(s) Confirmed for Washing',
                 body: `${updatedCount} item(s) confirmed for washing`,
@@ -437,7 +438,7 @@ class WashAndDryService extends BaseService {
                 )
             }
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Wash Confirmation Undone',
                 body: `${targetItems.length} item(s) wash confirmation has been undone`,
@@ -578,11 +579,31 @@ class WashAndDryService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Placed on Hold',
                 body: `An item has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 type: NOTIFICATION_TYPE.ORDER_WASHING,
+            })
+            // ADDED for the CUSTOMER (client decision 2026-10-08). The operator
+            // copy above never reached them.
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'An item on your order is on hold',
+                    body: `An item on your order ${order.oscNumber} has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} We are working to resolve this as quickly as possible.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                })
+            }
+            // ADDED for admin (client section 10: any station).
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ITEM_ON_HOLD,
+                title: 'Item Placed on Hold',
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} was placed on hold at Wash & Dry by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                recordId: order._id,
             })
             await createAuditLog({
                 userId: getObjectId(userId),
@@ -730,7 +751,7 @@ class WashAndDryService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            createNotification({
+            notifyOperator({
                 userId,
                 title: 'Order Moved to Drying',
                 body: `Order ${order.oscNumber} has been transferred to the dryer.`,

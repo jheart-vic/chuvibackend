@@ -596,6 +596,130 @@ async function main() {
             `selecting a piece that already left is refused and says so ("${b.data?.error}")`)
         ok(Array.isArray(b.data?.itemsNotAtStation) && b.data.itemsNotAtStation.length === 1,
             'and the response names exactly which piece')
+
+        // ── [15] A PIECE ON HOLD DOES NOT MOVE ──────────────────────────────
+        // The client asked us to confirm this (2026-10-08) and it was NOT true.
+        // A hold writes only `flaggedForReview` + `holdDetails`; it never touches
+        // the station status the handoff's completion gate reads. So a piece
+        // finished at its station and THEN held satisfied every gate and was
+        // pushed onward with its hold still open.
+        console.log('\n[15] a piece on hold stays put until the hold is released')
+        const o9 = await makeOrder({
+            stage: { status: ORDER_STATUS.SORT_AND_PRETREAT, updatedAt: new Date() },
+            stationStatus: S.SORT_AND_PRETREAT_STATION,
+            items: pieces().map((p) => ({
+                ...p,
+                currentStation: S.SORT_AND_PRETREAT_STATION,
+            })),
+        })
+        const o9id = String(o9._id)
+        const o9items = (await reload(o9id)).items.map((i) => String(i._id))
+
+        // Finish every piece at this station, WITHOUT handing over.
+        b = await SortService.bulkSortItems(
+            req(o9id, {
+                itemIds: o9items,
+                colorGroup: 'white',
+                fabricType: 'light',
+                pretreatmentOptions: ['no_pretreatment_needed'],
+                markSorted: true,
+                sendToWash: false,
+            }, {}, s2._id),
+        )
+        ok(b.success === true, 'all pieces finished at sort & pretreat, nothing handed over')
+
+        // Now hold ONE of them — after it is already complete, which is the
+        // case the old gates could not see.
+        const heldId = o9items[0]
+        // HARNESS NOTE: a station may NOT assign a hold to itself — S2's
+        // `assignTo` is limited to admin / intake-and-tag, which is the
+        // section-B rule that a hold is handed to whoever can resolve it. So
+        // the release below has to come from Intake, not from S2.
+        const held = await SortService.sendToHold({
+            params: { id: o9id, itemId: heldId },
+            user: { id: String(s2._id) },
+            body: { reason: 'Stain needs a second look', note: 'STG', assignTo: 'intake-and-tag' },
+        })
+        ok(held.success === true, `the piece was placed on hold (${held.success ? 'ok' : held.data?.error})`)
+
+        // An explicit push of the held piece must be refused BY NAME.
+        let pushed = await handoff.push({
+            params: { id: o9id },
+            user: { id: String(s2._id) },
+            body: {
+                fromStation: S.SORT_AND_PRETREAT_STATION,
+                toStation: S.WASH_AND_DRY_STATION,
+                itemIds: [heldId],
+            },
+        })
+        ok(pushed.success === false, 'pushing the held piece is REFUSED')
+        ok(/on hold/i.test(pushed.data?.error || ''),
+            `and the refusal says why ("${pushed.data?.error}")`)
+
+        // A push of the whole batch must be refused too — one open hold must
+        // not be smuggled through alongside its siblings.
+        pushed = await handoff.push({
+            params: { id: o9id },
+            user: { id: String(s2._id) },
+            body: {
+                fromStation: S.SORT_AND_PRETREAT_STATION,
+                toStation: S.WASH_AND_DRY_STATION,
+                itemIds: o9items,
+            },
+        })
+        ok(pushed.success === false,
+            'a batch containing the held piece is refused, not partly sent')
+
+        // WHAT ACTUALLY HAPPENS, and it is worth knowing: holding ONE piece at
+        // S2 flips the whole ORDER's stage.status to `hold`, and S2's station
+        // guard then refuses every further action on that order — so the four
+        // siblings stop too. The client asked only that held pieces not move;
+        // this is a stronger guarantee than they asked for, but it also means a
+        // single held piece parks its whole order. That is a product question
+        // for them, NOT something to quietly change here: order-level hold is
+        // what drives Holds Management.
+        b = await SortService.bulkSortItems(
+            req(o9id, { all: true, markSorted: true }, {}, s2._id),
+        )
+        ok(b.success === false,
+            'while the hold is open, no further work at this station is accepted')
+        ok(/hold/i.test(b.data?.error || ''),
+            `and the refusal names the hold ("${b.data?.error}")`)
+        let fresh9 = await reload(o9id)
+        const heldItem = fresh9.items.find((i) => String(i._id) === heldId)
+        ok(heldItem.currentStation === S.SORT_AND_PRETREAT_STATION,
+            `*** the held piece is STILL at sort & pretreat (${heldItem.currentStation}) ***`)
+        const stillHere9 = fresh9.items.filter(
+            (i) => i.currentStation === S.SORT_AND_PRETREAT_STATION,
+        )
+        ok(stillHere9.length === o9items.length,
+            `all ${stillHere9.length} pieces are parked, not just the held one — ONE HOLD STOPS THE ORDER`)
+
+        // Release it, and now it may move.
+        // Released by INTAKE, because that is the station the hold was assigned
+        // to; S2's own release only sees holds assigned to S2.
+        const released = await intake.releaseFromHold({
+            params: { id: o9id },
+            user: { id: String(s1._id) },
+            body: { note: 'STG resolved' },
+        })
+        ok(released.success === true,
+            `the hold was released (${released.success ? 'ok' : released.data?.error})`)
+        fresh9 = await reload(o9id)
+        const afterRelease = fresh9.items.find((i) => String(i._id) === heldId)
+        ok(!afterRelease.holdDetails?.heldAt || !!afterRelease.holdDetails?.releasedAt,
+            'the hold is recorded as released, not erased')
+        pushed = await handoff.push({
+            params: { id: o9id },
+            user: { id: String(s2._id) },
+            body: {
+                fromStation: S.SORT_AND_PRETREAT_STATION,
+                toStation: S.WASH_AND_DRY_STATION,
+                itemIds: [heldId],
+            },
+        })
+        ok(pushed.success === true,
+            `*** once released the same piece CAN be pushed (${pushed.success ? 'ok' : pushed.data?.error}) ***`)
     } catch (e) {
         FAIL++
         console.log('\n  ✗ THREW:', e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n') : e)

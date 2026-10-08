@@ -694,10 +694,16 @@ const run = (async () => {
     // ─── Client answer 1(b) — First Experience clock starts at REGISTRATION ──
     console.log('\nitem #2 / answer 1(b) — First Experience offer clock')
     const crmSrc = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
+    // Now AWAITED rather than fire-and-forget, because the follow-up sequence is
+    // anchored to the offer's expiry and needs the linkage back.
     ok('the First Experience trigger fires from handleUserRegistered',
-        /async handleUserRegistered\(user\)[\s\S]{0,2600}offerOnTrigger\(\s*OFFER_TRIGGER\.FIRST_EXPERIENCE,\s*\{ userId: user\._id \}\)/.test(
+        /async handleUserRegistered\(user\)[\s\S]{0,3400}await OfferService\.handleTrigger\(\s*OFFER_TRIGGER\.FIRST_EXPERIENCE,/.test(
             crmSrc,
         ))
+    ok('  …and its expiry is captured, so the sequence can be anchored to it',
+        /offerEndsAt = linkage\?\.expiresAt \|\| null/.test(crmSrc))
+    ok('  …without a failed grant being able to break a signup',
+        /First Experience grant on registration failed \(non-fatal\)/.test(crmSrc))
     ok('  …and NOT from createLead, where an account-less lead made it a no-op',
         !/async createLead\([\s\S]{0,700}offerOnTrigger\(OFFER_TRIGGER\.FIRST_EXPERIENCE/.test(
             crmSrc,
@@ -719,6 +725,255 @@ const run = (async () => {
         /customerWindowDays/.test(
             fs.readFileSync(path.join(ROOT, 'models/offer.model.js'), 'utf8'),
         ) && /offer\.customerWindowDays \|\| 14/.test(offerSrc))
+
+    // ─── Client item #10 — who gets notified ────────────────────────────────
+    console.log('\nitem #10 — notification policy')
+    const policy = require(path.join(ROOT, 'util/notifyPolicy'))
+    const STATION_FILES = [
+        'services/sortAndPretreat.service.js',
+        'services/washAndDry.service.js',
+        'services/qc.service.js',
+        'services/rider.service.js',
+        'services/intake-user.service.js',
+        'services/walletAdjustment.service.js',
+    ].map((f) => [f, fs.readFileSync(path.join(ROOT, f), 'utf8')])
+
+    // An operator receipt is suppressed unless it names a kept exception.
+    let sent = await policy.notifyOperator({ userId: 'x', title: 't' })
+    ok('an unnamed operator receipt is NOT sent', sent === 0)
+    sent = await policy.notifyOperator({ keep: 'not-a-real-exception', userId: 'x' })
+    ok('a MISTYPED exception name fails closed rather than sending', sent === 0)
+    ok('only the client\'s two exceptions are keepable',
+        policy.KEPT_RECEIPTS.length === 2 &&
+            policy.KEPT_RECEIPTS.includes('order-in-tagging-queue') &&
+            policy.KEPT_RECEIPTS.includes('adjustment-request-decided'))
+    ok('all eight admin events the client listed are named',
+        Object.keys(policy.ADMIN_EVENT).length === 8)
+
+    const suppressed = STATION_FILES.reduce(
+        (n, [, s]) => n + (s.match(/notifyOperator\(\{/g) || []).length,
+        0,
+    )
+    ok(`every station receipt goes through the policy (${suppressed} sites)`,
+        suppressed >= 27)
+    const keptCount = STATION_FILES.reduce(
+        (n, [, s]) => n + (s.match(/keep: '/g) || []).length,
+        0,
+    )
+    ok(`exactly three call sites claim an exception (${keptCount})`, keptCount === 3)
+
+    // The three hold messages: affected station, never the actor.
+    const adminSrc2 = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+    ok('the three hold notices go to the affected station',
+        (adminSrc2.match(/notifyAffectedStation\(\{/g) || []).length === 3)
+    ok('  …and every one of them excludes the actor',
+        (adminSrc2.match(/notifyAffectedStation\(\{\s*role:[^}]*actorId: userId/g) || [])
+            .length === 3)
+    ok('  …so no "notify admin who performed the action" receipt survives',
+        !/notify admin who performed the action/.test(adminSrc2))
+    ok('the station-level hold releases do the same',
+        /notifyAffectedStation\(\{\s*role: ROLE\.INTAKE_AND_TAG,\s*actorId: userId/.test(
+            STATION_FILES[4][1],
+        ) &&
+            /notifyAffectedStation\(\{\s*role: ROLE\.SORT_AND_PRETREAT,\s*actorId: userId/.test(
+                STATION_FILES[0][1],
+            ))
+    ok('actor exclusion lives in the ONE shared notifyRoles, not a second copy',
+        /if \(exceptUserId\) query\._id = \{ \$ne: exceptUserId \}/.test(
+            fs.readFileSync(path.join(ROOT, 'util/notifyRoles.js'), 'utf8'),
+        ))
+
+    // Customer switch-offs.
+    ok('the customer is no longer told their order was "flagged"',
+        !/title: 'Order Flagged',\s*\n\s*body: `Your order/.test(STATION_FILES[4][1]))
+    ok('  …an admin is told instead',
+        /ADMIN_EVENT\.ORDER_FLAGGED/.test(STATION_FILES[4][1]))
+    const handoffSrc = fs.readFileSync(
+        path.join(ROOT, 'services/handoff.service.js'),
+        'utf8',
+    )
+    ok('the inter-station handoff notice is silenced for customers',
+        /customerSilent: true/.test(handoffSrc) &&
+            /!STAGE_ENTRY_NOTICE\[enteredStage\]\.customerSilent/.test(handoffSrc))
+    // Match the FIELD (trailing comma), not the mention of it in the comment
+    // above the table — the first version of this check counted both.
+    ok('  …but the garment-progress notices still reach them',
+        (handoffSrc.match(/customerSilent: true,/g) || []).length === 1)
+
+    // Admin additions actually wired up.
+    const adminWired = [
+        ['services/bookOrder.service.js', 'ORDER_CANCELLED'],
+        ['services/bookOrder.service.js', 'CANCELLATION_REQUESTED'],
+        ['services/sortAndPretreat.service.js', 'ITEM_FLAGGED'],
+        ['services/sortAndPretreat.service.js', 'ITEM_ON_HOLD'],
+        ['services/washAndDry.service.js', 'ITEM_ON_HOLD'],
+        ['services/qc.service.js', 'ITEM_ON_HOLD'],
+        ['services/wallet.service.js', 'PAYMENT_PROOF_UPLOADED'],
+    ]
+    for (const [file, event] of adminWired) {
+        ok(`admin is notified of ${event} in ${file.split('/').pop()}`,
+            new RegExp(`ADMIN_EVENT\\.${event}`).test(
+                fs.readFileSync(path.join(ROOT, file), 'utf8'),
+            ))
+    }
+    ok('a new complaint ALREADY reached an admin — not double-sent',
+        /notifyStaff\(\[ROLE\.CUSTOMER_EXPERIENCE, ROLE\.ADMIN\]/.test(
+            fs.readFileSync(path.join(ROOT, 'services/recovery.service.js'), 'utf8'),
+        ) &&
+            !/ADMIN_EVENT\.COMPLAINT_OPENED/.test(
+                fs.readFileSync(path.join(ROOT, 'services/recovery.service.js'), 'utf8'),
+            ))
+
+    // The switch-off must not touch the record of the work.
+    // The client's condition: "on-screen confirmation and order history must
+    // survive the switch-off." Every file that lost a notification must still
+    // record the work — an activity row or an audit line (walletAdjustment
+    // writes audit lines, not activity rows).
+    ok('the record of the work survives every switch-off',
+        STATION_FILES.every(
+            ([, s]) => /ActivityModel\.create\(/.test(s) || /createAuditLog\(/.test(s),
+        ))
+    ok('no notification title carries a leaked regex escape',
+        STATION_FILES.every(([, s]) => !/title: '[^']*\\[^']*'/.test(s)))
+
+    // ─── Client confirmation 2026-10-08 — held pieces must not move ─────────
+    console.log('\nclient answer 1 — the auto-handover conditions')
+    const { isItemOnHold, describeHeld } = require(path.join(ROOT, 'util/itemHold'))
+    const now2 = new Date()
+    ok('a piece held and not released reads as on hold',
+        isItemOnHold({ holdDetails: { heldAt: now2 } }) === true)
+    ok('a released hold does NOT read as on hold',
+        isItemOnHold({ holdDetails: { heldAt: now2, releasedAt: now2 } }) === false)
+    ok('a piece with no hold block is not on hold',
+        isItemOnHold({}) === false && isItemOnHold(null) === false)
+    ok('being FLAGGED is not the same as being HELD (brief 1.4 keeps them apart)',
+        isItemOnHold({ flaggedForReview: true }) === false)
+    ok('the refusal names the pieces that are blocking',
+        /TAG-9/.test(
+            describeHeld([{ tagId: 'TAG-9', holdDetails: { heldAt: now2 } }]) || '',
+        ))
+    const handoffSrc2 = fs.readFileSync(
+        path.join(ROOT, 'services/handoff.service.js'),
+        'utf8',
+    )
+    ok('the handoff refuses to push a held piece',
+        /const heldMessage = describeHeld\(targets\)/.test(handoffSrc2) &&
+            /if \(heldMessage\)/.test(handoffSrc2))
+    ok('  …and the hold gate runs BEFORE anything is written',
+        handoffSrc2.indexOf('const heldMessage') <
+            handoffSrc2.indexOf('const targetIds = targets.map'))
+    const sortSrc2 = fs.readFileSync(
+        path.join(ROOT, 'services/sortAndPretreat.service.js'),
+        'utf8',
+    )
+    ok('condition (a): a piece still needing pretreatment is not handed over',
+        /\['complete', 'not_required'\]\.includes\(i\.pretreatStatus\) &&\s*\n\s*!isItemOnHold\(i\)/.test(
+            sortSrc2,
+        ))
+    ok('condition (b): the automatic handover skips held pieces',
+        /!isItemOnHold\(i\)/.test(sortSrc2) && /!isItemOnHold\(freshItem\)/.test(sortSrc2))
+
+    // ─── Client decision 2026-10-08 — the 60-day "ordered again" window ─────
+    console.log('\nclient answer 2 — "ordered again" is capped at 60 days')
+    const recSrc = fs.readFileSync(
+        path.join(ROOT, 'services/recoveryReport.service.js'),
+        'utf8',
+    )
+    ok('the window is 60 days, named once',
+        /const ORDERED_AGAIN_WINDOW_DAYS = 60/.test(recSrc) &&
+            (recSrc.match(/ORDERED_AGAIN_WINDOW_DAYS/g) || []).length >= 3)
+    ok('the cap is applied to each customer\'s own recovery moment',
+        /placed - recovered <= windowMs/.test(recSrc))
+    ok('  …and the order query is no longer open-ended',
+        /createdAt: \{ \$gte: from, \$lte: latestRelevant \}/.test(recSrc))
+    ok('the window travels in the response so the card cannot misstate it',
+        /orderedAgainWindowDays: ORDERED_AGAIN_WINDOW_DAYS/.test(recSrc))
+
+    // ─── Client item #1 — registered-but-never-booked sequence ──────────────
+    console.log('\nitem #1 — registered-but-never-booked sequence')
+    const sw = require(path.join(ROOT, 'util/crmSendWindow'))
+    const {
+        CRM_WORKFLOW: WF,
+        CRM_WINDOWED_WORKFLOWS: WINDOWED,
+        CRM_MESSAGE_TYPE: MT,
+        CRM_INTERNAL_ACTIONS: ACTIONS,
+        CRM_SEND_SLOT: SLOT,
+    } = require(path.join(ROOT, 'util/constants'))
+
+    // The client's own worked example: Fri 15:00 registration, Mon 15:00 expiry.
+    const regAt = new Date('2026-10-09T15:00:00+01:00')
+    const offerEnd = new Date('2026-10-12T15:00:00+01:00')
+    const m1 = sw.nextSendSlot(new Date(regAt.getTime() + 24 * 3600 * 1000), SLOT.ANY)
+    const pairEx = sw.offerEndSchedule(offerEnd)
+    ok('msg1 lands in the first window after 24h (Sat evening)',
+        m1.getDay() === 6 && m1.getHours() === 18)
+    ok('msg2 lands the evening BEFORE the offer ends (Sun 18:00)',
+        pairEx.second.getDay() === 0 && pairEx.second.getHours() === 18)
+    ok('msg3 lands the morning the offer ENDS (Mon 06:00)',
+        pairEx.third.getDay() === 1 && pairEx.third.getHours() === 6)
+    // Their stated edge case.
+    const early = sw.offerEndSchedule(new Date('2026-10-12T07:00:00+01:00'))
+    ok('an offer ending before 08:00 shifts BOTH messages back a slot',
+        early.shifted === true &&
+            early.third.getDay() === 0 && early.third.getHours() === 18 &&
+            early.second.getDay() === 0 && early.second.getHours() === 6)
+    ok('nothing may send outside the two windows',
+        !sw.isInSendWindow(new Date('2026-10-12T12:00:00+01:00')) &&
+            !sw.isInSendWindow(new Date('2026-10-12T21:00:00+01:00')) &&
+            sw.isInSendWindow(new Date('2026-10-12T06:30:00+01:00')) &&
+            sw.isInSendWindow(new Date('2026-10-12T19:30:00+01:00')))
+    ok('a message due mid-afternoon waits for the EVENING window, not tomorrow',
+        sw.nextSendSlot(new Date('2026-10-12T14:00:00+01:00'), SLOT.ANY).getHours() === 18)
+    ok('a nonsense window setting cannot silence every message forever',
+        sw.normalizeWindows({ morningStartHour: 9, morningEndHour: 9 })
+            .morningEndHour === 8)
+    ok('the four workflows the client named are windowed; order messages are NOT',
+        WINDOWED.length === 4 &&
+            WINDOWED.includes(WF.REGISTERED_NOT_BOOKED) &&
+            WINDOWED.includes(WF.LEAD) &&
+            WINDOWED.includes(WF.REACTIVATION) &&
+            WINDOWED.includes(WF.BROADCAST) &&
+            !WINDOWED.includes(WF.POST_DELIVERY))
+    ok('the day-7 prospect move is an internal action, so no template is rendered',
+        ACTIONS.includes(MT.REG_NOT_BOOKED_MARK_PROSPECT))
+
+    const CrmSettingMod = require(path.join(ROOT, 'models/crmSetting.model'))
+    const rnbSchedule = CrmSettingMod.DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE
+    ok('the default schedule is the four steps the client specified',
+        rnbSchedule.length === 4)
+    ok('  …with messages 2 and 3 anchored to the OFFER end, not a fixed delay',
+        rnbSchedule.filter((s) => s.anchor === 'offer-end').length === 2)
+    ok('  …and step 1 at +24h, the prospect move at day 7',
+        rnbSchedule[0].delayMinutes === 1440 && rnbSchedule[3].delayMinutes === 10080)
+    const rnbTexts = [1, 2, 3].map(
+        (n) => CrmSettingMod.DEFAULT_TEMPLATES[`reg-not-booked-${n}`] || '',
+    )
+    ok("the three texts are seeded and use the system's firstName placeholder",
+        rnbTexts.every((t) => t.includes('{{firstName}}')))
+    ok('  …and none mentions "pickup window" (they ship before window booking)',
+        rnbTexts.every((t) => !/pickup window/i.test(t)))
+    ok('  …message 3 keeps the ₦8,000 line',
+        /from ₦8,000/.test(rnbTexts[2]))
+
+    const crmSrc2 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
+    ok('booking cancels the new sequence as well as the lead one',
+        /cancelPendingMessages\(profile\._id, \[\s*CRM_WORKFLOW\.LEAD,\s*CRM_WORKFLOW\.REGISTERED_NOT_BOOKED,?\s*\]\)/.test(
+            crmSrc2,
+        ))
+    ok('the queue itself is snapped to a window, so nextFollowUpAt is honest',
+        /CRM_WINDOWED_WORKFLOWS\.includes\(workflow\)/.test(crmSrc2) &&
+            /nextSendSlot\(e\.dueAt/.test(crmSrc2))
+    ok('the dispatcher ALSO holds back anything queued before this shipped',
+        /if \(!isInSendWindow\(new Date\(\), windows\)\)/.test(crmSrc2))
+
+    const setupSrc = fs.readFileSync(path.join(ROOT, 'config/setup.js'), 'utf8')
+    ok('the new settings are MIGRATED onto an existing doc, not left to defaults',
+        /registeredNotBookedSchedule =\s*\n?\s*CrmSettingModel\.DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE/.test(
+            setupSrc,
+        ) && /crmSetting\.sendWindows = \{/.test(setupSrc))
+    ok('app init now AWAITS its migrations instead of firing and forgetting',
+        /for \(const \[name, step\] of steps\)/.test(setupSrc) &&
+            /await step\(\)/.test(setupSrc))
 
     console.log(`\n${pass} passed, ${fail} failed\n`)
     process.exit(fail ? 1 : 0)

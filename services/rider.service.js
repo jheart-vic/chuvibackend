@@ -19,6 +19,7 @@ const { normalizeOrderAddresses } = require('../util/orderView')
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
+const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const {
     buildStageUpdate,
     normalizePhone,
@@ -203,7 +204,7 @@ class RiderService extends BaseService {
                     type: NOTIFICATION_TYPE.ORDER_DELIVERED,
                 })
             }
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Delivery Completed',
                 body: `Delivery for order ${order.oscNumber} has been marked as delivered.`,
@@ -499,7 +500,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            await createNotification({
+            await notifyOperator({
                 userId: userId,
                 title: 'Pickup Started',
                 body: `Pickup for order ${order.oscNumber} has been started.`,
@@ -604,7 +605,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            await createNotification({
+            await notifyOperator({
                 userId: userId,
                 title: 'Pickup Completed',
                 body: `Pickup for order ${order.oscNumber} has been marked as picked up.`,
@@ -776,7 +777,7 @@ class RiderService extends BaseService {
                 },
             )
 
-            await createNotification({
+            await notifyOperator({
                 userId: userId,
                 title: 'Delivery Started',
                 body: `Delivery for order ${order.oscNumber} has been started.`,

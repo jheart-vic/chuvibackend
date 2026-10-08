@@ -232,7 +232,18 @@ router.post(ROUTE_PAY_WITH_WALLET, [auth], (req, res) => {
  *         description: Filter transactions by date range
  *     responses:
  *       200:
- *         description: List of wallet transactions
+ *         description: >
+ *           The customer's own money history. **NOTE THE ENVELOPE: the rows are at `data.transactions`,
+ *           NOT at `data.message`.** This endpoint is a deliberate exception to the usual shape, and
+ *           this block documented `data.message.data[]` until 2026-10-08, when a harness run against
+ *           the real endpoint found it. It also documented `userId`, `subscription`, `channel`,
+ *           `paidAt` and `metadata`, none of which the pipeline returns.
+ *
+ *           Each row is a UNION of two collections, so `source` says which one it came from:
+ *           `payment` rows are real payments (card, transfer, counter tender); `wallet` rows are
+ *           movements with no Payment twin (manual adjustments, reversals, credit expiry, credit
+ *           spends). Amounts are always POSITIVE — `alertType` carries the direction, taken from the
+ *           SIGN of the stored amount and never from the type.
  *         content:
  *           application/json:
  *             schema:
@@ -242,81 +253,44 @@ router.post(ROUTE_PAY_WITH_WALLET, [auth], (req, res) => {
  *                 data:
  *                   type: object
  *                   properties:
- *                     message:
+ *                     transactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id: { type: string, example: 64a8f4b6c3d3f3b2e7a1f2d1 }
+ *                           amount: { type: number, example: 2100, description: Always positive; direction is in alertType }
+ *                           alertType: { type: string, enum: [credit, debit], example: debit }
+ *                           reference: { type: string, example: REF-1760000000000 }
+ *                           status: { type: string, enum: [pending, success, failed], example: success }
+ *                           type: { type: string, example: order, description: "Payment type, or the WalletTransaction type on wallet rows (manual-adjustment, reversal, expiry)" }
+ *                           description: { type: string, example: "Counter order OSC-20261008-114233" }
+ *                           source: { type: string, enum: [payment, wallet], example: payment }
+ *                           order: { type: string, nullable: true, example: 64a8f4b6c3d3f3b2e7a1f2a0, description: The order this line was for, if any }
+ *                           oscNumber: { type: string, nullable: true, example: OSC-20261008-114233, description: "That order's readable number. Added 2026-10-08 — an id alone is not a record a customer can read" }
+ *                           paymentMethod: { type: string, nullable: true, enum: [paystack, bank-transfer, wallet, cash, pos], example: wallet }
+ *                           proofOfPayment: { type: string, nullable: true, description: payment rows only }
+ *                           reason: { type: string, nullable: true, description: "wallet rows only — why the adjustment was made" }
+ *                           balanceAfter: { type: number, nullable: true, example: 5000, description: wallet rows only }
+ *                           creditType: { type: string, nullable: true, enum: [laundry, referral, recovery, promotional], description: "set when the line is reward credit rather than cash" }
+ *                           createdAt: { type: string, format: date-time, example: 2026-10-08T12:34:56.789Z }
+ *                     pagination:
  *                       type: object
  *                       properties:
- *                         data:
- *                           type: array
- *                           items:
- *                             type: object
- *                             properties:
- *                               _id:
- *                                 type: string
- *                                 example: 64a8f4b6c3d3f3b2e7a1f2d1
- *                               userId:
- *                                 type: string
- *                                 example: 64a8f4b6c3d3f3b2e7a1f2c0
- *                               amount:
- *                                 type: number
- *                                 example: 500
- *                               reference:
- *                                 type: string
- *                                 example: TXN123456
- *                               type:
- *                                 type: string
- *                                 enum: [order, subscription, wallet-top-up]
- *                                 example: wallet-top-up
- *                               subscription:
- *                                 type: string
- *                                 example: 64a8f4b6c3d3f3b2e7a1f2b0
- *                               order:
- *                                 type: string
- *                                 example: 64a8f4b6c3d3f3b2e7a1f2a0
- *                               status:
- *                                 type: string
- *                                 enum: [pending, success, failed]
- *                                 example: success
- *                               channel:
- *                                 type: string
- *                                 example: card
- *                               alertType:
- *                                 type: string
- *                                 enum: [credit, debit]
- *                                 example: credit
- *                               paidAt:
- *                                 type: string
- *                                 format: date-time
- *                                 example: 2026-01-13T12:34:56.789Z
- *                               metadata:
- *                                 type: object
- *                                 additionalProperties: true
- *                               createdAt:
- *                                 type: string
- *                                 format: date-time
- *                                 example: 2026-01-13T12:34:56.789Z
- *                               updatedAt:
- *                                 type: string
- *                                 format: date-time
- *                                 example: 2026-01-13T12:34:56.789Z
- *                         pagination:
- *                           type: object
- *                           properties:
- *                             total:
- *                               type: integer
- *                               example: 100
- *                             page:
- *                               type: integer
- *                               example: 1
- *                             limit:
- *                               type: integer
- *                               example: 10
- *                             pages:
- *                               type: integer
- *                               example: 10
+ *                         total: { type: integer, example: 100 }
+ *                         page: { type: integer, example: 1 }
+ *                         limit: { type: integer, example: 10 }
+ *                         pages: { type: integer, example: 10 }
  *       400:
- *         description: Validation error
+ *         description: No wallet exists for this user
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.get(ROUTE_FETCH_USER_TRANSACTIONS, [auth], (req, res) => {
   const walletController = new WalletController();

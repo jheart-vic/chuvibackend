@@ -10,6 +10,131 @@
 > `origin/main..feature/fix` is EMPTY.** Any older note here claiming commits are unpushed is
 > stale.
 
+### ITEM #1 CRM SEQUENCE BUILT (2026-10-08) — briefCheck **200/200**, regNotBooked **33/33**
+Client asked for it LIVE NOW, before window booking: their reps start registering people tomorrow.
+NEW `CRM_WORKFLOW.REGISTERED_NOT_BOOKED`, 4 message types, admin-editable schedule, the three texts
+seeded verbatim (revised copy, no "pickup window"), NEW pure `util/crmSendWindow.js`.
+- **Global send windows 06:00–08:00 / 18:00–20:00** (four settings) for lead ·
+  registered-not-booked · reactivation · broadcast. **POST-DELIVERY + ORDER-READY EXEMPT** —
+  holding "your order is ready" until 6pm would be a real harm.
+- **msg2/msg3 anchored to the OFFER's `expiresAt`, never a fixed delay**, so 3 → 7 days moves them.
+  `handleUserRegistered` now AWAITS `OfferService.handleTrigger` for the linkage; still non-fatal.
+- Their edge case built: offer ending before 08:00 → msg3 the evening before, msg2 the morning
+  before that. Snapped at schedule time (honest `nextFollowUpAt`) AND guarded in the dispatcher.
+- **TWO REAL BUGS FOUND DOING IT:**
+  (1) **`setupApp()` was `async` but awaited NOTHING** — nine seeds/migrations fired in parallel and
+  "App init successful" printed before any completed, so a migration could still be running when
+  traffic arrived and a failure inside one was an invisible unhandled rejection. **Now sequential and
+  awaited, each wrapped so one failure cannot stop the others or kill a live process.** This is what
+  made the harness flap between runs.
+  (2) The new settings needed an explicit **migration** onto the existing CrmSetting doc — defaults
+  apply on CREATION only, so without it the sequence works on a fresh DB and **silently schedules
+  nothing in production**. The harness strips the fields and re-runs setup to prove the backfill.
+- ⚠️ **Their dependency:** msg3's "free only on orders from ₦8,000" needs a BASELINE free-logistics
+  offer with an ₦8,000 minimum switched on. They said they will do it before the sequence starts.
+
+### CLIENT REPLIES #5 AND #6 (2026-10-08) — 4 BUILT, 5 RULINGS QUEUED, 2 BLOCKERS CLEARED
+Recorded in memory as `chuvi-client-rulings-oct2026`; full design on the board in feature.md.
+**BUILT:** counter tender MANDATORY (`paymentMethod: 'string|required'`, no `|| CASH` fallback; cash
+is a UI pre-select exported as `DEFAULT_COUNTER_METHOD` — a server fallback is exactly what
+"mandatory" rules out). ⚠️ **BREAKING for any app build not sending it.** counterPayment **51/51**.
+Reward credit stays customer opt-in (no change). **The customer is now told when an item goes on
+hold** — that body was written for the customer all along and had only ever reached the operator.
+**QUEUED, and #1 is the big one:**
+1. **Holds become per-STATION in scope, reversing shipped behaviour.** Intake + payment holds park
+   the whole order; S2/S3/S4/S5 holds park only the PIECE, siblings keep moving, and the order
+   simply cannot be PACKED or DISPATCHED until every held piece is released. Holds Management must
+   still list the order **with a count of held pieces**. The trap: removing the order-level
+   `buildStageUpdate(HOLD, …)` makes item holds VANISH from Holds Management, because both
+   `holdSla.js` filters are scoped `'stage.status': HOLD`. Design on the board; **`$elemMatch` is
+   mandatory in the item branch because a RELEASED item keeps its `heldAt`.**
+2. Per-METHOD money reporting (the tenders are already stored; the aggregations split on
+   `billingType` alone).
+3. **First Experience ALWAYS wins on a first order**, overriding the bill-value tie-break.
+4. Merged CRM cards are **ARCHIVED, not deleted** — their reason is sound: numbers get recycled here.
+5. The merged card's stage is **recomputed from the combined orders**, not "keep the furthest".
+**BLOCKERS CLEARED:** window booking D1–D6 answered (they chose to build **Quick Booking ONCE with
+real windows**, so N1 + windows are now one piece), and the three CRM texts arrived — saved to
+`context/CRM-REGISTERED-NOT-BOOKED-TEXTS.md` so they cannot be lost again.
+**NEW GLOBAL CRM RULE:** every follow-up/offer message sends only 06:00–08:00 or 18:00–20:00 (both
+settings), waiting for the next window if due outside; order/payment messages are exempt. That
+changes the dispatcher, not just the new sequence.
+**STILL OWED:** audit item 8 is ambiguous ("add the it to the notifications") — do NOT guess, a wrong
+read either spams customers or spams staff on every handoff; and D7/D8 need restating for them.
+
+### CLIENT ANSWERS #4 BUILT + **ALL 19 HARNESSES RUN GREEN AGAINST testingdb** (2026-10-08)
+briefCheck **178/178**. The user supplied the testingdb URI, so **every gate has now actually run**,
+including `counterPaymentStaging` which had never been executed.
+**TALLY:** counterPayment **49/49 (first ever run)** · stationFlow **92/92** (new scenario 15) ·
+recoveryReport **52/52** · walletLimit 63 · handoff 54 · dispatch 46 · dispatchTag 46 ·
+staffStatus 38 · planCreate 39 · offerAdmin 37 · dashboardDecisions 36 · holds 34 · tierPricing 33 ·
+templateStaging 27 · freeLogistics 23 · subLogistics 20 · phase12 14 · bot 11/11.
+Swagger 62 schemas / 296 paths / 0 wrong envelopes.
+
+- **ANSWER 1(a) CONFIRMED TRUE, no change needed.** `itemCompleteAt` already requires
+  `pretreatStatus` to be `complete` or `not_required`, so a piece still needing pretreatment was
+  never in `readyIds`.
+- **ANSWER 1(b) WAS FALSE — A REAL BUG, FIXED.** They asked us to confirm "pieces on hold do not
+  move until the hold is released". They did not. **A hold writes ONLY `flaggedForReview` +
+  `holdDetails` and never touches the station status**, and the handoff's only completion gate was
+  `itemCompleteAt`, which reads those statuses. So a piece finished at its station and THEN held
+  satisfied every gate and was pushed onward with its hold still open — **at every station, not
+  just S2.** NEW `util/itemHold.js` (`isItemOnHold` = `heldAt && !releasedAt`, which matches both
+  hold paths — station `sendToHold` and a handoff rejection — and all five release paths) + a gate
+  in `HandoffService.push` BEFORE any write. Also excluded held pieces from the two auto-handover
+  paths in sortAndPretreat. **Deliberately NOT part of the test: `flaggedForReview` — a flag is not
+  a hold (brief 1.4 keeps them apart) and must not stop work.**
+- **DISCOVERED WHILE TESTING IT, and it is a product question for the client: holding ONE piece
+  flips the whole ORDER's `stage.status` to `hold`, and the station guard then refuses every further
+  action on that order — so the four siblings stop too.** Stronger than they asked for, but it means
+  one held piece parks its entire order. **Left alone on purpose** (order-level hold is what drives
+  Holds Management) and asserted as the current behaviour in scenario 15 so a future change is
+  visible. ASK THEM.
+- **ANSWER 2 BUILT: "ordered again after recovery" capped at 60 days** (`ORDERED_AGAIN_WINDOW_DAYS`,
+  named once, travels in the response as `orderedAgainWindowDays` so the card cannot misstate it).
+  The order query's upper bound widened to `latestRelevant` — the ORDER may fall outside the report
+  month; it is the RECOVERY that must be in it. Harness proves both sides of the boundary: the SAME
+  order at 61 days is excluded and at 59 days is counted.
+- **TWO REAL BUGS THE FIRST counterPayment RUN FOUND — both in `fetch-user-transactions`:**
+  (1) **the swagger documented `data.message.data[]` for an endpoint that returns
+  `data.transactions[]`** (a deliberate envelope exception, commented as such in the code) and also
+  promised `userId`/`subscription`/`channel`/`paidAt`/`metadata`, none of which the pipeline
+  returns. Rewritten to reality. This is the exact class CLAUDE.md warns about — the FE would have
+  found it with a network capture. (2) **neither union branch projected the ORDER**, so a customer
+  saw amounts with no way to tell what they paid for — only half of "the money has a record". Added
+  `order` to both branches plus a `$lookup` for `oscNumber`, because a raw ObjectId is not a record
+  a customer can read.
+- **My own harness bugs, for the record:** the ledger invariant subtracted reward credit, assuming
+  only cash is ledgered — wrong, `applyCreditsToAmount` writes its own debit line per credit spent
+  (correctly; the ledger must show credit being used or the balance won't reconcile). And a station
+  **may not assign a hold to itself** (S2's `assignTo` is admin/intake-and-tag only), so the release
+  has to come from the station it was assigned to.
+
+### ITEM #10 NOTIFICATIONS BUILT (2026-10-08) — briefCheck **165/165**
+NEW `util/notifyPolicy.js`; `notifyRoles` gained `exceptUserId` so "affected station, never the
+actor" has ONE implementation. 27 operator receipts suppressed through `notifyOperator` (kept as a
+wrapper, not 27 deletions, so the sites still read as themselves and there is one switch);
+3 exceptions named; 5 `notifyAffectedStation` all passing `actorId`; 7 new admin notifications.
+- **`keep` must be the exception's NAME, not `true` — a mistyped name sends NOTHING** (fails
+  closed). Otherwise a new call site copying a flag it didn't understand would silently re-enable.
+- **"New complaint opened" ALREADY notified admin** (`recovery.service.js:150`) — briefCheck asserts
+  we did NOT add a duplicate.
+- **"Payment approved/rejected by INTAKE" cannot be built: the event does not exist yet.** Only
+  ADMIN approves payments today; Intake approval is part of N1's payment hold. Told the client.
+- **THE FINDING: those station notifications were WRITTEN FOR THE CUSTOMER AND SENT TO THE
+  OPERATOR.** "An item on *your* order was placed on hold… we are working to resolve this" went to
+  `req.user.id` — the staff member. So the customer was never told an item was held, and the
+  operator read messages addressed to them as if they were the customer. Suppressing the operator
+  copy is right; whether the CUSTOMER should now be told is a NEW question for the client.
+- **ONE INTERPRETATION WE OWE THEM:** no notification is titled "handoff confirmed between
+  stations" (`handoff.service.js:470` is an Activity row). The customer message on a handoff confirm
+  is `STAGE_ENTRY_NOTICE`, so we silenced only the entry about an internal station move
+  (`customerSilent: true`) and kept the garment-progress ones. GET CONFIRMED.
+- **MY OWN BUG the harness caught:** the bulk-rewrite script wrote its regex-escaped title into the
+  replacement → `title: 'Item\(s\) QC Passed'`. JS drops unknown escapes, so the VALUE was right
+  and no test would ever have failed — it would just have looked wrong forever. briefCheck now
+  rejects a backslash in any notification title.
+
 ### CLIENT REPLY #3 (2026-10-08) — 1(b) + notifications AGREED + A NEW FEATURE (window booking)
 briefCheck now **140/140**.
 - **1(b) BUILT, and it was a BUG, not a policy change — our answer to the client was WRONG.**

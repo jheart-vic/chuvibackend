@@ -13,6 +13,12 @@ const {
     RECOVERY_COMPENSATION_TYPE,
 } = require('../util/constants')
 
+// How long after a recovery a repeat order still counts as "they came back".
+// CLIENT DECISION 2026-10-08: 60 days. We shipped it open-ended and flagged the
+// assumption; they closed it. Keeping it as a named constant rather than an
+// inline 60 so the number appears once and travels in the response.
+const ORDERED_AGAIN_WINDOW_DAYS = 60
+
 // §2 N2 (client brief 6 Oct 2026) — "Recovery, Complaints and Feedback"
 // dashboard. One admin screen beside the CRM Dashboard, built like the Monthly
 // Lead Report: a month picker and a set of cards.
@@ -272,9 +278,29 @@ class RecoveryReportService extends BaseService {
 
         let orderedAgain = 0
         if (recoveredAt.size) {
+            // CLIENT DECISION 2026-10-08: count only orders placed WITHIN 60
+            // DAYS of the recovery. Everything else in the definition stands —
+            // real orders only, not cancelled, never a recovery order itself,
+            // counted as distinct customers.
+            //
+            // The window was previously open-ended, which made the figure
+            // measure "did they ever come back" and therefore creep upward
+            // forever: a customer compensated in March and returning in
+            // September was still counted in March's number, so a past month's
+            // figure never settled. With a closing window each month's result
+            // is final 60 days after it ends, and months are comparable.
+            //
+            // The upper bound of the ORDER query widens accordingly — the order
+            // can fall outside the report month, it is the RECOVERY that must be
+            // in the month.
+            const windowMs = ORDERED_AGAIN_WINDOW_DAYS * 24 * 60 * 60 * 1000
+            const latestRelevant = new Date(
+                Math.max(...[...recoveredAt.values()].map((d) => new Date(d).getTime())) +
+                    windowMs,
+            )
             const laterOrders = await BookOrderModel.find({
                 userId: { $in: [...recoveredAt.keys()] },
-                createdAt: { $gte: from },
+                createdAt: { $gte: from, $lte: latestRelevant },
                 'stage.status': { $ne: ORDER_STATUS.CANCELLED },
                 isRecoveryOrder: { $ne: true },
             })
@@ -283,7 +309,13 @@ class RecoveryReportService extends BaseService {
             const returned = new Set()
             for (const o of laterOrders) {
                 const at = recoveredAt.get(String(o.userId))
-                if (at && o.createdAt > at) returned.add(String(o.userId))
+                if (!at) continue
+                const placed = new Date(o.createdAt).getTime()
+                const recovered = new Date(at).getTime()
+                // Strictly after the recovery, and no later than the window.
+                if (placed > recovered && placed - recovered <= windowMs) {
+                    returned.add(String(o.userId))
+                }
             }
             orderedAgain = returned.size
         }
@@ -305,6 +337,9 @@ class RecoveryReportService extends BaseService {
             },
             customersRecovered: recoveredAt.size,
             orderedAgainAfterRecovery: orderedAgain,
+            // Shipped with the figure so the card can say what it measured and
+            // the screen can never describe a different window from the code.
+            orderedAgainWindowDays: ORDERED_AGAIN_WINDOW_DAYS,
         }
     }
 

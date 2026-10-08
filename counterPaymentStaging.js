@@ -152,10 +152,17 @@ async function main() {
         const rowsFor = (orderId) => PaymentModel.find({ order: orderId }).lean()
         const ordersNow = () => BookOrderModel.countDocuments({ intakeStaffId: operator._id })
 
-        // ── 1 ── nothing sent → cash, exactly as before ─────────────────────
-        console.log('\n[1] No paymentMethod sent → cash, and the wallet is untouched')
+        // ── 1 ── the tender is MANDATORY (client decision 2026-10-08) ───────
+        console.log('\n[1] paymentMethod is REQUIRED; cash is recorded properly')
         await setBalance(0)
-        let { r, order } = await place()
+        let { r } = await place({ paymentMethod: undefined })
+        ok(r.success === false, 'creating a counter order without a tender is REFUSED')
+        ok(
+            /paymentMethod/i.test(JSON.stringify(r.data?.error || '')),
+            `and the refusal names the missing field (${JSON.stringify(r.data?.error)})`,
+        )
+        let order
+        ;({ r, order } = await place({ paymentMethod: 'cash' }))
         ok(r.success === true, `order created (${r.success ? 'ok' : r.data?.error})`)
         ok(order?.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS, 'it is marked paid')
         ok(order?.paymentMethod === PAYMENT_METHOD.CASH,
@@ -296,22 +303,21 @@ async function main() {
         const lines = await WalletTransactionModel.find({
             userId: customer._id,
         }).lean()
-        const ledgerSum = lines.reduce(
-            (s, l) => s + (l.type === 'debit' ? -l.amount : l.amount),
-            0,
-        )
-        // Opening balances were set directly for the test, so compare the DEBITS
-        // against what the wallet legs actually took rather than the raw sum.
+        const debited = lines
+            .filter((l) => l.type === 'debit')
+            .reduce((s, l) => s + l.amount, 0)
         const walletTaken = allRows
             .filter((p) => p.paymentMethod === PAYMENT_METHOD.WALLET)
             .reduce((s, p) => s + p.amount, 0)
-        const creditPart = allOrders.reduce(
-            (s, o) => s + (o.counterPayment?.creditApplied || 0),
-            0,
-        )
+        // Every naira the wallet tendered has a debit ledger line behind it —
+        // whether it came out of the cash balance or out of reward credit.
+        // (The first version of this check subtracted the credit, assuming only
+        // cash is ledgered. It is not: applyCreditsToAmount writes its own debit
+        // line per credit spent, which is correct — the ledger must show the
+        // credit being used, or the balance would not reconcile.)
         ok(
-            -ledgerSum === walletTaken - creditPart,
-            `the debit lines equal the cash the wallet legs took (${naira(-ledgerSum)} vs ${naira(walletTaken - creditPart)}) — credit is not a cash debit`,
+            debited === walletTaken,
+            `every naira the wallet paid has a debit line (${naira(debited)} vs ${naira(walletTaken)})`,
         )
 
         // ── 9 ── the customer can see it ────────────────────────────────────
@@ -320,10 +326,27 @@ async function main() {
             user: { id: String(customer._id) },
             query: { page: 1, limit: 50 },
         })
-        const list = txns?.data?.message?.data || []
+        // NOTE THE SHAPE: this endpoint returns `data.transactions`, NOT the
+        // usual `data.message`. The first draft of this check read the
+        // documented shape and got 0 rows — which is how we found that the
+        // swagger had been describing `data.message.data[]` for an endpoint that
+        // has always returned `data.transactions[]`.
+        const list = txns?.data?.transactions || []
+        ok(list.length > 0, `the customer's list is not empty (${list.length} rows)`)
+        const mine = list.filter((t) =>
+            created.orderIds.some((id) => String(id) === String(t.order)),
+        )
         ok(
-            list.some((t) => created.orderIds.some((id) => String(id) === String(t.order))),
-            `a counter order's payment appears in their list (${list.length} rows)`,
+            mine.length > 0,
+            `a counter order's payment appears in their list (${mine.length} of ${list.length} rows)`,
+        )
+        ok(
+            mine.every((t) => !!t.oscNumber),
+            'each row names the ORDER it was for, not just an amount',
+        )
+        ok(
+            list.every((t) => t.source === 'payment' || t.source === 'wallet'),
+            'every row says which collection it came from',
         )
 
         // ── 10 ── an unpaid order does not start the production clock ───────

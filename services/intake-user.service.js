@@ -32,6 +32,7 @@ const {
 } = require('../util/counterPayment')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
+const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const {
     generateOscNumber,
     buildStageUpdate,
@@ -154,10 +155,15 @@ class IntakeUserService extends BaseService {
                 // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
                 // piece is priced at the order's tier, exactly as before.
                 'items.*.serviceTier': 'string|in:classic,premium,vip',
-                // Counter tender (client item #8). OPTIONAL so every existing
-                // caller keeps working: no value means cash, which is what a
-                // counter order has always implicitly been.
-                paymentMethod: 'string',
+                // Counter tender (client item #8). REQUIRED — client decision
+                // 2026-10-08: "make it mandatory". Staff must state how the
+                // money arrived; a counter order can no longer be created
+                // without saying. **CASH IS THE PRE-SELECTED CHOICE ON THE
+                // SCREEN**, which is the other half of their answer — it is a
+                // UI default, not a server fallback, because a server fallback
+                // is exactly what "mandatory" rules out.
+                // ⚠️ BREAKING for any app build that does not send it yet.
+                paymentMethod: 'string|required',
                 secondaryPaymentMethod: 'string',
             }
 
@@ -262,7 +268,10 @@ class IntakeUserService extends BaseService {
             // ("the wallet covers ₦3,500 of ₦5,000 — how is the rest paid?")
             // instead of an order sitting unpaid. `useCredit` is opt-in: reward
             // credit is the customer's, and staff must not spend it silently.
-            const tenderMethod = post.paymentMethod || PAYMENT_METHOD.CASH
+            // No `|| CASH` fallback: the field is required above, so an absent
+            // value is now a refusal rather than a silent assumption about
+            // where the money went.
+            const tenderMethod = post.paymentMethod
             const secondaryTender = post.secondaryPaymentMethod || null
             const useCredit =
                 post.useCredit === true || post.useCredit === 'true'
@@ -635,16 +644,20 @@ class IntakeUserService extends BaseService {
             })
             await createAuditLog({userId: getObjectId(userId), action: `Flagged order ${order.oscNumber} with message: ${message}`, category: 'order', orderId: order._id})
 
-            // ✅ Fix 2 — only notify customer if order has a linked userId
-            if (order.userId) {
-                await createNotification({
-                    userId: order.userId,
-                    title: 'Order Flagged',
-                    body: `Your order ${order.oscNumber} has been flagged by our team.`,
-                    subBody: `Reason: ${message}`,
-                    type: NOTIFICATION_TYPE.ORDER_FLAGGED,
-                })
-            }
+            // CLIENT SECTION 10: "switch off for customers — Order flagged."
+            // A flag is an internal note about a problem we are still looking
+            // into; telling the customer their order is "flagged" alarms them
+            // without giving them anything to do. The order history keeps it.
+            // Replaced by an ADMIN notification, which they asked for instead.
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ORDER_FLAGGED,
+                title: 'Order Flagged',
+                body: `Order ${order.oscNumber} was flagged by ${user?.fullName || 'a staff member'}. Reason: ${message}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_FLAGGED,
+                recordId: order._id,
+            })
+
             return BaseService.sendSuccessResponse({
                 message: 'Order flagged successfully',
             })
@@ -718,7 +731,10 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            // KEPT (client section 10, named exception): this is not a receipt —
+            // it tells the station that work has ARRIVED and needs tagging.
+            await notifyOperator({
+                keep: 'order-in-tagging-queue',
                 userId,
                 title: 'Order in Tagging Queue',
                 body: `Order ${order.oscNumber} is now in the tagging queue.`,
@@ -817,7 +833,7 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Order Item Tagged',
                 body: `An item with ${tagId} order ${order.oscNumber} has been tagged`,
@@ -889,7 +905,7 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Order Item Tag Undone',
                 body: `An item with ${itemId} order ${order.oscNumber} has been undone from tagging`,
@@ -1835,7 +1851,7 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'All Tags Generated',
                 body: `All tags have been auto-generated for order ${order.oscNumber}.`,
@@ -1899,7 +1915,7 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Tagging Completed',
                 body: `All items on order ${order.oscNumber} have been confirmed tagged.`,
@@ -2338,8 +2354,12 @@ class IntakeUserService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
-                userId,
+            // CLIENT SECTION 10: a released hold means a job the station could
+            // not touch is live again, so the STATION is told — but not the
+            // person who released it, who already knows.
+            await notifyAffectedStation({
+                role: ROLE.INTAKE_AND_TAG,
+                actorId: userId,
                 title: 'Order Released from Hold',
                 body: `Order ${order.oscNumber} has been released from hold and returned to tagging queue.`,
                 subBody: `Please proceed to tag the items in the order.`,
