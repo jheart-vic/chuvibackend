@@ -23,6 +23,8 @@ const {
     ROUTE_ADMIN_STAFF,
     ROUTE_ADMIN_STAFF_STATUS,
     ROUTE_ADMIN_HOLD_TYPES,
+    ROUTE_ADMIN_PROFILE_DUPLICATES,
+    ROUTE_ADMIN_PROFILE_DUPLICATES_MERGE,
     ROUTE_ADMIN_HOLD_TYPE_BY_ID,
     ROUTE_SEARCH_ORDERS,
     ROUTE_SEARCH_ORDER_DETAIL,
@@ -2396,6 +2398,123 @@ router.get(ROUTE_ADMIN_HOLD_TYPES, [adminAuth], (req, res) => {
 router.post(ROUTE_ADMIN_HOLD_TYPES, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.createHoldType(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/profile-duplicates:
+ *   get:
+ *     summary: Customers split across two CRM cards by the old phone normaliser (admin)
+ *     description: >
+ *       Client item #9, step 1 — the REPORT. Writes nothing. Before brief 4.6 `normalizePhone` only
+ *       stripped a leading `234`, so a bare 10-digit number (`8031234567`) never matched the same
+ *       person stored as `08031234567`; the CRM links identity by the normalised phone, so one human
+ *       became two cards — usually a WhatsApp/walk-in lead plus their real account. Each group names
+ *       the OLDER card that would survive, exactly what the merged card would look like, what carries
+ *       over (orders, wallet balance, scheduled + logged messages) and any `blockers` that stop it.
+ *       A referral code is not stored on the card but on the USER account, so "keep the referral code
+ *       from the account card" is implemented as the surviving card ADOPTING the account's `userId` —
+ *       which brings the code, the wallet and the order history with it.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Every phone number that maps to more than one CRM card
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/ProfileDuplicateReport' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_PROFILE_DUPLICATES, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.listProfileDuplicates(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/profile-duplicates/merge:
+ *   post:
+ *     summary: Merge one phone number's duplicate CRM cards into the older card (admin)
+ *     description: >
+ *       Client item #9, steps 2-5. One phone number per call, deliberately — this decides which
+ *       history survives. The OLDER card survives; order counts, spend and tags are combined, the
+ *       first/last order dates are widened to cover both, the furthest stage is kept, every scheduled
+ *       and logged message is re-pointed at the survivor, and the account (with its referral code and
+ *       wallet) moves onto it. The absorbed cards are then DELETED — a second card for the same human
+ *       is the bug being fixed — and the audit row records exactly what was removed.
+ *       **It REFUSES before writing anything** when a pair cannot be combined; today the one blocker
+ *       is two cards linked to DIFFERENT user accounts, which is two logins and two wallets and so a
+ *       user merge rather than a card merge. Run the GET report first.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 example: "08031234567"
+ *                 description: Any format — it is normalised. Send this OR keepId.
+ *               keepId:
+ *                 type: string
+ *                 example: 665f1c2ab9e77a0012d4e300
+ *                 description: A card id from the report; its phone number's whole group is merged.
+ *               note:
+ *                 type: string
+ *                 example: "Confirmed with the customer on the phone"
+ *                 description: Recorded on the survivor's stage history and in the audit log.
+ *     responses:
+ *       200:
+ *         description: What was merged
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         merged: { type: boolean, example: true }
+ *                         phone: { type: string, example: "08031234567" }
+ *                         keptProfileId: { type: string, example: 665f1c2ab9e77a0012d4e300 }
+ *                         removedProfileIds:
+ *                           type: array
+ *                           items: { type: string, example: 665f1c2ab9e77a0012d4e301 }
+ *                         removedCount: { type: integer, example: 1 }
+ *                         movedScheduledMessages: { type: integer, example: 2 }
+ *                         movedMessageLogs: { type: integer, example: 7 }
+ *                         profile: { $ref: '#/components/schemas/CrmProfile' }
+ *       400:
+ *         description: >
+ *           Nothing to merge, an unusable phone number, or a BLOCKER — the message names it and no
+ *           card was touched.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ADMIN_PROFILE_DUPLICATES_MERGE, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.mergeProfileDuplicate(req, res)
 })
 
 /**

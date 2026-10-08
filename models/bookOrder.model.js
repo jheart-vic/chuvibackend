@@ -376,6 +376,26 @@ const bookOrderSchema = new mongoose.Schema(
         paymentWaivedAt: { type: Date },
         paymentWaivedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         paymentWaiverReason: { type: String },
+        // How a COUNTER order was actually tendered (client item #8, 2026-10-08).
+        // `paymentMethod` holds one value, but a wallet that is short is settled
+        // with a second tender, so the full story needs a list. Absent on every
+        // order not taken at the counter. See util/counterPayment.js.
+        counterPayment: {
+            tenders: [
+                {
+                    _id: false,
+                    method: {
+                        type: String,
+                        enum: Object.values(PAYMENT_METHOD),
+                    },
+                    amount: { type: Number },
+                },
+            ],
+            creditApplied: { type: Number },
+            cashFromWallet: { type: Number },
+            collectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            collectedAt: { type: Date },
+        },
         // ORDER-level hold. Note the item sub-document has its own `holdDetails`
         // for a single piece held at a station; that one does NOT put the order
         // on hold (it only flags the piece), so Holds Management — which filters

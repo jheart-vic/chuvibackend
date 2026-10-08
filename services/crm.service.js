@@ -301,12 +301,11 @@ class CrmService {
         })
         if (created) {
             await this.startLeadWorkflow(profile)
-            // Offer System: a new qualifying lead may get the First Experience
-            // Offer (no-op for account-less leads)
-            offerOnTrigger(OFFER_TRIGGER.FIRST_EXPERIENCE, {
-                userId: profile.userId,
-            })
         }
+        // NOTE (client answer 1(b), 2026-10-08): the First Experience trigger
+        // used to fire from HERE. It has moved to handleUserRegistered, because
+        // firing it on lead creation could never work for the case it mattered
+        // for. See the comment there — this is a bug fix, not a policy change.
         return { profile, created }
     }
 
@@ -392,6 +391,28 @@ class CrmService {
             await this.cancelPendingMessages(profile._id, [CRM_WORKFLOW.LEAD])
             await this.refreshNextFollowUp(profile._id)
         }
+
+        // ── CLIENT ANSWER 1(b), 2026-10-08 ──────────────────────────────────
+        // "The 3 days run from REGISTRATION for everyone. A lead entered on the
+        //  dashboard gets no offer and no clock until that person opens the
+        //  account." Registration is the trigger, so it fires HERE.
+        //
+        // This also fixes a real bug, and the answer we sent them was wrong:
+        // we said a staff-entered lead's clock started the day the rep typed
+        // the number in. It did not — they got NO offer at all, ever. The
+        // trigger used to live in createLead behind `if (created)`, and an
+        // account-less lead has no userId, so handleTrigger returned null. When
+        // that same person later registered, findOrCreateProfile matched the
+        // EXISTING profile by phone, `created` was false, and the trigger never
+        // fired again. Firing on registration (unconditionally, not only on a
+        // fresh profile) is what closes that hole.
+        //
+        // Every account-creation path — local signup, Google, Apple — comes
+        // through here, so "a staff member creating the account counts as
+        // registration" is satisfied by construction. The offer LENGTH is the
+        // offer's own `customerWindowDays`, admin-editable, which is the
+        // "setting I control, not a fixed 3 days" they asked for.
+        offerOnTrigger(OFFER_TRIGGER.FIRST_EXPERIENCE, { userId: user._id })
     }
 
     // Order placed: the lead has converted out of the sales sequence.

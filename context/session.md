@@ -2,10 +2,71 @@
 
 > **▶ WHAT IS LEFT TO BUILD LIVES IN `context/feature.md`, IN THE "TO BUILD" BOARD AT THE VERY
 > TOP. Read that first, before anything else in either file.** Short version: N1 Quick Booking
-> + order editing is the one large piece; the other seven are a day or less each, and two of
-> them (#10 notifications, #2 offer auto-grant) are blocked on client answers sent 2026-10-08.
-> Everything else is DONE and committed as `d10d2d9` — **3 commits still unpushed to
-> `origin/main`, so none of it is live yet.**
+> + order editing is the one large piece. **Items #8, #6 and #9 were built 2026-10-08 (see the
+> board).** Of what is left, #10 notifications and #2 offer auto-grant are blocked on client
+> answers sent 2026-10-08, and **#1's CRM sequence is blocked on CONTENT — the three verbatim
+> message texts were never saved into this repo, so there is nothing to copy; ask for them.**
+> **MERGE STATE IS CLEAN: PR #242 put everything on `origin/main` (`e0d5c3a`) and
+> `origin/main..feature/fix` is EMPTY.** Any older note here claiming commits are unpushed is
+> stale.
+
+### CLIENT REPLY #3 (2026-10-08) — 1(b) + notifications AGREED + A NEW FEATURE (window booking)
+briefCheck now **140/140**.
+- **1(b) BUILT, and it was a BUG, not a policy change — our answer to the client was WRONG.**
+  The `FIRST_EXPERIENCE` trigger moved from `createLead` to `handleUserRegistered`. We had told
+  them a staff-entered lead's 3-day clock starts when the rep types the number in. It doesn't:
+  `handleTrigger` returns null without a `userId` (`offer.service.js:253`), and the call sat behind
+  `if (created)` — so when that lead later registered, `findOrCreateProfile` matched the existing
+  profile by phone, `created` was false, and the trigger **never fired again. Those people got no
+  First Experience offer and never would have.** Correction issued; they should check which entered
+  leads have since registered and grant it manually.
+- **Offer length was ALREADY a setting** (`offer.customerWindowDays`) — their "make it a setting I
+  control" needs no code. All four other asks (first-order-only, ₦4,000 minimum, ₦1,000 credit on
+  delivery, 30-day credit life) verified expressible as offer config; the credit already pays out on
+  REDEEM which fires from `offerOnOrderDelivered`, i.e. on delivery. **Still to do: create the offer.**
+- **`new UserModel(` exists ONLY in `auth.service.js`** (local/Google/Apple), so "staff creating the
+  account counts as registration" is true by construction — asserted by briefCheck. **But no staff
+  endpoint creates a customer account at all**, so a counter order has no account behind it and
+  therefore no offer. Flagged to the client.
+- **Item #10 notifications UNBLOCKED** — client agreed: affected station only, never the actor.
+- **NEW: window booking.** Logic doc written FIRST as they asked
+  (`context/WINDOW-BOOKING-LOGIC-2026-10-08.md`), 8 decisions back to them, nothing built.
+  **The three findings that matter: (1) the customer does NOT choose delivery timing today at all —
+  delivery is a DATE pinned to 19:00 from `calculateDueDate`, so their 6:30pm evening window
+  collides with every existing "by 7pm" promise; (2) today's `pickupTimeSlots` is decorative —
+  free text, validator COMMENTED OUT, no cutoff, no limit; (3) the "customers moved because a
+  window was full" number cannot be derived from saved orders — a deflected customer leaves no
+  trace, so the deflection must be written at the moment it happens. Same shape as the N2 NPS
+  asked-vs-answered clock.** Also: "a bag" does not exist in the data (orders are PIECES), and
+  their ₦1,000 window price IS today's price (500+500), so nobody pays more unless they pick anytime.
+
+### SESSION 2026-10-08 (later) — ITEMS #8, #6, #9 BUILT. briefCheck 135/135.
+Swagger **62 schemas / 296 paths / 0 wrong envelopes**. NEW `counterPaymentStaging.js`
+**not yet run — needs the testingdb URI.** Full design for all three is in feature.md's board.
+- **#8 counter payment.** NEW `util/counterPayment.js`: plan-then-settle, delegating the actual
+  money to the existing `WalletService.chargeWalletForOrder` rather than writing a second copy.
+  **The plan runs before the order is created**, so a wallet that cannot cover the bill produces
+  a sentence naming both amounts instead of an order sitting unpaid.
+  **TWO BUGS FOUND WHILE DOING IT:** the counter order's `Payment` row was filed under the
+  **STAFF** member with the default method **`paystack`** (the one method a counter order can never
+  be), so a walk-in's own payment never showed in their history — the 2.3 complaint again, on a
+  path nobody had looked at; and the customer was matched by **`fullName` alone**, which collides,
+  now phone-first per 4.6.
+- **#6 offers at checkout.** `checkoutPrompt` + `autoApply`. The tie-break scores **only what comes
+  off THIS bill** — `creditPromised` is excluded on purpose, or a big future credit would win and
+  spend today's better offer. Part (c) confirmed with no code: `validateAndPrice` →
+  `_offerRejection` is the single rule and the bill already carries `rejected[]` with
+  `reason`/`requirement`/`unlockMessage`.
+- **#9 phone-split merge.** The interesting part is that a **referral code lives on the USER, not
+  the card**, so "keep the referral code from the account card" means the older surviving card must
+  ADOPT the account's `userId`. **AND `phoneFormatBackfill.js` was guaranteed to ABORT on live
+  data** — `normalizedPhone` is `unique+sparse`, so rewriting a 10-digit number to canonical form
+  throws E11000 against the same person's other card, which is precisely the split it reports. The
+  un-caught `updateOne` would have died mid-run having already rewritten every row before it. Now
+  caught per row and reported as "merge these two first".
+- **NEW `context/FE-CHANGELOG-2026-10-08.md`** — everything FE-affecting since 7 Oct, all 8
+  endpoint claims verified against the built spec. **The one hard FE break: `avgProcessingTime` is
+  now `null` + `processingTimeNote` instead of a number**, so an unguarded render prints "null".
 >
 > **CURRENT STATE 2026-10-07 — see `context/feature.md`'s STATUS BOARD at the top for the full
 > picture.** Working the 6 Oct client Developer Brief, backend only, order = fixes → features →

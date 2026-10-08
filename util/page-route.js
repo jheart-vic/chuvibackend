@@ -193,6 +193,10 @@ exports.ROUTE_ADMIN_STAFF = '/staff'
 exports.ROUTE_ADMIN_STAFF_STATUS = '/staff/:id/status'
 // hold types + their editable time limits (client section B)
 exports.ROUTE_ADMIN_HOLD_TYPES = '/hold-types'
+// Client item #9 — one person split across two CRM cards by the old phone
+// normaliser. The report is a GET (writes nothing); the merge is its own POST.
+exports.ROUTE_ADMIN_PROFILE_DUPLICATES = '/profile-duplicates'
+exports.ROUTE_ADMIN_PROFILE_DUPLICATES_MERGE = '/profile-duplicates/merge'
 exports.ROUTE_ADMIN_HOLD_TYPE_BY_ID = '/hold-types/:id'
 exports.ROUTE_SEARCH_ORDERS = '/search-orders'
 exports.ROUTE_SEARCH_ORDER_DETAIL = '/search-orders/:id'

@@ -516,6 +516,210 @@ const run = (async () => {
         /async getRiders\(req\)/.test(intakeSrc) &&
             /ROUTE_RIDERS/.test(fs.readFileSync(path.join(ROOT, 'routes/intake-user.js'), 'utf8')))
 
+    // ─── Client item #8 — counter payment from the wallet ────────────────────
+    console.log('\nitem #8 — counter payment tenders')
+    const counter = require(path.join(ROOT, 'util/counterPayment'))
+    const { PAYMENT_METHOD: PM, COUNTER_PAYMENT_METHODS } = require(
+        path.join(ROOT, 'util/constants'),
+    )
+    ok('the four counter tenders the client named are the allowed set',
+        COUNTER_PAYMENT_METHODS.length === 4 &&
+            ['cash', 'pos', 'bank-transfer', 'wallet'].every((m) =>
+                COUNTER_PAYMENT_METHODS.includes(m)))
+    ok('"transfer" and "card" are accepted as what the screen sends',
+        counter.normalizeCounterMethod('transfer') === PM.BANK_TRANFER &&
+            counter.normalizeCounterMethod('POS') === PM.POS &&
+            counter.normalizeCounterMethod('card') === PM.POS)
+    ok('paystack is NOT a counter tender (that is the customer\'s own app)',
+        counter.normalizeCounterMethod('paystack') === null &&
+            counter.normalizeCounterMethod('') === null)
+    const cashPlan = await counter.planCounterPayment({
+        customerId: null,
+        total: 5000,
+        method: 'cash',
+    })
+    ok('a cash order plans one tender for the whole bill and needs no account',
+        cashPlan.ok &&
+            cashPlan.plan.tenders.length === 1 &&
+            cashPlan.plan.tenders[0].amount === 5000 &&
+            cashPlan.plan.walletAmount === 0)
+    const noAcct = await counter.planCounterPayment({
+        customerId: null,
+        total: 5000,
+        method: 'wallet',
+    })
+    ok('the wallet cannot be used without a customer account, and it says so',
+        !noAcct.ok && /no customer account/i.test(noAcct.error))
+    const zeroPlan = await counter.planCounterPayment({
+        customerId: null,
+        total: 0,
+        method: 'wallet',
+    })
+    ok('a ₦0 bill charges nothing rather than writing an empty wallet line',
+        zeroPlan.ok && zeroPlan.plan.tenders.length === 0)
+    ok('intake no longer stamps a counter order paid before the money moves',
+        !/paymentStatus: PAYMENT_ORDER_STATUS\.SUCCESS,\n\s*billingType/.test(intakeSrc) &&
+            /settleCounterPayment\(\{/.test(intakeSrc))
+    ok('the plan runs BEFORE the order is created, so a short wallet creates nothing',
+        intakeSrc.indexOf('planCounterPayment({') <
+            intakeSrc.indexOf('const newOrder = new BookOrderModel'))
+    ok('wallet movement is delegated, not reimplemented (one owner, as in 2.4)',
+        /chargeWalletForOrder/.test(
+            fs.readFileSync(path.join(ROOT, 'util/counterPayment.js'), 'utf8'),
+        ) &&
+            !/\$inc: \{ balance/.test(
+                fs.readFileSync(path.join(ROOT, 'util/counterPayment.js'), 'utf8'),
+            ))
+    ok('the production clock is started AFTER settlement, not at creation',
+        intakeSrc.indexOf('settleCounterPayment({') <
+            intakeSrc.indexOf('markProductionClearedIfReady(newOrder._id)'))
+    ok('the customer is resolved by phone first, not by full name alone',
+        /lookupPhone &&\s*\(await UserModel\.findOne\(\{ phoneNumber: lookupPhone \}\)\)/.test(
+            intakeSrc))
+
+    // ─── Client item #6 — offers at checkout ────────────────────────────────
+    console.log('\nitem #6 — checkout prompt + auto-apply tie-break')
+    const OfferSvcMod = require(path.join(ROOT, 'services/offer.service'))
+    const offerSvc =
+        typeof OfferSvcMod === 'function' ? new OfferSvcMod() : OfferSvcMod
+    const cart = { pickupAmount: 1000, deliveryAmount: 1000 }
+    const freeLogistics = {
+        customerOfferId: 'A',
+        name: 'Free pickup + delivery',
+        benefit: { discount: 0, freePickup: true, freeDelivery: true },
+        expiresAt: new Date('2026-12-01'),
+    }
+    const tenPercent = {
+        customerOfferId: 'B',
+        name: '₦1,500 off',
+        benefit: { discount: 1500 },
+        expiresAt: new Date('2026-11-01'),
+    }
+    const sameValueLater = {
+        customerOfferId: 'C',
+        name: '₦1,500 off, expires later',
+        benefit: { discount: 1500 },
+        expiresAt: new Date('2026-12-30'),
+    }
+    ok('auto-apply picks the offer worth MORE on THIS bill',
+        offerSvc._bestByBillValue([freeLogistics, tenPercent], cart)
+            .customerOfferId === 'A')
+    ok('  …counting the pickup/delivery fees an offer waives, not just a discount',
+        offerSvc._bestByBillValue([freeLogistics, tenPercent], cart)._billValue === 2000)
+    ok('a promised FUTURE credit does not win today\'s bill',
+        offerSvc._bestByBillValue(
+            [
+                { customerOfferId: 'D', benefit: { discount: 100, creditPromised: 50000 } },
+                { customerOfferId: 'E', benefit: { discount: 500 } },
+            ],
+            cart,
+        ).customerOfferId === 'E')
+    ok('a tie goes to the offer expiring soonest (the other still has time)',
+        offerSvc._bestByBillValue([sameValueLater, tenPercent], cart)
+            .customerOfferId === 'B')
+    ok('nothing applicable → no prompt and no auto-apply',
+        offerSvc._bestByBillValue([], cart) === null)
+    const offerSrc = fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')
+    ok("the prompt is the client's exact wording, shipped from the backend",
+        /You have a first time offer\. Tap to use it\./.test(offerSrc))
+    ok('item #6(c): an offer is re-validated at ATTACH time by the shared rejection rule',
+        /async validateAndPrice/.test(offerSrc) &&
+            /_offerRejection\(\{\s*kind: 'personal'/.test(offerSrc) &&
+            /breakdown\.rejected\.push/.test(offerSrc))
+    ok('  …and the bill carries WHY one was refused',
+        /rejected: offerBreakdown\.rejected \|\| \[\]/.test(
+            fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8'),
+        ))
+
+    // ─── Client item #9 — phone-split CRM profiles ──────────────────────────
+    console.log('\nitem #9 — merging phone-split CRM cards')
+    const ProfileMergeService = require(path.join(ROOT, 'services/profileMerge.service'))
+    const merge = new ProfileMergeService()
+    const older = {
+        _id: 'OLD',
+        createdAt: new Date('2026-01-01'),
+        stage: 'lead',
+        totalOrders: 0,
+        totalSpent: 0,
+        tags: ['whatsapp-lead'],
+        fullName: 'tunde (rider wrote it)',
+    }
+    const newerWithAccount = {
+        _id: 'NEW',
+        createdAt: new Date('2026-05-01'),
+        userId: 'USER1',
+        stage: 'active',
+        totalOrders: 4,
+        totalSpent: 36000,
+        tags: ['express-user'],
+        fullName: 'Tunde Adeyemi',
+        firstOrderAt: new Date('2026-05-02'),
+        lastOrderAt: new Date('2026-09-20'),
+    }
+    const planned = merge._plan(older, [newerWithAccount])
+    ok('the ACCOUNT moves onto the older card, which is how the referral code is kept',
+        planned.userId === 'USER1')
+    ok('order counts and spend are combined, not picked from one card',
+        planned.totalOrders === 4 && planned.totalSpent === 36000)
+    ok('the survivor keeps the FURTHEST stage, not the older card\'s',
+        planned.stage === 'active')
+    ok('tags from both cards are kept, de-duplicated',
+        planned.tags.length === 2 &&
+            planned.tags.includes('whatsapp-lead') &&
+            planned.tags.includes('express-user'))
+    ok('the name on the account wins over what a rider wrote down',
+        planned.fullName === 'Tunde Adeyemi')
+    ok('first/last order dates widen to cover both cards',
+        planned.firstOrderAt?.getTime() === new Date('2026-05-02').getTime() &&
+            planned.lastOrderAt?.getTime() === new Date('2026-09-20').getTime())
+    const mergeSrc = fs.readFileSync(
+        path.join(ROOT, 'services/profileMerge.service.js'),
+        'utf8',
+    )
+    ok('two different accounts is a BLOCKER, refused before anything is written',
+        /code: 'two-accounts'/.test(mergeSrc) &&
+            mergeSrc.indexOf("if (group.blockers.length)") <
+                mergeSrc.indexOf('CrmScheduledMessageModel.updateMany'))
+    ok('messages are re-pointed BEFORE the absorbed cards are deleted',
+        mergeSrc.indexOf('CrmScheduledMessageModel.updateMany') <
+            mergeSrc.indexOf('CrmProfileModel.deleteMany'))
+    ok('the unique normalizedPhone is freed before the survivor claims it',
+        mergeSrc.indexOf("$unset: { normalizedPhone: '' }") <
+            mergeSrc.indexOf('normalizedPhone: canonical'))
+    ok('the phone backfill survives a duplicate-key collision instead of aborting',
+        /err\?\.code === 11000/.test(
+            fs.readFileSync(path.join(ROOT, 'phoneFormatBackfill.js'), 'utf8'),
+        ))
+
+    // ─── Client answer 1(b) — First Experience clock starts at REGISTRATION ──
+    console.log('\nitem #2 / answer 1(b) — First Experience offer clock')
+    const crmSrc = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
+    ok('the First Experience trigger fires from handleUserRegistered',
+        /async handleUserRegistered\(user\)[\s\S]{0,2600}offerOnTrigger\(\s*OFFER_TRIGGER\.FIRST_EXPERIENCE,\s*\{ userId: user\._id \}\)/.test(
+            crmSrc,
+        ))
+    ok('  …and NOT from createLead, where an account-less lead made it a no-op',
+        !/async createLead\([\s\S]{0,700}offerOnTrigger\(OFFER_TRIGGER\.FIRST_EXPERIENCE/.test(
+            crmSrc,
+        ))
+    ok('  …unconditionally, so a lead who registers LATER still gets it',
+        !/if \(created\)[\s\S]{0,200}FIRST_EXPERIENCE/.test(crmSrc))
+    ok('account creation has exactly one chokepoint, so staff-created = registration',
+        ['services', 'controllers'].every((dir) =>
+            fs
+                .readdirSync(path.join(ROOT, dir))
+                .filter((f) => f.endsWith('.js') && f !== 'auth.service.js')
+                .every(
+                    (f) =>
+                        !/new UserModel\(|UserModel\.create\(/.test(
+                            fs.readFileSync(path.join(ROOT, dir, f), 'utf8'),
+                        ),
+                )))
+    ok('the offer LENGTH is configuration (customerWindowDays), not a hardcoded 3 days',
+        /customerWindowDays/.test(
+            fs.readFileSync(path.join(ROOT, 'models/offer.model.js'), 'utf8'),
+        ) && /offer\.customerWindowDays \|\| 14/.test(offerSrc))
+
     console.log(`\n${pass} passed, ${fail} failed\n`)
     process.exit(fail ? 1 : 0)
 })()

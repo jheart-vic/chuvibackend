@@ -24,7 +24,12 @@ const {
     ROLE,
     SERVICE_TIERS,
     ORDER_SERVICE_TYPE,
+    PAYMENT_METHOD,
 } = require('../util/constants')
+const {
+    planCounterPayment,
+    settleCounterPayment,
+} = require('../util/counterPayment')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const {
@@ -117,9 +122,19 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            const customer = await UserModel.findOne({
-                fullName: post.fullName,
-            })
+            // Resolving the customer by fullName ALONE is how this used to work,
+            // and it is the wrong key: two "Tunde Adeyemi"s collide, and the
+            // wallet path (client item #8) must debit the right person. Phone is
+            // the canonical identity everywhere else in the system (brief 4.6,
+            // CRM links by normalised phone), so try that first and keep the
+            // name as a fallback so nothing that worked before stops working.
+            const lookupPhone = post.phoneNumber
+                ? normalizePhone(post.phoneNumber)
+                : null
+            const customer =
+                (lookupPhone &&
+                    (await UserModel.findOne({ phoneNumber: lookupPhone }))) ||
+                (await UserModel.findOne({ fullName: post.fullName }))
 
             const customerId = customer ? customer._id : null
 
@@ -139,6 +154,11 @@ class IntakeUserService extends BaseService {
                 // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
                 // piece is priced at the order's tier, exactly as before.
                 'items.*.serviceTier': 'string|in:classic,premium,vip',
+                // Counter tender (client item #8). OPTIONAL so every existing
+                // caller keeps working: no value means cash, which is what a
+                // counter order has always implicitly been.
+                paymentMethod: 'string',
+                secondaryPaymentMethod: 'string',
             }
 
             const validateMessage = {
@@ -236,15 +256,48 @@ class IntakeUserService extends BaseService {
                 }
             }
 
+            // ── Counter payment (client item #8) ────────────────────────────
+            // Decide how this is being paid BEFORE the order exists, so a wallet
+            // that cannot cover the bill produces an answer staff can act on
+            // ("the wallet covers ₦3,500 of ₦5,000 — how is the rest paid?")
+            // instead of an order sitting unpaid. `useCredit` is opt-in: reward
+            // credit is the customer's, and staff must not spend it silently.
+            const tenderMethod = post.paymentMethod || PAYMENT_METHOD.CASH
+            const secondaryTender = post.secondaryPaymentMethod || null
+            const useCredit =
+                post.useCredit === true || post.useCredit === 'true'
+            const paymentPlan = await planCounterPayment({
+                customerId,
+                total: totalPrice,
+                method: tenderMethod,
+                secondaryMethod: secondaryTender,
+                useCredit,
+            })
+            if (!paymentPlan.ok) {
+                return BaseService.sendFailedResponse({
+                    error: paymentPlan.error,
+                })
+            }
+            // These are instructions, not order fields — `...post` below would
+            // otherwise spread an alias like "transfer" straight onto
+            // `paymentMethod` and fail the enum on save. settle() sets the real
+            // value.
+            delete post.paymentMethod
+            delete post.secondaryPaymentMethod
+            delete post.useCredit
+
             const oscNumber = generateOscNumber()
             const newOrderItem = {
                 oscNumber,
                 amount: totalPrice,
-                paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+                // PENDING until the tender is actually settled below. It used to
+                // be stamped SUCCESS unconditionally at creation, which is how a
+                // wallet-paid walk-in could read as paid with the balance
+                // untouched.
+                paymentStatus: PAYMENT_ORDER_STATUS.PENDING,
                 billingType: BILLING_TYPE.PAY_PER_ITEM,
                 intakeStaffId: userId,
                 channel: ORDER_CHANNEL.OFFICE,
-                paymentDate: new Date(),
                 stage: {
                     status: ORDER_STATUS.QUEUE,
                 },
@@ -282,9 +335,29 @@ class IntakeUserService extends BaseService {
             })
             await newOrder.save()
 
-            // A counter order arrives with the clothes already here AND already
-            // paid, so both conditions are met at creation and the clock starts
-            // immediately. Non-fatal.
+            // Settle the tender now that the order has an id (the wallet ledger
+            // line and any credit usage are both filed against it). This writes
+            // the Payment row(s) and stamps paymentStatus/paymentMethod/
+            // billingType + the `counterPayment` record of how it arrived.
+            const settled = await settleCounterPayment({
+                order: newOrder,
+                plan: paymentPlan.plan,
+                customerId,
+                staffId: userId,
+            })
+            if (!settled.ok) {
+                // Only reachable if the balance moved between the plan and the
+                // charge. Nothing was debited; the order exists and is PENDING,
+                // and the message says exactly that.
+                return BaseService.sendFailedResponse({ error: settled.error })
+            }
+            await newOrder.save()
+
+            // A counter order arrives with the clothes already here, so the
+            // moment the money completes it is cleared for production (client
+            // item #5 — whichever of the two happens LAST). That is now AFTER
+            // settlement, not at creation: an unpaid counter order must not
+            // start the clock. Non-fatal.
             try {
                 await markProductionClearedIfReady(newOrder._id)
             } catch (err) {
@@ -298,34 +371,29 @@ class IntakeUserService extends BaseService {
                 userId: userId,
                 title: 'Order Created Successfully',
                 body: `Your have successfully created an order for ${post.fullName}.`,
-                subBody: `Order ID: ${oscNumber}.`,
+                subBody: `Order ID: ${oscNumber}. Paid ${settled.settlement.summary}.`,
                 type: NOTIFICATION_TYPE.ORDER_CREATED,
             })
 
             await ActivityModel.create({
                 title: 'New Order Registered',
-                description: `Order ${oscNumber} created for a customer ${post.fullName}.`,
+                description: `Order ${oscNumber} created for a customer ${post.fullName}, paid ${settled.settlement.summary}.`,
                 type: ACTIVITY_TYPE.ORDER_CREATED,
                 orderId: newOrder._id,
                 userId,
                 reference: oscNumber,
             })
 
-            const reference = generateReferenceId()
-            await PaymentModel.create({
-                userId: userId,
-                amount: totalPrice,
-                reference: reference,
-                status: 'success',
-                order: newOrder._id,
-                type: 'order',
-                //   alertType: "debit",
-            })
+            // The Payment row(s) are written by settleCounterPayment — one per
+            // tender, filed under the CUSTOMER when we know them. The single row
+            // that used to be written here was attributed to the staff member
+            // and carried the default method `paystack`.
 
-            await createAuditLog({userId: getObjectId(userId), action: `Created order ${oscNumber} with amount ${totalPrice}`, category: 'order', orderId: newOrder._id})
+            await createAuditLog({userId: getObjectId(userId), action: `Created order ${oscNumber} with amount ${totalPrice} (${settled.settlement.summary})`, category: 'order', orderId: newOrder._id})
 
             return BaseService.sendSuccessResponse({
                 message: newOrder,
+                payment: settled.settlement,
             })
         } catch (error) {
             console.log(error)

@@ -122,6 +122,28 @@ const PAYMENT_METHOD = {
     PAYSTACK: 'paystack',
     WALLET: 'wallet',
     CARD: 'card',
+    // Counter tenders (client item #8, 2026-10-08). Staff taking an order at the
+    // counter pick how it was paid; before this a counter order was stamped
+    // `paymentStatus: success` with no tender recorded and no wallet movement,
+    // so a wallet-paid walk-in was indistinguishable from cash.
+    CASH: 'cash',
+    POS: 'pos',
+}
+
+// What an intake/counter order may be settled with. `wallet` is the only one
+// that MOVES money inside the system; the other three are physically collected
+// at the counter, so they are recorded, not charged.
+const COUNTER_PAYMENT_METHODS = [
+    PAYMENT_METHOD.CASH,
+    PAYMENT_METHOD.POS,
+    PAYMENT_METHOD.BANK_TRANFER,
+    PAYMENT_METHOD.WALLET,
+]
+// The client says "transfer"; the stored value has always been `bank-transfer`.
+const COUNTER_PAYMENT_ALIASES = {
+    transfer: PAYMENT_METHOD.BANK_TRANFER,
+    'bank transfer': PAYMENT_METHOD.BANK_TRANFER,
+    card: PAYMENT_METHOD.POS,
 }
 
 const NOTIFICATION_TYPE = {
@@ -752,6 +774,8 @@ module.exports = {
     ORDER_STATUS,
     PAYMENT_ORDER_STATUS,
     PAYMENT_METHOD,
+    COUNTER_PAYMENT_METHODS,
+    COUNTER_PAYMENT_ALIASES,
     NOTIFICATION_TYPE,
     ORDER_SERVICE_TYPE,
     BILLING_TYPE,
