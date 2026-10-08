@@ -1,4 +1,82 @@
-# ███ STATUS BOARD — read this first (updated 2026-10-07) ███
+# ███ STATUS BOARD — read this first (updated 2026-10-08) ███
+
+## ███ TO BUILD — THE ONLY LIST THAT MATTERS. SURVIVES A CONTEXT CLEAR. ███
+Everything above the line is DONE and committed (`d10d2d9`, 3 commits ahead of `origin/main` —
+`cc8ef2c` + `368fe96` + `d10d2d9` all still need pushing + a PR before anything is live).
+
+**ONE BIG THING, then seven small ones.**
+
+### 1. N1 QUICK BOOKING + client item #7 (order editing) — THE ONLY LARGE PIECE
+Build these TOGETHER. #7 *is* N1's intake step; split them and the bill-recalculation gets
+written twice. Locked spec is in "CLIENT REPLY #2" and "N1 SPEC" below. Shape:
+- booking captures count + service + speed + address/landmark + window (no payment)
+- rider records the TRUE count, reason required when it differs → flag, SMS, never blocks
+- Intake confirms the rider count → **mismatch raises the `count_differs_from_rider` hold
+  (already seeded, `requiresAdminApproval: true`) and only an admin clears it**
+- Intake enters real items → bill computed by the system (staff can NEVER type an amount)
+- → **payment hold** (`HoldTypeModel.PAYMENT_HOLD_KEY`, 48h, already built) + SMS + Paystack link
+- Paystack clears it alone; bank transfer approved by Intake or admin (every Intake approval
+  notifies admin + lands on a daily bank-check list)
+- reminders 6h / 24h, admin alerted 48h
+- **tags NEVER print before payment**; on payment → tags print → S2
+- admin can WAIVE a hold with a reason → processes unpaid, **STOPPED AT DISPATCH**
+  (`paymentWaivedAt/By/Reason` fields already exist and already count as money-complete for the
+  production clock)
+- cancellation: before tagging only; before pickup free; after pickup ₦1,000 + ₦1,000 even if a
+  free-pickup offer applied; after payment the laundry fee returns to wallet, both fees kept
+- #7 also applies to NORMAL bookings: total up → payment hold, total down → wallet, every change
+  records who/why + SMS, **after tagging only an admin may edit**
+- admin can rename delivery speeds / service types / care tiers (display name only)
+
+### 2. Client item #10 — notification switches (~40 call sites, mechanical)
+ADD to admin: order cancelled · cancellation requested · order flagged AND item flagged · item
+placed on hold (any station) · payment proof uploaded · new complaint opened · payment
+approved/rejected by Intake.
+SWITCH OFF the 31 operator self-receipts EXCEPT: "order in tagging queue"; "adjustment request
+approved/rejected"; and the three hold ones **only when someone ELSE acted** (we recommended this —
+send to the station AFFECTED, never to the actor). Switch off for customers: "handoff confirmed"
+and "order flagged". On-screen confirmation + order history must survive.
+**BLOCKED on the client confirming our recommendation — question sent 2026-10-08.**
+
+### 3. Client item #1 — "registered but never booked" CRM sequence
+New workflow beside the lead one: welcome now · +24h · +48h · **+66h** · day 7 → prospect list.
+Stops on first booking. Timings AND texts admin-editable like the lead sequence.
+**The three message texts are verbatim in the client's 2026-10-08 reply — copy them exactly.**
+Today `handleUserRegistered` CANCELS the lead sequence and leaves them with nothing; this replaces
+that silence.
+
+### 4. Client item #2 — First Experience offer
+Mostly configuration (first-order trigger + ₦4,000 minimum + the ₦1,000 on-delivery credit with a
+30-day life are all offer settings, no new code). The one code question: should it be auto-granted
+at REGISTRATION for everyone, so the 3-day window and the +66h message agree?
+**BLOCKED on the client — question sent 2026-10-08.** Today a lead YOU enter starts their 3 days
+on the day you typed the number, which is why the +66h timing would be wrong for them.
+
+### 5. Client item #6 — offers at checkout
+(a) checkout prompt, exact wording "You have a first time offer. Tap to use it." (FE renders it —
+backend just needs to surface that the customer holds one); (b) Quick Booking auto-applies the
+offer worth MORE on that bill, the other survives; (c) **they asked us to CONFIRM every offer is
+re-validated at attach time and the bill says why one was refused** — verify, then answer.
+
+### 6. Client item #8 — counter payment from the wallet
+Staff pick cash / POS / transfer / wallet; wallet debits with a real ledger line; short wallet →
+rest another way. Today `intake-user.createBookOrder` just stamps `paymentStatus: SUCCESS` and
+never touches the wallet. **The client will not mark ANY counter order as wallet-paid until this
+is live**, so it is blocking them operationally. Small: point it at `WalletService.payWithWallet`,
+the same path the bot already uses correctly.
+
+### 7. Client item #9 — phone-split profiles
+Send the REPORT first (`phoneFormatBackfill.js --dry` already lists the pairs). Then merge into the
+OLDER card, carrying orders + wallet balance + messages from both, **keeping the referral code from
+the account card**, and flagging anything that cannot be combined BEFORE merging.
+
+### 8. Smaller / housekeeping
+- `GET|POST|PUT|DELETE /api/admin/hold-types` CRUD has no harness coverage (the SLA maths does, 34/34)
+- Tell the FE their two "missing endpoint" reports were a STALE DEPLOY, and point them at
+  `context/CLIENT-ANSWERS-oct2026.md` for the dormant-rate + Q1–Q8 answers they asked for again
+- Assemble the single §1+§2+§3 client block (the original deliverable, still not assembled)
+
+
 
 ## ⚠️ CLIENT ANSWERED EVERYTHING 2026-10-07 — N1 SPEC CHANGED, PLUS A–F OF NEW WORK
 **N1 Quick Booking: the client REJECTED 3 of our 5 proposals. Do NOT build the "as proposed" version.**

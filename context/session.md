@@ -1,5 +1,12 @@
 # Current Session Log
 
+> **▶ WHAT IS LEFT TO BUILD LIVES IN `context/feature.md`, IN THE "TO BUILD" BOARD AT THE VERY
+> TOP. Read that first, before anything else in either file.** Short version: N1 Quick Booking
+> + order editing is the one large piece; the other seven are a day or less each, and two of
+> them (#10 notifications, #2 offer auto-grant) are blocked on client answers sent 2026-10-08.
+> Everything else is DONE and committed as `d10d2d9` — **3 commits still unpushed to
+> `origin/main`, so none of it is live yet.**
+>
 > **CURRENT STATE 2026-10-07 — see `context/feature.md`'s STATUS BOARD at the top for the full
 > picture.** Working the 6 Oct client Developer Brief, backend only, order = fixes → features →
 > answers. **§1 ALL 22 FIXES DONE** (4.5 needed no code — answered; 1.7/1.8 + parts of 1.4/1.5/2.1 are
