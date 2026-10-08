@@ -21,6 +21,7 @@ const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
+const { QUEUE_SORT } = require('../util/queueSort')
 const BaseService = require('./base.service')
 const {
     scopeOrderToStation,
@@ -142,7 +143,7 @@ class SortAndPretreatService extends BaseService {
                     return paginate(BookOrderModel, query, {
                         page,
                         limit,
-                        sort: { updatedAt: -1 },
+                        sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                         select: 'oscNumber fullName phoneNumber serviceType serviceTier stage createdAt updatedAt',
                         lean: true,
                     })
@@ -228,7 +229,7 @@ class SortAndPretreatService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { updatedAt: -1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier amount items stage stageHistory createdAt updatedAt',
                 lean: true,
             })
@@ -1700,7 +1701,7 @@ class SortAndPretreatService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { updatedAt: -1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stageHistory createdAt updatedAt',
                 lean: true,
             })
@@ -1781,7 +1782,7 @@ class SortAndPretreatService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { updatedAt: -1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stageHistory createdAt updatedAt',
                 lean: true,
             })

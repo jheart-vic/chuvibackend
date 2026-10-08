@@ -304,6 +304,49 @@ class WalletCreditService {
         }
     }
 
+    // Pull back a credit that should never have been granted — today only the
+    // referral reward on a fully-refunded order (client 2026-10-08 §4.3).
+    //
+    // THE RULE THAT SHAPES THIS: "never take a wallet below zero". So it only
+    // ever removes what is STILL UNSPENT on that credit. If the referrer has
+    // already spent some of it on an order, that part is gone — we do not chase
+    // it into their cash balance, and we do not leave a negative remaining.
+    // Returns how much was actually recovered, which may be 0.
+    async clawBackCredit({ creditId, userId, amount, reason, performedBy }) {
+        if (!creditId || !(amount > 0)) return 0
+        const credit = await WalletCreditModel.findById(creditId)
+        if (!credit) return 0
+        if (userId && String(credit.userId) !== String(userId)) return 0
+
+        // the floor: only what is left, never more than the reward itself
+        const recoverable = Math.min(credit.remaining || 0, amount)
+        if (recoverable <= 0) return 0
+
+        credit.remaining -= recoverable
+        if (credit.remaining <= 0) {
+            credit.status = CREDIT_STATUS.REVERSED
+        }
+        credit.note = [credit.note, reason].filter(Boolean).join(' | ')
+        await credit.save()
+
+        // A negative amount, so the ledger reads as money leaving — the same
+        // signed convention manual adjustments use (brief 2.3).
+        await WalletTransactionModel.create({
+            userId: credit.userId,
+            type: WALLET_TX_TYPE.REVERSAL,
+            amount: -recoverable,
+            status: 'success',
+            description: reason || 'Credit reversed',
+            sourceSystem: credit.sourceSystem,
+            creditType: credit.type,
+            relatedCreditId: credit._id,
+            reason,
+            performedBy,
+        })
+
+        return recoverable
+    }
+
     // Returns every non-reversed credit consumption for an order (client rule:
     // "a cancelled order must not consume the offer/credit"). The original
     // expiry date is kept — an expired credit stays expired unless staff

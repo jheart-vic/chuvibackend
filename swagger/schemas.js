@@ -603,6 +603,43 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     HoldType:
+ *       type: object
+ *       description: >
+ *         A kind of hold, with its own time limit. Client section B (6 Oct brief reply):
+ *         the limit depends on the KIND of hold, not on the order's delivery speed —
+ *         a payment hold lasts days while an operational one lasts hours.
+ *       properties:
+ *         _id: { type: string, example: 665f1c2ab9e77a0012d4e500 }
+ *         key:
+ *           type: string
+ *           example: payment
+ *           description: Permanent identifier stored on the order. Derived from the name at creation and never changed.
+ *         name: { type: string, example: "Awaiting payment" }
+ *         description: { type: string, nullable: true }
+ *         slaHours:
+ *           type: number
+ *           nullable: true
+ *           example: 48
+ *           description: "Hours before it is Overdue. NULL means it follows the order's delivery speed (2/4/6) — not that it has no limit."
+ *         effectiveLimit:
+ *           type: string
+ *           example: "48 hours"
+ *           description: The limit in words, including the delivery-speed fallback spelled out.
+ *         stations:
+ *           type: array
+ *           items: { type: string, enum: [admin, intake-and-tag, sort-and-pretreat, wash-and-dry, press, qc, customer-experience] }
+ *           description: Who may raise it. Empty means any station.
+ *         judgeByOwnLimitOnly:
+ *           type: boolean
+ *           example: true
+ *           description: True on the payment hold — the promised delivery date must not drag it into Overdue.
+ *         escalateToAdmin: { type: boolean, example: true }
+ *         isSystem: { type: boolean, example: true, description: Seeded and used by code; cannot be deleted or switched off. }
+ *         systemRaisedOnly: { type: boolean, example: true, description: Raised by the system, never by a person. }
+ *         active: { type: boolean, example: true }
+ *         ordersOnHoldNow: { type: integer, example: 3, description: Holds sitting on this type right now (list endpoint only). }
+ *
  *     StaffAccount:
  *       type: object
  *       description: A non-customer account and whether they can currently work.

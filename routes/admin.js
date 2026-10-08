@@ -22,6 +22,8 @@ const {
     ROUTE_ADMIN_WALLET_TRANSACTIONS,
     ROUTE_ADMIN_STAFF,
     ROUTE_ADMIN_STAFF_STATUS,
+    ROUTE_ADMIN_HOLD_TYPES,
+    ROUTE_ADMIN_HOLD_TYPE_BY_ID,
     ROUTE_SEARCH_ORDERS,
     ROUTE_SEARCH_ORDER_DETAIL,
     ROUTE_ADMIN_ORDER_DETAILS,
@@ -2308,6 +2310,190 @@ router.get(ROUTE_ADMIN_STAFF, [adminAuth], (req, res) => {
 router.patch(ROUTE_ADMIN_STAFF_STATUS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.setStaffStatus(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/hold-types:
+ *   get:
+ *     summary: List hold types and their time limits (admin)
+ *     description: >
+ *       The kinds of hold a station can raise, each with its own time limit.
+ *       A `slaHours` of null does NOT mean "no limit" — it means the hold follows the
+ *       ORDER'S DELIVERY SPEED (same-day 2h / express 4h / standard 6h), which is what
+ *       every operational type is seeded with, so nothing changed on the floor when
+ *       hold types were introduced. `effectiveLimit` spells that out in words.
+ *       `ordersOnHoldNow` lets the screen show what a limit change will affect.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: includeInactive
+ *         schema: { type: string, enum: ['true','false'] }
+ *     responses:
+ *       200:
+ *         description: The hold types
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/HoldType' }
+ *   post:
+ *     summary: Create a hold type (admin)
+ *     description: >
+ *       The key is derived from the name and is permanent, because orders store it.
+ *       Leave `slaHours` out or null to follow the order's delivery speed.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, example: "Awaiting customer reply" }
+ *               description: { type: string }
+ *               slaHours: { type: number, nullable: true, example: 24, description: "Minimum 0.25. Null = follow the order's delivery speed." }
+ *               stations:
+ *                 type: array
+ *                 items: { type: string, enum: [admin, intake-and-tag, sort-and-pretreat, wash-and-dry, press, qc, customer-experience] }
+ *                 description: Who may raise it. Empty means any station.
+ *               escalateToAdmin: { type: boolean, example: true }
+ *     responses:
+ *       200:
+ *         description: The created hold type
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/HoldType' }
+ *       400:
+ *         description: Missing name, duplicate name, bad limit or unknown station
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_HOLD_TYPES, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.listHoldTypes(req, res)
+})
+router.post(ROUTE_ADMIN_HOLD_TYPES, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.createHoldType(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/hold-types/{id}:
+ *   put:
+ *     summary: Edit a hold type's limit, stations or name (admin)
+ *     description: >
+ *       A system type (the payment hold) can have its limit and stations tuned but
+ *       cannot be renamed or switched off, because the payment flow looks it up by key.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               slaHours: { type: number, nullable: true, example: 48 }
+ *               stations:
+ *                 type: array
+ *                 items: { type: string }
+ *               escalateToAdmin: { type: boolean }
+ *               active: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: The saved hold type
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/HoldType' }
+ *       400:
+ *         description: Bad limit, unknown station, or an attempt to switch off a system type
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *   delete:
+ *     summary: Delete a hold type (admin)
+ *     description: >
+ *       If orders are currently on hold under this type it is DEACTIVATED instead of
+ *       deleted, and the response says so. Deleting it outright would move those orders
+ *       back onto the delivery-speed clock, which for a long hold means instantly Overdue.
+ *       A system type is never deleted.
+ *     tags:
+ *       - Admin
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted, or deactivated because it was in use
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         deleted: { type: boolean, example: false }
+ *                         deactivated: { type: boolean, example: true }
+ *                         ordersOnHoldNow: { type: integer, example: 3 }
+ *                         note: { type: string }
+ *       400:
+ *         description: Unknown id, or a system type
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.put(ROUTE_ADMIN_HOLD_TYPE_BY_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.updateHoldType(req, res)
+})
+router.delete(ROUTE_ADMIN_HOLD_TYPE_BY_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.deleteHoldType(req, res)
 })
 
 /**

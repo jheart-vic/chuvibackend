@@ -59,6 +59,7 @@ const WalletService = require('./wallet.service')
 const PaystackService = require('./paystack.service')
 const {
     referralOnOrderCreated,
+    referralOnOrderRefunded,
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
@@ -191,6 +192,17 @@ class BookOrderService extends BaseService {
                 })
             }
         }
+
+        // 2b) CLIENT 2026-10-08 §4.3: if this order was a referred customer's
+        //     FIRST order and it is being refunded in full, take the referrer's
+        //     reward back. A cancellation refunds the whole order, which is the
+        //     "whole order is refunded" case — a partial refund keeps the
+        //     reward, and there is no partial-refund path that reaches here.
+        //     The staff cancellation fee does not make it partial: the order
+        //     itself is gone, so the referral it generated is not a sale.
+        //     Fire-and-forget — a reward correction must never fail a refund
+        //     the customer is already being told about.
+        referralOnOrderRefunded(order, { fullRefund: true, performedBy })
 
         // 3) Free a scheduled/pending pickup so the rider is released.
         if (
@@ -805,6 +817,18 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // CLIENT DECISION A7 (2026-10-07): the "Delivery address is the same
+            // as pickup" tick box. Applied BEFORE validation, because
+            // `isDelivery` is a required field — defaulting it after the
+            // validator runs is too late, and a customer who ticks the box and
+            // sends nothing else would be refused with "isDelivery is required".
+            if (
+                post.deliverySameAsPickup === true ||
+                post.deliverySameAsPickup === 'true'
+            ) {
+                if (post.isDelivery === undefined) post.isDelivery = true
+            }
+
             const validateRule = {
                 fullName: 'string|required',
                 phoneNumber: 'string|required',
@@ -853,6 +877,18 @@ class BookOrderService extends BaseService {
             // links identity by normalised phone that splits one person into two
             // profiles.
             if (post.phoneNumber) post.phoneNumber = normalizePhone(post.phoneNumber)
+
+            // A7, second half: copy the address itself. Done HERE rather than in
+            // the app so the two can never drift apart, and BEFORE enrichment so
+            // the copy still gets the saved-address landmark treatment — which
+            // is what satisfies the delivery-landmark rule below without asking
+            // the customer for the same landmark twice.
+            if (
+                post.deliverySameAsPickup === true ||
+                post.deliverySameAsPickup === 'true'
+            ) {
+                post.deliveryAddress = post.pickupAddress
+            }
 
             // 3.3: when the customer sends an address they already have saved,
             // borrow its landmark/label — the rider needs the "how do I find the

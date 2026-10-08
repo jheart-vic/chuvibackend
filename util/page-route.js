@@ -191,6 +191,9 @@ exports.ROUTE_ADMIN_WALLET_TRANSACTIONS = '/wallet-transactions'
 // staff suspend / reinstate — the only thing that writes User.status
 exports.ROUTE_ADMIN_STAFF = '/staff'
 exports.ROUTE_ADMIN_STAFF_STATUS = '/staff/:id/status'
+// hold types + their editable time limits (client section B)
+exports.ROUTE_ADMIN_HOLD_TYPES = '/hold-types'
+exports.ROUTE_ADMIN_HOLD_TYPE_BY_ID = '/hold-types/:id'
 exports.ROUTE_SEARCH_ORDERS = '/search-orders'
 exports.ROUTE_SEARCH_ORDER_DETAIL = '/search-orders/:id'
 exports.ROUTE_ADD_ORDER_ITEM = '/add-order-item'

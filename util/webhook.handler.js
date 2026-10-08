@@ -9,6 +9,7 @@ const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
 const createNotification = require('./createNotification')
 const notifyBot = require('./notifyBot')
+const { markProductionClearedIfReady } = require('./productionClock')
 
 // Subscriber loyalty rewards (client confirmed 2026-08-29): payment NEVER changes
 // (same price, same monthly schedule) — only that month's ITEM BUNDLE grows, scaled
@@ -516,6 +517,17 @@ async function handleOrderPayment(metadata, reference) {
         order.paymentMethod = 'paystack'
 
         await order.save()
+
+        // Processing clock (client correction 2026-10-08): the money is now
+        // complete. If the clothes are already with us this is the LATER of the
+        // two events, so the clock starts here — the Quick Booking case, and
+        // the "S1 sent a top-up request" case. Non-fatal: a measurement must
+        // never be able to fail a payment.
+        try {
+            await markProductionClearedIfReady(order._id)
+        } catch (err) {
+            console.error('production clock (order payment) failed:', err?.message)
+        }
 
        await notifyBot({
             event: 'order-paid',

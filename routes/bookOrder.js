@@ -60,15 +60,27 @@ const {
  *                 oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ]
  *                 description: >
  *                   Structured { label, address, landmark } or a plain string (stored as
- *                   { label:'', address, landmark:'' }). Only `address` is required here —
- *                   but PLEASE COLLECT `landmark`: the rider navigates by it and staff
- *                   intake already demands it. When the address matches one the customer
- *                   has saved, the landmark and label are borrowed from that saved address
- *                   automatically; otherwise the order reaches the dispatch queue flagged
- *                   `landmarkMissing: true` (brief 3.3).
+ *                   { label:'', address, landmark:'' }).
+ *                   BREAKING, client decision 2026-10-07: `landmark` is now REQUIRED on
+ *                   both legs when that leg applies — a booking without one is refused
+ *                   with `field: "pickupAddress.landmark"`. The rider navigates by it and
+ *                   staff intake has always demanded it. The check runs AFTER saved-address
+ *                   enrichment, so a customer reusing an address they already saved is
+ *                   never asked twice.
  *               deliveryAddress:
  *                 oneOf: [ { $ref: '#/components/schemas/OrderAddress' }, { type: string } ]
- *                 description: "Structured { label, address, landmark } or a plain string. Same landmark guidance as pickupAddress."
+ *                 description: "Structured { label, address, landmark } or a plain string. Landmark is REQUIRED here too when isDelivery is true — unless deliverySameAsPickup is sent."
+ *               deliverySameAsPickup:
+ *                 type: boolean
+ *                 example: true
+ *                 description: >
+ *                   Client decision A7 (2026-10-07) — the "Delivery address is the same as
+ *                   pickup" tick box. Send true and the backend copies pickupAddress into
+ *                   deliveryAddress (landmark included, so the delivery landmark rule is
+ *                   satisfied by the copy) and defaults isDelivery to true. Send the full
+ *                   delivery details instead when the box is not ticked. Copying server-side
+ *                   rather than in the app is deliberate: the two addresses can then never
+ *                   drift apart.
  *               pickupDate:
  *                 type: string
  *                 format: date

@@ -29,6 +29,7 @@ const { crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
 const { referralOnOrderDelivered } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
+const { markProductionClearedIfReady } = require('../util/productionClock')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -582,6 +583,16 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.isVerified = true
             order.markModified('dispatchDetails.pickup')
             await order.save()
+
+            // Processing clock (client correction 2026-10-08): the clothes are
+            // now with us. If the order was already paid this is the LATER of
+            // the two events, so the clock starts here — their case (a), paid
+            // in the app. Non-fatal: a measurement must never fail a pickup.
+            try {
+                await markProductionClearedIfReady(order._id)
+            } catch (err) {
+                console.error('production clock (pickup) failed:', err?.message)
+            }
 
             if (order.userId?._id) {
                 await createNotification({

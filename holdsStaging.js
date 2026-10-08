@@ -93,6 +93,7 @@ async function main() {
     await mongoose.connect(url, { serverSelectionTimeoutMS: 60000 })
 
     const createdIds = []
+    const createdTypeIds = []
     let parked = []
     try {
         // ── park any existing holds so "and no others" is true ────────────────
@@ -276,7 +277,142 @@ async function main() {
                 (dash4 || {}).overdueHolds === 4,
             'an order that is not on hold changes neither count',
         )
+
+        // ── 6 HOLD TYPES (client section B, 2026-10-07) ──────────────────────
+        // "The limit should depend on the kind of hold, not on the speed of the
+        // order." The whole point: a PAYMENT hold legitimately lasts a day or
+        // more, and under the 2/4/6-hour speed table every one of them would be
+        // Overdue within hours — turning the card 4.4 just fixed back into noise.
+        console.log('\n6 — a payment hold is judged by its own 48-hour limit')
+        const HoldTypeModel = require('./models/holdType.model')
+        const payType = await HoldTypeModel.findOneAndUpdate(
+            { key: HoldTypeModel.PAYMENT_HOLD_KEY },
+            {
+                $setOnInsert: {
+                    key: HoldTypeModel.PAYMENT_HOLD_KEY,
+                    name: 'Awaiting payment',
+                    slaHours: 48,
+                    judgeByOwnLimitOnly: true,
+                    isSystem: true,
+                },
+            },
+            { upsert: true, new: true },
+        )
+        createdTypeIds.push(payType._id)
+
+        // 10 hours on hold: far past every operational limit, nowhere near 48.
+        const payHold = await mkHold('PAY1', DELIVERY_SPEED.STANDARD, 10)
+        await BookOrderModel.updateOne(
+            { _id: payHold._id },
+            { $set: { 'orderHold.holdTypeKey': HoldTypeModel.PAYMENT_HOLD_KEY } },
+        )
+
+        const dash5 = await call(admin.getDashboardStats.bind(admin))
+        ok(
+            (dash5 || {}).activeHolds === 3,
+            `*** a 10-hour payment hold counts as ACTIVE, not overdue *** (active ${(dash5 || {}).activeHolds}, want 3)`,
+        )
+        ok(
+            (dash5 || {}).overdueHolds === 4,
+            `and Overdue is unchanged at 4 (got ${(dash5 || {}).overdueHolds})`,
+        )
+
+        // the row badge must agree with the card it sits under — the exact
+        // failure 4.4's follow-up had to fix, now re-testable per type
+        const activeRows = rows(await listOf("activeHolds"))
+        const payRow = activeRows.find(
+            (r) => r.oscNumber === `OSC-HOLD${STAMP}-PAY1`,
+        )
+        ok(!!payRow, 'and it appears in the Active list, not the Overdue one')
+        ok(
+            payRow?.holdMeta?.slaBreached === false,
+            'its row badge reads NOT breached, agreeing with its card',
+        )
+        ok(
+            payRow?.holdMeta?.slaThresholdMinutes === 48 * 60,
+            `and the badge shows the 48-hour limit, not 6 (got ${payRow?.holdMeta?.slaThresholdMinutes} minutes)`,
+        )
+        ok(
+            payRow?.holdMeta?.holdTypeName === 'Awaiting payment',
+            'the row names the hold type so staff can see why the clock is longer',
+        )
+
+        // past 48 hours it DOES breach
+        const oldPay = await mkHold('PAY2', DELIVERY_SPEED.STANDARD, 50)
+        await BookOrderModel.updateOne(
+            { _id: oldPay._id },
+            { $set: { 'orderHold.holdTypeKey': HoldTypeModel.PAYMENT_HOLD_KEY } },
+        )
+        const dash6 = await call(admin.getDashboardStats.bind(admin))
+        ok(
+            (dash6 || {}).overdueHolds === 5 && (dash6 || {}).activeHolds === 3,
+            `a 50-hour payment hold IS overdue (active ${(dash6 || {}).activeHolds} want 3, overdue ${(dash6 || {}).overdueHolds} want 5)`,
+        )
+        ok(
+            (dash6 || {}).activeHolds + (dash6 || {}).overdueHolds ===
+                (await BookOrderModel.countDocuments({
+                    'stage.status': ORDER_STATUS.HOLD,
+                })),
+            '*** Active + Overdue still equals every hold — the 4.4 property survives types ***',
+        )
+
+        // "judged only by its own limit": a passed delivery date must NOT drag a
+        // payment hold into Overdue. On a Quick Booking that date does not even
+        // exist yet, because the clock starts when payment is confirmed.
+        await BookOrderModel.updateOne(
+            { _id: payHold._id },
+            { $set: { deliveryDate: new Date(Date.now() - 24 * HOUR) } },
+        )
+        const dash7 = await call(admin.getDashboardStats.bind(admin))
+        ok(
+            (dash7 || {}).activeHolds === 3,
+            `*** a past delivery date does NOT overdue a payment hold *** (active ${(dash7 || {}).activeHolds}, want 3)`,
+        )
+
+        // ── 7 escalation fires once, not every sweep ─────────────────────────
+        console.log('\n7 — an overdue hold escalates to an admin exactly once')
+        const first = await admin.escalateOverdueHolds()
+        ok(first >= 1, `the sweep escalated ${first} overdue hold(s)`)
+        const second = await admin.escalateOverdueHolds()
+        ok(
+            second === 0,
+            `a second sweep escalates nothing (got ${second}) — the latch holds`,
+        )
+
+        // ── 8 an operational type with no limit set still follows the speed ──
+        console.log('\n8 — an operational type with no limit is unchanged')
+        const opType = await HoldTypeModel.findOneAndUpdate(
+            { key: `stg_op_${STAMP}` },
+            {
+                $setOnInsert: {
+                    key: `stg_op_${STAMP}`,
+                    name: 'STG operational',
+                    slaHours: null, // follows the order's delivery speed
+                },
+            },
+            { upsert: true, new: true },
+        )
+        createdTypeIds.push(opType._id)
+        const opHold = await mkHold('OP1', DELIVERY_SPEED.STANDARD, 10)
+        await BookOrderModel.updateOne(
+            { _id: opHold._id },
+            { $set: { 'orderHold.holdTypeKey': opType.key } },
+        )
+        const dash8 = await call(admin.getDashboardStats.bind(admin))
+        ok(
+            (dash8 || {}).overdueHolds === 6,
+            `*** a type with no limit still breaches on the 6-hour standard clock *** (overdue ${(dash8 || {}).overdueHolds}, want 6)`,
+        )
     } finally {
+        if (createdTypeIds.length) {
+            // Only the types this run created. A real seeded payment type in the
+            // target DB would have been upserted rather than created, so this
+            // removes the staging ones without touching real configuration.
+            await require('./models/holdType.model').deleteMany({
+                _id: { $in: createdTypeIds },
+                key: { $regex: `^stg_|^${require('./models/holdType.model').PAYMENT_HOLD_KEY}$` },
+            })
+        }
         const d = await BookOrderModel.deleteMany({ _id: { $in: createdIds } })
         if (parked.length) {
             await BookOrderModel.updateMany(

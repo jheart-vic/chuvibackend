@@ -15,6 +15,7 @@ const {
     DRY_DURATION_MINUTES,
 } = require('../util/constants')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
+const { QUEUE_SORT } = require('../util/queueSort')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const createNotification = require('../util/createNotification')
@@ -100,7 +101,7 @@ class WashAndDryService extends BaseService {
                     {
                         page: 1,
                         limit: 5,
-                        sort: { 'stage.updatedAt': 1 },
+                        sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                         select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
                         lean: true,
                     },
@@ -165,7 +166,7 @@ class WashAndDryService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'stage.updatedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
                 lean: true,
             })
@@ -622,7 +623,7 @@ class WashAndDryService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'washDetails.startedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
                 lean: true,
             })
@@ -774,7 +775,7 @@ class WashAndDryService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'washDetails.movedToDryingAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items stage stationStatus stageHistory washDetails createdAt updatedAt',
                 lean: true,
             })

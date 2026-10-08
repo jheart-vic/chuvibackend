@@ -48,6 +48,16 @@ const referralSchema = new mongoose.Schema(
         // when the referrer reward was actually granted — the authoritative
         // timestamp for counting successful referrals per month (level engine)
         rewardedAt: { type: Date },
+        // Reversal, client 2026-10-08 §4.3: a FULL refund of the referred
+        // customer's first order takes the reward back. The referral record
+        // itself survives — the relationship happened, only the money is
+        // pulled. `rewardShortfall` is the part the referrer had already spent,
+        // which is deliberately NOT clawed into their cash balance (the wallet
+        // may never go below zero) and is reported to an admin instead.
+        rewardReversedAt: { type: Date },
+        rewardReversedAmount: { type: Number },
+        rewardShortfall: { type: Number },
+        rewardReversalNote: { type: String },
         // welcome reward for the referred customer
         welcomeCreditId: { type: mongoose.Schema.Types.ObjectId, ref: 'WalletCredit' },
     },

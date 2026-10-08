@@ -13,6 +13,77 @@
 > template 27 · phase12 14 · subLogistics 20 · handoff 54 · botStaging 11/11. Swagger 56/287, 0 wrong
 > envelopes. Never edit `.env` — pass `MONGODB_URL` inline (testingdb URI supplied by the user).
 
+### FE WAS RIGHT TWICE (2026-10-08) — 2.3 WAS NEVER FINISHED, AND LIMITS READ ₦0 LIVE
+- **`fetch-user-transactions` read ONLY the Payment collection.** A manual adjustment writes a
+  WalletTransaction and NO Payment, so the customer never saw it — **the client's original 2.3
+  complaint ("the money has no record") was still true** after we fixed the write side and built
+  the admin ledger. Now a `$unionWith` over both collections: Payment rows plus the
+  WalletTransaction kinds that have no Payment twin (manual-adjustment / reversal / expiry /
+  anything with a `creditType`). Deliberately a UNION, not a swap — top-ups and card refunds live
+  in both, and swapping would have lost proof-of-payment and card refs. Direction comes from the
+  SIGN, never the type, and amounts are shown positive with `alertType` beside them. Each row
+  carries `source: 'payment' | 'wallet'`.
+- **`walletAdjustmentLimits` reads ₦0 for every role in PRODUCTION** even though the model default
+  says 5000/10000 — because `setup.js init()` returns early when an AdminSetting exists, and
+  **Mongoose applies defaults on CREATION, not on read.** The live doc predates 2.4 and has no such
+  key. NEW idempotent `ensureWalletAdjustmentLimits()` writes the defaults ONLY when the field is
+  absent, so an admin's own limits are never overwritten. **Same trap as the inverted tier charges:
+  seeding is not migrating — check this whenever a field is added to an existing settings doc.**
+- The FE's other two points were a STALE DEPLOY, not gaps: `GET /api/admin/wallet-transactions`
+  exists (built 2026-10-07) and phone normalisation shipped with 4.6.
+- `walletLimitStaging.js` now **63/63** (new scenario 10b proves the customer sees adjustments).
+
+### CLIENT REPLY #2 (2026-10-08) — ITEMS 3, 4 AND 5 BUILT. 1, 2, 6–10 STILL OPEN.
+Ten items, recorded in full at the top of feature.md. Built so far:
+- **#5 PROCESSING CLOCK — the client REVERSED the A4 rule we shipped the same day.** Not at
+  tagging: it starts when the order is **cleared for production = clothes at Intake AND money
+  complete, whichever is LAST.** NEW `util/productionClock.js` with a recompute called from BOTH
+  sides (payment webhook, rider pickup, intake receive, counter order) because neither side knows
+  if it is the second one. Stamped once, guarded against a double trigger. An admin payment WAIVER
+  counts as money-complete. The handoff stamp I added hours earlier is REMOVED. Card now returns
+  `avgProcessingTime: null` + `processingTimeNote: 'Not enough data yet'` instead of a 0.
+- **#3 HOLD LIMITS — they picked the option our `slaHours: null` default already implemented.**
+  Added on top: the three speed numbers are now admin-editable (`AdminSetting.holdSlaHoursBySpeed`,
+  falls back to the code table per-speed so a partial setting can't leave a gap); NEW Intake reason
+  `count_differs_from_rider` with `requiresAdminApproval`; `checkStationMayRaise()` enforces "a
+  station may only raise its own reasons" (admin exempt, system-only types refused).
+- **#4 REFERRAL:** the open-complaint pause is REMOVED (deferred rewards already granted are still
+  released by `processDeferredRewards`, so none are stranded). NEW
+  `reverseRewardForRefundedOrder` + `WalletCreditService.clawBackCredit` — **full refund only**,
+  **never takes the wallet below zero** (claws back only what is unspent), records
+  `rewardShortfall` and notifies an admin about the part it could not recover. Hooked into
+  `_performCancellation` via `referralOnOrderRefunded`.
+Gates: briefCheck 106 · dashboardDecisions **36** · holds 34 · stationFlow 80 · handoff 54 ·
+phase12 14 · bot 11/11.
+
+### SECTION A (A1–A5, A7) BUILT (2026-10-08) — `dashboardDecisionsStaging.js` 32/32
+The client's decisions that need no further input. **A2, A3 and A4 all make a number on their
+dashboard go DOWN — warn them before they see it.** A2 divides by all 7 days (₦45,000 → ₦12,857 on
+the same money); A3 is total÷total (₦1,750 → ₦1,636) with the old `avgCostPerItem7Days` key kept as
+a mirror for one release; A4 measures `productionStartedAt` → `qcDetails.packCompletedAt` over
+orders READY TODAY and reads **0 on day one** because orders tagged before the deploy have no start
+stamp and are excluded rather than guessed. A5 added `util/queueSort.js` across 16 lists, closing
+the §3 Q6 newest-vs-oldest split. A1 renamed the card from the backend. A7 added
+`deliverySameAsPickup`. Full design in feature.md.
+- **BUG the harness caught: A7 applied the tick box AFTER validation**, so ticking it and sending
+  nothing else was refused "isDelivery is required". Defaulted before the validator now.
+- Also found: the booking swagger still described `landmark` as optional when the code has rejected
+  without it since 2026-10-07. Corrected.
+
+### SECTION B — HOLD TYPES BUILT (2026-10-08), started while the client confirms
+N1's payment hold depends on it, so it went first. NEW `HoldType` model + seed + admin CRUD
+(`/api/admin/hold-types`) + `crons/holdSlaScan.js` escalating overdue holds to admins once each.
+**`slaHours: null` = "follow the order's delivery speed", which every operational type seeds with —
+so nothing changes on the floor until an admin sets a number, and we are built for either answer to
+the open question.** Payment hold = 48h + `judgeByOwnLimitOnly`. `util/holdSla.js` kept backward-
+compatible signatures and the 4.4 Active/Overdue partition still holds. **`holdsStaging.js` 34/34.**
+- **BUG: `holdDetails` is on the ITEM, not the order.** The first cut `$set` a non-existent
+  order-level path and Mongoose silently dropped it — the 3.2 `pickup.note` shape exactly. The
+  order-level block is now **`orderHold`**. Also learned: an item hold does NOT set
+  `stage.status: hold`, so Holds Management is order-level only.
+- **HARNESS BUG = the Lagos/UTC split-brain, inside a test:** `walletLimitStaging` took "today" from
+  `toISOString().slice(0,10)` (UTC). Passed all day, failed at 00:43 Lagos. Endpoint was right.
+
 ### STAFF SUSPENSION BUILT (2026-10-07) — FE: "no endpoint to suspend a rider"
 True, and the shape was the interesting part: **every reader of `User.status` already existed and
 nothing could write it**, so suspension was unreachable dead code. NEW `GET /api/admin/staff` +

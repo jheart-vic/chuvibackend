@@ -14,6 +14,7 @@ const {
     ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
+const { QUEUE_SORT } = require('../util/queueSort')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
@@ -79,7 +80,7 @@ class QCService extends BaseService {
                     {
                         page: 1,
                         limit: 5,
-                        sort: { 'stage.updatedAt': 1 },
+                        sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                         select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage createdAt qcDetails',
                         lean: true,
                     },
@@ -129,7 +130,7 @@ class QCService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'stage.updatedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
@@ -197,7 +198,7 @@ class QCService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'stage.updatedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
@@ -602,7 +603,7 @@ class QCService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'qcDetails.passedAt': 1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })
@@ -779,7 +780,7 @@ class QCService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                sort: { 'stage.updatedAt': -1 },
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
                 lean: true,
             })

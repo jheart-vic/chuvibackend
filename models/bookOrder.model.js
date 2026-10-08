@@ -359,6 +359,44 @@ const bookOrderSchema = new mongoose.Schema(
             note: { type: String },
             updatedAt: { type: Date, default: Date.now },
         },
+        // When the order was CLEARED FOR PRODUCTION: the clothes are at Intake
+        // AND the money is complete, whichever happened LAST. Client decision
+        // A4 as corrected by them 2026-10-08 — their first answer was "at
+        // tagging", changed because an order can sit tagged but unpaid.
+        // Stamped once, from either side, by util/productionClock.js; nothing
+        // recorded this moment before. The stop side is
+        // `qcDetails.packCompletedAt`. Orders that started production before
+        // this shipped have no value and are excluded from the figure rather
+        // than having one invented for them.
+        productionStartedAt: { type: Date },
+        // Set when an admin waives a payment hold (client section B / N1): the
+        // order goes into production unpaid and is stopped again at dispatch.
+        // Counts as "money complete" for the production clock above, because
+        // the order really is cleared to be worked on.
+        paymentWaivedAt: { type: Date },
+        paymentWaivedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        paymentWaiverReason: { type: String },
+        // ORDER-level hold. Note the item sub-document has its own `holdDetails`
+        // for a single piece held at a station; that one does NOT put the order
+        // on hold (it only flags the piece), so Holds Management — which filters
+        // on `stage.status: hold` — is driven entirely by this block.
+        // Added 2026-10-08: the first cut wrote `holdDetails.holdTypeKey` at
+        // order level without this, and Mongoose silently DROPPED it because the
+        // path did not exist, so every payment hold still read against the
+        // 6-hour clock. Exactly the 3.2 `dispatchDetails.pickup.note` bug again:
+        // a $set to a non-schema path fails without erroring.
+        orderHold: {
+            // Which KIND of hold this is (HoldType.key). Drives the time limit:
+            // client section B, 2026-10-07 — a payment hold lasts days, an
+            // operational one hours, so the limit follows the type, not the
+            // order's delivery speed. Absent on every hold raised before that
+            // change, which is why the speed table remains the fallback.
+            holdTypeKey: { type: String },
+            // Latch so an overdue hold interrupts an admin ONCE, not on every
+            // 20-minute sweep. Cleared whenever a hold is raised, so a
+            // released-then-re-held order escalates again on its own merits.
+            escalatedAt: { type: Date },
+        },
         stageHistory: [
             {
                 status: {

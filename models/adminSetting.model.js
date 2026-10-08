@@ -78,6 +78,20 @@ const adminSettingSchema = new mongoose.Schema(
         // becomes a request. Admin is unlimited and never checked.
         // Updated through the normal admin-settings endpoint, which $sets
         // whatever it is given.
+        // CLIENT DECISION (2026-10-08, section 3): station holds KEEP their
+        // limit by delivery speed — same-day 2h, express 4h, standard 6h — but
+        // "the admin can edit these three numbers". They were fixed in code
+        // (util/holdSla.js) until now; that file still holds the defaults and
+        // falls back to them when this is unset, so an unseeded database keeps
+        // behaving exactly as before.
+        // The PAYMENT hold does not appear here: it is a hold TYPE with its own
+        // limit, because the delivery clock has not even started when it is
+        // raised.
+        holdSlaHoursBySpeed: {
+            type: Map,
+            of: Number,
+            default: undefined,
+        },
         walletAdjustmentLimits: {
             type: Map,
             of: Number,

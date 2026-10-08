@@ -36,6 +36,19 @@ const referralOnOrderDelivered = (order) => {
     )
 }
 
+// The referred customer's first order was refunded IN FULL → take the
+// referrer's reward back (client 2026-10-08 §4.3). A partial refund keeps it,
+// which is why `fullRefund` must be passed explicitly rather than assumed.
+const referralOnOrderRefunded = (order, { fullRefund, performedBy } = {}) => {
+    if (!order?._id) return
+    ReferralService.reverseRewardForRefundedOrder(order._id, {
+        fullRefund,
+        performedBy,
+    }).catch((err) =>
+        console.warn('Referral reversal hook failed (non-fatal):', err.message),
+    )
+}
+
 // A referrer's eligibility was restored (complaint resolved) → release deferred rewards.
 const referralOnEligibilityRestored = (userId) => {
     if (!userId) return
@@ -49,5 +62,6 @@ module.exports = {
     referralOnReferralCode,
     referralOnOrderCreated,
     referralOnOrderDelivered,
+    referralOnOrderRefunded,
     referralOnEligibilityRestored,
 }

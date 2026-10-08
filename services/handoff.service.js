@@ -195,6 +195,13 @@ class HandoffService extends BaseService {
                 handoff = order.handoffs[order.handoffs.length - 1]
             }
 
+            // NOTE the processing-time clock is NOT started here. It first was
+            // (client decision A4, "tagged and pushed to S2"), but they
+            // corrected themselves on 2026-10-08: it starts when the order is
+            // CLEARED FOR PRODUCTION — clothes at Intake AND the money complete,
+            // whichever happens last — which is usually before this push and
+            // sometimes long before it. See util/productionClock.js.
+
             // A push to a DIFFERENT destination supersedes any earlier pending
             // handoff that still claims these items from the same station.
             //
