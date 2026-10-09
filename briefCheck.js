@@ -1740,6 +1740,31 @@ const run = (async () => {
         !/toISOString\(\)\s*\.\s*split\('T'\)\[0\]/.test(adminSrcTz) &&
             /lagosDayKey\(d\)/.test(adminSrcTz))
 
+    // Client decision 2026-10-09 (option 1): a service type's name is a pricing
+    // key, so the general settings screen may no longer change or remove one
+    // that orders depend on. Behaviour is asserted live in
+    // dashboardDecisionsStaging; this pins the SHAPE, because the guard has to
+    // be written against the consequence (a name vanishing) rather than against
+    // the word "rename" — otherwise delete-and-re-add walks straight through.
+    ok('updateAdminSettings refuses to drop a service-type name orders depend on',
+        /Array\.isArray\(updateData\?\.serviceTypes\)/.test(adminSrcTz) &&
+            /countDocuments\(\{\s*\n?\s*serviceType: name,/.test(adminSrcTz) &&
+            /useInstead: '\/api\/admin\/display-names'/.test(adminSrcTz))
+    ok('  …and the check runs BEFORE the $set, so nothing is half-written',
+        (() => {
+            // Scoped to updateAdminSettings. A whole-file indexOf finds an
+            // EARLIER `$set: updateData` in a different settings function, so
+            // the naive comparison fails against correct code.
+            const start = adminSrcTz.indexOf('async updateAdminSettings(req)')
+            const body = adminSrcTz.slice(start, start + 6000)
+            return (
+                start > -1 &&
+                body.indexOf('blockedServiceTypes') > -1 &&
+                body.indexOf('blockedServiceTypes') <
+                    body.indexOf('{ $set: updateData }')
+            )
+        })())
+
     const crmSrc2 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
     ok('booking cancels the new sequence as well as the lead one',
         /cancelPendingMessages\(profile\._id, \[\s*CRM_WORKFLOW\.LEAD,\s*CRM_WORKFLOW\.REGISTERED_NOT_BOOKED,?\s*\]\)/.test(

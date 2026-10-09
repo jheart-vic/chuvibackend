@@ -1426,6 +1426,68 @@ class AdminService extends BaseService {
                 })
             }
 
+            // ── A SERVICE TYPE'S NAME IS A PRICING KEY, NOT A LABEL ─────────
+            //
+            // Client decision 2026-10-09, option 1: "Block edits to a service
+            // type's name on the general settings screen and point the admin to
+            // the new renaming feature."
+            //
+            // Why it matters, and why it was urgent enough to close on its own:
+            // an order stores `serviceType: "wash-and-iron"`, and pricing finds
+            // the price by matching that string against `serviceTypes[].name`
+            // (`services/bookOrder.service.js`). The fallback when nothing
+            // matches is a multiplier of **1** — so renaming a service type did
+            // not throw, it SILENTLY under-priced every order already placed
+            // under the old name, with nothing on screen to indicate it. This
+            // endpoint `$set`s whatever it is given with `runValidators: false`,
+            // so there was nothing stopping it.
+            //
+            // The guard is written against the CONSEQUENCE rather than against
+            // the word "rename": it refuses when a name that orders depend on
+            // would DISAPPEAR. That also covers deleting a type and re-adding it
+            // under a new name, which has the identical effect and would walk
+            // straight through a check that only compared names pairwise.
+            //
+            // Still allowed, because none of it breaks a lookup: adding a new
+            // service type, changing a price, and removing a type no order has
+            // ever used.
+            if (Array.isArray(updateData?.serviceTypes)) {
+                const incoming = new Set(
+                    updateData.serviceTypes
+                        .map((s) => String(s?.name ?? '').trim())
+                        .filter(Boolean),
+                )
+                const vanished = (adminSetting.serviceTypes || [])
+                    .map((s) => s.name)
+                    .filter((name) => name && !incoming.has(name))
+
+                if (vanished.length) {
+                    const inUse = []
+                    for (const name of vanished) {
+                        const count = await BookOrderModel.countDocuments({
+                            serviceType: name,
+                        })
+                        if (count > 0) inUse.push({ name, orders: count })
+                    }
+                    if (inUse.length) {
+                        const list = inUse
+                            .map(
+                                (t) =>
+                                    `"${t.name}" (${t.orders} order${t.orders === 1 ? '' : 's'})`,
+                            )
+                            .join(', ')
+                        return BaseService.sendFailedResponse({
+                            error:
+                                `A service type's name is how existing orders find their price, so it cannot be changed or removed here: ${list}. ` +
+                                'To change what customers and staff SEE, use Display Names instead — that renames it everywhere without touching the orders already placed.',
+                            field: 'serviceTypes',
+                            blockedServiceTypes: inUse,
+                            useInstead: '/api/admin/display-names',
+                        })
+                    }
+                }
+            }
+
             const updated = await AdminSettingModel.findOneAndUpdate(
                 { _id: adminSetting._id },
                 { $set: updateData },

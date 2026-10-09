@@ -1,5 +1,49 @@
 # Current Session Log
 
+## ███ READ FIRST AFTER A CLEAR — STATE AT 2026-10-09 ███
+
+**The 6 Oct brief is CODE-COMPLETE.** All 22 fixes, N2 and N1 (Quick Booking + window booking +
+payment hold + order editing) are built and verified. The §1+§2+§3 deliverable is written:
+`context/CLIENT-DELIVERABLE-oct2026.md`. briefCheck **341/341** · **21 DB harnesses green** ·
+swagger **74/307/0**.
+
+### ⚠️ THE NEXT ACTION IS THE PR. NOTHING IS LIVE.
+`feature/fix` is pushed but **NOT merged**. `origin/main` = `e0d5c3a`, **10 commits behind**.
+Unshipped: window booking · the delivery promise · the payment hold + reminders cron · item editing
+(#7) · D7 · the Anytime refund · display names · the service-type name guard · item-level holds ·
+the notifications policy · **the CRM registered-not-booked sequence the client asked to go live
+FIRST**. Verify with `git log --oneline origin/main..HEAD` — **never** from local `main`.
+
+### The last 10 commits
+`5ea80ac` FE changelog w/ swagger refs · `ce2380b` service-type name guard · `10faff1` client
+deliverable + UTC day-bucket fix · `a87b113` docs · `77c6bc9` item #7 + D7 + Anytime refund +
+display names · `d06fbe8` payment hold + waiver + reminders + cancellation fees · `7c03e99` window
+booking phases 1–2 + delivery promise + payment gate · plus 3 older (`620cca4`, `58070c8`,
+`abb68f2`).
+
+### Running the gates
+`node briefCheck.js` (offline, 341). DB harnesses need the URI inline — **never edit `.env`**, it
+points at live `laundrydb` and every harness hard-refuses that name:
+`STAGING_OK=1 MONGODB_URL="<testingdb uri>" node <name>Staging.js`. The 21: windowBooking 35 ·
+itemEdit 20 · stationFlow 97 · walletLimit 63 · handoff 54 · recoveryReport 52 · counterPayment 51 ·
+holds 48 · dispatch 46 · dispatchTag 46 · dashboardDecisions 45 · planCreate 39 · staffStatus 38 ·
+offerAdmin 37 · tierPricing 33 · regNotBooked 33 · template 27 · freeLogistics 23 · subLogistics 20 ·
+phase12 14 · bot 11.
+
+### Open, none of it code
+1. **FE adoption gap.** `/api/communication/templates/meta` has been LIVE since the Group 4 merge —
+   it exists so the template **Key** field is a dropdown of the six valid keys (`offer-available`,
+   `referral-reward`, `referral-level-up`, `referral-monthly-benefit`, `complaint-update`,
+   `generic-announcement`) — and the client was typing into a free-text box. Also possibly
+   unadopted and LIVE: `avgProcessingTime` can be **null** (**unguarded → the dashboard prints
+   "null" today**), `avgRevenuePerItem7Days`, `dormantRateLabel`.
+2. **Two client config actions** assumed by shipped messages: the **First Experience offer**, and a
+   **free-logistics offer with an ₦8,000 minimum** (message 3 promises it; false until it exists).
+3. **Two notes drafted, not sent:** the weekend date shift (Sat standard: Mon → Tue) and that a
+   window booking costs what a booking costs today.
+4. Optional: 295 of 307 swagger paths omit the `/api` prefix (the real mount is
+   `app.use("/api", router)`). Flagged to the FE; a mechanical pass if wanted.
+
 ### SESSION 2026-10-09 — N1 STARTED. PHASE 1 (scheduling engine) BUILT. briefCheck **236/236**
 **Only two items remain in the whole programme: N1 (in progress) and the §1+§2+§3 client block.**
 The client concluded the open questions (audit item 8, D7/D8, the notification interpretation) and

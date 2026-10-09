@@ -51,13 +51,37 @@ not the bot repo) are part of the plan.
 | 6. In-app bot | ✅ built + verified (18-check script + boot), awaiting commit | `proper-swagger-prt` |
 | 7. WhatsApp reconnection | later (separate budget) | — |
 
-## CURRENT WORK (2026-10-07): Developer Brief 6 Oct 2026 — 22 fixes + 2 features + 8 answers
+## CURRENT WORK: Developer Brief 6 Oct 2026 — ✅ CODE-COMPLETE 2026-10-09
 
-**PROGRESS: Group 1 ALL DONE + committed (`8795099 group 1 done`). Group 2: 2.1 / 2.2 / 2.3 / 2.4
-done (2.3 committed, the rest uncommitted); 2.5 is next. Groups 3 and 4 not started, except 4.4
-(committed) and 4.3 partly covered by 2.4. §2 features and the §3 answers come after the fixes.**
-Seven verification gates (one offline + six DB) must stay green — commands are in the STATUS BOARD at
-the top of `context/feature.md`, which is the single place to look after a context clear.
+**ALL 22 fixes, N2, and N1 (Quick Booking + window booking + payment hold + order editing) are
+BUILT AND VERIFIED, and the §1+§2+§3 deliverable is WRITTEN:
+`context/CLIENT-DELIVERABLE-oct2026.md`.** Gates: `briefCheck` **341/341** offline · **21 DB
+harnesses** green against testingdb · swagger **74 schemas / 307 paths / 0 wrong envelopes**.
+Commands and the per-item detail are in the STATUS BOARD at the top of `context/feature.md`, which
+remains the single place to look after a context clear.
+
+> ### ⚠️⚠️ THE ONLY THING LEFT: NOTHING IS DEPLOYED.
+> `feature/fix` is **pushed but NOT merged to `main`**. `origin/main` is at `e0d5c3a` with
+> **10 commits ahead of it**, so window booking, the payment hold, item editing, D7, the Anytime
+> refund, display names, the service-type guard, item-level holds, the notifications policy **and
+> the CRM registered-not-booked sequence the client asked to go live FIRST** are all unshipped.
+> **"Pushed" and "merged" are different questions** — check `git log origin/main..HEAD`, and never
+> reason from local `main` (it has been 127 commits behind and caused a wrong diagnosis once).
+
+**Also outstanding, none of it code:**
+- **FE adoption gap.** `GET /api/communication/templates/meta` has been LIVE since the Group 4
+  merge (it exists so the template **Key** field is a dropdown of the six valid keys) and the client
+  was seen typing into a free-text box. Three other live changes may be unadopted — `avgProcessingTime`
+  can be **null** (**unguarded, the dashboard prints "null" today**), `avgRevenuePerItem7Days`
+  replaces `avgCostPerItem7Days`, and `dormantRateLabel` ships from the backend. Keep this separate
+  from the 10 unmerged commits, which genuinely 404 and cannot be adopted yet.
+- **Two client config actions**, both assumed by shipped messages: create the **First Experience
+  offer**, and a **free-logistics offer with an ₦8,000 minimum** (the third registered-not-booked
+  message promises it and the promise is false until it exists).
+- **Two notes drafted but not sent:** the weekend date shift (Sat standard: Mon → Tue), and that a
+  window booking costs exactly what a booking costs today so only Anytime is dearer.
+- Client changelogs for the FE: `context/FE-CHANGELOG-2026-10-09.md` is the current one, with the
+  swagger path/method/schema for every change (all verified against the built spec).
 
 Client PDF "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas", from their own testing 4–6 Oct.
 **Full plan + per-item triage is in `context/feature.md` (CURRENT feature).**
