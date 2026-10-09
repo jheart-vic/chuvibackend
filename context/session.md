@@ -58,6 +58,30 @@ Swagger 66/301/0. NEW `services/bookingWindow.service.js`, `GET /bookOrder/booki
   `count_differs_from_rider` for admin-only clearing, system-computed bill, 48h payment hold + SMS +
   Paystack link, 6h/24h reminders, 48h admin alert, tags never before payment, the waiver that
   stops at dispatch). Then Phase 4 = order editing (#7) + the D7 delivery window at READY.
+### N1 PHASE 4 BUILT 2026-10-09 (`77c6bc9`) — **N1 IS CODE-COMPLETE.** briefCheck **337/337**
+NEW `itemEditStaging.js` 20/20; all 21 DB harnesses green. Swagger 74/307/0.
+**Only ONE item remains in the whole programme: the §1+§2+§3 client block.**
+- **Item #7:** `_repriceForItems` is ON `BookOrderService` and calls the IDENTICAL three steps a
+  booking branch calls — "through the same pricing + offers" is a claim about CODE PATHS. A separate
+  service would be a FOURTH copy of the basket maths (three had already drifted pre-1.6).
+- Service type / tier / speed / window come from the ORDER, not the request, so an item edit cannot
+  re-price the logistics. Up → the reused payment hold; down → the wallet. **A waiver is permission
+  to proceed, not money received**, so reducing a waived bill refunds nothing.
+- **NEW `util/walletRefund.js`: ONE refund implementation, now shared with cancellation.** Atomic
+  `$inc` + ledger line + **the mirrored `Payment` row, because the customer's history reads
+  `Payment`** — the 2.3 lesson.
+- ⚠️ **REAL BUG the new harness caught: `itemEdits` was `$push`ed to an UNDECLARED schema path, and
+  Mongoose silently drops that.** Bill changed, money moved, audit trail absent, no error. **Third
+  time** (after `pickup.note` and order-level `holdDetails`). Only counting the rows finds it.
+- **D7**: delivery window confirmed at READY, never re-pricing, and **left unconfirmed rather than
+  inventing a date** when no window is free.
+- **D2(c) refund pays out** from both serve points, **reading** the stored
+  `windowWasBookableAtBooking` (unanswerable after the cutoff passes), idempotent, and **recording a
+  refusal with its reason** rather than going silent.
+- **Renaming is a LABEL layer and that is the only safe reading:** the stored values are order enums
+  and the pricing key, so renaming one would fail new orders, orphan old ones and drop pricing to
+  ×1. `updateAdminSettings` would have allowed it. Also fixed: `vip` rendered as "Vip" on every card.
+
 ### N1 PHASE 3 COMPLETE 2026-10-09 — briefCheck **311/311**, all 20 DB harnesses green
 Swagger 71/305/0. Committed on top of `7c03e99`. Full design on feature.md's board.
 - **"Tags never print before payment" on ALL THREE tag doors** via one shared `util/paymentGate.js`

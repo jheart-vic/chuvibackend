@@ -252,17 +252,93 @@ Both are **optional** fields, so existing calls are unchanged.
   `countMismatch: true`, `requiresAdminApproval: true` and both counts. Only an
   admin can clear it.
 
+## 3c. New: editing an order's items (client item #7)
+
+### `PATCH /api/bookOrder/order/:id/items` (Intake or admin)
+
+Intake enters what was actually in the bag; the backend recalculates the bill
+through the same pricing and offer path a booking uses, then settles the
+difference automatically.
+
+```json
+{ "items": [{ "type": "shirt", "price": 700, "quantity": 4 }],
+  "reason": "Two extra shirts were in the bag" }
+```
+
+Response (`data.message`): `previousTotal`, `newTotal`, `difference`,
+`pieceCount`, plus **exactly one** of:
+
+- `paymentHold` — the total went up and money is outstanding. Same shape as
+  raising a hold directly, including `paymentUrl`.
+- `walletRefund` — the total went down; the number is what went back to the
+  wallet. If the automatic refund failed it is an **object** with `error` and
+  `amount` instead — the customer is still owed it, so surface that rather than
+  treating it as success.
+
+Rules worth building around:
+
+- **`reason` is required.** The customer is told the bill changed and why.
+- **After tagging has begun, only an admin may edit** — Intake gets
+  `requiresAdmin: true`. This is detected from the items, so an order sitting in
+  the tagging queue with labels already generated is already locked to admins.
+- **You cannot change the service type, care tier, delivery speed or time window
+  here.** They come from the order, so an item edit can't re-price the
+  logistics. Use the existing endpoints for those.
+- **A waived order is not treated as paid.** Reducing its bill refunds nothing,
+  because no money was received.
+- Applies to **both** booking types.
+
+## 3d. New: renaming speeds, service types and care tiers
+
+`GET /api/admin/display-names` · `PUT /api/admin/display-names`
+
+**Display name only — and this matters for how you build the form.** The stored
+values are enums on every order and the key the pricing path matches on, so they
+never change. You rename the *label*:
+
+```json
+{ "deliverySpeeds": { "same-day": "Express Same Day" },
+  "serviceTiers": { "vip": "Platinum" } }
+```
+
+- **Always send the `value` back in other requests, never the label.** Every
+  entry returns `{ value, label, renamed }` precisely so you never have to
+  reverse a label into an identifier.
+- An unknown key is refused, with the valid keys listed in the error.
+- An **empty label** drops the override and restores the derived name.
+- `renamed: false` means the label is derived, so a settings screen can show
+  which are custom.
+
+Also fixed: a lower-case acronym now renders as one — the `vip` tier previously
+read **"Vip"** on every station card.
+
+## 3e. Delivery windows are confirmed at READY (D7)
+
+`scheduling.delivery.confirmedAt` is now set when the order is packed and marked
+ready, and the window/day are pinned then. Before that point `deliveryPromise`
+reads *"Estimated delivery…"* with `confirmed: false`; afterwards it names the
+window.
+
+If no window has room, the leg is deliberately left **unconfirmed** rather than
+given a made-up date — so keep handling `confirmed: false` indefinitely, not as
+a transient state.
+
+The **Anytime refund now pays out** automatically when a leg qualifies (booked
+Anytime while the window was still bookable, then served inside that window).
+It appears in the wallet and in the customer's transaction history, and
+`scheduling.<leg>.refund` carries `qualified`, `amount`, `paidAt` and a `reason`
+— including when it was *refused*, so you can explain why no refund came.
+
 ## 4. Not built yet — don't design against it
 
-- **Intake entering the real items and the bill being recomputed.** The payment
-  hold works and uses the order's existing amount, but nothing re-prices an
-  order after Intake edits its items. That is the next phase (order editing),
-  where total-up becomes a payment hold and total-down returns to the wallet.
-- **Order editing** (#7) and the **D7 confirmation of the delivery window at
-  READY**. Until that ships, `scheduling.delivery.confirmedAt` is always absent
-  and every delivery promise reads as an estimate.
-- Anytime's **refund** when a job ends up served inside a window: the order now
-  records what the refund decision needs, but nothing pays it out yet.
+The backend side of N1 is now **code-complete** — booking, windows, the payment
+hold, item editing, the D7 confirmation, the Anytime refund and the display
+names are all built and covered. Two notes rather than gaps:
+
+- **Quick Booking has no separate endpoint.** It is the normal booking endpoint
+  with the timing fields in §2 — the client chose to build it once with real
+  windows rather than as a parallel flow, so there is nothing extra to call.
+- **Nothing here is deployed yet.** See §6.
 
 ---
 

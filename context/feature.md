@@ -250,17 +250,60 @@ Swagger **71 schemas / 305 paths / 0 wrong envelopes**. All 20 DB harnesses gree
   one banning `dispatchPaymentGate`), both tripped by the comment explaining the rule. **A test that
   greps source must strip comments or exclude its own explanation** — now done explicitly.
 
-### 🔨 STILL OPEN after Phase 3
-- **Intake entering the real items → recomputed bill** is the one piece of the client's four-step
-  Intake flow NOT built: the hold can be raised and takes the order's existing amount, but nothing
-  re-prices an order after Intake edits the items. **That is Phase 4 / client item #7 (order
-  editing)**, where total-up → payment hold and total-down → wallet already have their rule.
-- **D7 delivery-window confirmation at READY** — until it ships, `confirmedAt` is always absent and
-  every delivery promise reads as an estimate.
-- **The Anytime refund payout** — the order records everything the decision needs and
-  `qualifiesForAnytimeRefund` is tested, but nothing pays it.
-- Admin renaming of delivery speeds / service types / care tiers (display name only).
-- The single §1+§2+§3 client block.
+### ✅ PHASE 4 BUILT 2026-10-09 (`77c6bc9`) — item #7, D7, the Anytime refund, display names
+briefCheck **337/337**. Swagger **74 schemas / 307 paths / 0 wrong envelopes**. NEW
+`itemEditStaging.js` **20/20**; all 21 DB harnesses green.
+- **Item #7 re-pricing.** `_repriceForItems` lives ON `BookOrderService` and calls the IDENTICAL
+  three steps a booking branch calls (`priceItems` → `_priceWithOffers` → `_buildPricing`), because
+  "through the same pricing + offers" is a claim about CODE PATHS. A separate re-pricing service
+  would be a **fourth** copy of the basket maths; there were already three that had drifted before
+  `util/itemPricing.js` unified them (two defaulted a missing tier charge to 1, the third to 1.5/2).
+- **Service type, tier, speed and the chosen window come from the ORDER, not the request**, so an
+  item edit cannot quietly re-price the logistics. The window/Anytime fee the customer picked is
+  honoured instead of resetting to the flat fee.
+- **Up → `PaymentHoldService.raise` (reused, one dunning flow). Down → the wallet.** A **waiver is
+  permission to proceed, NOT money received**, so reducing a waived order's bill refunds nothing —
+  otherwise we would refund cash that never arrived. Reason required; every edit records who.
+  **After tagging, admin only**, detected from the ITEMS (a tag exists while the order still sits in
+  the tagging QUEUE).
+- **NEW `util/walletRefund.js` — ONE wallet refund, now shared with cancellation.** All three writes
+  matter: atomic `$inc`, the `WalletTransaction` ledger line, and **the mirrored `Payment` row,
+  because the customer's own history endpoint reads `Payment`** — exactly why the 2.3 complaint
+  ("the money has no record") stayed true after the write side was fixed.
+- ⚠️ **A REAL BUG `itemEditStaging` CAUGHT ON ITS FIRST RUN: `itemEdits` was `$push`ed to a path
+  NOT DECLARED on the schema, and Mongoose silently drops that.** The edit succeeded, the bill
+  changed, the money moved, and the audit trail was simply absent with no error anywhere. **Third
+  time in this repo** after `dispatchDetails.pickup.note` (3.2) and the order-level `holdDetails`.
+  Only running it and COUNTING THE ROWS finds this class.
+- **D7: the delivery window is confirmed at READY** (from `packAndSealComplete`), not at booking —
+  a standard order's delivery day is +2 and under D6 might not be a working day. It **never
+  re-prices** the order (they were quoted at booking, often already paid), and when no window is
+  free it leaves the leg **unconfirmed rather than inventing a date**, so the promise keeps reading
+  "Estimated delivery", which is honest.
+- **D2(c) the Anytime refund now PAYS OUT**, settled from both serve points (pickup + delivery).
+  It **READS `windowWasBookableAtBooking`, never recomputes it** — by the time the job is done the
+  cutoff has passed, so that condition is unanswerable after the fact. Idempotent on `refund.paidAt`,
+  and **a refusal is recorded with its reason**, so "why was there no refund?" has an answer later
+  instead of silence. A walk-in with no account is recorded as owed, to settle by hand.
+- **Renaming speeds / service types / care tiers is a LABEL layer, and that is the only safe
+  reading** — not a limitation we chose. `deliverySpeed` and `serviceTier` are **enum fields on
+  every order**, and `serviceTypes[].name` is **what the pricing path matches on**, so renaming a
+  stored value would fail validation on new orders, orphan existing ones and **silently drop pricing
+  to a multiplier of 1** (`updateAdminSettings` would happily allow it — it `$set`s anything).
+  `GET|PUT /api/admin/display-names` writes labels only, refuses an unknown key by name, and an
+  empty label restores the derived one. **The RAW value always travels beside the label.**
+- **Fixed in passing: a lower-case acronym now reads as one** — the care tier `vip` rendered as
+  "Vip" on every card that uses `prettifyName`, which is every station card.
+
+### 🔨 STILL OPEN — N1 IS NOW CODE-COMPLETE; ONE DELIVERABLE LEFT
+- **The single §1+§2+§3 client block** — the original deliverable of the 6 Oct brief, to be written
+  LAST from shipped code. **This is the only remaining item.**
+- **NOT MERGED TO `main`.** `origin/main` is still `e0d5c3a`; 7 commits sit ahead of it, so none of
+  windows, the payment hold, item #7, D7 or the refund is live.
+- Worth confirming with the client when convenient (neither blocks anything):
+  - the **weekend date shift** (Sat standard: Mon → Tue) — note drafted, not yet sent;
+  - that **a window booking costs exactly what every booking costs today**, so only Anytime is
+    dearer, before they announce the pricing.
 
 ### N1 PHASE 3 — the original scope note
 **the intake → payment-hold → tag chain** — rider's true count + reason, Intake
