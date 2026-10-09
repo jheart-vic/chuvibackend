@@ -13,6 +13,7 @@ const {
     ORDER_SERVICE_TYPE,
 } = require('../util/constants')
 const { QUEUE_SORT } = require('../util/queueSort')
+const { onHoldScope } = require('../util/itemHold')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
@@ -485,14 +486,16 @@ class PressAndIronService extends BaseService {
                 },
             )
 
-            await BookOrderModel.updateOne(
-                { _id: orderId },
-                buildStageUpdate(
-                    ORDER_STATUS.HOLD,
-                    stationMap[assignTo],
-                    holdNote,
-                ),
-            )
+            // CLIENT RULING 2026-10-08: a hold at this station stops ONLY THE
+            // PIECE. The order-level stage write that used to be here set
+            // `stage.status: hold`, and the station guards then refused every
+            // further action on the order — so one held piece parked its
+            // siblings. Removed: the order keeps its real station status, the
+            // other pieces keep moving, and the piece is held by its own
+            // holdDetails (util/itemHold.js). Holds Management still lists the
+            // order through the widened scope in util/holdSla.js, and the order
+            // cannot be PACKED or DISPATCHED while any piece is held.
+            // Intake & Tag and payment holds deliberately still park the order.
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
@@ -593,7 +596,13 @@ class PressAndIronService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const baseQuery = {
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: this station now holds a PIECE, not the
+                // order, so stage.status is no longer `hold`. Match either an
+                // order parked at order level (Intake/payment holds, and legacy
+                // rows from before this change) OR an order with a piece still
+                // held. $and, not $or — this object already has its own $or and
+                // two $or keys would silently overwrite each other.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     {
                         stationStatus:
@@ -702,7 +711,13 @@ class PressAndIronService extends BaseService {
             // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: this station now holds a PIECE, not the
+                // order, so stage.status is no longer `hold`. Match either an
+                // order parked at order level (Intake/payment holds, and legacy
+                // rows from before this change) OR an order with a piece still
+                // held. $and, not $or — this object already has its own $or and
+                // two $or keys would silently overwrite each other.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     {
                         stationStatus:

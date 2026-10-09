@@ -48,10 +48,12 @@ const HandoffService = require('./services/handoff.service')
 const SortService = require('./services/sortAndPretreat.service')
 const WashService = require('./services/washAndDry.service')
 const IntakeUserService = require('./services/intake-user.service')
+const AdminService = require('./services/admin.service')
 const { ROLE, STATION_STATUS: S, ORDER_STATUS } = require('./util/constants')
 
 const handoff = new HandoffService()
 const intake = new IntakeUserService()
+const adminSvc = new AdminService()
 
 let PASS = 0,
     FAIL = 0
@@ -678,22 +680,69 @@ async function main() {
         // single held piece parks its whole order. That is a product question
         // for them, NOT something to quietly change here: order-level hold is
         // what drives Holds Management.
+        // CLIENT RULING 2026-10-08: the siblings must keep moving. Before this,
+        // holding one piece set the ORDER's stage to `hold` and the station
+        // guard then refused everything on it — so this call failed outright and
+        // four clean pieces sat waiting on one stain.
         b = await SortService.bulkSortItems(
             req(o9id, { all: true, markSorted: true }, {}, s2._id),
         )
-        ok(b.success === false,
-            'while the hold is open, no further work at this station is accepted')
-        ok(/hold/i.test(b.data?.error || ''),
-            `and the refusal names the hold ("${b.data?.error}")`)
+        ok(b.success === true,
+            `work on the OTHER pieces is still accepted (${b.success ? 'ok' : JSON.stringify(b.data)})`)
+
+        // A push creates a PENDING handoff; the pieces only move when S3
+        // confirms it. So the guarantee to assert is that the handoff carries
+        // exactly the unheld pieces — then confirm it and watch them go.
+        const pend9 = unwrap(
+            await handoff.pendingQueue({
+                query: { toStation: S.WASH_AND_DRY_STATION },
+                user: { id: String(s3._id) },
+                body: {},
+            }),
+        )
+        const rows9 = pend9?.queue || pend9?.data || pend9 || []
+        const mine9 = rows9.find((r) => String(r.orderId) === o9id)
+        ok(!!mine9, 'a handoff to wash & dry was created for the unheld pieces')
+        const hid9 = mine9 && (mine9.handoffId || mine9._id || mine9.id)
+        const res9 = await handoff.confirm(
+            req(o9id, { rejectedItems: [] }, { hid: hid9 }, s3._id),
+        )
+        ok(res9.success === true,
+            `wash & dry confirms it (${res9.success ? 'ok' : res9.data?.error})`)
+
         let fresh9 = await reload(o9id)
         const heldItem = fresh9.items.find((i) => String(i._id) === heldId)
         ok(heldItem.currentStation === S.SORT_AND_PRETREAT_STATION,
             `*** the held piece is STILL at sort & pretreat (${heldItem.currentStation}) ***`)
-        const stillHere9 = fresh9.items.filter(
-            (i) => i.currentStation === S.SORT_AND_PRETREAT_STATION,
+        const movedOn9 = fresh9.items.filter(
+            (i) => i.currentStation === S.WASH_AND_DRY_STATION,
         )
-        ok(stillHere9.length === o9items.length,
-            `all ${stillHere9.length} pieces are parked, not just the held one — ONE HOLD STOPS THE ORDER`)
+        ok(movedOn9.length === o9items.length - 1,
+            `*** the other ${movedOn9.length} pieces moved on WITHOUT it — one hold no longer stops the order ***`)
+
+        // …and Holds Management must still see the order, with the count.
+        const holdList = unwrap(
+            await adminSvc.getHoldOrders({
+                query: { type: 'activeHolds', limit: 200 },
+                user: { id: String(s1._id) },
+            }),
+        )
+        const holdRow = (holdList?.data || []).find((o) => String(o._id) === o9id)
+        ok(!!holdRow, '*** the order still appears in Holds Management ***')
+        ok(holdRow?.holdMeta?.heldPieceCount === 1,
+            `and it reports the number of pieces on hold (${holdRow?.holdMeta?.heldPieceCount})`)
+        ok(holdRow?.holdMeta?.holdScope === 'items',
+            `flagged as an ITEM-level hold, not an order-level one (${holdRow?.holdMeta?.holdScope})`)
+
+        // The order must not be packable or dispatchable while a piece is held.
+        const { dispatchTagGate } = require('./util/dispatchTag')
+        const gate9 = dispatchTagGate({
+            ...fresh9,
+            isDelivery: true,
+            qcDetails: { packCompletedAt: new Date() },
+        })
+        ok(gate9.ok === false && /on hold/i.test(gate9.error || ''),
+            `*** it cannot be dispatched while a piece is held ("${gate9.error}") ***`)
 
         // Release it, and now it may move.
         // Released by INTAKE, because that is the station the hold was assigned

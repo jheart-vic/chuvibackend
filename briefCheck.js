@@ -34,18 +34,49 @@ const now = new Date('2026-10-07T12:00:00+01:00')
 const A = activeHoldsFilter(now)
 const O = overdueHoldsFilter(now)
 
-ok('both filters scope to stage.status = hold',
-    A['stage.status'] === ORDER_STATUS.HOLD && O['stage.status'] === ORDER_STATUS.HOLD)
+// SHAPE CHANGED 2026-10-08: holds at the four production stations are now
+// ITEM-level, so an order with a held piece has NO `stage.status: hold`. Both
+// filters are therefore `$and: [ scope, breachClause ]`, where scope is
+// "order parked OR any piece still held". $and and not a bare $or, because the
+// Overdue clause is itself an $or and two $or keys in one object would silently
+// overwrite each other — which would have made Overdue match every held order.
+const scopeOf = (f) => f.$and[0]
+const clauseOf = (f) => f.$and[1]
+ok('both filters are scoped by the SAME on-hold clause',
+    JSON.stringify(scopeOf(A)) === JSON.stringify(scopeOf(O)))
+ok('  …and that scope is "order parked OR a piece still held"',
+    scopeOf(O).$or.length === 2 &&
+        scopeOf(O).$or[0]['stage.status'] === ORDER_STATUS.HOLD &&
+        !!scopeOf(O).$or[1].items.$elemMatch)
+ok('  …matched with $elemMatch, so a RELEASED hold does not count forever',
+    scopeOf(O).$or[1].items.$elemMatch['holdDetails.releasedAt'].$exists === false)
 ok('Overdue uses $or, Active uses $nor (exact complement)',
-    Array.isArray(O.$or) && Array.isArray(A.$nor) && !A.$or && !O.$nor)
+    Array.isArray(clauseOf(O).$or) &&
+        Array.isArray(clauseOf(A).$nor) &&
+        !clauseOf(A).$or &&
+        !clauseOf(O).$nor)
 ok('the two clauses are the SAME branches — cannot drift',
-    JSON.stringify(A.$nor) === JSON.stringify(O.$or),
-    `\n       active.$nor=${JSON.stringify(A.$nor)}\n       overdue.$or=${JSON.stringify(O.$or)}`)
+    JSON.stringify(clauseOf(A).$nor) === JSON.stringify(clauseOf(O).$or))
 ok('every delivery speed has an SLA',
     Object.values(DELIVERY_SPEED).every((s) => HOLD_SLA_HOURS[s] > 0),
     JSON.stringify(HOLD_SLA_HOURS))
 ok('a past deliveryDate is also a breach branch',
-    O.$or.some((b) => b.deliveryDate && b.deliveryDate.$lt))
+    clauseOf(O).$or.some((b) => b.deliveryDate && b.deliveryDate.$lt))
+// THE FALSE POSITIVE THIS GUARDS: an order whose only hold is on a PIECE has a
+// stale `stage.updatedAt` like any other order. Without pinning the order-level
+// branches to `stage.status: hold`, such an order would match a speed branch
+// purely for not having moved in six hours, and be reported Overdue while
+// nothing was overdue at all.
+ok('every stage.updatedAt branch is pinned to an ORDER-level hold',
+    clauseOf(O).$or
+        .filter((b) => b['stage.updatedAt'])
+        .every((b) => b['stage.status'] === ORDER_STATUS.HOLD))
+ok('item holds are clocked from the PIECE\'s own heldAt, not the order stage',
+    clauseOf(O).$or.some(
+        (b) =>
+            b.items?.$elemMatch?.['holdDetails.heldAt']?.$lt &&
+            b.items.$elemMatch['holdDetails.releasedAt'].$exists === false,
+    ))
 // The row badge used its OWN hardcoded 120/240/360 minutes and ignored the
 // delivery-date branch, so a row counted as Overdue could still render "not
 // breached". Badge and bucket must read the same definition.
@@ -680,9 +711,29 @@ const run = (async () => {
         /code: 'two-accounts'/.test(mergeSrc) &&
             mergeSrc.indexOf("if (group.blockers.length)") <
                 mergeSrc.indexOf('CrmScheduledMessageModel.updateMany'))
-    ok('messages are re-pointed BEFORE the absorbed cards are deleted',
+    // Client ruling 2026-10-08: the absorbed card is ARCHIVED, never deleted —
+    // "phone numbers get shared and recycled here, so a wrong merge must be
+    // reversible."
+    ok('the absorbed card is ARCHIVED, not deleted',
+        !/CrmProfileModel\.deleteMany/.test(mergeSrc) &&
+            /mergedInto: keep\._id/.test(mergeSrc) &&
+            /archived: true/.test(mergeSrc))
+    ok('  …and archived cards are hidden from every list and count by a hook',
+        /crmProfileSchema\.pre\(\/\^find\/, hideArchived\)/.test(
+            fs.readFileSync(path.join(ROOT, 'models/crmProfile.model.js'), 'utf8'),
+        ) &&
+            /pre\('aggregate'/.test(
+                fs.readFileSync(path.join(ROOT, 'models/crmProfile.model.js'), 'utf8'),
+            ))
+    ok('messages are re-pointed BEFORE the cards are archived',
         mergeSrc.indexOf('CrmScheduledMessageModel.updateMany') <
-            mergeSrc.indexOf('CrmProfileModel.deleteMany'))
+            mergeSrc.indexOf('mergedInto: keep._id'))
+    ok("the survivor's stage is RECOMPUTED from combined orders, not the furthest",
+        /countStage\(combinedOrders\)/.test(mergeSrc) &&
+            /stage: recomputed,/.test(mergeSrc) &&
+            !/stage: furthest\.stage/.test(mergeSrc))
+    ok('  …using the CRM engine\'s own rule, not a second copy of the thresholds',
+        /const \{ countStage \} = require\('\.\/crm\.service'\)/.test(mergeSrc))
     ok('the unique normalizedPhone is freed before the survivor claims it',
         mergeSrc.indexOf("$unset: { normalizedPhone: '' }") <
             mergeSrc.indexOf('normalizedPhone: canonical'))

@@ -22,6 +22,7 @@
 // ONE definition shared by the read endpoint, the print endpoint and the
 // rider-assignment guard.
 const { PAYMENT_ORDER_STATUS } = require('./constants')
+const { describeHeld, heldItems } = require('./itemHold')
 const { normalizeAddress } = require('./address')
 const { briefsForAll, summarize, countPieces } = require('./itemSummary')
 
@@ -53,6 +54,28 @@ function dispatchTagGate(order) {
         return {
             ok: false,
             error: 'Order has not completed Pack & Seal yet, so it is not ready to leave the office.',
+        }
+    }
+
+    // CLIENT RULING 2026-10-08: "the order cannot be packed or dispatched until
+    // every held piece is released."
+    //
+    // This is the right chokepoint for the dispatch half: the gate is shared by
+    // reading the tag, PRINTING it, and the rider-assignment guard (which
+    // refuses an untagged delivery order). So one check here means a held piece
+    // cannot be tagged, cannot be printed and cannot be assigned to a rider —
+    // rather than three guards that could drift apart.
+    //
+    // It matters more now than it would have before: until the hold became
+    // item-level, a held order was frozen at order level and could not reach
+    // this point at all. With the siblings moving freely, an order CAN arrive
+    // here with one piece still sitting at another station.
+    const heldMessage = describeHeld(order.items || [])
+    if (heldMessage) {
+        return {
+            ok: false,
+            error: `This order cannot go out yet — ${heldMessage}`,
+            heldPieces: heldItems(order.items || []).length,
         }
     }
 

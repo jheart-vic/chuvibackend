@@ -49,6 +49,10 @@ async function main() {
                 serviceType: 'wash-and-iron', serviceTier: 'classic',
                 isPickUp: true, isDelivery: false, deliverySpeed: 'standard',
                 items, pickupAddress: { label: 'Home', address: '12 St' }, // no landmark
+                // paymentMethod is required since 2026-10-08; without it this
+                // call is refused for THAT reason and the landmark assertion
+                // below would be testing nothing.
+                paymentMethod: 'cash',
             },
         })
         ok(!r.success && /landmark is required/i.test(JSON.stringify(r.data)), 'staff intake rejects address missing landmark')

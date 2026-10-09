@@ -33,10 +33,24 @@ const BaseService = require('./base.service')
 const createAuditLog = require('../util/createAuditLog')
 const { normalizePhone, getObjectId } = require('../util/helper')
 const { CRM_STAGE, AUDIT_LOG_CATEGORIES } = require('../util/constants')
+// The CRM engine's OWN stage rule, not a second copy of the thresholds.
+const { countStage } = require('./crm.service')
+// Matches CrmSetting.thresholds.dormantDays' default; the dormancy scan is the
+// authority and reconciles anything this gets wrong on its next pass.
+const DORMANT_DAYS = 30
 
-// How far along the journey a stage is, so the survivor keeps the FURTHEST one
-// rather than whichever card happened to be older. dormant/reactivated are
-// scored by what they imply about order history, not by position in the enum.
+// CLIENT RULING 2026-10-08: "Please do not just keep the furthest stage. Work
+// out the stage again from the combined orders, using the normal stage rules,
+// and let the card follow the follow up messages for that stage."
+//
+// So STAGE_RANK is no longer how the survivor's stage is decided — it is kept
+// only to describe what WAS there, because the rank is still the honest way to
+// report which of two cards was further along. The decision now goes through
+// `countStage` from crm.service (the CRM engine's own rule) plus the dormancy
+// window, so a merged card cannot end up in a stage its order history does not
+// support. Keeping the furthest stage could do exactly that: a lead card with
+// zero orders absorbing a dormant card would have been called "dormant" while
+// the combined history said "lead".
 const STAGE_RANK = {
     [CRM_STAGE.LEAD]: 0,
     [CRM_STAGE.FIRST_ORDER]: 1,
@@ -62,6 +76,7 @@ class ProfileMergeService extends BaseService {
     async findDuplicates(req = {}) {
         try {
             const profiles = await CrmProfileModel.find({})
+                .setOptions({ includeArchived: false }) // the report is about LIVE duplicates
                 .select(
                     '_id fullName phoneNumber normalizedPhone userId email stage tags ' +
                         'totalOrders totalSpent nonSubscriptionOrders expressOrders ' +
@@ -203,6 +218,25 @@ class ProfileMergeService extends BaseService {
                 (STAGE_RANK[c.stage] ?? -1) > (STAGE_RANK[best.stage] ?? -1) ? c : best,
             all[0],
         )
+
+        // Recomputed from the COMBINED order history with the CRM engine's own
+        // rule, then the dormancy window applied the way the dormancy scan does
+        // — so the merged card lands where its real history puts it and then
+        // follows that stage's follow-up messages.
+        const combinedOrders = sum('totalOrders')
+        const lastOrder = latest(...all.map((c) => c.lastOrderAt))
+        let recomputed = countStage(combinedOrders)
+        if (
+            combinedOrders > 0 &&
+            lastOrder &&
+            Date.now() - new Date(lastOrder).getTime() > DORMANT_DAYS * 86400000
+        ) {
+            // Quiet longer than the dormancy window — the scan would call them
+            // dormant on its next pass, so the merge should not hand back a card
+            // that is about to flip anyway.
+            recomputed = CRM_STAGE.DORMANT
+        }
+
         return {
             // The account (and with it the referral code, wallet and orders)
             // moves ONTO the older card — client step 4.
@@ -211,7 +245,11 @@ class ProfileMergeService extends BaseService {
             // a rider wrote down.
             fullName: account?.fullName || all.find((c) => c.fullName)?.fullName,
             email: all.find((c) => c.email)?.email,
-            stage: furthest.stage,
+            stage: recomputed,
+            // What WAS there, so the report and the audit line can show the move
+            // rather than just the result.
+            stageWas: furthest.stage,
+            stageRecomputedFrom: combinedOrders,
             totalOrders: sum('totalOrders'),
             totalSpent: sum('totalSpent'),
             nonSubscriptionOrders: sum('nonSubscriptionOrders'),
@@ -352,19 +390,32 @@ class ProfileMergeService extends BaseService {
                 },
             )
 
-            // 4. The absorbed cards are DELETED, not kept as empty shells: a
-            //    second card for the same human is exactly the bug being fixed,
-            //    and every number on it has been added to the survivor. The
-            //    audit row below is the record of what was removed.
-            const removed = await CrmProfileModel.deleteMany({
-                _id: { $in: absorbIds },
-            })
+            // 4. The absorbed cards are ARCHIVED, never deleted — client ruling
+            //    2026-10-08, and their reason is a good one: "phone numbers get
+            //    shared and recycled here, so a wrong merge must be reversible."
+            //    Hidden from lists and counts, marked with what they merged
+            //    into, and restorable by an admin.
+            //
+            //    `normalizedPhone` was already unset in step 2, which is what
+            //    lets the survivor hold the canonical number while these cards
+            //    keep their history — the unique index allows only one.
+            const removed = await CrmProfileModel.updateMany(
+                { _id: { $in: absorbIds } },
+                {
+                    $set: {
+                        mergedInto: keep._id,
+                        mergedAt: new Date(),
+                        mergedBy: performedBy ? getObjectId(performedBy) : undefined,
+                        archived: true,
+                    },
+                },
+            )
 
             await createAuditLog({
                 userId: performedBy ? getObjectId(performedBy) : undefined,
                 action:
                     `Merged duplicate CRM profiles for ${canonical}: kept ${keep._id}, ` +
-                    `removed ${absorbIds.join(', ')}. Result: stage ${plan.stage}, ` +
+                    `archived ${absorbIds.join(', ')}. Result: stage ${plan.stage} (recomputed from ${plan.stageRecomputedFrom} combined orders; the cards read ${plan.stageWas}), ` +
                     `${plan.totalOrders} orders, ₦${plan.totalSpent}` +
                     (plan.userId ? `, account ${plan.userId}` : ', no account') +
                     `. Moved ${schedMoved.modifiedCount} scheduled + ${logMoved.modifiedCount} logged messages.` +
@@ -381,8 +432,8 @@ class ProfileMergeService extends BaseService {
                     merged: true,
                     phone: canonical,
                     keptProfileId: keep._id,
-                    removedProfileIds: absorbIds,
-                    removedCount: removed.deletedCount,
+                    archivedProfileIds: absorbIds,
+                    archivedCount: removed.modifiedCount,
                     movedScheduledMessages: schedMoved.modifiedCount,
                     movedMessageLogs: logMoved.modifiedCount,
                     profile: survivor,

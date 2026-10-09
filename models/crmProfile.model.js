@@ -93,6 +93,16 @@ const crmProfileSchema = new mongoose.Schema(
             },
         },
 
+        // ── Merge bookkeeping (client item #9, ruling 2026-10-08) ───────────
+        // An absorbed duplicate card is ARCHIVED, not deleted: "phone numbers
+        // get shared and recycled here, so a wrong merge must be reversible."
+        // `archived: true` hides it from every list and count; `mergedInto`
+        // points at the card that now holds the history, which is what makes an
+        // undo possible. Absent on every normal card.
+        archived: { type: Boolean, default: false, index: true },
+        mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'CrmProfile' },
+        mergedAt: { type: Date },
+        mergedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         stageHistory: [
             {
                 from: { type: String },
@@ -112,6 +122,43 @@ const crmProfileSchema = new mongoose.Schema(
 crmProfileSchema.index({ stage: 1 })
 crmProfileSchema.index({ tags: 1 })
 crmProfileSchema.index({ lastOrderAt: 1 })
+
+// ── Archived cards are hidden EVERYWHERE by default ─────────────────────────
+// Client ruling 2026-10-08: an absorbed duplicate is archived and must be
+// hidden "from lists and counts".
+//
+// Done as query middleware rather than by editing the ~13 places that read
+// profiles, for one reason: a filter added at 13 call sites is a filter the
+// 14th will forget, and the symptom — a merged-away duplicate reappearing in a
+// count — is the exact bug this feature exists to remove. One definition here
+// covers every current and future reader.
+//
+// `/^find/` so findOne/findById are included too, not just find(); `aggregate`
+// needs its own hook because it does not pass through the find hooks at all,
+// and the CRM metrics are aggregations.
+//
+// Opt back in with `.setOptions({ includeArchived: true })` — needed by the
+// merge report and by any future restore, which must be able to see them.
+const hideArchived = function (next) {
+    if (!this.getOptions?.().includeArchived) {
+        const filter = this.getFilter()
+        if (filter.archived === undefined && filter._id === undefined) {
+            this.where({ archived: { $ne: true } })
+        }
+    }
+    next()
+}
+crmProfileSchema.pre(/^find/, hideArchived)
+crmProfileSchema.pre(/^count/, hideArchived)
+crmProfileSchema.pre('distinct', hideArchived)
+
+// A lookup BY ID is deliberately exempt above (an explicit id is an explicit
+// request for that card), so an admin can still open an archived one.
+crmProfileSchema.pre('aggregate', function (next) {
+    if (this.options?.includeArchived) return next()
+    this.pipeline().unshift({ $match: { archived: { $ne: true } } })
+    next()
+})
 
 const CrmProfileModel = mongoose.model('CrmProfile', crmProfileSchema)
 module.exports = CrmProfileModel

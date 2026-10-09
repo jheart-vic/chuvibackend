@@ -26,6 +26,7 @@ const {
     ORDER_SERVICE_TYPE,
     PAYMENT_METHOD,
 } = require('../util/constants')
+const { onHoldScope } = require('../util/itemHold')
 const {
     planCounterPayment,
     settleCounterPayment,
@@ -470,10 +471,11 @@ class IntakeUserService extends BaseService {
                         ],
                     }),
 
-                    // hold orders — unchanged
-                    BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.HOLD,
-                    }),
+                    // Hold orders. WIDENED 2026-10-08 so the card agrees with
+                    // Holds Management: a piece held at a production station no
+                    // longer parks the order, and counting only parked orders
+                    // would show 0 while the Holds screen listed several.
+                    BookOrderModel.countDocuments(onHoldScope(ORDER_STATUS.HOLD)),
 
                     // dispatch legs still waiting on a rider
                     BookOrderModel.countDocuments({
@@ -2180,7 +2182,12 @@ class IntakeUserService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const baseQuery = {
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: the four production stations assign their
+                // ITEM holds TO Intake (a station may not hold for itself), and
+                // those orders are no longer parked at order level — so without
+                // this, Intake could see no held pieces and could not release
+                // them at all. $and because this object already has its own $or.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
                     {
@@ -2298,7 +2305,12 @@ class IntakeUserService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: the four production stations assign their
+                // ITEM holds TO Intake (a station may not hold for itself), and
+                // those orders are no longer parked at order level — so without
+                // this, Intake could see no held pieces and could not release
+                // them at all. $and because this object already has its own $or.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
                     { 'items.holdDetails.assignTo': ROLE.INTAKE_AND_TAG },

@@ -1861,3 +1861,9 @@ class CrmService {
 }
 
 module.exports = new CrmService()
+// Exported so the profile MERGE can recompute a stage with the SAME rule the
+// CRM engine uses (client ruling 2026-10-08: "work out the stage again from the
+// combined orders, using the normal stage rules"). A second copy of the
+// thresholds in profileMerge.service.js is exactly the drift that let the tier
+// pricing maths disagree with itself in brief 1.6.
+module.exports.countStage = countStage

@@ -60,8 +60,80 @@ Also in memory: `chuvi-client-rulings-oct2026`. **Several REVERSE what is alread
   for the customer all along ("an item on **your** order") and had only ever been sent to the
   operator.
 
-### 🔨 STILL TO BUILD from these rulings
-**1. HOLDS BECOME PER-STATION IN SCOPE — reverses shipped behaviour. Biggest item here.**
+### ✅ ALL FIVE RULINGS BUILT 2026-10-08 (second batch) — briefCheck **208/208**
+holds **48/48** (was 34 — now covers the CRUD endpoints) · stationFlow **97/97** ·
+counterPayment 51 · regNotBooked 33 · offerAdmin 37 · freeLogistics 23.
+
+**1. HOLDS ARE NOW PER-STATION IN SCOPE.** Intake + payment holds still park the whole order; the
+four production stations hold only the PIECE.
+- Removed the order-level `buildStageUpdate(ORDER_STATUS.HOLD, …)` from sendToHold in
+  sortAndPretreat / washAndDry / pressAndIron / qc. **That single write was what parked the
+  siblings** — the station guards then refused everything on the order.
+- NEW shared filters in `util/itemHold.js`: `anyItemHeldFilter`, `itemHeldForStationFilter`,
+  `onHoldScope`, `heldItemCount`. **Every one uses `$elemMatch`, and that is not optional: a
+  RELEASED hold keeps its `heldAt`** (release only adds `releasedAt`), so a bare
+  `items.holdDetails.heldAt` match would count every order that had ever had a hold, forever.
+- `util/holdSla.js`: both filters now `$and: [onHoldScope, breachClause]` — **`$and`, not a bare
+  `$or`, because Overdue's clause IS an `$or` and two `$or` keys in one object silently overwrite
+  each other, which would have made Overdue match every held order.** The 4.4 exact-complement
+  partition survives because BOTH filters take the IDENTICAL scope.
+- **A FALSE POSITIVE THIS NEARLY SHIPPED WITH:** every order-level breach branch is now pinned to
+  `'stage.status': HOLD`. Without it, an order whose only hold is on a PIECE matched a speed branch
+  purely because `stage.updatedAt` was over six hours old — reported Overdue with nothing overdue.
+  briefCheck asserts the pinning structurally.
+- Item holds are clocked from the piece's own `heldAt`; they carry no hold TYPE, so they always use
+  the speed table. `isHoldBreached` checks the item case FIRST, or a breached piece would have shown
+  "not breached" on its row while the card counted it Overdue — the 4.4 contradiction again.
+- **8 station finders + 2 intake finders + the intake dashboard hold count + `expiringToday` all
+  widened.** The intake ones matter most: **the four stations assign their holds TO Intake** (a
+  station may not hold for itself), so without widening Intake's release finder nobody could release
+  an item hold at all.
+- **Pack and dispatch gates (the client's condition):** `packAndSealComplete` refuses with the held
+  pieces named, and the held check went into **`dispatchTagGate`** — shared by reading the tag,
+  printing it AND the rider-assignment guard, so one check covers all three instead of three that
+  could drift.
+- Holds Management rows gained `heldPieceCount`, `totalPieceCount`, `holdScope` ('order' | 'items')
+  and a `heldPieces[]` detail list — the count the client asked for.
+
+**2. PER-METHOD MONEY REPORTING.** NEW `revenueTodayByMethod` on the admin dashboard. **No
+reconciliation needed, because a split counter order already writes ONE Payment ROW PER TENDER** —
+grouping by `paymentMethod` splits it by construction and the parts still sum to the total.
+Grouping on `billingType` never could: an order has exactly one.
+
+**3. FIRST EXPERIENCE ALWAYS WINS ON A FIRST ORDER.** `_bestByBillValue` takes `stats` and returns
+the First Experience offer when `totalOrders === 0`, with `autoApply.reason:
+'first-experience-override'` so the screen can explain why a bigger discount was not used. Rows
+carry `isFirstExperience`. The asymmetry is the point: every other offer survives for later.
+
+**4. MERGED CARDS ARE ARCHIVED, NEVER DELETED.** `archived` / `mergedInto` / `mergedAt` / `mergedBy`
+on `CrmProfile`. **Hidden by Mongoose query middleware (`pre(/^find/)`, `pre(/^count/)`,
+`pre('aggregate')`), not by editing the ~13 read sites** — a filter added at 13 call sites is the one
+the 14th forgets, and the symptom would be a merged-away duplicate reappearing in a count, i.e. the
+exact bug the feature removes. Opt back in with `.setOptions({ includeArchived: true })`; a lookup
+BY ID is exempt so an admin can still open an archived card.
+
+**5. THE MERGED STAGE IS RECOMPUTED** from the combined orders via **`countStage` exported from
+crm.service** (the engine's own rule, not a second copy of the thresholds), plus the dormancy
+window. `stageWas` / `stageRecomputedFrom` are reported so the move is visible.
+
+### ✅ ALSO DONE
+- **`seedFirstExperienceOffer.js`** — every value the client specified, idempotent, `--dry`.
+  **Deliberately NOT in `config/setup.js`**: every other seed there is plumbing, this one gives money
+  away and should exist because somebody ran it. If an active offer exists it is never edited, only
+  reported — with a list of where it DIFFERS from the client's spec.
+- **holdsStaging now covers the hold-type CRUD (34 → 48)** and found two real gaps:
+  1. **the duplicate check was on the derived KEY, not the name.** A key is permanent, so after a
+     rename the name is free again — two types could carry identical names and appear as two
+     indistinguishable reasons on a station's list. Now checks the name case-insensitively, which is
+     what the swagger always claimed.
+  2. **renaming a SYSTEM type was silently ignored** — the write was skipped but the response said
+     success, so an admin renamed the payment hold, saw it save, and the old name was still there.
+     Switching it off one branch above was refused out loud; renaming now is too.
+
+### 🔨 REMAINING from these rulings
+*(none — all five are built. The list below is kept for the record of what they were.)*
+
+**1. ~~HOLDS BECOME PER-STATION IN SCOPE~~ — DONE, see above.**
 - Intake & Tag + **payment holds → stop the WHOLE order** (today's behaviour, keep).
 - **Sort & Pretreat / Wash & Dry / Press & Iron / QC → stop only THAT PIECE.** Siblings keep moving.
   **The order cannot be PACKED or DISPATCHED until every held piece is released** — that is the new

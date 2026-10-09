@@ -493,6 +493,12 @@ class OfferService {
                 // tie-break (item #6(b)) breaks ties on "expiring soonest" and
                 // decorateOffer only returns the derived expiresInDays.
                 expiresAt: linkage.expiresAt,
+                // CLIENT RULING 2026-10-08: on a FIRST order the First
+                // Experience offer always wins, whatever the bill maths says.
+                // Carried on the row so the screen can mark it too.
+                isFirstExperience: (offer.triggers || []).includes(
+                    OFFER_TRIGGER.FIRST_EXPERIENCE,
+                ) || offer.trigger === OFFER_TRIGGER.FIRST_EXPERIENCE,
                 ...this.decorateOffer(offer, { expiresAt: linkage.expiresAt }),
                 preselected:
                     String(draft.customerOfferId || '') === String(linkage._id),
@@ -542,7 +548,7 @@ class OfferService {
         // customer has something to use — the same reason A1's dormant-rate
         // label moved here. The wording is the client's, verbatim.
         const applicablePersonal = personal.filter((p) => p.applicable)
-        const best = this._bestByBillValue(applicablePersonal, draft)
+        const best = this._bestByBillValue(applicablePersonal, draft, stats)
         const checkoutPrompt = best
             ? {
                   show: true,
@@ -571,6 +577,10 @@ class OfferService {
                       name: best.name,
                       billValue: best._billValue,
                       otherOffersKept: applicablePersonal.length - 1,
+                      // 'bill-value' normally; 'first-experience-override' when
+                      // the first-order rule beat a higher-value offer, so the
+                      // screen can explain why the bigger discount was not used.
+                      reason: best._wonBy || 'bill-value',
                   }
                 : null,
         }
@@ -584,8 +594,34 @@ class OfferService {
     // on the customer's NEXT order, so counting it here could spend today's
     // better offer to bank tomorrow's. Tie → the one expiring soonest, because
     // the other one still has time to be used.
-    _bestByBillValue(applicable, draft = {}) {
+    _bestByBillValue(applicable, draft = {}, stats = null) {
         if (!applicable || !applicable.length) return null
+
+        // CLIENT RULING 2026-10-08, and it OVERRIDES the bill maths below:
+        // "On a customer's first order, the First Experience offer always wins,
+        //  because it can only be used on the first order and it is what our
+        //  reps promised the customer. If another offer is applied instead, the
+        //  First Experience offer is lost for good."
+        //
+        // That asymmetry is the whole point: every other offer survives to be
+        // used later, so losing a bigger discount today costs the customer
+        // nothing permanent — losing this one costs them it entirely. Gated on
+        // `totalOrders === 0` so it only ever applies to a genuine first order.
+        if (stats && (stats.totalOrders || 0) === 0) {
+            const firstExperience = applicable.find((p) => p.isFirstExperience)
+            if (firstExperience) {
+                const b = firstExperience.benefit || {}
+                return {
+                    ...firstExperience,
+                    _billValue:
+                        (b.discount || 0) +
+                        (b.freePickup ? draft.pickupAmount || 0 : 0) +
+                        (b.freeDelivery ? draft.deliveryAmount || 0 : 0),
+                    _wonBy: 'first-experience-override',
+                }
+            }
+        }
+
         const scored = applicable.map((p) => {
             const b = p.benefit || {}
             const value =

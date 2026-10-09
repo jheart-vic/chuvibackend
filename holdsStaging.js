@@ -33,8 +33,10 @@ const {
     ORDER_CHANNEL,
     ORDER_SERVICE_TYPE,
     PAYMENT_ORDER_STATUS,
+    ROLE,
 } = require('./util/constants')
 const { HOLD_SLA_HOURS } = require('./util/holdSla')
+const HoldTypeModel = require('./models/holdType.model')
 
 const admin = new AdminService()
 let PASS = 0,
@@ -284,7 +286,6 @@ async function main() {
         // more, and under the 2/4/6-hour speed table every one of them would be
         // Overdue within hours — turning the card 4.4 just fixed back into noise.
         console.log('\n6 — a payment hold is judged by its own 48-hour limit')
-        const HoldTypeModel = require('./models/holdType.model')
         const payType = await HoldTypeModel.findOneAndUpdate(
             { key: HoldTypeModel.PAYMENT_HOLD_KEY },
             {
@@ -403,6 +404,84 @@ async function main() {
             (dash8 || {}).overdueHolds === 6,
             `*** a type with no limit still breaches on the 6-hour standard clock *** (overdue ${(dash8 || {}).overdueHolds}, want 6)`,
         )
+
+        // ── 9 the hold-type CRUD endpoints ───────────────────────────────────
+        // The SLA maths was covered from the start; the four endpoints an admin
+        // actually uses were not, which is the gap this closes.
+        console.log('\n[9] the hold-type admin endpoints')
+        const adminReq = (body = {}, params = {}, query = {}) => ({
+            body,
+            params,
+            query,
+            user: { id: new mongoose.Types.ObjectId().toString() },
+        })
+
+        let r = await admin.createHoldType(
+            adminReq({
+                name: `STG Awaiting customer reply ${STAMP}`,
+                slaHours: 24,
+                stations: [ROLE.INTAKE_AND_TAG],
+                escalateToAdmin: true,
+            }),
+        )
+        const made = r?.data?.message
+        if (made?._id) createdTypeIds.push(made._id)
+        ok(r.success === true, `create works (${r.success ? 'ok' : r.data?.error})`)
+        ok(!!made?.key, `and derives a permanent key (${made?.key})`)
+        ok(made?.slaHours === 24, 'with the limit the admin set')
+
+        // The key is permanent because ORDERS STORE IT — a rename must not
+        // orphan every hold already carrying it.
+        r = await admin.updateHoldType(
+            adminReq({ name: `STG Renamed ${STAMP}`, slaHours: 36 }, { id: String(made._id) }),
+        )
+        ok(r.success === true, `update works (${r.success ? 'ok' : r.data?.error})`)
+        const afterRename = await HoldTypeModel.findById(made._id).lean()
+        ok(afterRename.key === made.key, '*** the key survives a rename ***')
+        ok(afterRename.slaHours === 36, 'and the new limit stuck')
+
+        r = await admin.createHoldType(adminReq({ name: `STG Renamed ${STAMP}` }))
+        ok(r.success === false, 'a duplicate name is refused')
+        r = await admin.createHoldType(adminReq({}))
+        ok(r.success === false, 'a missing name is refused')
+        r = await admin.createHoldType(
+            adminReq({ name: `STG Bad station ${STAMP}`, stations: ['not-a-station'] }),
+        )
+        ok(r.success === false, 'an unknown station is refused')
+
+        const listed = (await admin.listHoldTypes(adminReq({}, {}, {})))?.data?.message || []
+        ok(
+            listed.some((t) => String(t._id) === String(made._id)),
+            `the list returns it (${listed.length} types)`,
+        )
+
+        // Deleting a type that orders are SITTING ON must deactivate, not
+        // delete: a real delete would drop those holds back onto the speed
+        // clock and read as instantly overdue.
+        await BookOrderModel.updateOne(
+            { _id: opHold._id },
+            { $set: { 'orderHold.holdTypeKey': afterRename.key } },
+        )
+        r = await admin.deleteHoldType(adminReq({}, { id: String(made._id) }))
+        ok(r.success === true, `delete accepted (${r.success ? 'ok' : r.data?.error})`)
+        const afterDelete = await HoldTypeModel.findById(made._id).lean()
+        ok(
+            !!afterDelete && afterDelete.active === false,
+            '*** a type in use is DEACTIVATED, not removed ***',
+        )
+
+        // The payment hold is system-owned and must survive both.
+        const payTypeNow = await HoldTypeModel.findOne({
+            key: HoldTypeModel.PAYMENT_HOLD_KEY,
+        }).lean()
+        if (payTypeNow) {
+            r = await admin.deleteHoldType(adminReq({}, { id: String(payTypeNow._id) }))
+            ok(r.success === false, 'the payment hold type cannot be deleted')
+            r = await admin.updateHoldType(
+                adminReq({ name: 'Renamed payment hold' }, { id: String(payTypeNow._id) }),
+            )
+            ok(r.success === false, 'nor renamed — the payment flow looks it up by key')
+        }
     } finally {
         if (createdTypeIds.length) {
             // Only the types this run created. A real seeded payment type in the

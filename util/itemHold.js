@@ -50,4 +50,63 @@ function describeHeld(items = []) {
     }`
 }
 
-module.exports = { isItemOnHold, heldItems, describeHeld }
+// ── CLIENT RULING 2026-10-08: a hold stops only what it is about ────────────
+// "At Intake & Tag, and for payment holds, the hold stops the whole order. At
+//  Sort & Pretreat, Wash & Dry, Press & Iron and QC & Pack, the hold stops only
+//  that piece. The other pieces keep moving. The order cannot be packed or
+//  dispatched until every held piece is released. The order still shows in Holds
+//  Management, with the number of pieces on hold."
+//
+// Before this, every station's sendToHold also wrote the ORDER's stage to
+// `hold`, which is what parked the siblings — the station guards then refused
+// all further work on that order. The four production stations no longer do
+// that, so these filters are how a held PIECE stays visible.
+//
+// THE TRAP, and the reason every query below uses $elemMatch: releasing a hold
+// sets `releasedAt` and nulls `assignTo` but LEAVES `heldAt` in place. A bare
+// `{'items.holdDetails.heldAt': {$exists: true}}` therefore matches every order
+// that has ever had a hold, forever. Each clause must pin heldAt and the absence
+// of releasedAt TO THE SAME ARRAY ELEMENT.
+
+// Orders with at least one piece still held.
+const anyItemHeldFilter = () => ({
+    items: {
+        $elemMatch: {
+            'holdDetails.heldAt': { $exists: true, $ne: null },
+            'holdDetails.releasedAt': { $exists: false },
+        },
+    },
+})
+
+// Pieces still held AND assigned to this station to resolve. Used by each
+// station's hold queue and its release endpoint.
+const itemHeldForStationFilter = (role) => ({
+    items: {
+        $elemMatch: {
+            'holdDetails.heldAt': { $exists: true, $ne: null },
+            'holdDetails.releasedAt': { $exists: false },
+            'holdDetails.assignTo': role,
+        },
+    },
+})
+
+// "This order is on hold" for Holds Management: the ORDER is parked (Intake or a
+// payment hold) OR any piece is held. Both filters that partition the holds must
+// use this IDENTICAL clause, or the 4.4 Active/Overdue complement breaks.
+const onHoldScope = (orderStatusHold) => ({
+    $or: [{ 'stage.status': orderStatusHold }, anyItemHeldFilter()],
+})
+
+// How many pieces are still held — the count the client asked Holds Management
+// to show. Works on a loaded document.
+const heldItemCount = (order) => heldItems(order?.items || []).length
+
+module.exports = {
+    isItemOnHold,
+    heldItems,
+    describeHeld,
+    anyItemHeldFilter,
+    itemHeldForStationFilter,
+    onHoldScope,
+    heldItemCount,
+}

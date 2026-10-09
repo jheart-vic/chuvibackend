@@ -10,6 +10,34 @@
 > `origin/main..feature/fix` is EMPTY.** Any older note here claiming commits are unpushed is
 > stale.
 
+### ALL FIVE RULINGS + HOUSEKEEPING BUILT — briefCheck **208/208**, 20 harnesses green
+holds **48/48** (was 34) · stationFlow **97/97** (was 92) · tierPricing 33 · phase12 14 ·
+counterPayment 51 · regNotBooked 33 · recoveryReport 52 · walletLimit 63 · handoff 54 · dispatch 46 ·
+dispatchTag 46 · dashboardDecisions 36 · offerAdmin 37 · freeLogistics 23 · template 27 ·
+subLogistics 20 · staffStatus 38 · planCreate 39 · bot 11/11. Swagger 62/296/0.
+
+- **HOLDS ARE PER-STATION NOW.** Removing one line per station (the order-level
+  `buildStageUpdate(HOLD, …)`) is what unparked the siblings. The hard parts were the filters:
+  **`$elemMatch` is mandatory because a RELEASED hold keeps its `heldAt`**; **`$and` not `$or`
+  because Overdue's clause is itself an `$or` and two `$or` keys overwrite each other silently**;
+  and **every order-level breach branch had to be pinned to `stage.status: HOLD`** or an order with
+  only a held PIECE matched a speed branch purely for a stale `stage.updatedAt` and read Overdue
+  with nothing overdue. The pack gate went in `packAndSealComplete`; the dispatch gate went in
+  **`dispatchTagGate`**, which the tag read, the print and the rider-assignment guard all share.
+  **The intake finders mattered most** — the four stations assign holds TO Intake, so without
+  widening Intake's release nobody could release an item hold at all.
+- **Archived merge cards are hidden by Mongoose query middleware**, not by editing ~13 read sites:
+  a filter added at 13 sites is the one the 14th forgets, and the symptom is the merged duplicate
+  reappearing in a count.
+- **Per-method revenue needed no reconciliation** — a split counter order already writes one Payment
+  ROW PER TENDER, so grouping by `paymentMethod` splits it by construction.
+- **TWO REAL GAPS the new hold-type CRUD coverage found:** the duplicate check was on the derived
+  KEY, so after a rename the NAME was free again and two indistinguishable reasons could exist; and
+  **renaming a SYSTEM type was silently ignored** — skipped write, success response.
+- **TWO HARNESSES went red for the right reason and were out of date, not wrong:** tierPricing and
+  phase12 both call the staff intake path, which now REQUIRES `paymentMethod`. phase12's was the
+  instructive one — its landmark assertion was failing on the missing tender, i.e. testing nothing.
+
 ### ITEM #1 CRM SEQUENCE BUILT (2026-10-08) — briefCheck **200/200**, regNotBooked **33/33**
 Client asked for it LIVE NOW, before window booking: their reps start registering people tomorrow.
 NEW `CRM_WORKFLOW.REGISTERED_NOT_BOOKED`, 4 message types, admin-editable schedule, the three texts
