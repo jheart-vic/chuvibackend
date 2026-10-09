@@ -1475,6 +1475,132 @@ const run = (async () => {
         /req\.body\?\.itemCount === undefined/.test(iuSrc) &&
             /req\.body\?\.itemCount === undefined/.test(riderSrcN1))
 
+    // ─── N1 Phase 3 — the payment hold, the waiver, the reminders ───────────
+    console.log('\nN1 Phase 3 — payment hold lifecycle and cancellation fees')
+    const PHS = require(path.join(ROOT, 'services/paymentHold.service'))
+    ok('the reminder schedule is the client’s: 6h, 24h, admin at 48h',
+        PHS.SCHEDULE.length === 3 &&
+            PHS.SCHEDULE[0].afterHours === 6 && PHS.SCHEDULE[0].audience === 'customer' &&
+            PHS.SCHEDULE[1].afterHours === 24 && PHS.SCHEDULE[1].audience === 'customer' &&
+            PHS.SCHEDULE[2].afterHours === 48 && PHS.SCHEDULE[2].audience === 'admin')
+    ok('an open hold is told apart from a cleared one',
+        PHS.isOnPaymentHold({ paymentHold: { raisedAt: new Date() } }) === true &&
+            PHS.isOnPaymentHold({ paymentHold: { raisedAt: new Date(), clearedAt: new Date() } }) === false &&
+            PHS.isOnPaymentHold({}) === false)
+
+    const phSrc = fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')
+    // "Staff can never type an amount" is enforced by there being no parameter.
+    ok('raising a hold takes NO amount — the bill comes from the order',
+        /static async raise\(\{ orderId, actorId, reason = null \}\)/.test(phSrc) &&
+            /const amount = Number\(order\.amount \|\| 0\)/.test(phSrc))
+    ok('the hold IS an ordinary order-level hold, so Holds Management shows it',
+        /'orderHold\.holdTypeKey': HoldTypeModel\.PAYMENT_HOLD_KEY/.test(phSrc) &&
+            /'stage\.status': ORDER_STATUS\.HOLD/.test(phSrc))
+    // Reminders are latched BY NAME, and the latch is claimed BEFORE the send:
+    // losing one reminder is better than messaging a customer every 20 minutes.
+    ok('each reminder is latched by NAME with $addToSet, claimed before sending',
+        /\$addToSet: \{ 'paymentHold\.remindersSent': step\.latch \}/.test(phSrc) &&
+            phSrc.indexOf("$addToSet: { 'paymentHold.remindersSent': step.latch }") <
+                phSrc.indexOf('tally.sent += 1'))
+    ok('a waiver REQUIRES a reason', /A reason is required to waive a payment hold/.test(phSrc))
+    ok('a bank transfer approval REQUIRES a matchable reference',
+        /transfer reference or the sender’s name is required/.test(phSrc))
+    ok('  …and every approval notifies an admin for the daily bank check',
+        /Bank transfer approved by Intake & Tag/.test(phSrc) &&
+            /approvedByRole/.test(phSrc))
+    // The waiver must not grow its own copy of the dispatch stop. Asserted by
+    // WHERE the gate is called, not by searching for the word "dispatch" — the
+    // waiver legitimately TELLS the customer it cannot be dispatched, so a
+    // text search fails on its own user-facing message.
+    ok('the dispatch stop is called ONLY from the shared dispatch-tag gate',
+        (() => {
+            // Comments stripped before searching. Twice this session a
+            // source-grepping assertion has failed on the prose explaining
+            // itself — the waiver's doc comment names `dispatchPaymentGate` to
+            // say where the stop lives, which is documentation, not a call.
+            const code = phSrc
+                .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/^\s*\/\/.*$/gm, '')
+            return /dispatchPaymentGate\(order\)/.test(dtSrc) &&
+                !/dispatchPaymentGate/.test(code)
+        })())
+    // Paystack clears the hold on its own; a human-approved transfer records
+    // WHO, because that is the first question asked about a bank transfer.
+    ok('the Paystack webhook releases the hold automatically',
+        /PaymentHoldService\.clear\(\{[\s\S]{0,120}source: 'paystack'/.test(
+            fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8'),
+        ))
+    ok('an admin-approved payment releases it too, recorded as bank-transfer',
+        /source: 'bank-transfer'/.test(
+            fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8'),
+        ))
+    ok('the reminder cron is REGISTERED in server.js (an unregistered cron never runs)',
+        /require\('\.\/crons\/paymentHoldReminders\.js'\)/.test(
+            fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8'),
+        ))
+
+    // Cancellation. Pure, so every tier runs here.
+    const { cancellationOutcome, taggingBegun } = require(path.join(ROOT, 'util/cancellationFees'))
+    const CSET = { cancellationPickupFee: 1000, cancellationReturnFee: 1000 }
+    const mkOrd = (o) => ({ items: [{ type: 'shirt' }], amount: 8000, dispatchDetails: { pickup: {} }, ...o })
+    ok('before pickup is FREE, and anything paid comes back in full',
+        (() => {
+            const a = cancellationOutcome({ order: mkOrd({}), settings: CSET })
+            const b = cancellationOutcome({ order: mkOrd({ paymentStatus: 'success' }), settings: CSET })
+            return a.tier === 'free' && a.feeApplied === 0 &&
+                b.tier === 'free' && b.refundToWallet === 8000
+        })())
+    ok('collected but unpaid owes ₦1,000 + ₦1,000 before the clothes go back',
+        (() => {
+            const r = cancellationOutcome({
+                order: mkOrd({ dispatchDetails: { pickup: { status: 'picked-up' } } }),
+                settings: CSET,
+            })
+            return r.tier === 'logistics' && r.feeApplied === 2000 &&
+                r.payableBeforeReturn === true
+        })())
+    // The clause that makes this file necessary: deriving the charge from
+    // `order.pricing` would make a cancelled free-pickup order cost nothing.
+    ok('  …charged even under a free-pickup offer, and said so to the customer',
+        /even if your order had free pickup/i.test(
+            cancellationOutcome({
+                order: mkOrd({ dispatchDetails: { pickup: { status: 'picked-up' } } }),
+                settings: CSET,
+            }).explanation,
+        ))
+    ok('after payment the laundry fee returns and both trips are kept',
+        (() => {
+            const r = cancellationOutcome({
+                order: mkOrd({
+                    dispatchDetails: { pickup: { status: 'picked-up' } },
+                    paymentStatus: 'success',
+                }),
+                settings: CSET,
+            })
+            return r.tier === 'post-payment' && r.feeApplied === 2000 && r.refundToWallet === 6000
+        })())
+    ok('once tagging has begun, cancellation is REFUSED',
+        (() => {
+            const r = cancellationOutcome({
+                order: mkOrd({ items: [{ type: 'shirt', tagId: 'TAG-01' }] }),
+                settings: CSET,
+            })
+            return r.allowed === false && r.tier === 'refused'
+        })())
+    // Checked on the ITEMS, not the stage: a tag is generated while the order
+    // is still in the tagging QUEUE, which the stage list treats as cancellable.
+    ok('  …detected from the ITEMS (a tag exists before the stage moves)',
+        taggingBegun({ items: [{ tagId: 'TAG-01' }] }) === true &&
+            taggingBegun({ items: [{ tagStatus: 'complete' }] }) === true &&
+            taggingBegun({ items: [{ type: 'shirt' }] }) === false)
+    ok('  …and the stricter tag rule is checked BEFORE the stage tiers',
+        boSrc.indexOf('if (taggingBegun(order))') < boSrc.indexOf('const RED = ['))
+    ok('the cancellation fee is COMPUTED, with an explicit value as an override',
+        (boSrc.match(/outcome\.feeApplied\s*\n?\s*: feeAmount/g) || []).length === 2)
+    ok('the cancellation charges are MIGRATED onto the existing settings doc',
+        /cancellationPickupFee: 1000/.test(setupSrcN1) &&
+            /cancellationReturnFee: 1000/.test(setupSrcN1))
+
     const crmSrc2 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
     ok('booking cancels the new sequence as well as the lead one',
         /cancelPendingMessages\(profile\._id, \[\s*CRM_WORKFLOW\.LEAD,\s*CRM_WORKFLOW\.REGISTERED_NOT_BOOKED,?\s*\]\)/.test(

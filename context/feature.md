@@ -181,7 +181,89 @@ every endpoint claim verified against the built spec** (incl. that `Infinity` se
   A Saturday standard order moves Monday → Tuesday. It is strictly more honest, but they should
   hear it from us before a customer does.
 
-**N1 PHASE 3 (next): the intake → payment-hold → tag chain** — rider's true count + reason, Intake
+### ✅ N1 PHASE 3 BUILT 2026-10-09 — intake → payment hold → tag. briefCheck **311/311**
+Swagger **71 schemas / 305 paths / 0 wrong envelopes**. All 20 DB harnesses green.
+- **NEW `util/paymentGate.js` — "tags never print before payment", on ALL THREE tag doors**
+  (`generateAllTags`, `confirmTagItem`, `completeTagging`). One shared gate for the same reason
+  `dispatchTagGate` is shared: three guards would drift and the missed one is the door an unpaid
+  order walks through. briefCheck counts the call sites (`=== 3`).
+- **THE WAIVER ASYMMETRY IS THE DESIGN.** A waiver **opens** tagging (the order is meant to be
+  processed) and **closes** dispatch. Two functions, not one, because a combined "is this order OK?"
+  helper would have to pick an answer and be wrong at the other end. The dispatch stop lives in
+  `dispatchTagGate`, shared by read/print/rider-assign, and briefCheck asserts
+  `dispatchPaymentGate` is called from NOWHERE else.
+- ⚠️ **I OVER-READ THE SPEC AND `dispatchTagStaging` CAUGHT IT.** The first cut refused EVERY unpaid
+  order at dispatch. **The dispatch tag has deliberately supported unpaid orders since 2026-09-24** —
+  it prints `paymentState: 'unpaid'` with "settle it in the app, do NOT collect cash". "Stopped at
+  dispatch" is specifically about a **WAIVER**: an admin override to get clothes washed must not
+  also buy a free delivery. Narrowed, and the narrowness is now asserted.
+- **`moneyIsComplete` is IMPORTED from `productionClock.js`, never re-stated.** Two copies would
+  eventually disagree about a waived order → an order in production with no tags, or tagged unpaid.
+- **NEW `services/paymentHold.service.js`** — raise / clear / waive / approveTransfer /
+  runReminderSweep / bankCheckList.
+  - **`raise()` takes NO amount parameter.** "Staff can never type an amount" is enforced by there
+    being no way to pass one; the bill is whatever the pricing pipeline put on the order.
+  - The hold IS an ordinary order-level hold (`stage.status: HOLD` +
+    `orderHold.holdTypeKey: 'payment'`), so Holds Management, the 48h `judgeByOwnLimitOnly` limit
+    and the escalation cron pick it up with **no special-casing**.
+  - **Idempotent** — a second tap reports the existing hold rather than re-sending the link or
+    restarting the 48h clock.
+  - The Paystack link reuses `initializePayment` via a synthetic `{body,user}` request (the bot's
+    pattern), and returns **null rather than failing** — a missing link must not stop the hold, the
+    SMS still says "pay in the app".
+  - **`clear()` does NOT set `paymentStatus`** — each caller proves payment differently (a webhook
+    signature, a wallet debit, a human looking at a bank app), and clearing a hold that also marked
+    the order paid would hide which actually happened.
+- **NEW `crons/paymentHoldReminders.js`, registered in `server.js`** (a cron only runs if required).
+  Every 20 min, not hourly — a 6h reminder must not arrive at 6h59.
+  **Reminders are latched BY NAME** (`6h`/`24h`/`admin-48h`) in `paymentHold.remindersSent`, not by
+  a count or a `lastReminderAt`: a count cannot say WHICH was skipped, and a timestamp lets a
+  restart re-send the 6h message at hour 30. **The latch is claimed BEFORE the send** — losing one
+  reminder beats messaging a customer every 20 minutes.
+- **Bank transfer approval (Intake or admin) REQUIRES a reference**, because the daily check has
+  nothing to match against the statement without it. Every approval notifies an admin and lands on
+  **`GET /api/admin/bank-check-list`** (Lagos day, exclusive upper bound, `byIntakeCount` broken out
+  because Intake's approvals are the ones the client wants reviewed). `approvedByRole` is STORED,
+  since a staff member's role can change after the fact.
+- **NEW `util/cancellationFees.js` (pure).** Free before pickup · **₦1,000 + ₦1,000 once collected,
+  even under a free-pickup offer** · after payment the laundry fee returns to the wallet and both
+  trips are kept · **refused once tagging begins**.
+  - ⚠️ **The "even if a free-pickup offer applied" clause is why this file exists.** Deriving the
+    charge from `order.pricing` gives ₦0 for an offer-covered order, so cancelling a free-pickup
+    order would cost nothing and absorb the rider's trip. The fees are their own settings
+    (`cancellationPickupFee`/`cancellationReturnFee`, migrated) and are NOT derived.
+  - **`taggingBegun` reads the ITEMS, not `stage.status`** — a tag is generated while the order is
+    still in the tagging QUEUE, which the existing tier list treats as Amber (cancellable on
+    request). Checked BEFORE the stage tiers, asserted structurally.
+  - **The fee is now COMPUTED at both cancellation sites** (staff cancel + request approval) with an
+    explicit `feeAmount` still honoured as an override, so the two routes cannot charge differently.
+- **NEW endpoints:** `POST /intake-user/order/:id/payment-hold` ·
+  `POST /intake-user/order/:id/approve-transfer` ·
+  `POST /admin/order/:id/payment-hold/waive` (admin only) · `GET /admin/bank-check-list`.
+- **Count chain (earlier this session):** rider records the true count — reason required when it
+  differs, flags + SMS, **never blocks**; Intake disagreeing with the rider **stops the order** on
+  the seeded `count_differs_from_rider` hold via `util/countMismatchHold.js`, which writes the full
+  hold shape (stage, note, stationStatus, holdTypeKey, stageHistory, escalatedAt cleared) because
+  writing four of five from memory is how a hold goes missing from the screen built to show it.
+- **Both counts are OPTIONAL**, which is why all 20 harnesses passed unedited.
+- **TWO briefCheck assertions failed on their OWN PROSE this session** (one banning `isCancelled`,
+  one banning `dispatchPaymentGate`), both tripped by the comment explaining the rule. **A test that
+  greps source must strip comments or exclude its own explanation** — now done explicitly.
+
+### 🔨 STILL OPEN after Phase 3
+- **Intake entering the real items → recomputed bill** is the one piece of the client's four-step
+  Intake flow NOT built: the hold can be raised and takes the order's existing amount, but nothing
+  re-prices an order after Intake edits the items. **That is Phase 4 / client item #7 (order
+  editing)**, where total-up → payment hold and total-down → wallet already have their rule.
+- **D7 delivery-window confirmation at READY** — until it ships, `confirmedAt` is always absent and
+  every delivery promise reads as an estimate.
+- **The Anytime refund payout** — the order records everything the decision needs and
+  `qualifiesForAnytimeRefund` is tested, but nothing pays it.
+- Admin renaming of delivery speeds / service types / care tiers (display name only).
+- The single §1+§2+§3 client block.
+
+### N1 PHASE 3 — the original scope note
+**the intake → payment-hold → tag chain** — rider's true count + reason, Intake
 confirming it (mismatch raises the already-seeded `count_differs_from_rider` hold, admin-only
 clear), system-computed bill (staff can NEVER type an amount), the 48h payment hold + SMS + Paystack
 link, reminders 6h/24h, admin alert at 48h, **tags never print before payment**, and the admin waiver

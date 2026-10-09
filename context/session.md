@@ -58,6 +58,42 @@ Swagger 66/301/0. NEW `services/bookingWindow.service.js`, `GET /bookOrder/booki
   `count_differs_from_rider` for admin-only clearing, system-computed bill, 48h payment hold + SMS +
   Paystack link, 6h/24h reminders, 48h admin alert, tags never before payment, the waiver that
   stops at dispatch). Then Phase 4 = order editing (#7) + the D7 delivery window at READY.
+### N1 PHASE 3 COMPLETE 2026-10-09 — briefCheck **311/311**, all 20 DB harnesses green
+Swagger 71/305/0. Committed on top of `7c03e99`. Full design on feature.md's board.
+- **"Tags never print before payment" on ALL THREE tag doors** via one shared `util/paymentGate.js`
+  (briefCheck counts the call sites `=== 3`). **The waiver asymmetry is the design:** a waiver
+  OPENS tagging and CLOSES dispatch — two functions, because one combined helper would have to pick
+  an answer and be wrong at the other end.
+- ⚠️ **I OVER-READ THE SPEC AND A HARNESS CAUGHT IT.** My first cut refused EVERY unpaid order at
+  dispatch; `dispatchTagStaging` went red immediately and was right — **the dispatch tag has
+  deliberately carried unpaid orders since 2026-09-24** ("settle it in the app, do NOT collect
+  cash"). "Stopped at dispatch" is about the **WAIVER** only: an admin override to get clothes
+  washed must not also buy a free delivery.
+- **`moneyIsComplete` imported from `productionClock`, never re-stated** — two copies would
+  eventually disagree about a waived order (order in production with no tags, or tagged unpaid).
+- **`raise()` has NO amount parameter** — "staff can never type an amount" enforced by the absence
+  of a way to pass one. The hold is an ORDINARY order-level hold, so Holds Management, the 48h
+  `judgeByOwnLimitOnly` limit and the escalation cron need no special-casing. Idempotent.
+- **`clear()` deliberately does NOT set `paymentStatus`** — each caller proves payment differently
+  (webhook signature / wallet debit / a human reading a bank app), and clearing a hold that also
+  marked the order paid would hide which one actually happened.
+- **Reminders latched BY NAME** (`6h`/`24h`/`admin-48h`), latch **claimed before the send**: losing
+  one reminder beats messaging a customer every 20 minutes. A count can't say which was skipped; a
+  `lastReminderAt` would let a restart send the 6h message at hour 30.
+- **Cancellation (pure `util/cancellationFees.js`):** free before pickup · ₦1,000+₦1,000 once
+  collected **even under a free-pickup offer** · after payment the laundry fee returns and both
+  trips are kept · **refused once tagging begins**. The free-pickup clause is why the file exists —
+  deriving from `order.pricing` gives ₦0 and absorbs the rider's trip. `taggingBegun` reads the
+  ITEMS, not the stage, because a tag exists while the order is still in the tagging QUEUE (which
+  the old tier list treated as cancellable on request).
+- **TWO briefCheck assertions failed on their OWN PROSE** (banning `isCancelled`, then
+  `dispatchPaymentGate`) — both tripped by the comment explaining the rule. **A source-grepping
+  test must strip comments or exclude its own explanation.** Third time this pattern has appeared;
+  now handled explicitly.
+- **NEXT = Phase 4:** Intake entering the real items → recomputed bill (the one piece of the
+  client's four-step Intake flow still missing), order editing (#7), the D7 delivery-window
+  confirmation at READY, the Anytime refund payout, and admin renaming of speeds/types/tiers.
+
 ### ALL 20 DB HARNESSES GREEN against testingdb 2026-10-09 + NEW `windowBookingStaging.js` 35/35
 The user supplied the URI. **All 19 pre-existing harnesses passed unchanged** — which is the real
 check, because `presentOrder` sits on EVERY order read path and `calculateDueDate` changed under

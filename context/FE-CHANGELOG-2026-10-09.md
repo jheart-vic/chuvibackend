@@ -180,11 +180,84 @@ Behaviour worth designing for:
 
 ---
 
+## 3b. New: the payment hold (N1 Phase 3)
+
+**The rule that affects every screen showing an order:** tags cannot be produced
+until an order is paid — and this applies to an ordinary unpaid booking, not
+just Quick Booking.
+
+All three tag endpoints (`generate-all-tags`, `confirm-tag`, `complete-tagging`)
+now refuse an unpaid order with:
+
+```json
+{ "success": false, "data": { "error": "Tags cannot be printed until this order is paid. ₦8,500 is outstanding. …",
+  "requiresPayment": true, "outstandingAmount": 8500 } }
+```
+
+Branch on `requiresPayment` and send the operator to the payment hold rather
+than showing a generic failure.
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| POST | `/api/intake-user/order/:id/payment-hold` | Intake | Raise the hold; sends SMS + Paystack link |
+| POST | `/api/intake-user/order/:id/approve-transfer` | Intake/admin | Mark a bank transfer received |
+| POST | `/api/admin/order/:id/payment-hold/waive` | **Admin only** | Process unpaid; stopped at dispatch |
+| GET | `/api/admin/bank-check-list` | Admin | Daily reconciliation of approved transfers |
+
+Design notes:
+
+- **Raising a hold takes no amount.** There is no field for one — the bill comes
+  from the order, because staff can never type an amount. Don't build an input.
+- **`paymentUrl` can be null** (a walk-in with no account, or Paystack
+  unreachable). The hold still stands; fall back to "pay in the app".
+- **Raising twice is a SUCCESS**, returning `alreadyOnHold: true` with the
+  existing hold. It does not re-send the link or restart the 48h clock, so a
+  double tap is safe.
+- **`approve-transfer` requires `reference`** — the sender's name or the transfer
+  reference. Without it the daily bank check has nothing to match, so it is
+  refused. Make the field mandatory in the form.
+- **The waiver requires `reason`** and is admin-only. Afterwards the order
+  processes normally but **cannot be dispatched**: the dispatch-tag endpoints
+  will refuse it with `paymentWaived: true`. Surface that to whoever is packing,
+  or it looks like a broken tag.
+- An ordinary **unpaid** order (never waived) still dispatches as it always has,
+  with its existing "settle it in the app, do not collect cash" notice. Only a
+  waived order is stopped.
+
+### Cancellation now has computed fees
+
+`feeAmount` is no longer needed when cancelling — the backend computes it:
+
+- **Before pickup:** free; anything paid returns to the wallet in full.
+- **Collected, not yet paid:** ₦1,000 + ₦1,000 due before the clothes go back —
+  **charged even if the order had free pickup**, because the trip was made. The
+  response's `explanation` says this in words you can show the customer.
+- **Collected and paid:** the laundry fee returns to the wallet, both trips kept.
+- **Once tagging has begun:** cancellation is refused outright, including via a
+  cancellation request. This is stricter than before — a tag can exist while the
+  order still sits in the tagging queue, and that order is no longer cancellable.
+
+Sending an explicit `feeAmount` still overrides the computed value.
+
+### The rider's count and the Intake confirmation
+
+Both are **optional** fields, so existing calls are unchanged.
+
+- `POST /rider/mark-pickup/:id` accepts `itemCount` and `countReason`. A count
+  that differs from the customer's **requires a reason** — the refusal carries
+  `requiresCountReason: true` plus both counts. It then flags the order and
+  SMSes the customer, but **never blocks the pickup**.
+- `POST /intake-user/proceed-to-tag/:id` accepts `itemCount`. If it differs from
+  the rider's, the order **stops** on a hold and the response carries
+  `countMismatch: true`, `requiresAdminApproval: true` and both counts. Only an
+  admin can clear it.
+
 ## 4. Not built yet — don't design against it
 
-- The **payment hold → tag → S2 chain** (Intake confirming the rider's count, the
-  system-computed bill, the 48h payment hold with its Paystack link, reminders at
-  6h/24h, the admin waiver that stops at dispatch). Next phase.
+- **Intake entering the real items and the bill being recomputed.** The payment
+  hold works and uses the order's existing amount, but nothing re-prices an
+  order after Intake edits its items. That is the next phase (order editing),
+  where total-up becomes a payment hold and total-down returns to the wallet.
 - **Order editing** (#7) and the **D7 confirmation of the delivery window at
   READY**. Until that ships, `scheduling.delivery.confirmedAt` is always absent
   and every delivery promise reads as an estimate.

@@ -92,6 +92,17 @@ const adminSettingSchema = new mongoose.Schema(
             of: Number,
             default: undefined,
         },
+        // N1 cancellation charges (client spec 2026-10-07): "after pickup,
+        // before payment, the customer pays ₦1,000 + ₦1,000 before the clothes
+        // go back, EVEN IF a free-pickup offer applied."
+        //
+        // Their own settings rather than being derived from `order.pricing`,
+        // and that is the whole point: an offer-covered order was billed ₦0 for
+        // logistics, so deriving the charge would make cancelling a free-pickup
+        // order cost nothing and absorb the rider's trip. The trip is real work.
+        cancellationPickupFee: { type: Number, default: 1000 },
+        cancellationReturnFee: { type: Number, default: 1000 },
+
         // ─────────── WINDOW BOOKING / WORKING DAYS (client D1–D6, 2026-10-08) ───────────
         //
         // D6: a tick box per day. An unticked day has NO windows and NO Anytime

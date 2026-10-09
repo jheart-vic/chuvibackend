@@ -508,6 +508,75 @@ const bookOrderSchema = new mongoose.Schema(
         // path did not exist, so every payment hold still read against the
         // 6-hour clock. Exactly the 3.2 `dispatchDetails.pickup.note` bug again:
         // a $set to a non-schema path fails without erroring.
+        // A bank transfer marked paid by a HUMAN (N1 Phase 3). Intake may do
+        // this, which is why every field needed to review the decision is kept:
+        // the client's rule is that each Intake approval notifies an admin and
+        // lands on a daily bank-check list to be matched against the statement.
+        // `approvedByRole` is stored rather than looked up later, because a
+        // staff member's role can change after the fact.
+        bankTransferApproval: {
+            type: {
+                approvedAt: { type: Date },
+                approvedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                },
+                approvedByRole: { type: String },
+                // The sender's name or the transfer reference — without it the
+                // daily check has nothing to match and the list is useless.
+                reference: { type: String },
+                note: { type: String },
+                amount: { type: Number },
+            },
+            default: undefined,
+            _id: false,
+        },
+
+        // ───────────── THE PAYMENT HOLD (N1 Phase 3) ─────────────
+        //
+        // Client spec: once Intake has entered the real items the system
+        // computes the total and the order sits in a PAYMENT HOLD — an SMS and
+        // an in-app Paystack link go out, reminders follow at 6h and 24h, and
+        // an admin is alerted at 48h. Nothing is tagged and nothing reaches S2
+        // until it clears. Paystack clears it on its own; a bank transfer is
+        // approved by Intake or an admin.
+        //
+        // The HOLD itself is the ordinary order-level hold (`stage.status`
+        // HOLD + `orderHold.holdTypeKey: 'payment'`, already seeded at 48h with
+        // judgeByOwnLimitOnly) — this subdoc is only the extra lifecycle the
+        // other hold types do not have: the link that was sent, and which
+        // reminders have gone.
+        //
+        // `remindersSent` is a list of LATCH NAMES ('6h', '24h', 'admin-48h')
+        // rather than a count or a timestamp. A count cannot say WHICH reminder
+        // was skipped when the cron misses a sweep, and a single
+        // `lastReminderAt` would let a restart re-send the 6h message at hour
+        // 30. Names make each one exactly-once.
+        paymentHold: {
+            type: {
+                raisedAt: { type: Date },
+                raisedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                },
+                // What was outstanding WHEN the hold was raised. Kept beside
+                // the live `amount` so an order edited later still shows what
+                // the customer was actually asked for.
+                amount: { type: Number },
+                paymentUrl: { type: String },
+                remindersSent: { type: [String], default: undefined },
+                clearedAt: { type: Date },
+                // 'paystack' | 'wallet' | 'bank-transfer' | 'waiver' | 'counter'
+                clearedBy: { type: String },
+                clearedByUser: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                },
+            },
+            default: undefined,
+            _id: false,
+        },
+
         // ───────────── THE ITEM COUNT CHAIN (N1 Phase 3) ─────────────
         //
         // Three parties count the same bag and the client wants all three kept,

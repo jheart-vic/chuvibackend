@@ -1,6 +1,7 @@
 const AdminService = require('../services/admin.service')
 const ProfileMergeService = require('../services/profileMerge.service')
 const BookingWindowService = require('../services/bookingWindow.service')
+const PaymentHoldService = require('../services/paymentHold.service')
 const BaseController = require('./base.controller')
 
 class AdminController extends BaseController {
@@ -194,6 +195,33 @@ class AdminController extends BaseController {
     async listHoldTypes(req, res) {
         const adminService = new AdminService()
         const result = await adminService.listHoldTypes(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // ── N1 Phase 3: waiving a payment hold is ADMIN-ONLY, because it lets
+    // unpaid work into production. The order is then stopped at dispatch
+    // instead (enforced in dispatchTagGate, not here).
+    async waivePaymentHold(req, res) {
+        const result = await PaymentHoldService.waive({
+            orderId: req.params.id,
+            reason: req.body?.reason,
+            actorId: req.user?.id,
+        })
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // The client's daily reconciliation of transfers approved by a human.
+    async getBankCheckList(req, res) {
+        const result = await PaymentHoldService.bankCheckList({
+            from: req.query?.from,
+            to: req.query?.to,
+        })
 
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)

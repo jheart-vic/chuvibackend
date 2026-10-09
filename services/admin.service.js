@@ -1547,6 +1547,21 @@ class AdminService extends BaseService {
                 await BookOrderModel.findByIdAndUpdate(payment.order, {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                 })
+                // N1 Phase 3: a bank transfer approved here must also release
+                // the payment hold, or the order stays frozen with its money
+                // already confirmed. Non-fatal, and after the payment is
+                // recorded. `source` records that a human approved it, which is
+                // the first question asked about a bank transfer.
+                try {
+                    const PaymentHoldService = require('./paymentHold.service')
+                    await PaymentHoldService.clear({
+                        orderId: payment.order,
+                        source: 'bank-transfer',
+                        actorId: adminId,
+                    })
+                } catch (err) {
+                    console.error('payment hold release (admin approval) failed:', err?.message)
+                }
             }
 
             await createNotification({

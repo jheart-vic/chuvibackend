@@ -1,4 +1,5 @@
 const IntakeUserService = require('../services/intake-user.service')
+const PaymentHoldService = require('../services/paymentHold.service')
 const BaseController = require('./base.controller')
 
 class IntakeUserController extends BaseController {
@@ -239,6 +240,33 @@ class IntakeUserController extends BaseController {
     async markOrderAsDelivered(req, res) {
         const intakeUserService = new IntakeUserService()
         const result = await intakeUserService.markOrderAsDelivered(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // ── N1 Phase 3: the payment hold ────────────────────────────────────────
+    // Intake raises it (they have just entered the real items) and may approve
+    // a bank transfer. WAIVING is admin-only and lives on the admin routes,
+    // because a waiver lets unpaid work into production.
+    async raisePaymentHold(req, res) {
+        const result = await PaymentHoldService.raise({
+            orderId: req.params.id,
+            actorId: req.user?.id,
+            reason: req.body?.reason,
+        })
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async approveTransfer(req, res) {
+        const result = await PaymentHoldService.approveTransfer({
+            orderId: req.params.id,
+            reference: req.body?.reference,
+            note: req.body?.note,
+            actor: req.user,
+        })
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)

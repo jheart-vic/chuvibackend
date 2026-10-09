@@ -673,6 +673,57 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     PaymentHoldResult:
+ *       type: object
+ *       description: >
+ *         The outcome of raising a payment hold (N1). `alreadyOnHold` is a
+ *         SUCCESS, not a failure — raising it twice reports the existing hold
+ *         rather than re-sending the link or restarting the 48h clock.
+ *       properties:
+ *         held: { type: boolean, example: true }
+ *         alreadyOnHold: { type: boolean, example: false }
+ *         amount:
+ *           type: integer
+ *           example: 8500
+ *           description: Taken from the order. There is no way to send an amount — staff can never type one.
+ *         paymentUrl:
+ *           type: string
+ *           nullable: true
+ *           example: https://checkout.paystack.com/abc123
+ *           description: >
+ *             Null for a walk-in with no account, or if Paystack could not be
+ *             reached. The hold still stands and the SMS tells the customer to
+ *             pay in the app.
+ *         raisedAt: { type: string, format: date-time }
+ *
+ *     BankCheckRow:
+ *       type: object
+ *       description: One human-approved bank transfer awaiting reconciliation (N1).
+ *       properties:
+ *         _id: { type: string }
+ *         oscNumber: { type: string, example: OSC-2026-00412 }
+ *         fullName: { type: string, example: Chinedu Okeke }
+ *         phoneNumber: { type: string, example: "08031234567" }
+ *         amount: { type: integer, example: 8500 }
+ *         paymentStatus: { type: string, example: success }
+ *         bankTransferApproval:
+ *           type: object
+ *           properties:
+ *             approvedAt: { type: string, format: date-time }
+ *             approvedByRole:
+ *               type: string
+ *               example: intake-and-tag
+ *               description: Stored rather than looked up later, because a staff member's role can change.
+ *             reference: { type: string, example: FT24100912345 }
+ *             note: { type: string, nullable: true }
+ *             amount: { type: integer, example: 8500 }
+ *             approvedBy:
+ *               type: object
+ *               properties:
+ *                 _id: { type: string }
+ *                 fullName: { type: string, example: Amaka Obi }
+ *                 userType: { type: string, example: intake-and-tag }
+ *
  *     DeliveryPromise:
  *       type: object
  *       nullable: true

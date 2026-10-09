@@ -26,6 +26,8 @@ const {
     ROUTE_ADMIN_PROFILE_DUPLICATES,
     ROUTE_ADMIN_PROFILE_DUPLICATES_MERGE,
     ROUTE_ADMIN_HOLD_TYPE_BY_ID,
+    ROUTE_ORDER_PAYMENT_HOLD_WAIVE,
+    ROUTE_ADMIN_BANK_CHECK_LIST,
     ROUTE_ADMIN_BOOKING_WINDOWS,
     ROUTE_ADMIN_BOOKING_WINDOW_BY_ID,
     ROUTE_ADMIN_WORKING_DAYS,
@@ -3325,6 +3327,132 @@ router.delete(ROUTE_DELETE_ORDER_SET_ID, [adminAuth], (req, res) => {
 router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAuditLogs(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/order/{id}/payment-hold/waive:
+ *   post:
+ *     summary: Waive a payment hold so the order processes unpaid (N1, admin only)
+ *     description: >
+ *       Client rule: "An admin can WAIVE a payment hold with a reason → the
+ *       order processes unpaid but is **STOPPED AT DISPATCH**."
+ *
+ *
+ *       So this opens one door and closes another. The order returns to the
+ *       tagging queue, tags print and it goes through production — then it
+ *       cannot be dispatched until the money arrives. The dispatch stop is
+ *       enforced in the shared dispatch-tag gate, so reading the tag, printing
+ *       it and assigning a rider are all refused by one check.
+ *
+ *
+ *       **A reason is required.** A waiver is a person deciding to process
+ *       unpaid work; without a reason the decision cannot be reviewed.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 example: Long-standing corporate client, invoice agreed
+ *     responses:
+ *       200:
+ *         description: The waiver, with what is still outstanding
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         waived: { type: boolean, example: true }
+ *                         waivedAt: { type: string, format: date-time }
+ *                         reason: { type: string, example: Long-standing corporate client }
+ *                         outstandingAmount: { type: integer, example: 8500 }
+ *                         note: { type: string, example: The order will process unpaid but cannot be dispatched until it is paid. }
+ *       400:
+ *         description: No reason given, already paid, or already waived
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ORDER_PAYMENT_HOLD_WAIVE, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.waivePaymentHold(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/bank-check-list:
+ *   get:
+ *     summary: Bank transfers approved by a human, for daily reconciliation (N1)
+ *     description: >
+ *       The client's daily check. Every transfer that Intake or an admin marked
+ *       as received in the window, with its reference, so each can be matched
+ *       against the bank statement. `byIntakeCount` is called out separately
+ *       because the client's concern is specifically the approvals made by
+ *       Intake rather than by an admin.
+ *
+ *
+ *       Defaults to today in Lagos. The upper bound is EXCLUSIVE.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date-time, description: Exclusive upper bound }
+ *     responses:
+ *       200:
+ *         description: The approvals to check, and their total
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         from: { type: string, format: date-time }
+ *                         to: { type: string, format: date-time }
+ *                         count: { type: integer, example: 4 }
+ *                         totalApproved: { type: integer, example: 34000 }
+ *                         byIntakeCount: { type: integer, example: 3 }
+ *                         note: { type: string, example: Match each reference against the bank statement. The upper bound is exclusive. }
+ *                         rows:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BankCheckRow' }
+ *       401:
+ *         description: Not an admin
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getBankCheckList(req, res)
 })
 
 /**

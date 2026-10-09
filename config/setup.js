@@ -380,6 +380,9 @@ const ensureSchedulingSettings = async () => {
       anytimeOpenTo: "17:00",
       anytimePickupFee: 1000,
       anytimeDeliveryFee: 1000,
+      // N1 cancellation charges — same migration, same reason.
+      cancellationPickupFee: 1000,
+      cancellationReturnFee: 1000,
     };
     const applied = [];
     for (const [field, value] of Object.entries(DEFAULTS)) {

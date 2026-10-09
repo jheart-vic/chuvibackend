@@ -48,6 +48,9 @@ const {
     sameDayLegPlan,
     startOfDay: startOfLagosDay,
 } = require('../util/bookingWindow')
+// N1: cancellation is refused once tagging begins, and the fees after pickup
+// are flat charges that ignore a free-pickup offer (the trip was still made).
+const { taggingBegun, cancellationOutcome } = require('../util/cancellationFees')
 const CancellationRequestModel = require('../models/cancellationRequest.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
@@ -84,6 +87,20 @@ class BookOrderService extends BaseService {
         const status = order.stage?.status
         if (status === ORDER_STATUS.CANCELLED) {
             return { tier: 'none', allowed: false, reason: 'This order is already cancelled.' }
+        }
+
+        // N1 (client spec 2026-10-07): "any time BEFORE TAGGING BEGINS; once
+        // tagged, never." This is STRICTER than the RED stage list below and
+        // has to be checked first — a tag can be generated while the order is
+        // still sitting in the tagging QUEUE, which the list below treats as
+        // Amber (cancellable on request). Without this, an order whose labels
+        // were already printed could still be cancelled by raising a request.
+        if (taggingBegun(order)) {
+            return {
+                tier: 'red',
+                allowed: false,
+                reason: 'Tagging has already started on this order, so it can no longer be cancelled. Please contact support to raise a complaint.',
+            }
         }
 
         // Any stage where work has physically begun — cannot be undone here.
@@ -401,11 +418,23 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // N1: the fee is COMPUTED, not typed. The client set it out exactly
+            // — free before pickup, ₦1,000 + ₦1,000 once the items have been
+            // collected (even under a free-pickup offer), and after payment the
+            // laundry fee returns to the wallet while both trips are kept. An
+            // explicit `feeAmount` is still honoured as a deliberate override
+            // so existing callers and admin discretion both keep working.
+            const outcome = cancellationOutcome({ order, settings })
+            const resolvedFee =
+                req.body?.feeAmount === undefined || req.body?.feeAmount === null
+                    ? outcome.feeApplied
+                    : feeAmount
+
             const result = await this._performCancellation(order, {
                 reason,
                 performedBy: getObjectId(staffId),
                 tier: role === ROLE.ADMIN ? 'admin' : 'intake-and-tag',
-                feeApplied: feeAmount,
+                feeApplied: resolvedFee,
             })
 
             return BaseService.sendSuccessResponse({
@@ -600,11 +629,20 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // N1: same computed fee as the staff-cancel path above, so the two
+            // routes to a cancellation cannot charge different amounts for the
+            // same order.
+            const outcome = cancellationOutcome({ order, settings })
+            const resolvedFee =
+                req.body?.feeAmount === undefined || req.body?.feeAmount === null
+                    ? outcome.feeApplied
+                    : feeAmount
+
             const result = await this._performCancellation(order, {
                 reason: request.reason,
                 performedBy: getObjectId(staffId),
                 tier: 'amber',
-                feeApplied: feeAmount,
+                feeApplied: resolvedFee,
                 skipRequestId: request._id, // this request is resolved as 'approved' below
             })
 
