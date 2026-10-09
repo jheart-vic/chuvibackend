@@ -1,5 +1,53 @@
 # Current Session Log
 
+## ███ MERGED 2026-10-09 — PR #246, `origin/main` = `073c25e`. NOTHING IS UNMERGED. ███
+`origin/main..feature/fix` is **0**. Everything is live once Render finishes the deploy: the five FE
+bug fixes, count-only Quick Booking, AND `ce2380b` (the service-type name guard / B3) which had been
+sitting unmerged. **Every "NOT merged / N commits behind" note further down this file is now STALE.**
+Verify with `git rev-list --count origin/main..HEAD`, never from local `main`.
+
+### ⚠️ NO NEW CUSTOMER GETS A FIRST EXPERIENCE OFFER — AND IT IS THE *RULES*, NOT THE STATUS
+Found by seeding the test accounts into production: all four were granted ZERO offers.
+
+⚠️ **MY FIRST DIAGNOSIS WAS WRONG AND IS CORRECTED HERE.** I read the legacy `trigger` field
+(`"manual"`) and concluded nothing was wired to the registration trigger. **False** — the ACTIVE
+offer's `triggers[]` array IS `["manual","first-experience","second-order"]`, and
+`getActiveOfferForTrigger` matches on `$or: [{triggers: trigger}, {trigger}]`. **Read `triggers[]`,
+never `trigger`, when judging what fires.**
+
+Proven by running the REAL `checkProfileRules`/`isWithinWindow` against the live docs with
+zero-history stats (`totalOrders: 0`, `lastOrderAt: null`, stage `lead`):
+
+| Offer | type/status | matched? | window | profile rules |
+|---|---|---|---|---|
+| First Experience Offer `6a6a0bc6` | personal/**active** | **YES** | ok | ❌ "Not enough completed orders" |
+| First Experience Offer `6a6ef62f` | **baseline**/paused | no | ok | ❌ "Customer stage not eligible" |
+| Always Free at ₦8,000 `6a6ef37a` | promotional/paused | no | ok | ❌ "No previous order" |
+| Spend ₦3000 Save ₦500 | promotional/expired | no | ❌ | — |
+| Second Order Offer | personal/archived | no | ❌ | — |
+
+**THE ACTUAL CAUSE: the active offer's rules are self-contradictory.** `rules.minOrders: 1` AND
+`rules.firstOrderOnly: true` — it demands a completed order and that this be the first order, which
+nobody can ever satisfy. `rules.daysSinceLastOrder: 0` rejects independently, because the check is
+`!= null` and **0 is not null**, so it then requires a `lastOrderAt` that a new customer has not got.
+**A `0` in `daysSinceLastOrder` is a TRAP, not "no constraint".**
+
+Two more structural traps:
+- **`type` is settable on CREATE but is NOT in `updateOffer`'s `editable` list**, so a wrongly-typed
+  offer can never be fixed by editing — it must be recreated. The paused `baseline` First Experience
+  can therefore never be minted on registration (the trigger query filters `type: personal`).
+- **promotional ≠ baseline**: promotional offers are *selectable campaigns* at booking, baselines are
+  *always-on policies applied by rule*. "Always Free at ₦8,000" is PROMOTIONAL, so even once active
+  the customer must pick it — which is not what "always free" means, and not what CRM
+  registered-not-booked **message 3 promises**. That dependency (flagged 2026-10-08) is still unmet.
+
+**Fix = EDIT THE RULES on the already-active `6a6a0bc6`** (`PUT /api/offer/:id`, `rules` is
+editable): `minOrders: 0`, `daysSinceLastOrder: null`. Keep `firstOrderOnly: true`.
+Then `node seedTestCustomers.js --clean --i-mean-live` and re-seed — the 4 accounts have already
+used their one registration each. They exist in live
+(`chuvi-offer-test-{below,at,above,spare}@example.com`, `OfferTest#2026`) as registered-not-booked
+CRM leads.
+
 ## ███ HARNESSES RUN GREEN 2026-10-09 + TEST ACCOUNTS. URI SAVED ███
 **The testingdb URI is in `context/LOCAL-SECRETS.md`, which is GITIGNORED** — `context/` is tracked
 and pushed, so a credential in any other file there would be in the history permanently. Never
