@@ -2,7 +2,7 @@
  * Split-flow (Phase 3) DB verification harness.
  *
  * Drives the REAL HandoffService + the REAL station queue services against a
- * throwaway order, covering the scenario matrix in context/feature.md, then
+ * throwaway order, covering the scenario matrix in blueprint/context/feature.md, then
  * deletes everything it created.
  *
  * Scenarios 13–14 book through the REAL customer path (postBookOrder) to verify

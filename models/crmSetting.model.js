@@ -23,7 +23,7 @@ const DEFAULT_TEMPLATES = {
     // substitution: the client writes `{name}` and says it is the first name,
     // which is this system's existing `{{firstName}}` placeholder. Do not
     // re-word these; the client edits them in CRM settings themselves once
-    // window booking ships. Full record: context/CRM-REGISTERED-NOT-BOOKED-TEXTS.md
+    // window booking ships. Full record: blueprint/context/CRM-REGISTERED-NOT-BOOKED-TEXTS.md
     [CRM_MESSAGE_TYPE.REG_NOT_BOOKED_1]:
         'Hello {{firstName}}, this is CHUVI. Your first order offer is still open: book any order from ₦4,000 and we pick up and deliver for free. After your first wash, we also add ₦1,000 to your CHUVI wallet for your next order.\nTo book: go to www.chuvilaundry.com, tap Book, choose your items and pick a pickup time.\nFor example, one duvet and two bedsheets come to ₦4,000.\nReply here if you want us to help you book.',
     [CRM_MESSAGE_TYPE.REG_NOT_BOOKED_2]:
