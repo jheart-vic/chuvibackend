@@ -51,6 +51,10 @@ const {
 // N1: cancellation is refused once tagging begins, and the fees after pickup
 // are flat charges that ignore a free-pickup offer (the trip was still made).
 const { taggingBegun, cancellationOutcome } = require('../util/cancellationFees')
+const {
+    isCountOnlyBooking,
+    applyCountOnlyBooking,
+} = require('../util/quickBooking')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -962,6 +966,13 @@ class BookOrderService extends BaseService {
                         items: explodedItems,
                         amount: newTotal,
                         pricing,
+                        // A Quick Booking's contents are now known — this IS the
+                        // "Intake enters the items, the system computes the
+                        // total" step of the client's four. `quickBooking` is
+                        // deliberately left alone: how the order was taken is a
+                        // permanent fact, and the Quick Booking card at Intake
+                        // needs it to stop listing an order it has finished.
+                        itemsPending: false,
                     },
                     $push: {
                         itemEdits: {
@@ -1204,6 +1215,25 @@ class BookOrderService extends BaseService {
                 post.deliverySameAsPickup === 'true'
             ) {
                 if (post.isDelivery === undefined) post.isDelivery = true
+            }
+
+            // ── QUICK BOOKING: a COUNT instead of a basket ──────────────────
+            //
+            // Client spec 2026-10-07. Normalised BEFORE validation so the whole
+            // existing path — capacity gates, pricing, offers, credit, the
+            // per-piece explosion and all three billing branches — runs
+            // unchanged on an ordinary `items[]`. See `util/quickBooking.js` for
+            // why this is a translation rather than a fourth booking path, and
+            // why the placeholder pieces are priced at zero (the bill is
+            // computed at Intake and sent by SMS, which is the client's flow).
+            const countOnly = isCountOnlyBooking(post)
+            if (countOnly) {
+                const normalised = applyCountOnlyBooking(post)
+                if (!normalised.ok) {
+                    return BaseService.sendFailedResponse({
+                        error: normalised.error,
+                    })
+                }
             }
 
             const validateRule = {

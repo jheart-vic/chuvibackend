@@ -1791,7 +1791,10 @@ AND count membership at every step. **Never edit `.env` (it points at the LIVE `
 - [x] F4.6 — DONE. `util/displayName.js` in the shared brief builder; `normalizePhone` fixed (it was
       the profile-splitter), applied on write, + `phoneFormatBackfill.js` which reports split profiles.
 ### New features
-- [ ] N1 — Quick Booking (count-only booking → rider confirms count + photo → S1 finalises with real
+- [x] N1 — Quick Booking. COUNT-ONLY BOOKING BUILT 2026-10-09 (`itemCount` on the existing endpoint,
+      `util/quickBooking.js`, `GET /intake-user/quick-bookings`). NOTE: the "+ photo" in this line is
+      SUPERSEDED — the client ruled "No rider photo" on 2026-10-07 (see line 809). Original wording:
+      (count-only booking → rider confirms count + photo → S1 finalises with real
       items + per-item tier → payment request → processing starts only after payment; <₦4,000 charged
       pickup+delivery; cancellation refunds full to wallet).
 - [ ] N2 — Recovery/Complaints/Feedback dashboard (month picker + cards, built like Monthly Lead

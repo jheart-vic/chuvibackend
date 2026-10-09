@@ -428,3 +428,202 @@ merged to `main`** (`origin/main` is at `e0d5c3a`, nine commits behind).
 **If your environment tracks `main`, none of this is live** — including the
 endpoints above, which will 404. Check with the backend before testing against a
 deployed URL.
+
+---
+
+# Addendum — 9 October, later: the five reported bugs
+
+Added after the frontend's bug report of the same day. All five were real; each
+is fixed and asserted in `briefCheck.js` so it cannot come back silently
+(**359/359**, swagger **74 schemas / 308 paths / 0 wrong envelopes**).
+
+## A1. Item holds can now be cleared — one NEW endpoint, one changed contract
+
+**NEW `PATCH /api/admin/order/{id}/release-item-hold`** (admin only).
+
+```jsonc
+// body — both fields optional
+{ "itemId": "66f1a2b3c4d5e6f708192a3b",   // omit to release every held piece
+  "note": "Missing shirt found in the sorting bin" }
+```
+
+```jsonc
+// 200
+{ "success": true,
+  "data": { "message": {
+      "orderId": "…", "oscNumber": "OSC-20261009-442410",
+      "released": 1, "releasedItemIds": ["66f1…"],
+      "itemsStillOnHold": 2 } } }
+```
+
+This is **the only way to clear a hold assigned to Admin**, and every station
+offers Admin as the first assignee when raising one — so those holds previously
+had no door at all. It does not move the piece and does not rewind any station's
+progress: a hold never changed `currentStation`, so the piece resumes where it
+already sits.
+
+You already have everything needed to call it per piece: the Holds Management
+rows carry `holdMeta.heldPieces[]` with `itemId`, `tagId`, `type`, `reason`,
+`heldByStation` and `assignTo`, plus `heldPieceCount` and
+`holdScope: 'order' | 'items'`.
+
+**CHANGED — every station release takes an optional `itemId`:**
+`PATCH /api/{sort-pretreat|wash-dry|press-iron|qc|intake-user}/…/release-from-hold`
+
+- **Omit `itemId`** → exactly today's behaviour. Nothing you have built breaks.
+- **Send `itemId`** → that one piece is released and the order is left alone.
+
+**Also fixed, and it affected you:** Intake's release used to wipe `tagId` /
+`tagStatus` on every piece and push the whole order back to the tagging queue —
+even when the hold had been raised at Wash, Press, Sort or QC and merely
+*assigned* to Intake (which is the normal case, since a station may not hold for
+itself). It now does that only for holds Intake itself raised.
+
+**Use `/admin/order/{id}/resolve-hold` for ORDER-level holds** (Intake and
+payment holds, `holdScope: 'order'`) — that one also routes the order onward.
+The two are not interchangeable.
+
+## A2. Press queue — the list now matches its counter
+
+No shape change. `GET /api/press-iron/dashboard` and `GET /api/press-iron/queue`
+were asking three different questions; all three now use one predicate
+(`items.currentStation` at press **and** `pressDetails.startedAt` unset), the
+same way Wash was fixed for brief 1.1.
+
+A started order now appears in **Active Press only**, not in both lists at once,
+and the Press Queue count always equals the length of the Press Queue list.
+
+## A3. Rider screens now get the delivery promise
+
+**`deliveryPromise` is now on every rider read** — assigned deliveries, active
+deliveries, assigned pickups, active pickups and the rider order detail:
+
+```jsonc
+"deliveryPromise": { "text": "Tomorrow between 15:00 and 18:30",
+                     "confirmed": true, … }
+```
+
+Same object the customer app already renders. `deliveryDate` is now returned
+too, but **render `deliveryPromise.text` and never format `deliveryDate` as a
+time** — its time component is a 19:00 end-of-day sentinel, which is the trap B1
+was about. `deliveryPromise` is `null` when there is no date yet.
+
+## A4. Count mismatch stays **400** — and now says so in the docs
+
+The behaviour has not changed; the documentation had simply never stated the
+status code, which is what misled you. Confirmed contract:
+
+**`POST /api/intake-user/proceed-to-tag/{id}`** with an `itemCount` that
+disagrees with the rider's answers **400**, because the order did *not* proceed
+to tag. Branch on the flag, not the code:
+
+```jsonc
+{ "success": false,
+  "data": { "error": "Your count of 8 does not match the rider's count of 10. …",
+            "countMismatch": true, "riderCount": 10, "intakeCount": 8,
+            "holdRaised": true, "requiresAdminApproval": true,
+            "statusCode": 400 } }
+```
+
+The `error` sentence is written for the operator and can be shown as it is. The
+rider's `requiresCountReason` refusal on `PUT /api/rider/mark-pickup/{id}` has
+the same shape and is recoverable — resend with `countReason`. Both are now
+documented with their bodies in swagger.
+
+## A5. `hasComplaint` is now derived, not read off a back-reference
+
+`GET /api/recovery/report` → `lowRatedOrders[].hasComplaint` was reading
+`feedback.complaintCaseId`, which is written in exactly one place: a feedback
+submission that *itself* carried `type: 'complaint'`. Every other route into a
+complaint — the in-app bot, a case opened by CX or an admin, and the common one,
+a customer who rates 1–2 stars and *then* opens a complaint — left it unset
+while the case still counted in the complaint figures.
+
+It is now derived from `ComplaintCase` directly, so it is correct whichever door
+the complaint came through. No shape change, no backfill needed — existing rows
+are fixed by the read.
+
+## A6. Not a backend gap: the rider pickup photo
+
+`PUT /api/rider/mark-pickup/{id}` takes `itemCount` and `countReason` and **no
+photo**, by the client's decision of 2026-10-07 — *"No rider photo. Rider
+RECORDS the count; if it differs he must change it and give a reason."* That
+overrode the "count + photo" line in the 6 October brief. Nothing is blocked on
+the backend here. If the client changes their mind again it is a small add.
+
+**Count-only Quick Booking IS a real gap and is mine** — booking currently
+requires a full `items[]` and the capacity gates count `items.length`. Being
+built next.
+
+---
+
+# Addendum 2 — count-only Quick Booking
+
+The gap from A6 is closed. **briefCheck 371/371**, swagger 74 schemas / 309 paths
+/ 0 wrong envelopes.
+
+## B1. Book by count — `itemCount` on the existing booking endpoint
+
+**`POST /api/bookOrder/create-book-order`** — send `itemCount` *instead of*
+`items[]`:
+
+```jsonc
+{ "fullName": "Ada Obi", "phoneNumber": "08031234567",
+  "serviceType": "wash-and-iron", "serviceTier": "classic",
+  "deliverySpeed": "standard", "isPickUp": true, "isDelivery": true,
+  "pickupAddress": { "address": "…", "landmark": "…" },
+  "pickupTiming": "window", "pickupWindowId": "…",
+  "itemCount": 10 }
+```
+
+There is **no separate Quick Booking endpoint** — same endpoint, same required
+fields (service type, tier, speed, landmark, windows), same capacity gates,
+measured against your count.
+
+The order comes back with `quickBooking: true`, `itemsPending: true`,
+`counts.customer: 10`, and 10 placeholder pieces.
+
+**`amount` at booking is the LOGISTICS FEES ONLY.** The laundry bill is 0 until
+Intake enters the real pieces — that is the client's flow ("bill by SMS before
+washing"), so do not present `amount` as a total. Say the bill follows.
+
+Rules worth knowing:
+- `billingType` is forced to `pay-per-item`. A wallet or a subscription cannot
+  be charged against an unknown amount; the customer's plan is settled at Intake.
+- Offers resolve against the **real** bill at Intake, not against zero — which
+  is what "the amount is checked on the bill" means in the spec.
+- Send both `itemCount` and `items[]` and the real basket wins; `itemCount` is
+  ignored.
+- 1–200 pieces. A bad count is refused with a sentence.
+
+## B2. Intake: `GET /api/intake-user/quick-bookings`
+
+The Quick Booking card. Orders waiting for their real contents — step 2 of
+Intake's four. They are **not** in the tagging queue yet, by design: tags never
+print before the bill is settled.
+
+Each row carries the three counts side by side (`customerCount`, `riderCount`
+with `riderReason`, `intakeCount`), `placeholderPieces`, `logisticsAmount` and
+the `deliveryPromise`. Paginated, searchable by OSC number / name / phone,
+sorted by delivery deadline like every other queue.
+
+Enter the real pieces with the existing **`PATCH /api/orders/{id}/items`**
+(`items[]` + a required `reason`). That computes the total, raises the payment
+hold with its SMS and Paystack link, and drops the order off this list.
+
+## B3. What I decided, and what the client may want to confirm
+
+The spec fixes the booking fields, the capacity rule and the Intake flow, but
+never says what a count-only order *costs at booking*. I built the reading that
+follows from "bill by SMS before washing": **the laundry bill does not exist
+until Intake**, so the placeholder pieces are priced at zero rather than at an
+invented per-piece estimate — a guess would quote the customer a number nobody
+approved and would make the ₦4,000 offer threshold resolve against it.
+
+Two consequences the client should be told about, because they are commercial:
+1. A Quick Booking customer is **not quoted a laundry price at booking at all**.
+   If they expect an indicative estimate on screen, that is a separate decision
+   and needs a per-piece figure from the client.
+2. A subscriber booking by count does not have the order counted against their
+   plan at booking — it is settled when the bill exists. Worth confirming that
+   is what they want.

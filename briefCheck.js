@@ -813,13 +813,15 @@ const run = (async () => {
     )
     ok(`exactly three call sites claim an exception (${keptCount})`, keptCount === 3)
 
-    // The three hold messages: affected station, never the actor.
+    // The hold messages: affected station, never the actor. Four since
+    // 2026-10-09, when the admin item-hold release was added — it tells the
+    // station that was waiting on the piece, and must obey the same rule.
     const adminSrc2 = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
-    ok('the three hold notices go to the affected station',
-        (adminSrc2.match(/notifyAffectedStation\(\{/g) || []).length === 3)
+    ok('the four hold notices go to the affected station',
+        (adminSrc2.match(/notifyAffectedStation\(\{/g) || []).length === 4)
     ok('  …and every one of them excludes the actor',
         (adminSrc2.match(/notifyAffectedStation\(\{\s*role:[^}]*actorId: userId/g) || [])
-            .length === 3)
+            .length === 4)
     ok('  …so no "notify admin who performed the action" receipt survives',
         !/notify admin who performed the action/.test(adminSrc2))
     ok('the station-level hold releases do the same',
@@ -1784,6 +1786,148 @@ const run = (async () => {
     ok('app init now AWAITS its migrations instead of firing and forgetting',
         /for \(const \[name, step\] of steps\)/.test(setupSrc) &&
             /await step\(\)/.test(setupSrc))
+
+    // ─── FE bug report 2026-10-09 — the five fixes ───────────────────────────
+    //
+    // Each of these failed in production for a reason the type system could not
+    // catch: a second copy of a query, a service that never called the shared
+    // view, a back-reference written in one place out of six. They are asserted
+    // here because every one of them would come back silently.
+    console.log('\nFE bug report 2026-10-09 — the five fixes')
+
+    // (1) Item holds — the admin door, and the per-piece release.
+    const adminSrc3 = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+    ok('admin has a release for an ITEM hold, whatever it is assigned to',
+        /async releaseItemHold\(req\)/.test(adminSrc3) &&
+            /isMine: \(\) => true/.test(adminSrc3))
+    ok('  …and it does NOT reuse resolveOrderHold, which needs stage.status HOLD',
+        /'stage\.status': ORDER_STATUS\.HOLD/.test(adminSrc3))
+    ok('  …the route is mounted and admin-only',
+        /ROUTE_ADMIN_RELEASE_ITEM_HOLD, adminAuth/.test(
+            fs.readFileSync(path.join(ROOT, 'routes/admin.js'), 'utf8'),
+        ))
+    ok('  …releaseNote is a DECLARED schema path (Mongoose drops undeclared ones)',
+        /releaseNote: \{ type: String \}/.test(
+            fs.readFileSync(path.join(ROOT, 'models/bookOrder.model.js'), 'utf8'),
+        ))
+    const releaseUtil = fs.readFileSync(path.join(ROOT, 'util/releaseItemHold.js'), 'utf8')
+    ok('releasing is gated on isItemOnHold, not on assignTo alone',
+        /isItemOnHold\(item\) && isMine\(item\)/.test(releaseUtil))
+    {
+        // All five station releases take the optional itemId and go through the
+        // shared stamp — five hand-written copies is how "released" drifts.
+        const files = [
+            'sortAndPretreat', 'washAndDry', 'pressAndIron', 'qc', 'intake-user',
+        ].map((n) => fs.readFileSync(path.join(ROOT, `services/${n}.service.js`), 'utf8'))
+        ok('every station release accepts an itemId (release ONE piece)',
+            files.every((s) => /const itemId = req\.body\?\.itemId \|\| null/.test(s)))
+        ok('  …and none of them still writes the release fields by hand',
+            files.every((s) => !/holdDetails\.releasedAt = now/.test(s)))
+        ok('  …a single-piece release never rewinds the whole order',
+            files.every((s) => /const orderLevelRewind = !itemId/.test(s)))
+        // The regression this nearly shipped: admin's `send-to-hold` parks an
+        // ORDER with no item hold at all, and the station release is how it was
+        // always cleared. Gating purely on "is a piece of mine held" refused it.
+        ok('  …and an ORDER-level hold is still clearable at its station',
+            files.every((s) =>
+                /!mine\.length && !\(orderParked && !itemId\)/.test(s)))
+        // Intake is the default assignee for S2–S5, so its tag wipe must be
+        // scoped or another station's hold sends the order back to re-tagging.
+        const intakeSrc = files[4]
+        ok('Intake wipes tags ONLY for holds Intake itself raised',
+            /const raisedHere = \(item\) =>/.test(intakeSrc) &&
+                /if \(wasOurs\) \{/.test(intakeSrc))
+    }
+
+    // (2) Press queue list and counter must ask ONE question.
+    const pressSrc = fs.readFileSync(path.join(ROOT, 'services/pressAndIron.service.js'), 'utf8')
+    ok('press queue, its counter and the recent list share one filter',
+        (pressSrc.match(/PRESS_QUEUE_FILTER\(\)/g) || []).length === 3)
+    ok('  …and no press list matches every order at the station any more',
+        !/\{\s*'items\.currentStation': HERE,\s*\}/.test(pressSrc))
+
+    // (3) The rider must get the promise, not a raw 19:00 deadline.
+    const riderSrcFE = fs.readFileSync(path.join(ROOT, 'services/rider.service.js'), 'utf8')
+    ok('rider lists derive deliveryPromise through the shared view',
+        (riderSrcFE.match(/addDeliveryPromise\(order\)/g) || []).length >= 4)
+    ok('  …and actually SELECT the fields it needs',
+        (riderSrcFE.match(/\$\{PROMISE_FIELDS\}/g) || []).length >= 4 &&
+            /const PROMISE_FIELDS = 'deliveryDate scheduling'/.test(riderSrc))
+    ok('  …order details is lean, or Mongoose drops the undeclared promise',
+        /\.lean\(\)\s*\n\s*if \(!order\)/.test(riderSrc) &&
+            /message: presentOrder\(order\)/.test(riderSrc))
+
+    // (4) hasComplaint is DERIVED — the back-reference had five blind doors.
+    const reportSrc = fs.readFileSync(path.join(ROOT, 'services/recoveryReport.service.js'), 'utf8')
+    ok('hasComplaint is derived from ComplaintCase, not the feedback row alone',
+        /ComplaintCaseModel\.find\(\{ orderId: \{ \$in: orderIds \} \}\)/.test(reportSrc) &&
+            /withComplaint\.has\(String\(f\.orderId\)\)/.test(reportSrc))
+    ok('  …and openCase repairs the back-reference for every other caller',
+        /complaintCaseId: \{ \$exists: false \}/.test(
+            fs.readFileSync(path.join(ROOT, 'services/recovery.service.js'), 'utf8'),
+        ))
+
+    // (5) The count mismatch stays a 400 — and now SAYS so where the FE reads.
+    ok('the count-mismatch 400 is documented with its machine-readable flag',
+        /countMismatch: \{ type: boolean, example: true \}/.test(
+            fs.readFileSync(path.join(ROOT, 'routes/intake-user.js'), 'utf8'),
+        ))
+
+    // ─── N1 count-only Quick Booking ────────────────────────────────────────
+    console.log('\nN1 — count-only Quick Booking')
+    {
+        const qb = require(path.join(ROOT, 'util/quickBooking.js'))
+
+        // The spec's own words: "the same capacity gates, USING THE CUSTOMER'S
+        // COUNT". Those gates read items.LENGTH, so N lines of quantity 1 is
+        // the only shape that makes them read the count without editing a gate.
+        const post = { itemCount: 12, billingType: 'pay-from-wallet' }
+        const res = qb.applyCountOnlyBooking(post)
+        ok('a count becomes N LINES, so capacity gates read the count',
+            res.ok && post.items.length === 12 &&
+                post.items.every((i) => i.quantity === 1))
+        ok('  …priced at zero — the bill is computed at Intake, not guessed',
+            post.items.every((i) => i.price === 0))
+        ok('  …wallet/subscription forced to pay-per-item (no bill to charge)',
+            post.billingType === 'pay-per-item')
+        ok('  …the customer count is recorded for the rider/intake comparison',
+            post.counts.customer === 12)
+        ok('  …and the order is marked as pending its real contents',
+            post.quickBooking === true && post.itemsPending === true)
+
+        ok('a real basket beats a stray itemCount',
+            qb.isCountOnlyBooking({ itemCount: 5, items: [{ type: 'shirt' }] }) === false)
+        ok('nonsense counts are refused, not booked',
+            [0, -2, 2.5, 'ten', 5000].every(
+                (n) => qb.applyCountOnlyBooking({ itemCount: n }).ok === false))
+
+        const bookSrc = fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')
+        ok('the translation happens BEFORE validation, so one path serves both',
+            bookSrc.indexOf('isCountOnlyBooking(post)') <
+                bookSrc.indexOf('const validateRule = {'))
+        ok('  …and no second booking path was forked for it',
+            (bookSrc.match(/async postBookOrder\(/g) || []).length === 1)
+        // The handover: Intake's re-price IS step 2 of the client's four, so it
+        // has to clear the flag in the same write that replaces the items.
+        // The window is generous because the WRITE is separated from the flag
+        // by the comment explaining it. A tight window here fails on correct
+        // code the moment anyone documents it — the same way two assertions in
+        // this file have already been tripped by their own prose.
+        ok('entering the real items clears itemsPending in the SAME write',
+            /items: explodedItems,[\s\S]{0,900}itemsPending: false,[\s\S]{0,80}\$push/.test(
+                bookSrc,
+            ))
+        ok('both markers are DECLARED on the schema (Mongoose drops the rest)',
+            /quickBooking: \{ type: Boolean \}/.test(
+                fs.readFileSync(path.join(ROOT, 'models/bookOrder.model.js'), 'utf8'),
+            ))
+        ok('Intake has a list of quick bookings awaiting their items',
+            /async getQuickBookingQueue\(req\)/.test(
+                fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8'),
+            ) && /ROUTE_INTAKE_QUICK_BOOKINGS, \[intakeUserAuth\]/.test(
+                fs.readFileSync(path.join(ROOT, 'routes/intake-user.js'), 'utf8'),
+            ))
+    }
 
     console.log(`\n${pass} passed, ${fail} failed\n`)
     process.exit(fail ? 1 : 0)

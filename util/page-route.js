@@ -50,6 +50,9 @@ exports.ROUTE_INTAKE_GENERATE_ALL_TAGS = '/generate-all-tags/:id'
 exports.ROUTE_INTAKE_COMPLETE_TAGGING  = '/complete-tagging/:id'
 exports.ROUTE_INTAKE_GET_DRAFTS        = '/drafts'
 exports.ROUTE_INTAKE_GET_TAGGING_QUEUE   = '/tagging-queue'
+// Quick Bookings whose real contents have not been entered yet — the one step
+// of the client's four-step Intake flow that needed its own list.
+exports.ROUTE_INTAKE_QUICK_BOOKINGS      = '/quick-bookings'
 exports.ROUTE_INTAKE_USER_GET_HOLD       = '/orders/hold'
 exports.ROUTE_INTAKE_USER_RELEASE         = '/hold/:id/release'
 exports.ROUTE_INTAKE_HISTORY         = '/orders/history'
@@ -181,6 +184,9 @@ exports.ROUTE_ADMIN_DISPATCH_DATA_COUNT = '/dispatch/data-count'
 exports.ROUTE_HOLD_ORDERS = '/hold-orders'
 exports.ROUTE_ADMIN_SEND_TO_HOLD_ORDERS = '/order/:id/send-to-hold'
 exports.ROUTE_ADMIN_RESOLVE_ORDER_HOLD = '/order/:id/resolve-hold'
+// Clears a hold on a PIECE (any assignee, admin only). Distinct from
+// resolve-hold, which closes an ORDER-level hold and routes the order onward.
+exports.ROUTE_ADMIN_RELEASE_ITEM_HOLD = '/order/:id/release-item-hold'
 exports.ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION = '/orders/:id/reassign-station'
 exports.ROUTE_ADMIN_WALLET_ID_ADD_FUND = '/wallet/:id/add-fund'
 exports.ROUTE_ADMIN_WALLET_ID_DEDUCT_FUND = '/wallet/:id/deduct-fund'

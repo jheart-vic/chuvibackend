@@ -214,6 +214,15 @@ class IntakeUserController extends BaseController {
         return BaseController.sendSuccessResponse(res, result.data)
     }
 
+    async getQuickBookingQueue(req, res) {
+        const intakeUserService = new IntakeUserService()
+        const result = await intakeUserService.getQuickBookingQueue(req)
+        if (!result.success) {
+            return BaseController.sendFailedResponse(res, result.data)
+        }
+        return BaseController.sendSuccessResponse(res, result.data)
+    }
+
     async getHistoryList(req, res) {
         const intakeUserService = new IntakeUserService()
         const result = await intakeUserService.getHistoryList(req)

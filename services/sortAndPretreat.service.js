@@ -21,6 +21,11 @@ const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const { isItemOnHold, onHoldScope } = require('../util/itemHold')
+const {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+} = require('../util/releaseItemHold')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const { QUEUE_SORT } = require('../util/queueSort')
@@ -2401,38 +2406,68 @@ class SortAndPretreatService extends BaseService {
                     error: 'Order not found or not on hold at this station',
                 })
 
+            // Optional `itemId` (FE report 2026-10-09) — release ONE piece
+            // rather than every piece assigned to this station. See
+            // `util/releaseItemHold.js`.
+            const itemId = req.body?.itemId || null
             const now = new Date()
+            const mine = selectHeldItems({
+                order,
+                itemId,
+                isMine: (i) =>
+                    i.holdDetails?.assignTo === ROLE.SORT_AND_PRETREAT,
+            })
+            // An ORDER-level hold (admin's `send-to-hold` parks the whole order
+            // at a station and raises NO item hold) still has to be clearable
+            // here — that is what this endpoint did before item holds existed.
+            const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            if (!mine.length && !(orderParked && !itemId))
+                return BaseService.sendFailedResponse({
+                    error: nothingToRelease({
+                        itemId,
+                        where: 'for sort & pretreat on this order',
+                    }),
+                })
+
+            const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo === ROLE.SORT_AND_PRETREAT) {
-                    item.holdDetails.releasedAt = now
-                    item.holdDetails.releasedByOperatorId = userId
-                    item.holdDetails.assignTo = null
-                    // ✅ reset so items can be sorted/pretreated again
-                    item.sortStatus = 'pending'
-                    item.pretreatStatus = 'pending'
-                    item.flaggedForReview = false
-                }
+                if (!releaseIds.has(String(item._id))) return item
+                stampRelease(item, { userId, now })
+                // ✅ reset so items can be sorted/pretreated again
+                item.sortStatus = 'pending'
+                item.pretreatStatus = 'pending'
+                item.flaggedForReview = false
                 return item
             })
+
+            // Releasing one piece of several must not rewrite the whole order's
+            // stage — the siblings never stopped.
+            const orderLevelRewind = !itemId
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
                         items: updatedItems,
-                        ...buildStageUpdate(
-                            ORDER_STATUS.SORT_AND_PRETREAT,
-                            STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                            'Released from hold',
-                        ).$set,
+                        ...(orderLevelRewind
+                            ? buildStageUpdate(
+                                  ORDER_STATUS.SORT_AND_PRETREAT,
+                                  STATION_STATUS.SORT_AND_PRETREAT_STATION,
+                                  'Released from hold',
+                              ).$set
+                            : {}),
                     },
-                    $push: {
-                        stageHistory: {
-                            status: ORDER_STATUS.SORT_AND_PRETREAT,
-                            note: 'Released from hold',
-                            updatedAt: now,
-                        },
-                    },
+                    ...(orderLevelRewind
+                        ? {
+                              $push: {
+                                  stageHistory: {
+                                      status: ORDER_STATUS.SORT_AND_PRETREAT,
+                                      note: 'Released from hold',
+                                      updatedAt: now,
+                                  },
+                              },
+                          }
+                        : {}),
                 },
                 { runValidators: false }, // ✅ avoid serviceTier validation issue
             )

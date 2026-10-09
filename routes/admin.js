@@ -51,6 +51,7 @@ const {
     ROUTE_GET_ADMIN_SETTING,
     ROUTE_ADMIN_SEND_TO_HOLD_ORDERS,
     ROUTE_ADMIN_RESOLVE_ORDER_HOLD,
+    ROUTE_ADMIN_RELEASE_ITEM_HOLD,
     ROUTE_GET_AUDIT_LOGS
 } = require("../util/page-route");
 const router = require("express").Router();
@@ -1785,6 +1786,83 @@ router.put(ROUTE_ADMIN_ORDERS_ID_REASSIGN_STATION, adminAuth, (req, res) => {
 router.patch(ROUTE_ADMIN_RESOLVE_ORDER_HOLD, adminAuth, (req, res) => {
     const adminController = new AdminController()
     return adminController.resolveOrderHold(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/order/{id}/release-item-hold:
+ *   patch:
+ *     summary: Admin releases a hold on a PIECE (any assignee)
+ *     description: >
+ *       Clears an item-level hold regardless of which role it was assigned to.
+ *
+ *       This is the only endpoint that can clear a hold assigned to **Admin** —
+ *       every station offers `assignTo: admin` when raising one, but a station's
+ *       own release only clears pieces assigned to that station's role.
+ *
+ *       Send `itemId` to release ONE piece; omit it to release every piece still
+ *       on hold on the order. Releasing does **not** rewind any station's
+ *       progress and does not move the piece — a hold never changed
+ *       `currentStation`, so the piece resumes where it already is.
+ *
+ *       For ORDER-level holds (Intake and payment holds, which park the whole
+ *       order and set `stage.status` to `hold`) use `/admin/order/{id}/resolve-hold`
+ *       instead — that one also decides which station the order returns to.
+ *     tags:
+ *       - Admin
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Order ID
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemId:
+ *                 type: string
+ *                 description: The one piece to release. Omit to release all held pieces on the order.
+ *                 example: "66f1a2b3c4d5e6f708192a3b"
+ *               note:
+ *                 type: string
+ *                 description: Optional reason, stored on the piece as holdDetails.releaseNote
+ *                 example: "Missing shirt found in the sorting bin"
+ *     responses:
+ *       200:
+ *         description: The hold(s) were released
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         orderId: { type: string, example: "66e0b1c2d3e4f5a6b7c8d9e0" }
+ *                         oscNumber: { type: string, example: "OSC-20261009-442410" }
+ *                         released: { type: integer, example: 1 }
+ *                         releasedItemIds:
+ *                           type: array
+ *                           items: { type: string }
+ *                           example: ["66f1a2b3c4d5e6f708192a3b"]
+ *                         itemsStillOnHold: { type: integer, example: 2 }
+ *       400:
+ *         description: No matching piece is on hold, or the order id is missing
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.patch(ROUTE_ADMIN_RELEASE_ITEM_HOLD, adminAuth, (req, res) => {
+    const adminController = new AdminController()
+    return adminController.releaseItemHold(req, res)
 })
 
 /**

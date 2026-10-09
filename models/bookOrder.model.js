@@ -166,6 +166,13 @@ const ItemSchema = new mongoose.Schema(
                 type: mongoose.Schema.Types.ObjectId,
                 ref: 'User',
             },
+            // Why the hold was cleared, when an admin clears it from Holds
+            // Management (`AdminService.releaseItemHold`). DECLARED, not
+            // implied: Mongoose silently drops a write to an undeclared path,
+            // and this codebase has lost `pickup.note`, order-level
+            // `holdDetails` and `itemEdits` to exactly that — the money moves
+            // and the trail is simply absent, with no error.
+            releaseNote: { type: String },
         },
         actionLog: [
             {
@@ -642,6 +649,23 @@ const bookOrderSchema = new mongoose.Schema(
             default: undefined,
             _id: false,
         },
+
+        // ── QUICK BOOKING (client spec 2026-10-07) ──────────────────────────
+        // The customer booked a COUNT, not a basket: the pieces on this order
+        // are placeholders and its laundry bill is 0 until Intake enters what
+        // actually arrived (`applyItemEdit`), which is when the bill is computed
+        // and sent by SMS.
+        //
+        // Both DECLARED rather than implied, because an undeclared path is
+        // silently dropped by Mongoose and this codebase has already lost
+        // `pickup.note`, order-level `holdDetails` and `itemEdits` that way —
+        // a marker that vanishes would make a quick order indistinguishable
+        // from a real ₦0 one.
+        quickBooking: { type: Boolean },
+        // Cleared by the Intake re-price. Separate from `quickBooking` on
+        // purpose: one records HOW the order was taken and never changes, the
+        // other records whether it is still waiting for its contents.
+        itemsPending: { type: Boolean },
 
         orderHold: {
             // Which KIND of hold this is (HoldType.key). Drives the time limit:

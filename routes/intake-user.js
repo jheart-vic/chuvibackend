@@ -23,6 +23,7 @@ const {
   ROUTE_INTAKE_GENERATE_ALL_TAGS,
   ROUTE_INTAKE_COMPLETE_TAGGING,
   ROUTE_INTAKE_GET_TAGGING_QUEUE,
+  ROUTE_INTAKE_QUICK_BOOKINGS,
   ROUTE_INTAKE_USER_GET_HOLD,
   ROUTE_INTAKE_USER_RELEASE,
   ROUTE_INTAKE_HISTORY_TIMELINE,
@@ -596,7 +597,20 @@ router.get(ROUTE_INTAKE_USER_DASHBOARD_STATS, [intakeUserAuth], (req, res) => {
  * @swagger
  * /intake-user/proceed-to-tag/{id}:
  *   post:
- *     summary: Move order to tagging queue
+ *     summary: Move order to tagging queue (optionally confirming the rider's count)
+ *     description: >
+ *       Send `itemCount` to record Intake's own count of the pieces received.
+ *
+ *       **If it differs from the rider's count the order does NOT proceed.** It
+ *       is placed on a `count_differs_from_rider` hold that only an admin can
+ *       clear, and this endpoint answers **400** — the requested move did not
+ *       happen. That is not a validation failure, so branch on
+ *       `data.countMismatch === true` rather than on the status code alone; the
+ *       sentence in `data.error` is written for the operator and can be shown
+ *       as it is.
+ *
+ *       `itemCount` is optional. Omit it and the order proceeds exactly as
+ *       before, which is what a walk-in or a pre-existing order does.
  *     tags:
  *       - Intake User
  *     parameters:
@@ -607,6 +621,17 @@ router.get(ROUTE_INTAKE_USER_DASHBOARD_STATS, [intakeUserAuth], (req, res) => {
  *         schema:
  *           type: string
  *           example: "64d3c9c0f1b2a8e9d0f12345"
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemCount:
+ *                 type: integer
+ *                 description: Pieces Intake actually counted. Optional.
+ *                 example: 10
  *     responses:
  *       200:
  *         description: Order moved to tag and queue successfully
@@ -623,25 +648,33 @@ router.get(ROUTE_INTAKE_USER_DASHBOARD_STATS, [intakeUserAuth], (req, res) => {
  *                       type: string
  *                       example: "Order moved to tag and queue successfully"
  *       400:
- *         description: Validation error or missing order ID
+ *         description: >
+ *           Missing order id, a non-numeric `itemCount`, or — the case worth
+ *           handling on its own — Intake's count disagreeing with the rider's.
+ *           The mismatch body carries the extra fields shown here beside `error`.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 error:
- *                   type: string
- *                   example: "Order ID is required"
+ *                 success: { type: boolean, example: false }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     error:
+ *                       type: string
+ *                       example: "Your count of 8 does not match the rider's count of 10. This order is on hold and needs an admin to approve it before it can move."
+ *                     countMismatch: { type: boolean, example: true }
+ *                     riderCount: { type: integer, example: 10 }
+ *                     intakeCount: { type: integer, example: 8 }
+ *                     holdRaised: { type: boolean, example: true }
+ *                     requiresAdminApproval: { type: boolean, example: true }
+ *                     statusCode: { type: integer, example: 400 }
  *       404:
  *         description: Order or user not found
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Order not found"
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
@@ -1786,6 +1819,98 @@ router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
 router.get(ROUTE_INTAKE_GET_TAGGING_QUEUE, [intakeUserAuth], (req, res) => {
 const controller = new IntakeUserController()
   return controller.getTaggingQueue(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/quick-bookings:
+ *   get:
+ *     summary: Quick Bookings waiting for their real contents
+ *     description: >
+ *       Orders the customer booked by COUNT rather than by item list, which have
+ *       not yet had their real pieces entered — step 2 of Intake's four-step
+ *       flow.
+ *
+ *       They do not appear in the tagging queue yet: a Quick Booking arrives
+ *       with placeholder pieces and a laundry bill of **0**, and tags never
+ *       print before the bill is settled. Enter the real pieces with
+ *       `PATCH /orders/{id}/items`, which computes the total, raises the payment
+ *       hold and removes the order from this list.
+ *
+ *       `amount` is NOT the final bill — until the items are entered it is the
+ *       logistics fees only, repeated as `logisticsAmount` so the screen can say
+ *       so plainly.
+ *     tags:
+ *       - Intake User
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string, example: "OSC-2026" }
+ *         description: Matches OSC number, customer name or phone
+ *     responses:
+ *       200:
+ *         description: The quick bookings awaiting their items
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id: { type: string, example: "66e0b1c2d3e4f5a6b7c8d9e0" }
+ *                               oscNumber: { type: string, example: "OSC-20261009-442410" }
+ *                               fullName: { type: string, example: "Ada Obi" }
+ *                               phoneNumber: { type: string, example: "08031234567" }
+ *                               serviceType: { type: string, example: "wash-and-iron" }
+ *                               serviceTier: { type: string, example: "classic" }
+ *                               deliverySpeed: { type: string, example: "standard" }
+ *                               quickBooking: { type: boolean, example: true }
+ *                               itemsPending: { type: boolean, example: true }
+ *                               customerCount: { type: integer, example: 10, nullable: true }
+ *                               riderCount: { type: integer, example: 9, nullable: true }
+ *                               riderReason: { type: string, example: "One shirt kept back", nullable: true }
+ *                               intakeCount: { type: integer, example: null, nullable: true }
+ *                               placeholderPieces: { type: integer, example: 10 }
+ *                               amount: { type: integer, example: 1000 }
+ *                               logisticsAmount: { type: integer, example: 1000 }
+ *                               deliveryPromise:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 properties:
+ *                                   text: { type: string, example: "Thursday between 15:00 and 18:30" }
+ *                                   confirmed: { type: boolean, example: false }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 7 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_INTAKE_QUICK_BOOKINGS, [intakeUserAuth], (req, res) => {
+    const controller = new IntakeUserController()
+    return controller.getQuickBookingQueue(req, res)
 })
 
 /**

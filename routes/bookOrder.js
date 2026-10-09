@@ -125,6 +125,33 @@ const {
  *                 type: string
  *                 enum: [same-day, express, standard]
  *                 example: express
+ *               itemCount:
+ *                 type: integer
+ *                 example: 10
+ *                 description: >
+ *                   **Quick Booking** — send this INSTEAD of `items` when the
+ *                   customer is booking by count and does not list what they are
+ *                   sending. Everything else is unchanged: service type, tier,
+ *                   delivery speed, landmark and the pickup/delivery windows are
+ *                   still required, and the same capacity gates apply, measured
+ *                   against this count.
+ *
+ *                   The order is created with `quickBooking: true`,
+ *                   `itemsPending: true`, `counts.customer` set to this number,
+ *                   and that many placeholder pieces. **Its laundry bill is 0
+ *                   until Intake enters the real pieces** — `amount` at booking
+ *                   is the logistics fees only. The real bill is computed by
+ *                   `PATCH /orders/{id}/items`, which then raises the payment
+ *                   hold and sends the customer the SMS and Paystack link.
+ *
+ *                   Because there is no bill yet, `billingType` is forced to
+ *                   `pay-per-item` — a wallet or a subscription cannot be
+ *                   charged against an unknown amount; the customer's plan is
+ *                   settled at Intake instead. Offers are likewise resolved
+ *                   against the real bill, not against zero.
+ *
+ *                   Ignored if `items` is also supplied (the real basket wins).
+ *                   Must be a whole number from 1 to 200.
  *               extraNote:
  *                 type: string
  *                 example: "wash carefully"

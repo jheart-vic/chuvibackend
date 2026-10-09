@@ -14,6 +14,11 @@ const {
 } = require('../util/constants')
 const { QUEUE_SORT } = require('../util/queueSort')
 const { onHoldScope } = require('../util/itemHold')
+const {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+} = require('../util/releaseItemHold')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
@@ -30,6 +35,17 @@ const {
 // Split-flow: this station only ever sees/acts on the items sitting at it.
 const HERE = STATION_STATUS.PRESSING_AND_IRONING_STATION
 
+// ONE definition of "waiting to be pressed", shared by the dashboard counter,
+// the dashboard's recent list and the full queue endpoint. Three copies of this
+// question is what made the counter read 0 while the list still showed orders
+// (FE report 2026-10-09). `pressDetails.startedAt` is stamped by
+// `updateOrderItemsStage` on the FIRST item confirmed, so an order leaves the
+// queue and enters Active Press at the same instant, by the same field.
+const PRESS_QUEUE_FILTER = () => ({
+    'items.currentStation': HERE,
+    'pressDetails.startedAt': { $exists: false },
+})
+
 class PressAndIronService extends BaseService {
     async getDashboard(req) {
         try {
@@ -45,18 +61,26 @@ class PressAndIronService extends BaseService {
 
             const [pressQueue, activePress, completedToday, recentQueueResult] =
                 await Promise.all([
-                    // $elemMatch: both conditions are item-level, so ONE item has
-                    // to satisfy both. Listed separately they could be met by two
-                    // DIFFERENT items — an item here, plus an unrelated item
-                    // upstream that simply has no pressConfirmedAt yet.
-                    BookOrderModel.countDocuments({
-                        items: {
-                            $elemMatch: {
-                                currentStation: HERE,
-                                pressConfirmedAt: { $exists: false },
-                            },
-                        },
-                    }),
+                    // FE report 2026-10-09: "the endpoint still returns started
+                    // orders while its counter says 0". It did, and the cause is
+                    // that this screen was asking THREE different questions.
+                    //
+                    // The counter used to be an item-level
+                    // $elemMatch{currentStation, pressConfirmedAt: {$exists:false}}
+                    // while BOTH lists below matched every order with an item
+                    // here. So the moment the operator confirmed the pieces the
+                    // count dropped to 0 and the order stayed in the list — and
+                    // appeared in Active Press at the same time, twice on one
+                    // screen.
+                    //
+                    // Partition on the ORDER-level `pressDetails.startedAt`, which
+                    // is what `updateOrderItemsStage` stamps on the first confirm
+                    // and what Active Press already keys off. Queue and Active are
+                    // then disjoint by construction and the count cannot disagree
+                    // with the list beside it. This is exactly the fix Wash got
+                    // for brief 1.1 (`washAndDry.service.js`), which Press never
+                    // received — all three queries there use one predicate.
+                    BookOrderModel.countDocuments(PRESS_QUEUE_FILTER()),
                     BookOrderModel.countDocuments({
                         'items.currentStation': HERE,
                         'pressDetails.startedAt': { $exists: true },
@@ -73,11 +97,11 @@ class PressAndIronService extends BaseService {
                             },
                         },
                     }),
+                    // "Recent Press Queue" must be the SAME SET as the pressQueue
+                    // count above, or the card contradicts the number beside it.
                     paginate(
                         BookOrderModel,
-                        {
-                            'items.currentStation': HERE,
-                        },
+                        PRESS_QUEUE_FILTER(),
                         {
                             page: 1,
                             limit: 5,
@@ -115,9 +139,9 @@ class PressAndIronService extends BaseService {
 
             const { page = 1, limit = 20, search = '' } = req.query
 
-            const query = {
-                'items.currentStation': HERE,
-            }
+            // Same set as the dashboard counter — see PRESS_QUEUE_FILTER.
+            // Started orders belong to Active Press, not here.
+            const query = PRESS_QUEUE_FILTER()
 
             if (search) {
                 query.$or = [
@@ -731,45 +755,74 @@ class PressAndIronService extends BaseService {
                     error: 'Order not found or not on hold at this station',
                 })
 
+            // Optional `itemId` (FE report 2026-10-09) — release ONE piece
+            // rather than every piece assigned to this station. See
+            // `util/releaseItemHold.js`.
+            const itemId = req.body?.itemId || null
             const now = new Date()
+            const mine = selectHeldItems({
+                order,
+                itemId,
+                isMine: (i) => i.holdDetails?.assignTo === ROLE.PRESS,
+            })
+            // An ORDER-level hold (admin's `send-to-hold` parks the whole order
+            // at a station and raises NO item hold) still has to be clearable
+            // here — that is what this endpoint did before item holds existed.
+            const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            if (!mine.length && !(orderParked && !itemId))
+                return BaseService.sendFailedResponse({
+                    error: nothingToRelease({
+                        itemId,
+                        where: 'for press & iron on this order',
+                    }),
+                })
+
+            const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo === ROLE.PRESS) {
-                    item.holdDetails.releasedAt = now
-                    item.holdDetails.releasedByOperatorId = userId
-                    item.holdDetails.assignTo = null
-                    // ✅ reset press status so item can be worked on again
-                    item.pressStatus = 'pending'
-                    item.pressConfirmedAt = null
-                    item.pressConfirmedByOperatorId = null
-                    item.flaggedForReview = false
-                }
+                if (!releaseIds.has(String(item._id))) return item
+                stampRelease(item, { userId, now })
+                // ✅ reset press status so item can be worked on again
+                item.pressStatus = 'pending'
+                item.pressConfirmedAt = null
+                item.pressConfirmedByOperatorId = null
+                item.flaggedForReview = false
                 return item
             })
+
+            // Releasing one piece of several must not rewind the whole order's
+            // press progress — the siblings never stopped.
+            const orderLevelRewind = !itemId
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
                         items: updatedItems,
-                        ...buildStageUpdate(
-                            ORDER_STATUS.IRONING,
-                            STATION_STATUS.PRESSING_AND_IRONING_STATION,
-                            'Released from hold',
-                        ).$set,
+                        ...(orderLevelRewind
+                            ? buildStageUpdate(
+                                  ORDER_STATUS.IRONING,
+                                  STATION_STATUS.PRESSING_AND_IRONING_STATION,
+                                  'Released from hold',
+                              ).$set
+                            : {}),
                     },
                     // ✅ $unset is a sibling of $set, not inside it
-                    $unset: {
-                        'pressDetails.startedAt': '',
-                        'pressDetails.completedAt': '',
-                        'pressDetails.operatorId': '',
-                    },
-                    $push: {
-                        stageHistory: {
-                            status: ORDER_STATUS.IRONING,
-                            note: 'Released from hold',
-                            updatedAt: now,
-                        },
-                    },
+                    ...(orderLevelRewind
+                        ? {
+                              $unset: {
+                                  'pressDetails.startedAt': '',
+                                  'pressDetails.completedAt': '',
+                                  'pressDetails.operatorId': '',
+                              },
+                              $push: {
+                                  stageHistory: {
+                                      status: ORDER_STATUS.IRONING,
+                                      note: 'Released from hold',
+                                      updatedAt: now,
+                                  },
+                              },
+                          }
+                        : {}),
                 },
                 { runValidators: false },
             )
