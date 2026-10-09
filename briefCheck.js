@@ -1707,6 +1707,39 @@ const run = (async () => {
         /\$set\[`displayNames\.\$\{group\}`\]/.test(bwSvcSrc) &&
             !/serviceTypes\[0\]\.name =/.test(bwSvcSrc))
 
+    // ─── The dashboard day boundary is LAGOS, not UTC ───────────────────────
+    // The TZ pin in server.js makes `setHours(0,0,0,0)` Lagos-correct, but it
+    // reaches NEITHER of the two other places that decide what day something
+    // happened on. Both filed the first hour of every Lagos day under the
+    // previous day — the same split-brain the pin exists to kill, one layer
+    // down. Found while writing the client answer for Q1.
+    console.log('\nDashboard day bucketing — Lagos, not UTC')
+    const adminSrcTz = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+    ok('every $dateToString in admin.service passes an explicit timezone',
+        (() => {
+            const re = /\$dateToString\s*:\s*\{/g
+            let m
+            let bad = 0
+            let seen = 0
+            while ((m = re.exec(adminSrcTz))) {
+                seen += 1
+                let depth = 1
+                let i = m.index + m[0].length
+                while (i < adminSrcTz.length && depth > 0) {
+                    if (adminSrcTz[i] === '{') depth += 1
+                    else if (adminSrcTz[i] === '}') depth -= 1
+                    i += 1
+                }
+                if (!/timezone/.test(adminSrcTz.slice(m.index, i))) bad += 1
+            }
+            return seen >= 2 && bad === 0
+        })())
+    // `toISOString()` CONVERTS to UTC, so a Lagos-local Date at 00:30 produced
+    // yesterday's key even with the process pinned.
+    ok('  …and no day key is built from toISOString (that is always UTC)',
+        !/toISOString\(\)\s*\.\s*split\('T'\)\[0\]/.test(adminSrcTz) &&
+            /lagosDayKey\(d\)/.test(adminSrcTz))
+
     const crmSrc2 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
     ok('booking cancels the new sequence as well as the lead one',
         /cancelPendingMessages\(profile\._id, \[\s*CRM_WORKFLOW\.LEAD,\s*CRM_WORKFLOW\.REGISTERED_NOT_BOOKED,?\s*\]\)/.test(

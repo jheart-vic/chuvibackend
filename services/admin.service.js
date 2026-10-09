@@ -1,3 +1,20 @@
+// Lagos day bucketing for the dashboard figures.
+//
+// The process TZ pin in `server.js` makes `setHours(0,0,0,0)` Lagos-correct, but
+// it does NOT reach two other places that decide what day something happened on:
+//   * `$dateToString` inside MongoDB, which defaults to UTC unless given a
+//     `timezone` — fixed by passing LAGOS_TZ at both aggregations below;
+//   * `toISOString()` in JavaScript, which CONVERTS to UTC, so a Lagos-local
+//     Date at 00:30 produced yesterday's key.
+// Both filed the first hour of every Lagos day under the previous day. These
+// two helpers are the only correct way to build a day key here.
+const { LAGOS: LAGOS_TZ } = require('../util/lagosDay')
+const lagosDayKey = (date) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+}
 const ActivityModel = require('../models/activity.model')
 const AdminOrderDetailsModel = require('../models/adminOrderDetails.model')
 const AdminSettingModel = require('../models/adminSetting.model')
@@ -196,6 +213,14 @@ class AdminService extends BaseService {
                             $dateToString: {
                                 format: '%Y-%m-%d',
                                 date: '$createdAt',
+                                // ⚠️ WITHOUT THIS, MONGO BUCKETS BY UTC.
+                                // `server.js` pins the PROCESS to Africa/Lagos,
+                                // which fixes `setHours(0,0,0,0)` — but it has
+                                // no effect inside the database, so a payment
+                                // taken at 00:30 Lagos was filed under the
+                                // PREVIOUS day. The same split-brain the TZ pin
+                                // was introduced to kill, one layer down.
+                                timezone: LAGOS_TZ,
                             },
                         },
                         dailyTotal: { $sum: '$amount' },
@@ -208,7 +233,7 @@ class AdminService extends BaseService {
             for (let i = 6; i >= 0; i--) {
                 const d = new Date()
                 d.setDate(d.getDate() - i)
-                const key = d.toISOString().split('T')[0]
+                const key = lagosDayKey(d)
                 const found = revenue7DayAgg.find((r) => r._id === key)
                 allRevenueDays.push({
                     _id: key,
@@ -337,6 +362,9 @@ class AdminService extends BaseService {
                             $dateToString: {
                                 format: '%Y-%m-%d',
                                 date: '$paymentDate',
+                                // Lagos, not UTC — see the note on the revenue
+                                // aggregation above.
+                                timezone: LAGOS_TZ,
                             },
                         },
                         // ← sum amount once per order, not per item
@@ -374,7 +402,7 @@ class AdminService extends BaseService {
             for (let i = 6; i >= 0; i--) {
                 const d = new Date()
                 d.setDate(d.getDate() - i)
-                const key = d.toISOString().split('T')[0]
+                const key = lagosDayKey(d)
                 const found = avgCostPerItem7DaysAgg.find((r) => r._id === key)
                 allCostDays.push({
                     _id: key,
