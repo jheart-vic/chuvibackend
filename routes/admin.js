@@ -775,7 +775,21 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                           format: date-time
  *                           example: 2026-05-19T14:00:00.000Z
  *       400:
- *         description: Invalid value or payload format supplied
+ *         description: >
+ *           Invalid value or payload format — **or** the payload would change or
+ *           remove a `serviceTypes[].name` that existing orders depend on.
+ *
+ *
+ *           A service type's name is the key an order uses to find its price, so
+ *           renaming or dropping one would silently under-price every order
+ *           already placed under the old name. The refusal carries
+ *           `blockedServiceTypes` (each with its name and order count) and
+ *           `useInstead: "/api/admin/display-names"` — **to change what people
+ *           SEE, use that endpoint instead.** Adding a type, changing a price,
+ *           and removing a type no order has used are all still allowed.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       401:
  *         description: Unauthorized access (Missing token)
  *       403:

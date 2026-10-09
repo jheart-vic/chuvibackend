@@ -472,6 +472,133 @@ async function run() {
     )
 }
 
+/**
+ * A SERVICE TYPE'S NAME IS A PRICING KEY (client decision 2026-10-09, option 1).
+ *
+ * An order stores `serviceType: "wash-and-iron"` and pricing finds its price by
+ * matching that string against `serviceTypes[].name`. The fallback when nothing
+ * matches is a multiplier of **1**, so renaming a type did not throw — it
+ * silently under-priced every order already placed under the old name.
+ * `updateAdminSettings` $sets whatever it is given with `runValidators: false`,
+ * so nothing stopped it.
+ *
+ * The guard is written against the CONSEQUENCE, not the word "rename": it
+ * refuses when a name orders depend on would DISAPPEAR. That also catches
+ * delete-and-re-add, which has the identical effect and walks straight through
+ * a pairwise name comparison — asserted below, because that bypass is the whole
+ * reason the check is shaped this way.
+ */
+async function serviceTypeNameGuard() {
+    console.log('\nService type names are pricing keys, not labels')
+    const AdminSettingModel = require('./models/adminSetting.model')
+    const before = await AdminSettingModel.findOne({}).lean()
+    const saved = (before.serviceTypes || []).map((s) => ({
+        name: s.name,
+        pricePerPiece: s.pricePerPiece,
+    }))
+    if (!saved.length) {
+        ok(false, 'no service types configured — cannot test the guard')
+        return
+    }
+    const used = saved[0].name
+
+    // An order that depends on the first service type.
+    const order = await BookOrderModel.create({
+        oscNumber: `OSC-A${STAMP}-STG-RENAME`,
+        fullName: 'Rename Guard',
+        phoneNumber: '08050000913',
+        serviceType: used,
+        serviceTier: SERVICE_TIERS.CLASSIC,
+        deliverySpeed: DELIVERY_SPEED.STANDARD,
+        channel: ORDER_CHANNEL.OFFICE,
+        amount: 1000,
+        items: [{ type: 'shirt', price: 700, quantity: 1 }],
+    })
+    created.orders.push(order._id)
+
+    try {
+        let res = await admin.updateAdminSettings({
+            body: {
+                serviceTypes: saved.map((t) =>
+                    t.name === used ? { ...t, name: 'Wash & Press' } : t,
+                ),
+            },
+        })
+        ok(
+            !res.success && /cannot be changed or removed/i.test(res.data?.error || ''),
+            'renaming an in-use service type is refused',
+        )
+        ok(
+            res.data?.blockedServiceTypes?.[0]?.name === used &&
+                res.data.blockedServiceTypes[0].orders >= 1,
+            'the refusal names the type and how many orders depend on it',
+        )
+        ok(
+            res.data?.useInstead === '/api/admin/display-names',
+            'and points the admin at the renaming feature instead',
+        )
+
+        res = await admin.updateAdminSettings({
+            body: {
+                serviceTypes: [
+                    ...saved.filter((t) => t.name !== used),
+                    { name: 'Wash And Press', pricePerPiece: 700 },
+                ],
+            },
+        })
+        ok(
+            !res.success && /cannot be changed or removed/i.test(res.data?.error || ''),
+            'delete-and-re-add under a new name is refused too (the bypass)',
+        )
+
+        // What must STILL work, or the guard has broken normal admin work.
+        res = await admin.updateAdminSettings({
+            body: {
+                serviceTypes: saved.map((t) =>
+                    t.name === used ? { ...t, pricePerPiece: 777 } : t,
+                ),
+            },
+        })
+        const priced = await AdminSettingModel.findOne({}).lean()
+        ok(
+            res.success &&
+                priced.serviceTypes.find((t) => t.name === used)?.pricePerPiece === 777,
+            'changing a service type PRICE is still allowed',
+        )
+
+        res = await admin.updateAdminSettings({
+            body: {
+                serviceTypes: [...saved, { name: `stg-${STAMP}-starch`, pricePerPiece: 900 }],
+            },
+        })
+        ok(res.success, 'adding a NEW service type is still allowed')
+
+        res = await admin.updateAdminSettings({ body: { serviceTypes: saved } })
+        const pruned = await AdminSettingModel.findOne({}).lean()
+        ok(
+            res.success &&
+                !pruned.serviceTypes.some((t) => t.name === `stg-${STAMP}-starch`),
+            'removing an UNUSED service type is still allowed',
+        )
+
+        res = await admin.updateAdminSettings({ body: { pickupFee: before.pickupFee } })
+        ok(res.success, 'a settings update that sends no serviceTypes is unaffected')
+    } finally {
+        // The harness edits the real settings document, so put the service
+        // types and their prices back exactly as they were found.
+        await AdminSettingModel.updateOne(
+            { _id: before._id },
+            { $set: { serviceTypes: before.serviceTypes } },
+        )
+        const after = await AdminSettingModel.findOne({}).lean()
+        ok(
+            JSON.stringify(after.serviceTypes.map((t) => [t.name, t.pricePerPiece])) ===
+                JSON.stringify(before.serviceTypes.map((t) => [t.name, t.pricePerPiece])),
+            'service types restored exactly as found',
+        )
+    }
+}
+
 async function cleanup() {
     await BookOrderModel.deleteMany({ _id: { $in: created.orders } })
     await PaymentModel.deleteMany({ _id: { $in: created.payments } })
@@ -505,6 +632,7 @@ async function main() {
     await mongoose.connect(url, { serverSelectionTimeoutMS: 60000 })
     try {
         await run()
+        await serviceTypeNameGuard()
     } catch (error) {
         FAIL++
         console.error('\n  ✗ THREW:', error)

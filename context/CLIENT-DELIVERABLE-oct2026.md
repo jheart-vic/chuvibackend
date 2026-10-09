@@ -332,12 +332,24 @@ See §2 for the dashboard now reporting all of it.
 
 ## What we need from you
 
-**1. Renaming delivery speeds, service types and care tiers.** We have built it
-so you can rename what everyone **sees**. The short internal names stay in place
-as reference codes. If you meant you want the underlying data itself renamed,
-that is a larger piece of work and we will come back with a timeline — please
-confirm which you meant. (Sent separately, with one related warning about the
-current settings screen.)
+**1. Renaming — ✅ CONFIRMED AND CLOSED (9 Oct).** You chose (a): rename what
+everyone sees, short internal names left alone. That is what was built, so
+nothing further is needed. You can rename any delivery speed, service type or
+care tier in admin and the new wording appears everywhere.
+
+**1b. The pricing risk — ✅ CLOSED (9 Oct), as you asked.** The general settings
+screen now refuses to change or remove a service type's name once any order
+depends on it, and points the admin to the renaming feature instead. The
+refusal names the type and how many orders rely on it, so it explains itself.
+
+Still allowed, because none of it can break a price lookup: adding a new service
+type, changing a price, and removing a type no order has ever used.
+
+One detail worth knowing, because it is slightly broader than you asked for: the
+block triggers on a name **disappearing**, not on the word "rename". Deleting a
+service type and adding it back under a new name has exactly the same effect on
+pricing, so that is refused too. Option 2 remains available whenever a real need
+comes up.
 
 **2. The weekend delivery dates.** See §2, point 2. Nothing to do unless you want
 Monday ticked as a working day.

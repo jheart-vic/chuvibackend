@@ -295,9 +295,30 @@ briefCheck **337/337**. Swagger **74 schemas / 307 paths / 0 wrong envelopes**. 
 - **Fixed in passing: a lower-case acronym now reads as one** — the care tier `vip` rendered as
   "Vip" on every card that uses `prettifyName`, which is every station card.
 
-### 🔨 STILL OPEN — N1 IS NOW CODE-COMPLETE; ONE DELIVERABLE LEFT
-- **The single §1+§2+§3 client block** — the original deliverable of the 6 Oct brief, to be written
-  LAST from shipped code. **This is the only remaining item.**
+### ✅ CLIENT CLOSED RENAMING + THE PRICING RISK (2026-10-09). briefCheck **341/341**
+`dashboardDecisionsStaging` **45/45** (was 36). They chose **(a)** — rename what people SEE, short
+names untouched — which is what was already built, so no code followed. And they asked for
+**option 1** on the pricing risk, now done.
+- **`updateAdminSettings` refuses to change or remove a `serviceTypes[].name` that orders depend
+  on**, names the type + its order count, and points at `/api/admin/display-names`.
+- ⚠️ **THE GUARD IS WRITTEN AGAINST THE CONSEQUENCE, NOT THE WORD "RENAME".** It refuses when a
+  name orders depend on would **disappear** — which also catches **delete-and-re-add under a new
+  name**, identical in effect and something a pairwise name comparison would have let straight
+  through. Asserted live, because that bypass is the whole reason for the shape.
+- **Still allowed** (none can break a lookup): adding a type, changing a price, removing a type no
+  order has used. The check runs BEFORE the `$set`, so nothing is half-written.
+- Why it mattered: an order stores `serviceType: "wash-and-iron"` and pricing matches it against
+  `serviceTypes[].name`, **falling back to a multiplier of 1** — so a rename did not throw, it
+  silently under-priced every order under the old name, and `updateAdminSettings` `$set`s anything
+  with `runValidators: false`.
+- **A briefCheck assertion failed on correct code first:** a whole-file `indexOf` for
+  `{ $set: updateData }` found an EARLIER one in a different settings function. Now scoped to the
+  `updateAdminSettings` body.
+
+### 🔨 STILL OPEN — N1 IS CODE-COMPLETE AND THE BRIEF IS ANSWERED
+- **✅ The §1+§2+§3 client block is WRITTEN** — `context/CLIENT-DELIVERABLE-oct2026.md`. Four of the
+  eight §3 answers had CHANGED since the 7 Oct draft (A2/A3/A4 + hold types), each marked with its
+  reason. **Writing it from shipped code is what exposed the UTC day-bucketing bug.**
 - **NOT MERGED TO `main`.** `origin/main` is still `e0d5c3a`; 7 commits sit ahead of it, so none of
   windows, the payment hold, item #7, D7 or the refund is live.
 - Worth confirming with the client when convenient (neither blocks anything):

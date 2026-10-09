@@ -312,6 +312,32 @@ never change. You rename the *label*:
 Also fixed: a lower-case acronym now renders as one — the `vip` tier previously
 read **"Vip"** on every station card.
 
+### ⚠️ The general settings screen now refuses service-type name edits
+
+`PUT` on the admin settings endpoint will **reject** a payload that changes or
+removes a `serviceTypes[].name` that existing orders depend on (client decision,
+9 Oct). A service type's name is the key an order uses to find its price, so
+renaming one silently under-priced every order already placed under the old
+name.
+
+The 400 carries:
+
+```json
+{ "success": false, "data": {
+  "error": "A service type's name is how existing orders find their price, so it cannot be changed or removed here: \"wash-and-iron\" (42 orders). To change what customers and staff SEE, use Display Names instead…",
+  "blockedServiceTypes": [{ "name": "wash-and-iron", "orders": 42 }],
+  "useInstead": "/api/admin/display-names" } }
+```
+
+**What to change on the settings screen:** make the service-type *name* field
+read-only once it is saved, and link to the Display Names screen for renaming.
+Adding a type, editing a price, and removing a type with no orders all still
+work exactly as before.
+
+Note the block triggers on a name **disappearing**, so deleting a type and
+re-adding it under a different name is refused too — it has the same effect on
+pricing.
+
 ## 3e. Delivery windows are confirmed at READY (D7)
 
 `scheduling.delivery.confirmedAt` is now set when the order is packed and marked
