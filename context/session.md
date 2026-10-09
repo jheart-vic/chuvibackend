@@ -1,5 +1,32 @@
 # Current Session Log
 
+## ███ MERGED 2026-10-09 — PR #246, `origin/main` = `073c25e`. NOTHING IS UNMERGED. ███
+`origin/main..feature/fix` is **0**. Everything is live once Render finishes the deploy: the five FE
+bug fixes, count-only Quick Booking, AND `ce2380b` (the service-type name guard / B3) which had been
+sitting unmerged. **Every "NOT merged / N commits behind" note further down this file is now STALE.**
+Verify with `git rev-list --count origin/main..HEAD`, never from local `main`.
+
+### ⚠️ LIVE OFFER CONFIG IS BROKEN — AFFECTS REAL CUSTOMERS, NOT JUST TESTS
+Found while seeding the test accounts into production. `handleTrigger` →
+`getActiveOfferForTrigger` needs an **active** offer for the trigger. In live:
+| Offer | Trigger | Status |
+|---|---|---|
+| First Experience Offer | `first-experience` | **paused** |
+| First Experience Offer | `manual` | active |
+| Spend ₦3000 Save ₦500 | `first-experience` | **expired** |
+| Always Free at ₦8,000 | — | **paused** |
+| Second Order Offer | `manual` | archived |
+
+**So NO new customer in production is being granted a First Experience offer** — the only
+`first-experience` offers are paused/expired, and the one that IS active is `manual`, which
+registration never fires. And **"Always Free at ₦8,000" is paused**, so CRM registered-not-booked
+**message 3's promise ("free only on orders from ₦8,000") is currently FALSE** — the dependency
+flagged on 2026-10-08 was never actually satisfied. The client believes both are set up.
+**The FE's ₦3,900/₦4,000/₦8,000 offer cases cannot be tested until these are activated**; then
+`node seedTestCustomers.js --clean --i-mean-live` and re-seed so the accounts pick the offer up.
+The 4 accounts DO exist in live (`chuvi-offer-test-{below,at,above,spare}@example.com`,
+`OfferTest#2026`) and are now registered-not-booked CRM leads.
+
 ## ███ HARNESSES RUN GREEN 2026-10-09 + TEST ACCOUNTS. URI SAVED ███
 **The testingdb URI is in `context/LOCAL-SECRETS.md`, which is GITIGNORED** — `context/` is tracked
 and pushed, so a credential in any other file there would be in the history permanently. Never
