@@ -11,6 +11,7 @@ const  mongoose = require("mongoose");
 const paginate = require("../util/paginate");
 const { generateReferenceId, getObjectId } = require("../util/helper");
 const createNotification = require("../util/createNotification");
+const { notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy');
 const { NOTIFICATION_TYPE, WALLET_TX_TYPE } = require("../util/constants");
 const createAuditLog = require("../util/createAuditLog");
 const WalletCreditService = require("./walletCredit.service");
@@ -292,6 +293,12 @@ async fetchUserTransactions(req) {
           alertType: 1,
           paymentMethod: 1,
           proofOfPayment: 1,
+          // WHICH ORDER this line was for. Neither branch projected it, so the
+          // customer saw amounts with no way to tell what they paid for — which
+          // is only half of "the money has a record" (brief 2.3). The swagger
+          // had been documenting an `order` field all along that the pipeline
+          // never returned.
+          order: 1,
           source: { $literal: "payment" },
         },
       },
@@ -318,12 +325,32 @@ async fetchUserTransactions(req) {
                 reason: 1,
                 balanceAfter: 1,
                 creditType: 1,
+                // same field name as the Payment branch, so one row shape
+                order: "$relatedOrderId",
                 source: { $literal: "wallet" },
               },
             },
           ],
         },
       },
+      // The order's OSC number, because a raw id tells a customer nothing — the
+      // point of 2.3 is a record they can actually read. Left null for lines
+      // with no order (top-ups, credit expiry).
+      {
+        $lookup: {
+          from: "bookorders",
+          localField: "order",
+          foreignField: "_id",
+          pipeline: [{ $project: { oscNumber: 1 } }],
+          as: "_order",
+        },
+      },
+      {
+        $addFields: {
+          oscNumber: { $arrayElemAt: ["$_order.oscNumber", 0] },
+        },
+      },
+      { $project: { _order: 0 } },
     ];
 
     if (alertType === "credit" || alertType === "debit") {
@@ -713,6 +740,15 @@ async fetchUserTransactions(req) {
         userId,
         title: "Payment Proof Uploaded",
         body: `Your payment proof for ₦${amount} has been uploaded successfully. Our team will verify it shortly.`,
+        type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
+      })
+      // ADDED for admin (client section 10). The customer is promised
+      // verification "shortly"; before this nothing told anyone a proof was
+      // waiting, so it sat until someone happened to open the list.
+      await notifyAdminEvent({
+        event: ADMIN_EVENT.PAYMENT_PROOF_UPLOADED,
+        title: "Payment Proof Uploaded",
+        body: `${user?.fullName || "A customer"} uploaded proof of a ₦${amount} bank transfer. Reference ${reference}. It needs verifying.`,
         type: NOTIFICATION_TYPE.TOP_UP_REQUEST,
       })
       await createAuditLog({userId: getObjectId(userId), action: `Uploaded payment proof for ₦${amount} with reference ${reference}`, category: 'wallet'})

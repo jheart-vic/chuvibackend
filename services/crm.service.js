@@ -15,6 +15,14 @@ const moment = require('moment-timezone')
 // Client decision: reporting months run on Lagos time, not UTC.
 const LAGOS = 'Africa/Lagos'
 const { sendCrmMessage, getCrmSettings } = require('./crmMessenger.service')
+// Client item #1: the follow-up sequence is anchored to the First Experience
+// offer's expiry, so registration must know the linkage it just created.
+const OfferService = require('./offer.service')
+const {
+    nextSendSlot,
+    offerEndSchedule,
+    isInSendWindow,
+} = require('../util/crmSendWindow')
 const createAuditLog = require('../util/createAuditLog')
 const paginate = require('../util/paginate')
 const { normalizePhone, getObjectId } = require('../util/helper')
@@ -25,6 +33,9 @@ const {
     CRM_MANUAL_TAGS,
     CRM_LEAD_SOURCE,
     CRM_WORKFLOW,
+    CRM_WINDOWED_WORKFLOWS,
+    CRM_SCHEDULE_ANCHOR,
+    CRM_SEND_SLOT,
     CRM_MESSAGE_TYPE,
     CRM_INTERNAL_ACTIONS,
     CRM_MESSAGE_STATUS,
@@ -231,8 +242,27 @@ class CrmService {
 
     async scheduleMessages(profileId, workflow, entries) {
         if (!entries.length) return
+        // CLIENT RULING 2026-10-08: every follow-up and offer message may only
+        // leave inside one of the two daily send windows, and one due outside
+        // "waits for the next one". Snapping here means the QUEUE itself is
+        // honest — `nextFollowUpAt` on the card shows when the customer will
+        // really hear from us, instead of a time the dispatcher would silently
+        // slide. The dispatcher guards it again for rows queued before this.
+        //
+        // Only the windowed workflows are moved; order-ready, delivery
+        // confirmation and feedback requests are exempt and still go at once.
+        let prepared = entries
+        if (CRM_WINDOWED_WORKFLOWS.includes(workflow)) {
+            const windows = (await getCrmSettings())?.sendWindows
+            prepared = entries.map((e) => ({
+                ...e,
+                dueAt: e.exactDueAt
+                    ? e.dueAt // already positioned on a window by the caller
+                    : nextSendSlot(e.dueAt, e.preferSlot || CRM_SEND_SLOT.ANY, windows),
+            }))
+        }
         await CrmScheduledMessageModel.insertMany(
-            entries.map((e) => ({
+            prepared.map((e) => ({
                 profileId,
                 workflow,
                 messageType: e.messageType,
@@ -301,13 +331,87 @@ class CrmService {
         })
         if (created) {
             await this.startLeadWorkflow(profile)
-            // Offer System: a new qualifying lead may get the First Experience
-            // Offer (no-op for account-less leads)
-            offerOnTrigger(OFFER_TRIGGER.FIRST_EXPERIENCE, {
-                userId: profile.userId,
+        }
+        // NOTE (client answer 1(b), 2026-10-08): the First Experience trigger
+        // used to fire from HERE. It has moved to handleUserRegistered, because
+        // firing it on lead creation could never work for the case it mattered
+        // for. See the comment there — this is a bug fix, not a policy change.
+        return { profile, created }
+    }
+
+    // ─── Registered-but-never-booked workflow (client item #1) ───────────────
+    //
+    // The gap this fills: `handleUserRegistered` CANCELS the lead sequence,
+    // because that sequence exists to push a number towards registering. Once
+    // they registered, they got nothing at all — silence until they happened to
+    // book. This is the follow-up the reps rely on.
+    //
+    // The schedule is anchored to the FIRST EXPERIENCE OFFER's expiry, not to
+    // fixed delays, so if the client moves the offer from 3 days to 7 the
+    // messages move with it. `offerEndsAt` is the customer's own linkage expiry.
+    async startRegisteredNotBookedWorkflow(profile, offerEndsAt) {
+        const now = Date.now()
+        const settings = await getCrmSettings()
+        const schedule =
+            settings.registeredNotBookedSchedule &&
+            settings.registeredNotBookedSchedule.length
+                ? settings.registeredNotBookedSchedule
+                : CrmSettingModel.DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE
+        const windows = settings.sendWindows
+
+        // Never run two copies for the same person (a re-registration, or a
+        // retried hook) — the sequence is idempotent per profile.
+        await this.cancelPendingMessages(profile._id, [
+            CRM_WORKFLOW.REGISTERED_NOT_BOOKED,
+        ])
+
+        // Messages 2 and 3 only exist if we know when the offer ends. Without an
+        // offer (none configured yet, or the customer was not eligible) the
+        // sequence still runs — message 1 and the day-7 move — rather than
+        // failing outright, and the pair is simply skipped.
+        const offerPair = offerEndsAt
+            ? offerEndSchedule(offerEndsAt, windows)
+            : null
+
+        const entries = []
+        for (const step of schedule) {
+            if (step.enabled === false) continue
+            if (step.anchor === CRM_SCHEDULE_ANCHOR.OFFER_END) {
+                if (!offerPair) continue
+                const dueAt =
+                    step.preferSlot === CRM_SEND_SLOT.MORNING
+                        ? offerPair.third
+                        : offerPair.second
+                // Already sitting exactly on a window, and deliberately so —
+                // do not let scheduleMessages re-snap it forward.
+                entries.push({
+                    messageType: step.messageType,
+                    dueAt,
+                    exactDueAt: true,
+                    cancelIfOrdered: step.cancelIfOrdered !== false,
+                })
+                continue
+            }
+            entries.push({
+                messageType: step.messageType,
+                dueAt: new Date(now + (step.delayMinutes || 0) * 60 * 1000),
+                preferSlot: step.preferSlot,
+                cancelIfOrdered: step.cancelIfOrdered !== false,
             })
         }
-        return { profile, created }
+
+        // A message whose moment has already passed is dropped rather than sent
+        // late: a "your offer ends tomorrow" that arrives after it ended is
+        // worse than nothing. Happens when an offer is shorter than 24h.
+        const live = entries.filter((e) => e.dueAt > new Date())
+
+        await this.scheduleMessages(
+            profile._id,
+            CRM_WORKFLOW.REGISTERED_NOT_BOOKED,
+            live,
+        )
+        await this.refreshNextFollowUp(profile._id)
+        return live.length
     }
 
     // ─── Post-delivery workflow ──────────────────────────────────────────────
@@ -392,6 +496,60 @@ class CrmService {
             await this.cancelPendingMessages(profile._id, [CRM_WORKFLOW.LEAD])
             await this.refreshNextFollowUp(profile._id)
         }
+
+        // ── CLIENT ANSWER 1(b), 2026-10-08 ──────────────────────────────────
+        // "The 3 days run from REGISTRATION for everyone. A lead entered on the
+        //  dashboard gets no offer and no clock until that person opens the
+        //  account." Registration is the trigger, so it fires HERE.
+        //
+        // This also fixes a real bug, and the answer we sent them was wrong:
+        // we said a staff-entered lead's clock started the day the rep typed
+        // the number in. It did not — they got NO offer at all, ever. The
+        // trigger used to live in createLead behind `if (created)`, and an
+        // account-less lead has no userId, so handleTrigger returned null. When
+        // that same person later registered, findOrCreateProfile matched the
+        // EXISTING profile by phone, `created` was false, and the trigger never
+        // fired again. Firing on registration (unconditionally, not only on a
+        // fresh profile) is what closes that hole.
+        //
+        // Every account-creation path — local signup, Google, Apple — comes
+        // through here, so "a staff member creating the account counts as
+        // registration" is satisfied by construction. The offer LENGTH is the
+        // offer's own `customerWindowDays`, admin-editable, which is the
+        // "setting I control, not a fixed 3 days" they asked for.
+        //
+        // AWAITED, not fire-and-forget like the other offer hooks: the follow-up
+        // sequence below is anchored to this offer's expiry, so we need the
+        // linkage back before we can schedule messages 2 and 3. Still non-fatal —
+        // a failure here must never break a signup.
+        let offerEndsAt = null
+        try {
+            const linkage = await OfferService.handleTrigger(
+                OFFER_TRIGGER.FIRST_EXPERIENCE,
+                { userId: user._id },
+            )
+            offerEndsAt = linkage?.expiresAt || null
+        } catch (err) {
+            console.warn(
+                'First Experience grant on registration failed (non-fatal):',
+                err?.message,
+            )
+        }
+
+        // ── CLIENT ITEM #1 ──────────────────────────────────────────────────
+        // Registering used to cancel the lead sequence and leave them with
+        // NOTHING. This is the replacement, and it is what the reps follow up
+        // with. Non-fatal for the same reason.
+        if (profile) {
+            try {
+                await this.startRegisteredNotBookedWorkflow(profile, offerEndsAt)
+            } catch (err) {
+                console.warn(
+                    'registered-not-booked workflow failed (non-fatal):',
+                    err?.message,
+                )
+            }
+        }
     }
 
     // Order placed: the lead has converted out of the sales sequence.
@@ -404,7 +562,14 @@ class CrmService {
             channel: order.channel,
         })
 
-        await this.cancelPendingMessages(profile._id, [CRM_WORKFLOW.LEAD])
+        // The client's rule: the registered-not-booked sequence "stops the
+        // moment they book". Cancelled here alongside the lead sequence, so one
+        // order silences both — otherwise a customer who booked would keep
+        // getting "your free pickup ends tomorrow".
+        await this.cancelPendingMessages(profile._id, [
+            CRM_WORKFLOW.LEAD,
+            CRM_WORKFLOW.REGISTERED_NOT_BOOKED,
+        ])
 
         profile.tags = replaceGroupTags(
             profile.tags,
@@ -598,9 +763,30 @@ class CrmService {
                     continue
                 }
 
+                // CLIENT RULING 2026-10-08: a follow-up message due outside the
+                // two send windows "waits for the next one". scheduleMessages
+                // already snaps new rows onto a window; this guard catches rows
+                // queued BEFORE that shipped, and anything an admin reschedules
+                // by hand. Internal actions (mark-prospect, mark-churned) are
+                // not messages, so they are not held back.
+                if (
+                    CRM_WINDOWED_WORKFLOWS.includes(msg.workflow) &&
+                    !CRM_INTERNAL_ACTIONS.includes(msg.messageType)
+                ) {
+                    const windows = (await getCrmSettings())?.sendWindows
+                    if (!isInSendWindow(new Date(), windows)) {
+                        msg.dueAt = nextSendSlot(new Date(), CRM_SEND_SLOT.ANY, windows)
+                        await msg.save()
+                        touchedProfiles.add(String(profile._id))
+                        continue
+                    }
+                }
+
                 if (CRM_INTERNAL_ACTIONS.includes(msg.messageType)) {
                     if (
-                        msg.messageType === CRM_MESSAGE_TYPE.LEAD_MARK_PROSPECT
+                        msg.messageType === CRM_MESSAGE_TYPE.LEAD_MARK_PROSPECT ||
+                        msg.messageType ===
+                            CRM_MESSAGE_TYPE.REG_NOT_BOOKED_MARK_PROSPECT
                     ) {
                         await this.markProspect(profile)
                     } else if (
@@ -1675,3 +1861,9 @@ class CrmService {
 }
 
 module.exports = new CrmService()
+// Exported so the profile MERGE can recompute a stage with the SAME rule the
+// CRM engine uses (client ruling 2026-10-08: "work out the stage again from the
+// combined orders, using the normal stage rules"). A second copy of the
+// thresholds in profileMerge.service.js is exactly the drift that let the tier
+// pricing maths disagree with itself in brief 1.6.
+module.exports.countStage = countStage

@@ -42,6 +42,12 @@ const {
 } = require('../util/holdSla')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
+const { heldItems, onHoldScope } = require('../util/itemHold')
+const {
+    notifyAffectedStation,
+    notifyAdminEvent,
+    ADMIN_EVENT,
+} = require('../util/notifyPolicy')
 const { getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
@@ -112,6 +118,43 @@ class AdminService extends BaseService {
                 { $group: { _id: null, total: { $sum: '$amount' } } },
             ])
             const revenueTodayVerified = revenueTodayAgg[0]?.total || 0
+
+            // CLIENT RULING 2026-10-08: "count each amount under the way it was
+            // actually paid. A ₦5,000 order paid ₦3,000 from the wallet and
+            // ₦2,000 in cash shows ₦3,000 under wallet and ₦2,000 under cash."
+            //
+            // This needs no reconciliation step, because a split counter order
+            // already writes ONE Payment ROW PER TENDER (util/counterPayment.js)
+            // — so grouping by `paymentMethod` splits it correctly by
+            // construction, and the parts still sum to the order total. Grouping
+            // on `billingType` could never have done this: an order has exactly
+            // one of those, so a split would have been filed entirely under
+            // whichever single value it carried.
+            const revenueTodayByMethodAgg = await PaymentModel.aggregate([
+                {
+                    $match: {
+                        status: 'success',
+                        type: { $in: ['order', 'subscription'] },
+                        createdAt: { $gte: todayStart, $lte: todayEnd },
+                    },
+                },
+                {
+                    $group: {
+                        // rows written before `paymentMethod` was recorded on
+                        // every tender fall into `unknown` rather than being
+                        // silently attributed to a method nobody chose
+                        _id: { $ifNull: ['$paymentMethod', 'unknown'] },
+                        total: { $sum: '$amount' },
+                        count: { $sum: 1 },
+                    },
+                },
+                { $sort: { total: -1 } },
+            ])
+            const revenueTodayByMethod = revenueTodayByMethodAgg.map((r) => ({
+                method: r._id,
+                total: r.total,
+                payments: r.count,
+            }))
 
             const revenueYesterdayAgg = await PaymentModel.aggregate([
                 {
@@ -849,6 +892,10 @@ class AdminService extends BaseService {
                     dueToday,
                     totalRevenue,
                     revenueTodayVerified,
+                    // Today's money split by how it actually arrived (client
+                    // ruling 2026-10-08). A split counter order appears under
+                    // BOTH its tenders, and the parts sum to revenueTodayVerified.
+                    revenueTodayByMethod,
                     revenueYesterday,
                     revenueTodayChange,
                     avgDailyRevenue7Days,
@@ -1837,9 +1884,16 @@ class AdminService extends BaseService {
                     break
 
                 case 'expiringToday':
+                    // Widened with the other two (2026-10-08): a piece held at a
+                    // production station no longer parks the order, so scoping
+                    // this to `stage.status: hold` alone would hide exactly the
+                    // orders most worth seeing — ones due today with a piece
+                    // stuck somewhere.
                     filter = {
-                        deliveryDate: { $gte: todayStart, $lte: todayEnd },
-                        'stage.status': ORDER_STATUS.HOLD,
+                        $and: [
+                            onHoldScope(ORDER_STATUS.HOLD),
+                            { deliveryDate: { $gte: todayStart, $lte: todayEnd } },
+                        ],
                     }
                     break
 
@@ -1881,6 +1935,13 @@ class AdminService extends BaseService {
 
                 const slaBreached = isHoldBreached(order, now, listHoldRules)
 
+                // CLIENT RULING 2026-10-08: "the order still shows in Holds
+                // Management, with the number of pieces on hold." A hold at the
+                // four production stations no longer parks the order, so without
+                // this the row would give no clue how much of the order is
+                // actually stuck — one piece out of twelve reads the same as all
+                // twelve.
+                const heldPieces = heldItems(order.items || [])
                 return {
                     ...order,
                     holdMeta: {
@@ -1891,6 +1952,25 @@ class AdminService extends BaseService {
                         holdTypeKey: order.orderHold?.holdTypeKey || null,
                         holdTypeName: limit.typeName,
                         slaSource: limit.source,
+                        // how much of the order is stuck, and where
+                        heldPieceCount: heldPieces.length,
+                        totalPieceCount: (order.items || []).length,
+                        // `order` = the whole order is parked (Intake / payment
+                        // hold); `items` = only these pieces are held and the
+                        // rest of the order is still moving.
+                        holdScope:
+                            order.stage?.status === ORDER_STATUS.HOLD
+                                ? 'order'
+                                : 'items',
+                        heldPieces: heldPieces.map((i) => ({
+                            itemId: i._id,
+                            tagId: i.tagId || null,
+                            type: i.type,
+                            reason: i.holdDetails?.reason || null,
+                            heldAt: i.holdDetails?.heldAt || null,
+                            heldByStation: i.holdDetails?.heldByStation || null,
+                            assignTo: i.holdDetails?.assignTo || null,
+                        })),
                     },
                 }
             })
@@ -1990,14 +2070,10 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            // notify admin who performed the action
-            await createNotification({
-                userId,
-                title: 'Hold Reassigned',
-                body: `Order ${order.oscNumber} hold has been reassigned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATED,
-            })
-
+            // CLIENT SECTION 10: the receipt to the person who performed the
+            // action is switched off — they already know, the screen confirmed
+            // it, and the audit line below is the lasting record. Only the
+            // AFFECTED station is told (just after the audit log).
             await createAuditLog({
                 userId: getObjectId(userId),
                 orderId,
@@ -2005,23 +2081,17 @@ class AdminService extends BaseService {
                 action: `Order ${order.oscNumber}  has been assigned to ${type} ${note ? ` Note: ${note}.` : ''}`,
             })
 
-            // notify all operators at the target station
-            const stationOperators = await UserModel.find({
-                userType: target.role,
-                status: 'active',
-            }).select('_id')
-
-            await Promise.all(
-                stationOperators.map((operator) =>
-                    createNotification({
-                        userId: operator._id,
-                        title: 'Hold Order Assigned to Your Station',
-                        body: `Order ${order.oscNumber} has been reassigned to your station for resolution. Note: ${note}`,
-                        subBody: `Order ID: ${order.oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
-                    }),
-                ),
-            )
+            // The AFFECTED station is told — this is the only way they learn a
+            // held order is now their problem. `actorId` excludes whoever
+            // performed the reassignment, even if they work at that station.
+            await notifyAffectedStation({
+                role: target.role,
+                actorId: userId,
+                title: 'Hold Order Assigned to Your Station',
+                body: `Order ${order.oscNumber} has been reassigned to your station for resolution. Note: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: `Order ${order.oscNumber} hold reassigned to ${type}`,
@@ -2137,31 +2207,18 @@ class AdminService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            // notify admin who performed the action
-            await createNotification({
-                userId,
-                title: 'Hold Resolved',
-                body: `Order ${order.oscNumber} hold has been resolved and returned to ${type.replace(/-/g, ' ')}. Note: ${note}`,
+            // CLIENT SECTION 10: no receipt to whoever resolved it. Only the
+            // station the order RETURNS to is told, because that is the only
+            // way they learn a job they could not touch is live again — and
+            // never the actor, even if they work at that station.
+            await notifyAffectedStation({
+                role: target.role,
+                actorId: userId,
+                title: 'Order Returned to Your Station',
+                body: `Order ${order.oscNumber} hold has been resolved and returned to your station. Note: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
-
-            // notify all operators at the target station
-            const stationOperators = await UserModel.find({
-                userType: target.role,
-                status: 'active',
-            }).select('_id')
-
-            await Promise.all(
-                stationOperators.map((operator) =>
-                    createNotification({
-                        userId: operator._id,
-                        title: 'Order Returned to Your Station',
-                        body: `Order ${order.oscNumber} hold has been resolved and returned to your station. Note: ${note}`,
-                        subBody: `Order ID: ${order.oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
-                    }),
-                ),
-            )
 
             // notify customer if linked account exists
             if (order.userId) {
@@ -2524,6 +2581,23 @@ class AdminService extends BaseService {
                     error: `A hold type called "${name}" already exists.`,
                 })
             }
+            // The key alone was not enough. A key is PERMANENT, so once a type
+            // has been renamed its key no longer matches its name — and a second
+            // type could then be created with that same name, deriving a fresh
+            // key and passing the check above. Two types with identical names
+            // would appear as two indistinguishable reasons on a station's list.
+            // The documented contract says "duplicate name", so check the name.
+            const nameClash = await HoldTypeModel.findOne({
+                name: new RegExp(
+                    `^${String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+                    'i',
+                ),
+            })
+            if (nameClash) {
+                return BaseService.sendFailedResponse({
+                    error: `A hold type called "${nameClash.name}" already exists.`,
+                })
+            }
 
             const created = await HoldTypeModel.create({
                 key,
@@ -2570,6 +2644,20 @@ class AdminService extends BaseService {
             if (type.isSystem && active === false) {
                 return BaseService.sendFailedResponse({
                     error: `"${type.name}" is used by the system and cannot be switched off. You can change its limit instead.`,
+                })
+            }
+            // Renaming a system type used to be SILENTLY IGNORED: the write was
+            // skipped but the response still said success, so an admin renamed
+            // the payment hold, saw it save, and found the old name still there.
+            // Switching it off one branch above is refused out loud; this is the
+            // same rule and it should say so too.
+            if (
+                type.isSystem &&
+                name !== undefined &&
+                String(name).trim() !== type.name
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: `"${type.name}" is used by the system and cannot be renamed — the payment flow looks it up by name. You can change its limit and stations instead.`,
                 })
             }
 
@@ -3553,22 +3641,15 @@ class AdminService extends BaseService {
                 action: `Order ${order.oscNumber} has been placed on hold for reason: ${reason}, assigned to ${assignTo} ${note ? ` Note: ${note}.` : ''}`,
             })
 
-            const stationOperators = await UserModel.find({
-                userType: assignTo,
-                status: 'active',
-            }).select('_id')
-
-            await Promise.all(
-                stationOperators.map((operator) =>
-                    createNotification({
-                        userId: operator._id,
-                        title: 'Hold Order Assigned to Your Station',
-                        body: `Order ${order.oscNumber} has been placed on hold by admin and assigned to your station for resolution. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
-                        subBody: `Order ID: ${order.oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
-                    }),
-                ),
-            )
+            // Affected station only, never the actor (client section 10).
+            await notifyAffectedStation({
+                role: assignTo,
+                actorId: userId,
+                title: 'Hold Order Assigned to Your Station',
+                body: `Order ${order.oscNumber} has been placed on hold by admin and assigned to your station for resolution. Reason: ${reason}.${note ? ` Note: ${note}.` : ''}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+            })
 
             return BaseService.sendSuccessResponse({
                 message: 'Order placed on hold successfully',

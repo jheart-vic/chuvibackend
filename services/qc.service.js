@@ -15,10 +15,12 @@ const {
 } = require('../util/constants')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const { QUEUE_SORT } = require('../util/queueSort')
+const { onHoldScope, describeHeld } = require('../util/itemHold')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
 const createNotification = require('../util/createNotification')
+const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
 const { crmOnOrderReady } = require('../util/crmHooks')
@@ -370,7 +372,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item(s) QC Passed',
                 body: `${updatedCount} item(s) on order ${order.oscNumber} have passed quality control.`,
@@ -475,7 +477,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item QC Status Undone',
                 body: `${targetItems.length} item(s) on order ${order.oscNumber} have had their QC status undone.`,
@@ -549,7 +551,7 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId: userId,
                 title: 'Your order passed QC',
                 body: `Order ${order.oscNumber} has passed quality control and is now being prepared for packing and sealing.`,
@@ -695,6 +697,20 @@ class QCService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not in Pack & Seal stage',
                 })
+
+            // CLIENT RULING 2026-10-08: "the order cannot be packed or
+            // dispatched until every held piece is released." This is the gate
+            // that replaces the old order-level park. Before, a hold at any
+            // station froze the whole order, which made packing a held order
+            // impossible by accident; now the siblings move freely, so packing
+            // has to be refused EXPLICITLY — otherwise an order would be sealed
+            // and sent out with a piece still sitting at another station.
+            const heldMessage = describeHeld(order.items || [])
+            if (heldMessage) {
+                return BaseService.sendFailedResponse({
+                    error: `This order cannot be packed yet — ${heldMessage}`,
+                })
+            }
 
             const now = new Date()
 
@@ -900,14 +916,16 @@ class QCService extends BaseService {
                 },
             )
 
-            await BookOrderModel.updateOne(
-                { _id: orderId },
-                buildStageUpdate(
-                    ORDER_STATUS.HOLD,
-                    stationMap[assignTo],
-                    holdNote, // ← stage note also carries it
-                ),
-            )
+            // CLIENT RULING 2026-10-08: a hold at this station stops ONLY THE
+            // PIECE. The order-level stage write that used to be here set
+            // `stage.status: hold`, and the station guards then refused every
+            // further action on the order — so one held piece parked its
+            // siblings. Removed: the order keeps its real station status, the
+            // other pieces keep moving, and the piece is held by its own
+            // holdDetails (util/itemHold.js). Holds Management still lists the
+            // order through the widened scope in util/holdSla.js, and the order
+            // cannot be PACKED or DISPATCHED while any piece is held.
+            // Intake & Tag and payment holds deliberately still park the order.
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
@@ -918,12 +936,33 @@ class QCService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'An item on your order has been placed on hold',
                 body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on your order ${order.oscNumber} has been placed on hold.${note ? ` Note: ${note}.` : ''} Please contact support for more details.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+            // ADDED for the CUSTOMER (client decision 2026-10-08). The operator
+            // copy above never reached them.
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'An item on your order is on hold',
+                    body: `An item on your order ${order.oscNumber} has been placed on hold.${note ? ` Note: ${note}.` : ''} We are working to resolve this as quickly as possible.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                })
+            }
+            // ADDED for admin (client section 10: any station). A hold at QC is
+            // the last one before dispatch, so it is the most urgent of the three.
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ITEM_ON_HOLD,
+                title: 'Item Placed on Hold',
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} was placed on hold at QC.${note ? ` Note: ${note}.` : ''}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                recordId: order._id,
             })
             await createAuditLog({
                 userId: getObjectId(userId),
@@ -956,7 +995,13 @@ class QCService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const baseQuery = {
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: this station now holds a PIECE, not the
+                // order, so stage.status is no longer `hold`. Match either an
+                // order parked at order level (Intake/payment holds, and legacy
+                // rows from before this change) OR an order with a piece still
+                // held. $and, not $or — this object already has its own $or and
+                // two $or keys would silently overwrite each other.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
                     {
@@ -1057,7 +1102,13 @@ class QCService extends BaseService {
             // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: this station now holds a PIECE, not the
+                // order, so stage.status is no longer `hold`. Match either an
+                // order parked at order level (Intake/payment holds, and legacy
+                // rows from before this change) OR an order with a piece still
+                // held. $and, not $or — this object already has its own $or and
+                // two $or keys would silently overwrite each other.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.QC_STATION },
                     { 'items.holdDetails.assignTo': ROLE.QC },

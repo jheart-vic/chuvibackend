@@ -1,4 +1,5 @@
 const AdminService = require('../services/admin.service')
+const ProfileMergeService = require('../services/profileMerge.service')
 const BaseController = require('./base.controller')
 
 class AdminController extends BaseController {
@@ -192,6 +193,26 @@ class AdminController extends BaseController {
     async listHoldTypes(req, res) {
         const adminService = new AdminService()
         const result = await adminService.listHoldTypes(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // Client item #9 — phone-split CRM profiles. The report NEVER writes; the
+    // merge refuses with its reason when a pair cannot be combined.
+    async listProfileDuplicates(req, res) {
+        const svc = new ProfileMergeService()
+        const result = await svc.findDuplicates(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async mergeProfileDuplicate(req, res) {
+        const svc = new ProfileMergeService()
+        const result = await svc.mergeDuplicate(req)
 
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)

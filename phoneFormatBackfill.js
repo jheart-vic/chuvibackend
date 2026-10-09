@@ -76,6 +76,7 @@ async function main() {
             let changed = 0
             let blanked = 0
             const examples = []
+            const collisions = []
             for (const d of docs) {
                 const before = d[field]
                 const after = normalizePhone(before)
@@ -86,13 +87,37 @@ async function main() {
                     continue
                 }
                 if (after === before) continue
+                if (!DRY) {
+                    try {
+                        await model.updateOne({ _id: d._id }, { $set: { [field]: after } })
+                    } catch (err) {
+                        // `CrmProfile.normalizedPhone` is unique+sparse. Rewriting
+                        // a bare 10-digit number to the canonical form collides
+                        // with the SAME person's other card — which is exactly the
+                        // split this script exists to report. Without this catch
+                        // the whole run aborted on the first such pair, having
+                        // already rewritten everything before it. Skip it, name
+                        // it, and carry on: the pair must be merged first
+                        // (GET /api/admin/profile-duplicates), then re-run.
+                        if (err?.code === 11000) {
+                            collisions.push(
+                                `${label} ${d._id}: ${before} → ${after} BLOCKED — another record already holds that number. Merge the duplicate profiles first.`,
+                            )
+                            continue
+                        }
+                        throw err
+                    }
+                }
                 changed++
                 if (examples.length < 5) examples.push(`${before} → ${after}`)
-                if (!DRY) {
-                    await model.updateOne({ _id: d._id }, { $set: { [field]: after } })
-                }
             }
-            report[label] = { scanned: docs.length, changed, unusable: blanked, examples }
+            report[label] = {
+                scanned: docs.length,
+                changed,
+                unusable: blanked,
+                examples,
+                collisions,
+            }
         }
 
         for (const [label, r] of Object.entries(report)) {
@@ -100,6 +125,12 @@ async function main() {
                 `\n${label}: scanned ${r.scanned}, ${DRY ? 'would change' : 'changed'} ${r.changed}, unusable left alone ${r.unusable}`,
             )
             r.examples.forEach((e) => console.log('   ', e))
+            if (r.collisions?.length) {
+                console.log(
+                    `   *** ${r.collisions.length} row(s) could NOT be rewritten — the canonical number is already taken by the same person's other record. Merge first, then re-run. ***`,
+                )
+                r.collisions.slice(0, 10).forEach((c) => console.log('   ', c))
+            }
         }
 
         // ── the consequence the client actually cares about ───────────────────
@@ -126,6 +157,9 @@ async function main() {
             )
             console.log('   These are NOT merged automatically — merging decides which')
             console.log('   history survives, which is a business call, not a script\'s.')
+            console.log('   Merge them from the admin API (client item #9):')
+            console.log('     GET  /api/admin/profile-duplicates        — the same report, with blockers')
+            console.log('     POST /api/admin/profile-duplicates/merge  — one phone number at a time')
             for (const [key, list] of dupes.slice(0, 20)) {
                 console.log(`   ${key}:`)
                 for (const p of list) {

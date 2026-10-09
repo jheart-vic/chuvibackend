@@ -139,6 +139,76 @@
  * @swagger
  * components:
  *   schemas:
+ *     ProfileDuplicateReport:
+ *       type: object
+ *       description: >
+ *         Client item #9 — every phone number that maps to more than one CRM card, with what a merge
+ *         would do and what stops it. The report writes nothing.
+ *       properties:
+ *         totalProfiles: { type: integer, example: 412 }
+ *         duplicatePhones: { type: integer, example: 6 }
+ *         mergeable: { type: integer, example: 5, description: Groups with no blockers }
+ *         blocked: { type: integer, example: 1 }
+ *         note: { type: string, example: "Nothing has been merged. Merge one phone at a time with POST /api/admin/profile-duplicates/merge." }
+ *         groups:
+ *           type: array
+ *           description: Worst first — the groups a human must look at before anything else.
+ *           items:
+ *             type: object
+ *             properties:
+ *               phone: { type: string, example: "08031234567" }
+ *               keepId: { type: string, example: 665f1c2ab9e77a0012d4e300, description: The OLDER card, which survives }
+ *               absorbIds:
+ *                 type: array
+ *                 items: { type: string, example: 665f1c2ab9e77a0012d4e301 }
+ *               mergeable: { type: boolean, example: true }
+ *               cards:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     _id: { type: string, example: 665f1c2ab9e77a0012d4e300 }
+ *                     fullName: { type: string, nullable: true, example: "Tunde Adeyemi" }
+ *                     phoneNumber: { type: string, example: "8031234567" }
+ *                     normalizedPhone: { type: string, example: "8031234567" }
+ *                     userId: { type: string, nullable: true, example: 64d3c9c0f1b2a8e9d0f12345 }
+ *                     hasAccount: { type: boolean, example: false }
+ *                     stage: { type: string, example: lead }
+ *                     totalOrders: { type: integer, example: 0 }
+ *                     totalSpent: { type: number, example: 0 }
+ *                     leadSource: { type: string, example: lead }
+ *                     createdAt: { type: string, format: date-time }
+ *                     role: { type: string, enum: [survives, absorbed], example: survives }
+ *               willBecome:
+ *                 type: object
+ *                 description: What the surviving card looks like after the merge.
+ *                 properties:
+ *                   userId: { type: string, nullable: true, example: 64d3c9c0f1b2a8e9d0f12345 }
+ *                   referralCodeComesFrom: { type: string, example: "the account card" }
+ *                   stage: { type: string, example: active }
+ *                   totalOrders: { type: integer, example: 4 }
+ *                   totalSpent: { type: number, example: 36000 }
+ *                   tags: { type: array, items: { type: string }, example: ["express-user"] }
+ *                   firstOrderAt: { type: string, format: date-time, nullable: true }
+ *                   lastOrderAt: { type: string, format: date-time, nullable: true }
+ *               carriesOver:
+ *                 type: object
+ *                 properties:
+ *                   scheduledMessages: { type: integer, example: 2 }
+ *                   messageLogs: { type: integer, example: 7 }
+ *                   walletBalance: { type: number, nullable: true, example: 2500 }
+ *                   ordersOnTheAccount: { type: integer, nullable: true, example: 4 }
+ *                   walletNote: { type: string, example: "The wallet belongs to the account, and the account moves to the surviving card, so the balance follows untouched." }
+ *               blockers:
+ *                 type: array
+ *                 description: Non-empty means the merge is REFUSED until a human decides.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     code: { type: string, enum: [two-accounts], example: two-accounts }
+ *                     message: { type: string, example: "Both cards are linked to DIFFERENT user accounts..." }
+ *                     userIds: { type: array, items: { type: string } }
+ *
  *     CrmProfile:
  *       type: object
  *       properties:
@@ -892,6 +962,34 @@
  *         personal: { type: array, items: { $ref: '#/components/schemas/OfferBookingOption' } }
  *         promotions: { type: array, items: { $ref: '#/components/schemas/OfferBookingOption' } }
  *         baseline: { type: array, items: { $ref: '#/components/schemas/OfferBookingOption' } }
+ *         checkoutPrompt:
+ *           type: object
+ *           description: >
+ *             Client item #6(a) — render `message` VERBATIM when `show` is true. The backend decides
+ *             whether the customer actually has a usable personal offer on this cart, so the prompt and
+ *             the eligibility rule cannot disagree. `show:false` means do not prompt.
+ *           properties:
+ *             show: { type: boolean, example: true }
+ *             message: { type: string, nullable: true, example: "You have a first time offer. Tap to use it." }
+ *             customerOfferId: { type: string, nullable: true, example: 665f1c2ab9e77a0012d4e100 }
+ *             offerName: { type: string, nullable: true, example: "First Experience" }
+ *             billValue: { type: number, nullable: true, example: 2000, description: What tapping it takes off THIS bill }
+ *             count: { type: integer, example: 2, description: How many personal offers are usable right now }
+ *         autoApply:
+ *           type: object
+ *           nullable: true
+ *           description: >
+ *             Client item #6(b) — the personal offer Quick Booking applies without asking: the one worth
+ *             MORE on THIS bill (discount + any pickup/delivery fee it waives; a promised future credit
+ *             is NOT counted). Ties go to the offer expiring soonest. The others are untouched and
+ *             survive for a later order (`otherOffersKept`). Exposed on the normal booking screen too so
+ *             both paths visibly agree about which one is "best".
+ *           properties:
+ *             customerOfferId: { type: string, example: 665f1c2ab9e77a0012d4e100 }
+ *             offerId: { type: string, example: 665f1c2ab9e77a0012d4e0aa }
+ *             name: { type: string, example: "First Experience" }
+ *             billValue: { type: number, example: 2000 }
+ *             otherOffersKept: { type: integer, example: 1 }
  *
  *     # ── Referral ─────────────────────────────────────────────────────────
  *     Referral:
@@ -1100,7 +1198,18 @@
  *                 credits: { type: integer, example: 9500 }
  *                 refunds: { type: integer, example: 3000 }
  *             customersRecovered: { type: integer, example: 5 }
- *             orderedAgainAfterRecovery: { type: integer, example: 3 }
+ *             orderedAgainAfterRecovery:
+ *               type: integer
+ *               example: 3
+ *               description: >
+ *                 Distinct customers who received a recovery this month and then placed a real order
+ *                 (not cancelled, never a recovery order itself) WITHIN `orderedAgainWindowDays` of it.
+ *                 Client decision 2026-10-08: the window is 60 days. The order itself may fall outside
+ *                 the report month — it is the RECOVERY that must be in the month.
+ *             orderedAgainWindowDays:
+ *               type: integer
+ *               example: 60
+ *               description: The window the figure above was measured over, so the card can state it.
  *         complaintsByType:
  *           type: array
  *           items:

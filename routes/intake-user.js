@@ -55,6 +55,7 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *               - isDelivery
  *               - isPickUp
  *               - items
+ *               - paymentMethod
  *             properties:
  *               fullName:
  *                 type: string
@@ -111,9 +112,45 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                     quantity:
  *                       type: integer
  *                       example: 5
+ *                     serviceTier:
+ *                       type: string
+ *                       enum: [classic, premium, vip]
+ *                       description: "Optional per-piece care tier (brief 1.6). Omit it and the piece is priced at the order's serviceTier."
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [cash, pos, bank-transfer, wallet]
+ *                 example: wallet
+ *                 description: >
+ *                   How the counter order was paid (client item #8). **REQUIRED** since 2026-10-08 —
+ *                   staff must state how the money arrived. Pre-select `cash` on the screen (that is a UI
+ *                   default, not a server fallback: there is no fallback). "transfer" and
+ *                   "card" are accepted as aliases for `bank-transfer` and `pos`. `paystack` is NOT a
+ *                   counter tender. With `wallet` the customer's balance is really debited and a
+ *                   WalletTransaction ledger line is written; the customer must have an account
+ *                   (resolved by phone number) or the request is refused.
+ *               secondaryPaymentMethod:
+ *                 type: string
+ *                 enum: [cash, pos, bank-transfer]
+ *                 example: cash
+ *                 description: >
+ *                   Only used with `paymentMethod: wallet`. If the wallet cannot cover the whole bill
+ *                   the request is REFUSED with a message naming what the wallet covers and what is
+ *                   left; resend with this field to settle the remainder. No order is created by the
+ *                   refused call.
+ *               useCredit:
+ *                 type: boolean
+ *                 example: false
+ *                 description: >
+ *                   Opt in to spending the customer's reward credit (referral/recovery/promotional)
+ *                   on this bill, oldest expiry first. Defaults to false — staff must not spend a
+ *                   customer's reward without asking. Credit is only counted towards wallet
+ *                   sufficiency when this is true.
  *     responses:
  *       200:
- *         description: A single book order document
+ *         description: >
+ *           The created order, plus a `payment` summary of how it was tendered. `data.message` is the
+ *           order document (it now carries `counterPayment` and a real `paymentMethod`); `data.payment`
+ *           describes the tenders.
  *         content:
  *           application/json:
  *             schema:
@@ -206,8 +243,49 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                           type: string
  *                           format: date-time
  *                           example: "2026-01-13T13:00:00.123Z"
+ *                         counterPayment:
+ *                           type: object
+ *                           description: "How the counter order was tendered. Absent on orders not taken at the counter."
+ *                           properties:
+ *                             tenders:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   method: { type: string, example: "wallet" }
+ *                                   amount: { type: integer, example: 3500 }
+ *                             creditApplied: { type: integer, example: 1000 }
+ *                             cashFromWallet: { type: integer, example: 2500 }
+ *                             collectedBy: { type: string, example: "671f0c2a9b1e4f0012a3b4c5" }
+ *                             collectedAt: { type: string, format: date-time, example: "2026-10-08T11:02:00.000Z" }
+ *                     payment:
+ *                       type: object
+ *                       description: "Summary of the settlement, beside `message` under `data` (not inside it)."
+ *                       properties:
+ *                         tenders:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               method: { type: string, example: "wallet" }
+ *                               amount: { type: integer, example: 3500 }
+ *                         creditApplied: { type: integer, example: 0 }
+ *                         cashFromWallet: { type: integer, example: 3500 }
+ *                         paymentIds:
+ *                           type: array
+ *                           items: { type: string, example: "671f0c2a9b1e4f0012a3b4c6" }
+ *                         summary:
+ *                           type: string
+ *                           example: "₦3,500 by wallet + ₦1,500 by cash"
  *       400:
- *         description: Validation error
+ *         description: >
+ *           Validation error, or the counter payment cannot be settled — an unknown payment method, a
+ *           wallet asked for on a walk-in with no customer account, or a wallet that cannot cover the
+ *           bill with no `secondaryPaymentMethod`. In all three cases NO order is created and no money
+ *           moves; the message names the amounts.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */

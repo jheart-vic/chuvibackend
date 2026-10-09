@@ -8,6 +8,10 @@ const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
 const createAuditLog = require('../util/createAuditLog')
 const { notifyRoles } = require('../util/notifyRoles')
+// KEPT operator receipts (client section 10): the requester is waiting on this
+// answer, so it is not noise. Routed through the policy so the exception is
+// visible where it happens, not only in notifyPolicy's comment.
+const { notifyOperator } = require('../util/notifyPolicy')
 const { getObjectId } = require('../util/helper')
 const {
     ROLE,
@@ -237,7 +241,8 @@ class WalletAdjustmentService extends BaseService {
                 category: 'wallet',
                 orderId: request.orderId || undefined,
             })
-            await createNotification({
+            await notifyOperator({
+                keep: 'adjustment-request-decided',
                 userId: request.requestedBy,
                 title: 'Wallet adjustment rejected',
                 body: `Your request to ${request.type} ₦${request.amount} was not approved.${note ? ` Note: ${note}` : ''}`,
@@ -309,7 +314,8 @@ class WalletAdjustmentService extends BaseService {
             category: 'wallet',
             orderId: request.orderId || undefined,
         })
-        await createNotification({
+        await notifyOperator({
+            keep: 'adjustment-request-decided',
             userId: request.requestedBy,
             title: 'Wallet adjustment approved',
             body: `Your request to ${request.type} ₦${request.amount} was approved.`,

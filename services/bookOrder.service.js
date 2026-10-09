@@ -41,6 +41,7 @@ const {
 const CancellationRequestModel = require('../models/cancellationRequest.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
+const { notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const WalletModel = require('../models/wallet.model')
 const AdminSettingModel = require('../models/adminSetting.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
@@ -276,6 +277,17 @@ class BookOrderService extends BaseService {
                 body: `Your order ${order.oscNumber || order._id} has been cancelled.${parts.join('')}`,
                 type: NOTIFICATION_TYPE.ORDER_CANCELLED,
             })
+            // ADDED for admin (client section 10). A cancellation moves money —
+            // refunds, reversed credit, a fee — so an admin should see it as it
+            // happens rather than finding it in a report.
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ORDER_CANCELLED,
+                title: 'Order Cancelled',
+                body: `Order ${order.oscNumber || order._id} was cancelled (${tier}).${parts.join('')}`,
+                subBody: `Order ID: ${order.oscNumber || order._id}`,
+                type: NOTIFICATION_TYPE.ORDER_CANCELLED,
+                recordId: order._id,
+            })
             await createAuditLog({
                 userId: performedBy,
                 action: `Cancelled order ${order.oscNumber || order._id} (${tier}); refunded ₦${cashRefunded} cash, ₦${creditsReversed} credit, fee ₦${feeCharged}`,
@@ -467,6 +479,17 @@ class BookOrderService extends BaseService {
                     title: 'Cancellation Requested',
                     body: `We received your request to cancel order ${order.oscNumber || order._id}. Our team will review it shortly.`,
                     type: NOTIFICATION_TYPE.ORDER_CANCELLED,
+                })
+                // ADDED for admin (client section 10). The customer is told we
+                // will "review it shortly" — which only happens if somebody is
+                // actually told there is something to review.
+                await notifyAdminEvent({
+                    event: ADMIN_EVENT.CANCELLATION_REQUESTED,
+                    title: 'Cancellation Requested',
+                    body: `${order.fullName || 'A customer'} asked to cancel order ${order.oscNumber || order._id} and is waiting on a decision.`,
+                    subBody: `Order ID: ${order.oscNumber || order._id}`,
+                    type: NOTIFICATION_TYPE.ORDER_CANCELLED,
+                    recordId: order._id,
                 })
             } catch (e) {
                 console.warn('request-cancellation notify failed (non-fatal):', e.message)

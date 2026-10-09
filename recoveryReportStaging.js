@@ -476,6 +476,59 @@ async function run() {
         'a free rewash does not count as "ordered again"',
     )
 
+    // ── 8d the 60-day window (CLIENT DECISION 2026-10-08) ─────────────────────
+    // We shipped this open-ended and flagged it; they closed it at 60 days. A
+    // return LATER than 60 days after the recovery must not be counted, or a
+    // past month's figure would keep creeping up forever.
+    console.log('\n8d — "ordered again" is capped at 60 days after the recovery')
+    ok(
+        r8c.recovery.orderedAgainWindowDays === 60,
+        `the window travels with the figure (got ${r8c.recovery.orderedAgainWindowDays})`,
+    )
+    const lateUser = oid()
+    const lateOrder = await makeDeliveredOrder('LATEORD', at(5), lateUser)
+    // Same shape as the scenario-8 fixture above: `orderId` (not bookOrderId),
+    // `description` is required, and compensations is a LIST.
+    const lateCase = await ComplaintCaseModel.create({
+        userId: lateUser,
+        orderId: lateOrder._id,
+        complaintTypeId: type1._id,
+        description: 'STG late-return case',
+        status: COMPLAINT_STATUS.RESOLVED,
+        compensations: [
+            {
+                type: RECOVERY_COMPENSATION_TYPE.WALLET_CREDIT,
+                amount: 1000,
+                reason: 'STG late credit',
+                status: RECOVERY_CREDIT_STATUS.APPROVED,
+                decidedAt: at(5),
+            },
+        ],
+    })
+    created.cases.push(lateCase._id)
+    await forceCreatedAt(ComplaintCaseModel, lateCase._id, at(5))
+    // A real order 61 days after the recovery — just outside the window.
+    const recoveredOn = at(5)
+    const tooLate = new Date(recoveredOn.getTime() + 61 * 24 * 60 * 60 * 1000)
+    const lateComeback = await makeDeliveredOrder('TOOLATE', tooLate, lateUser)
+    await forceCreatedAt(BookOrderModel, lateComeback._id, tooLate)
+    const r8d = (await report.monthlyReport({ query: { month: MONTH } })).data
+        ?.message
+    ok(
+        r8d.recovery.orderedAgainAfterRecovery === 1,
+        `*** a return 61 days later is NOT counted *** (still ${r8d.recovery.orderedAgainAfterRecovery}, expected 1)`,
+    )
+    // Move the same order to 59 days and it counts — proving the cap is the
+    // only thing that excluded it, not some unrelated filter.
+    const justInTime = new Date(recoveredOn.getTime() + 59 * 24 * 60 * 60 * 1000)
+    await forceCreatedAt(BookOrderModel, lateComeback._id, justInTime)
+    const r8e = (await report.monthlyReport({ query: { month: MONTH } })).data
+        ?.message
+    ok(
+        r8e.recovery.orderedAgainAfterRecovery === 2,
+        `the same order at 59 days DOES count (got ${r8e.recovery.orderedAgainAfterRecovery}, expected 2)`,
+    )
+
     // ── 9 the 1-2 star call list ──────────────────────────────────────────────
     console.log('\n9 — the list of 1 and 2 star orders, with phone numbers')
     const angryOrder = await makeDeliveredOrder('ANGRY', at(18), oid())

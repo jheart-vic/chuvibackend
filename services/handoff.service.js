@@ -5,6 +5,7 @@ const createNotification = require('../util/createNotification')
 const { getObjectId } = require('../util/helper')
 // Readable item helpers (per-piece briefs + "5 Shirts, 3 Trousers" summaries).
 const { briefsForIds, summarize } = require('../util/itemSummary')
+const { describeHeld } = require('../util/itemHold')
 const {
     STATION_STATUS,
     ORDER_STATUS,
@@ -15,11 +16,25 @@ const {
 
 // Customer notification fired when the order's computed summary ENTERS a stage
 // (ported from the old whole-order advance actions so the messages aren't lost).
+// CLIENT SECTION 10 (2026-10-08): "switch off for customers — handoff confirmed
+// between stations."
+//
+// There is no notification literally titled that; the customer message that
+// fires on a handoff confirm is this table. So we read their instruction as the
+// one entry that tells a customer about an INTERNAL station move and nothing
+// about their clothes — "Order in Sort & Pretreat". The others ("being washed",
+// "being ironed", "in final checks") describe what is happening to the garments
+// and are ordinary order-progress messages, so they stay.
+//
+// `customerSilent: true` is the switch. Flipping any other entry to it, or this
+// one back, is a one-line change — ASK THE CLIENT TO CONFIRM this reading, since
+// it is the only interpretation in this package we had to make ourselves.
 const STAGE_ENTRY_NOTICE = {
     [ORDER_STATUS.SORT_AND_PRETREAT]: {
         title: 'Order in Sort & Pretreat',
         body: (osc) => `Order ${osc} is now in the Sort & Pretreat station.`,
         type: NOTIFICATION_TYPE.ORDER_UPDATED,
+        customerSilent: true,
     },
     [ORDER_STATUS.WASHING]: {
         title: 'Your order is being washed',
@@ -144,6 +159,20 @@ class HandoffService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: `${incomplete.length} item(s) are not yet completed at ${fromStation} and cannot be pushed`,
                 })
+            }
+
+            // HOLD GATE (client confirmation, 2026-10-08): "pieces on hold do
+            // not move until the hold is released."
+            //
+            // This was NOT true before. A hold writes only `flaggedForReview`
+            // and `holdDetails`; it never touches the station status that
+            // `itemCompleteAt` reads. So a piece finished at its station and
+            // THEN held still passed every gate above and was pushed onward with
+            // its hold open. It applies to every station, not just the automatic
+            // Sort & Pretreat handover the client was asking about.
+            const heldMessage = describeHeld(targets)
+            if (heldMessage) {
+                return BaseService.sendFailedResponse({ error: heldMessage })
             }
 
             // Whole-order gate for S1→S2 and S4→S5.
@@ -455,7 +484,12 @@ class HandoffService extends BaseService {
             await order.save({ validateBeforeSave: false })
 
             // Port the old advance-action customer notification (fire once, on entry).
-            if (enteredStage && order.userId && STAGE_ENTRY_NOTICE[enteredStage]) {
+            if (
+                enteredStage &&
+                order.userId &&
+                STAGE_ENTRY_NOTICE[enteredStage] &&
+                !STAGE_ENTRY_NOTICE[enteredStage].customerSilent
+            ) {
                 const n = STAGE_ENTRY_NOTICE[enteredStage]
                 await createNotification({
                     userId: order.userId,

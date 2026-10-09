@@ -1,10 +1,185 @@
-# ███ STATUS BOARD — read this first (updated 2026-10-08) ███
+# ███ STATUS BOARD — read this first (updated 2026-10-08, later session) ███
 
 ## ███ TO BUILD — THE ONLY LIST THAT MATTERS. SURVIVES A CONTEXT CLEAR. ███
-Everything above the line is DONE and committed (`d10d2d9`, 3 commits ahead of `origin/main` —
-`cc8ef2c` + `368fe96` + `d10d2d9` all still need pushing + a PR before anything is live).
 
-**ONE BIG THING, then seven small ones.**
+**MERGE STATE IS NOW CLEAN.** PR #242 merged `feature/fix` → `origin/main` (`e0d5c3a`);
+`git log origin/main..feature/fix` is EMPTY. Every earlier note in these files about "3 commits
+unpushed, none of it is live" is STALE — all 22 fixes, N2, Section A, hold types and staff
+suspension ARE on main.
+
+### ✅ DONE THIS SESSION (2026-10-08, after the merge) — #8, #6, #9, #10, #2 code, + both yes/no answers
+Offline gate `briefCheck.js` is now **178/178**; swagger **62 schemas / 296 paths / 0 wrong
+envelopes**. **ALL 19 DB HARNESSES HAVE NOW ACTUALLY RUN GREEN against testingdb** (the user
+supplied the URI): counterPayment **49/49 — first ever run** · stationFlow **92/92** ·
+recoveryReport **52/52** · walletLimit 63 · handoff 54 · dispatch 46 · dispatchTag 46 ·
+staffStatus 38 · planCreate 39 · offerAdmin 37 · dashboardDecisions 36 · holds 34 · tierPricing 33 ·
+template 27 · freeLogistics 23 · subLogistics 20 · phase12 14 · bot 11/11.
+**Nothing in this session is committed yet.**
+
+#### Client answers #4 (2026-10-08) — both built
+- **1(a) was already TRUE** — `itemCompleteAt` already required `pretreatStatus` complete/not_required.
+- **1(b) WAS FALSE. REAL BUG, FIXED.** A hold writes only `flaggedForReview` + `holdDetails` and
+  **never touches the station status**, while the handoff's only completion gate read those
+  statuses — so a piece finished at its station and THEN held passed every gate and moved onward
+  with its hold open, **at every station**. NEW `util/itemHold.js` + a gate in `HandoffService.push`
+  before any write, + held pieces excluded from both sortAndPretreat auto-handover paths.
+  `flaggedForReview` is deliberately NOT part of the hold test (1.4 keeps flag ≠ hold).
+- **⚠️ NEW PRODUCT QUESTION FOR THE CLIENT, found while testing it: holding ONE piece flips the
+  whole ORDER to `stage.status: hold`, so the station guard parks its SIBLINGS too.** Stronger than
+  they asked, but one held piece stops a whole order. Left unchanged on purpose (order-level hold
+  drives Holds Management) and pinned as current behaviour in stationFlow scenario 15.
+- **2: "ordered again after recovery" now capped at 60 days** — `ORDERED_AGAIN_WINDOW_DAYS`, in the
+  response as `orderedAgainWindowDays`. Proven both sides: the same order at 61 days excluded, at
+  59 days counted. Closing the window also stops a past month's figure creeping upward forever.
+- **TWO REAL BUGS the first counterPayment run exposed in `fetch-user-transactions`:** the swagger
+  described `data.message.data[]` for an endpoint returning **`data.transactions[]`** (and promised
+  five fields the pipeline never returns) — corrected; and **neither union branch projected the
+  order**, so a customer saw amounts with nothing to tie them to. Added `order` + an `oscNumber`
+  `$lookup`.
+- **#8 counter payment from the wallet** — NEW `util/counterPayment.js`; `createBookOrder` now
+  plans the tender BEFORE creating the order, then settles it. See the section below.
+- **#6 offers at checkout** — `checkoutPrompt` + `autoApply` on `booking-options`; part (c) is
+  CONFIRMED, no code needed (answer below).
+- **#9 phone-split profiles** — NEW `services/profileMerge.service.js` + two admin endpoints;
+  `phoneFormatBackfill.js` no longer aborts on the duplicate-key collision it was guaranteed to hit.
+- **NEW `context/FE-CHANGELOG-2026-10-08.md`** — everything FE-affecting since 7 Oct, all 8
+  endpoint claims verified against the built spec. **Four items need an FE change** (§1 there).
+
+## ⚠️⚠️ CLIENT RULINGS 2026-10-08 (replies #4, #5, #6) — READ BEFORE TOUCHING THESE AREAS
+Also in memory: `chuvi-client-rulings-oct2026`. **Several REVERSE what is already shipped.**
+
+### ✅ DONE in this batch (4 of the 6 direct instructions)
+- **Counter tender is MANDATORY** (`paymentMethod: 'string|required'`, no `|| CASH` fallback).
+  **Cash is PRE-SELECTED ON THE SCREEN** — a UI default, exported as `DEFAULT_COUNTER_METHOD`,
+  deliberately NOT a server fallback, because a fallback is the silent assumption "mandatory" exists
+  to prevent. ⚠️ **BREAKING: any app build that does not send it now gets "paymentMethod is
+  required".** counterPaymentStaging **51/51** proves the refusal and that cash records correctly.
+- **Reward credit stays customer opt-in** — confirmed, no change. `useCredit` records the CUSTOMER's
+  consent, not a staff preference.
+- **The customer is now told when an item goes on hold** (sort / wash / QC). The body was written
+  for the customer all along ("an item on **your** order") and had only ever been sent to the
+  operator.
+
+### ✅ ALL FIVE RULINGS BUILT 2026-10-08 (second batch) — briefCheck **208/208**
+holds **48/48** (was 34 — now covers the CRUD endpoints) · stationFlow **97/97** ·
+counterPayment 51 · regNotBooked 33 · offerAdmin 37 · freeLogistics 23.
+
+**1. HOLDS ARE NOW PER-STATION IN SCOPE.** Intake + payment holds still park the whole order; the
+four production stations hold only the PIECE.
+- Removed the order-level `buildStageUpdate(ORDER_STATUS.HOLD, …)` from sendToHold in
+  sortAndPretreat / washAndDry / pressAndIron / qc. **That single write was what parked the
+  siblings** — the station guards then refused everything on the order.
+- NEW shared filters in `util/itemHold.js`: `anyItemHeldFilter`, `itemHeldForStationFilter`,
+  `onHoldScope`, `heldItemCount`. **Every one uses `$elemMatch`, and that is not optional: a
+  RELEASED hold keeps its `heldAt`** (release only adds `releasedAt`), so a bare
+  `items.holdDetails.heldAt` match would count every order that had ever had a hold, forever.
+- `util/holdSla.js`: both filters now `$and: [onHoldScope, breachClause]` — **`$and`, not a bare
+  `$or`, because Overdue's clause IS an `$or` and two `$or` keys in one object silently overwrite
+  each other, which would have made Overdue match every held order.** The 4.4 exact-complement
+  partition survives because BOTH filters take the IDENTICAL scope.
+- **A FALSE POSITIVE THIS NEARLY SHIPPED WITH:** every order-level breach branch is now pinned to
+  `'stage.status': HOLD`. Without it, an order whose only hold is on a PIECE matched a speed branch
+  purely because `stage.updatedAt` was over six hours old — reported Overdue with nothing overdue.
+  briefCheck asserts the pinning structurally.
+- Item holds are clocked from the piece's own `heldAt`; they carry no hold TYPE, so they always use
+  the speed table. `isHoldBreached` checks the item case FIRST, or a breached piece would have shown
+  "not breached" on its row while the card counted it Overdue — the 4.4 contradiction again.
+- **8 station finders + 2 intake finders + the intake dashboard hold count + `expiringToday` all
+  widened.** The intake ones matter most: **the four stations assign their holds TO Intake** (a
+  station may not hold for itself), so without widening Intake's release finder nobody could release
+  an item hold at all.
+- **Pack and dispatch gates (the client's condition):** `packAndSealComplete` refuses with the held
+  pieces named, and the held check went into **`dispatchTagGate`** — shared by reading the tag,
+  printing it AND the rider-assignment guard, so one check covers all three instead of three that
+  could drift.
+- Holds Management rows gained `heldPieceCount`, `totalPieceCount`, `holdScope` ('order' | 'items')
+  and a `heldPieces[]` detail list — the count the client asked for.
+
+**2. PER-METHOD MONEY REPORTING.** NEW `revenueTodayByMethod` on the admin dashboard. **No
+reconciliation needed, because a split counter order already writes ONE Payment ROW PER TENDER** —
+grouping by `paymentMethod` splits it by construction and the parts still sum to the total.
+Grouping on `billingType` never could: an order has exactly one.
+
+**3. FIRST EXPERIENCE ALWAYS WINS ON A FIRST ORDER.** `_bestByBillValue` takes `stats` and returns
+the First Experience offer when `totalOrders === 0`, with `autoApply.reason:
+'first-experience-override'` so the screen can explain why a bigger discount was not used. Rows
+carry `isFirstExperience`. The asymmetry is the point: every other offer survives for later.
+
+**4. MERGED CARDS ARE ARCHIVED, NEVER DELETED.** `archived` / `mergedInto` / `mergedAt` / `mergedBy`
+on `CrmProfile`. **Hidden by Mongoose query middleware (`pre(/^find/)`, `pre(/^count/)`,
+`pre('aggregate')`), not by editing the ~13 read sites** — a filter added at 13 call sites is the one
+the 14th forgets, and the symptom would be a merged-away duplicate reappearing in a count, i.e. the
+exact bug the feature removes. Opt back in with `.setOptions({ includeArchived: true })`; a lookup
+BY ID is exempt so an admin can still open an archived card.
+
+**5. THE MERGED STAGE IS RECOMPUTED** from the combined orders via **`countStage` exported from
+crm.service** (the engine's own rule, not a second copy of the thresholds), plus the dormancy
+window. `stageWas` / `stageRecomputedFrom` are reported so the move is visible.
+
+### ✅ ALSO DONE
+- **`seedFirstExperienceOffer.js`** — every value the client specified, idempotent, `--dry`.
+  **Deliberately NOT in `config/setup.js`**: every other seed there is plumbing, this one gives money
+  away and should exist because somebody ran it. If an active offer exists it is never edited, only
+  reported — with a list of where it DIFFERS from the client's spec.
+- **holdsStaging now covers the hold-type CRUD (34 → 48)** and found two real gaps:
+  1. **the duplicate check was on the derived KEY, not the name.** A key is permanent, so after a
+     rename the name is free again — two types could carry identical names and appear as two
+     indistinguishable reasons on a station's list. Now checks the name case-insensitively, which is
+     what the swagger always claimed.
+  2. **renaming a SYSTEM type was silently ignored** — the write was skipped but the response said
+     success, so an admin renamed the payment hold, saw it save, and the old name was still there.
+     Switching it off one branch above was refused out loud; renaming now is too.
+
+### 🔨 REMAINING from these rulings
+*(none — all five are built. The list below is kept for the record of what they were.)*
+
+**1. ~~HOLDS BECOME PER-STATION IN SCOPE~~ — DONE, see above.**
+- Intake & Tag + **payment holds → stop the WHOLE order** (today's behaviour, keep).
+- **Sort & Pretreat / Wash & Dry / Press & Iron / QC → stop only THAT PIECE.** Siblings keep moving.
+  **The order cannot be PACKED or DISPATCHED until every held piece is released** — that is the new
+  gate replacing the order-level park.
+- **Holds Management must still show the order, with a COUNT of pieces on hold.**
+- Why it is not a one-liner: `sendToHold` writes `buildStageUpdate(ORDER_STATUS.HOLD, …)` at ORDER
+  level (sortAndPretreat ~:2205 and the same in wash/press/qc), and that is what parks the siblings.
+  Removing it makes item holds **vanish from Holds Management**, because `util/holdSla.js`'s
+  `activeHoldsFilter`/`overdueHoldsFilter` are both scoped `'stage.status': HOLD`.
+- **DESIGN (worked out, not yet written):** the scope clause becomes
+  `$or: [ {'stage.status': HOLD}, { items: { $elemMatch: { 'holdDetails.heldAt': {$exists:true},
+  'holdDetails.releasedAt': {$exists:false} } } } ]`, IDENTICAL in both filters so the 4.4
+  exact-complement partition survives ($or for Overdue, $nor for Active over the same branches).
+  Add item breach branches per speed using `items.$elemMatch{heldAt < cutoff, releasedAt absent}`.
+  **`$elemMatch` is mandatory here: a RELEASED item keeps its `heldAt`** (release only adds
+  `releasedAt` and nulls `assignTo`), so a bare `items.holdDetails.heldAt` match would report
+  released holds as overdue. Item holds carry no `holdTypeKey`, so they fall back to the speed table.
+- Touches 5 station services + `util/holdSla.js` + `admin.service` (row badge + counts) +
+  `holdsStaging.js`. Must re-run holds 34 · stationFlow 92 · briefCheck.
+
+**2. Per-METHOD money reporting.** Keep the single `billingType`, but report each tender under the
+way it was actually paid: ₦5,000 = ₦3,000 wallet + ₦2,000 cash shows ₦3,000 under wallet AND ₦2,000
+under cash. `bookOrder.counterPayment.tenders[]` already stores exactly this (built today) — the
+work is in the revenue aggregations, which currently split on `billingType` alone.
+
+**3. First Experience ALWAYS WINS on a first order.** Overrides the bill-value tie-break in
+`_bestByBillValue` / `autoApply`. Their reason: it can only ever be used once and it is what the reps
+promised, so losing it to a smaller offer loses it for good. Everything else about the tie-break
+stands (bill value, future credit excluded, ties to soonest expiry).
+
+**4. A merged CRM card is ARCHIVED, NOT DELETED.** `profileMerge.service.js` currently
+`deleteMany`s. Change to: hide from lists and counts, mark "merged into <id>", admin-restorable.
+**Their reason is a good one: phone numbers get recycled here, so a wrong merge must be reversible.**
+
+**5. The merged card's stage is RECOMPUTED from the combined orders** under the normal stage rules —
+not `STAGE_RANK`'s "keep the furthest" — and the card then follows that stage's follow-up messages.
+
+### ⏳ Still owed to them
+- **Audit item 8 is AMBIGUOUS — ask before building.** Their answer was "add the it to the
+  notifications". My item 8 was the "handoff confirmed between stations" switch-off, where NO
+  notification by that name exists (it is an Activity row) and I silenced one customer stage-entry
+  notice instead. "Add it" could mean restore it, or add an internal one. **Do not guess — a wrong
+  read either spams customers or spams staff on every handoff.**
+- **Restate D7 and D8** — they asked for both in a few lines so they can confirm.
+
+**ONE BIG THING, then four small ones.**
 
 ### 1. N1 QUICK BOOKING + client item #7 (order editing) — THE ONLY LARGE PIECE
 Build these TOGETHER. #7 *is* N1's intake step; split them and the bill-recalculation gets
@@ -28,52 +203,268 @@ written twice. Locked spec is in "CLIENT REPLY #2" and "N1 SPEC" below. Shape:
   records who/why + SMS, **after tagging only an admin may edit**
 - admin can rename delivery speeds / service types / care tiers (display name only)
 
-### 2. Client item #10 — notification switches (~40 call sites, mechanical)
-ADD to admin: order cancelled · cancellation requested · order flagged AND item flagged · item
-placed on hold (any station) · payment proof uploaded · new complaint opened · payment
-approved/rejected by Intake.
-SWITCH OFF the 31 operator self-receipts EXCEPT: "order in tagging queue"; "adjustment request
-approved/rejected"; and the three hold ones **only when someone ELSE acted** (we recommended this —
-send to the station AFFECTED, never to the actor). Switch off for customers: "handoff confirmed"
-and "order flagged". On-screen confirmation + order history must survive.
-**BLOCKED on the client confirming our recommendation — question sent 2026-10-08.**
+### 1b. ✅ UNBLOCKED — WINDOW BOOKING: D1–D6 ANSWERED 2026-10-08. BUILD IT (with N1, see below).
+**They chose (b): build Quick Booking ONCE, with the real windows.** So N1 and windows are now ONE
+piece of work, not two. Their locked answers:
+- **D1 windows on BOTH legs, and the window REPLACES the "by 7pm" promise.**
+- **Start with ONE window: 3:00–6:30 PM, Tue–Sun, cutoff 60 min, limit 10.** A morning window comes
+  later. Each window: name · start · end · days · cutoff · limit (**blank limit = no limit**).
+  One window covers pickups AND deliveries.
+- **D2 "Anytime" = dispatch as soon as we can.** (a) it must **alert Intake & Tag at once and sit at
+  the TOP of the pickup list marked Anytime**, never waiting for a window; (b) open **08:00–17:00 on
+  working days, both settings** — outside those hours the app promises first thing next working day;
+  (c) **if an anytime job ends up served INSIDE a window, auto-refund the price difference for that
+  leg to the wallet** ("they paid for speed and did not get it").
+- **D3** capacity-forced move → customer pays the WINDOW price and KEEPS their offer.
+- **D4** 1 order = 1 bag per leg, no pieces-per-bag setting.
+- **D5** ONE shared count per window per day, using each window's own limit. **This REPLACES
+  "bags per bike" × "bikes on duty"** — raise a window's limit when a bike is added. Keep the daily
+  count of windows that filled and customers moved.
+- **D6 NEW "Working days" setting, a tick box per day, Tue–Sun to start.** An unticked day has NO
+  windows and NO anytime (bookings are offered the next working day); **the promised delivery date
+  must also skip unticked days**; ticking a day makes it live at once.
+- Free pickup/delivery still applies to window bookings only, EXCEPT the D3 case.
+- **D7/D8: restated to them and PRE-APPROVED** ("if neither changes the shape of the data, go ahead
+  as you recommended" — neither does). So: **D7 the delivery window is confirmed at READY**, not at
+  booking (a standard order's delivery day is not known at booking, and under D6 it might not even
+  be a working day); **D8 timing may be changed by anyone before tagging, admin only after.**
+- **TWO MORE RULINGS 2026-10-08, both from consequences we flagged:**
+  - **SAME-DAY ORDERS: pickup is ANYTIME and pays the Anytime price**, delivery returns in the
+    evening window at the window price. **This must be shown clearly at booking BEFORE the customer
+    confirms** — their words. When a morning window is added later, same-day pickups use it at the
+    window price. (Their reasoning: a morning pickup is a special trip and the customer chose speed.)
+  - **THE REFUND RULE IN D2(c) IS NARROWED.** Anytime stays 08:00–17:00, but the difference is
+    refunded **only when BOTH** are true: (a) the customer booked Anytime **while that day's window
+    could still be booked** — i.e. before its cutoff — **and** (b) the job was actually done inside
+    that window. Someone who books Anytime after the window has closed had no cheaper way to be
+    served that day, so **no refund**. Their examples: booked 11:00, picked up 16:00 → REFUND;
+    booked 14:30, picked up 16:00 → NO refund. **This means the booking must record whether the
+    window was still bookable at the moment of booking** — it cannot be reconstructed later, because
+    the cutoff has passed by the time the job is done. Same shape as the deflection-logging lesson.
+Design notes from the earlier spec that still hold are below.
 
-### 3. Client item #1 — "registered but never booked" CRM sequence
-New workflow beside the lead one: welcome now · +24h · +48h · **+66h** · day 7 → prospect list.
-Stops on first booking. Timings AND texts admin-editable like the lead sequence.
-**The three message texts are verbatim in the client's 2026-10-08 reply — copy them exactly.**
+### 1b-OLD. The spec we sent (`context/WINDOW-BOOKING-LOGIC-2026-10-08.md`) — findings still valid
+Customer picks a pickup/delivery time window or pays more for "anytime". Four admin price settings
+(window pickup/delivery ₦500, outside ₦1,000), admin-managed windows (name/start/end/days/cutoff),
+an optional limit of `bagsPerBike × bikesOnDuty` per window, and a daily dashboard count of windows
+that filled + customers deflected.
+**Logic document written and sent: `context/WINDOW-BOOKING-LOGIC-2026-10-08.md`. The client asked
+for the logic in writing BEFORE the build, and we owe them D1–D8 answers first — D1–D5 change the
+shape of the data, so do not start until they land.**
+What that document establishes from the code (verified, not assumed):
+- **The customer does NOT choose delivery timing today. At all.** No field, no setting — zero matches
+  for `deliveryTime`/`deliveryWindow`/`deliverySlot`. Delivery is `calculateDueDate(deliverySpeed)`
+  → a DATE pinned to **19:00**. So delivery windows are new work, and **the 7pm promise collides
+  with their 6:30pm evening window (D1)**.
+- **Today's `pickupTimeSlots` is decorative:** stored as free text, the validator line is COMMENTED
+  OUT in both `bookOrder.service.js:837` and the model enum, no cutoff, no limit. Their two new
+  windows (9–12, 15:30–18:30) also REPLACE the current 10am–12pm/4pm–6pm the app offers.
+- **Their prices are today's prices.** `pickupFee`+`deliveryFee` are 500+500 = the ₦1,000 "inside a
+  window" figure, so nobody pays more unless they pick anytime. Tell them before they announce it.
+- **"A bag" does not exist in the data** — orders are counted in PIECES. D4 recommends 1 order =
+  1 bag per leg (the only reading knowable at booking).
+- **Speed capacity already exists** (standard 100 / same-day 50 / express 30) and is a DIFFERENT axis
+  from the window limit; check speed first so "that window is full" never masks "same-day sold out".
+- **The "customers moved because a window was full" number CANNOT be derived from saved orders** — a
+  deflected customer leaves no trace; the order just says "Evening". Must write a deflection row AT
+  THE MOMENT the full window is dropped from the offered list. Same shape as the N2 NPS
+  asked-vs-answered clock.
+- Monday has NO windows under Tue–Sun, so as written every Monday booking is double-priced (D6).
+- A standard order's delivery day is +2, unknown at booking → D7 recommends confirming the delivery
+  window at READY, not at booking.
+
+### 2. ✅ Client item #10 — notification switches — **DONE 2026-10-08. briefCheck 165/165.**
+NEW **`util/notifyPolicy.js`** owns "who gets notified". `notifyRoles` gained **`exceptUserId`** so
+"affected station, never the actor" has exactly ONE implementation.
+- **27 operator receipts now route through `notifyOperator`, which SUPPRESSES by default.** Kept as
+  a wrapper rather than 27 deletions so the sites still read as "this is where the operator would
+  be told", with one function to flip. **`keep` must be the exception's NAME, not `true`** — a
+  mistyped name logs and sends NOTHING (fails closed), so a new call site can't opt itself back in
+  by copying a flag it doesn't understand. Exactly 3 sites claim an exception, asserted.
+- **The 2 kept exceptions:** `order-in-tagging-queue` (intake) + `adjustment-request-decided`
+  (walletAdjustment ×2 — and note those already went to the REQUESTER, not the actor, so they were
+  always correctly targeted).
+- **5 × `notifyAffectedStation`** (3 in admin: hold reassigned / hold resolved / admin hold assign;
+  2 station-level hold releases) — all pass `actorId`, asserted structurally.
+- **7 new admin notifications wired:** order cancelled · cancellation requested · order flagged ·
+  item flagged · item on hold ×3 (sort/wash/QC) · payment proof uploaded.
+- **"New complaint opened" ALREADY reached admin** (`recovery.service.js:150` notifies
+  `[CUSTOMER_EXPERIENCE, ADMIN]`). Not double-sent; briefCheck asserts we did NOT add a second one.
+- **"Payment approved/rejected by INTAKE" CANNOT be built yet — that event does not exist.** Today
+  only ADMIN approves/rejects a payment (`admin.service` approve/rejectPayment). Intake approval of
+  a bank transfer is part of N1's payment hold. **Tell the client; it lands with N1.**
+- **FINDING WORTH KEEPING: the station notifications were written for the CUSTOMER and sent to the
+  OPERATOR.** Bodies read "An item on **your** order was placed on hold… we are working to resolve
+  this" while `userId` is `req.user.id`, the staff member. So the customer was never told, and the
+  operator got messages addressed to them as the customer. Suppressing the operator copy is right;
+  **whether the CUSTOMER should now be told about an item hold is a new question for the client —
+  they only asked for the admin addition.**
+- **ONE INTERPRETATION WE HAD TO MAKE (flagged to the client):** there is no notification titled
+  "handoff confirmed between stations" — `handoff.service.js:470` is an ACTIVITY row. The customer
+  message that fires on a handoff confirm is `STAGE_ENTRY_NOTICE`. We silenced only the entry that
+  describes an internal station move (`Order in Sort & Pretreat`) via `customerSilent: true`, and
+  kept "being washed"/"being ironed"/"in final checks", which describe the garments. One line to
+  change either way. **GET THIS CONFIRMED.**
+- **MY OWN BUG, caught by the harness:** the bulk-rewrite script put its regex-escaped title into
+  the REPLACEMENT, producing `title: 'Item\(s\) QC Passed'`. JS drops unknown escapes so the value
+  was still correct — it would never have failed a test, only looked wrong forever. briefCheck now
+  fails if any notification title contains a backslash.
+
+### 3. ✅✅ BUILT 2026-10-08 — Client item #1 "registered but never booked". LIVE BEFORE WINDOWS.
+**The client asked for this to go on NOW, before window booking — their reps start registering
+people the next day and this is their follow-up.** NEW `regNotBookedStaging.js` **33/33** against
+testingdb; briefCheck **200/200**.
+- NEW `CRM_WORKFLOW.REGISTERED_NOT_BOOKED` + 4 message types + `registeredNotBookedSchedule`
+  (admin-editable) + the three texts seeded VERBATIM (revised copy with every "in a pickup window"
+  removed, so nothing promises a feature that is not live).
+- NEW **`util/crmSendWindow.js`** — pure, so it is tested offline against the client's own worked
+  example. Global rule: follow-up/offer messages leave ONLY 06:00–08:00 or 18:00–20:00 (all four
+  hours are settings); anything due outside **waits for the next window**.
+  **Their edge case is implemented: if the offer ends before 08:00, msg3 goes the evening before and
+  msg2 the morning before that** — both shift back a slot, neither is dropped.
+- **Anchoring: msg2/msg3 are positioned from the OFFER's `expiresAt`, never a fixed delay**, so
+  moving the offer 3 → 7 days moves the messages (harness proves it). `handleUserRegistered` now
+  **awaits** `OfferService.handleTrigger` to get the linkage expiry back; still non-fatal, a failed
+  grant can never break a signup.
+- **Windowed workflows = lead · registered-not-booked · reactivation · broadcast.**
+  **POST-DELIVERY AND ORDER-READY ARE EXEMPT** — "order and payment messages still go out at once";
+  holding a "your order is ready" until 6pm would be a real harm.
+- Snapped at SCHEDULE time (so `nextFollowUpAt` on the card is honest) **and** guarded again in the
+  dispatcher for rows queued before this shipped.
+- Booking cancels LEAD **and** REGISTERED_NOT_BOOKED together; re-running the hook cancels first so
+  it cannot double-schedule; a message whose moment has already passed is DROPPED, not sent late.
+- **TWO REAL BUGS FOUND WHILE BUILDING IT:**
+  1. **`setupApp()` was `async` but awaited NOTHING** — all nine seeds/migrations fired in parallel
+     and "App init successful" printed before any finished. So a migration could still be running
+     when the first request arrived, a failure inside one was an invisible unhandled rejection, and
+     the ordering meant nothing. **Now awaited in sequence, each wrapped so one failure cannot stop
+     the others or kill a live process.** This is what made the harness flap.
+  2. The new settings needed an explicit **migration** onto the existing CrmSetting doc — Mongoose
+     applies defaults on CREATION only, and the live doc predates all of it. Without it the sequence
+     would work perfectly on a fresh DB and **silently schedule nothing in production**. The harness
+     strips the fields and re-runs setup to prove the backfill.
+- ⚠️ **Dependency the client accepted:** message 3's last line ("free only on orders from ₦8,000")
+  is only true once a BASELINE free-logistics offer with an ₦8,000 minimum is switched on. **They
+  said they will do that in admin before the sequence starts — confirm on the day.**
+
+### 3-OLD. The original (pre-texts) notes for item #1
+**THE THREE VERBATIM TEXTS ARE NOW IN `context/CRM-REGISTERED-NOT-BOOKED-TEXTS.md` — copy them
+exactly, never paraphrase.** The schedule changed again and is now tied to the OFFER's end, not to
+fixed delays:
+- **Global send windows (applies to ALL follow-up and offer messages — leads, registered-not-booked,
+  prospects, reactivation): only 06:00–08:00 or 18:00–20:00, BOTH admin settings.** A message falling
+  due outside a window **waits for the next one**. **Order and payment messages still send at once.**
+  This is a change to the whole CRM dispatcher, not just this sequence.
+- **Message 1:** the first send window after **24h from registration**.
+- **Message 2:** the **18:00–20:00 window on the day BEFORE the offer ends**.
+- **Message 3:** the **06:00–08:00 window on the day the offer ends**. **If the offer ends before
+  08:00, send message 3 the evening before and message 2 the morning before that** (the two shift
+  back a slot rather than one being dropped).
+- **Day 7 → prospect list.** Stops the moment they book.
+- Their worked example to test against: *Ada registers Friday 15:00, offer ends Monday 15:00 →
+  msg 1 Saturday evening, msg 2 Sunday evening, msg 3 Monday morning.*
+- `{name}` is the customer's **first name**.
+- Offer length is `offer.customerWindowDays` and the linkage carries `expiresAt`, so all three times
+  are derivable; **nothing may hardcode 3 days or +66h.** The offer length
+itself is `offer.customerWindowDays`, already a setting.
 Today `handleUserRegistered` CANCELS the lead sequence and leaves them with nothing; this replaces
 that silence.
 
-### 4. Client item #2 — First Experience offer
-Mostly configuration (first-order trigger + ₦4,000 minimum + the ₦1,000 on-delivery credit with a
-30-day life are all offer settings, no new code). The one code question: should it be auto-granted
-at REGISTRATION for everyone, so the 3-day window and the +66h message agree?
-**BLOCKED on the client — question sent 2026-10-08.** Today a lead YOU enter starts their 3 days
-on the day you typed the number, which is why the +66h timing would be wrong for them.
+### 4. ✅ Client item #2 — First Experience offer — **CODE DONE 2026-10-08; config still to set up**
+Client answered **(b): the clock runs from REGISTRATION for everyone.**
+- **DONE:** the `FIRST_EXPERIENCE` trigger MOVED from `createLead` → `handleUserRegistered`.
+  **THIS WAS A REAL BUG AND OUR ANSWER TO THE CLIENT WAS WRONG.** We told them a staff-entered
+  lead's 3 days start when the rep types the number in. They don't: an account-less lead has NO
+  `userId`, so `handleTrigger` returned `null` at line 253 — and the trigger only fired behind
+  `if (created)`, so when that person later registered `findOrCreateProfile` matched the existing
+  profile by phone, `created` was false, and it **never fired again. Those leads got no offer, ever.**
+  The correction is issued in the client doc; **tell them to check which entered leads have since
+  registered — those people are owed the offer and can be granted it manually.**
+- Firing on registration covers "staff creating the account counts as registration" **by
+  construction**: `new UserModel(` exists ONLY in `auth.service.js` (local/Google/Apple), asserted
+  by briefCheck. **But there is NO staff endpoint that creates a customer account at all** — a
+  counter order attaches to a phone number with no account, so no account ⇒ no offer. Flagged to
+  the client as a small new piece of work if they want it.
+- **Offer LENGTH is already configuration: `offer.customerWindowDays`** (default 14, used at
+  `offer.service.js:284`). Set it to 3; they can move it to 7 with no deploy. That is their
+  "setting I control" — no code needed.
+- **The +66h message must be computed from the linkage's `expiresAt` MINUS an offset**, not a fixed
+  delay — the client asked for "6 hours before the offer ends" so it survives a length change. The
+  linkage already carries `expiresAt`, so this is available to item #1's new workflow.
+- **STILL TO DO (configuration, verified expressible):** `rules.firstOrderOnly: true` ·
+  `rules.minOrderValue: 4000` · benefits `free-pickup` + `free-delivery` +
+  `{extra-laundry-credit, creditAmount: 1000}` · `creditExpiryDays: 30`. The credit pays out on
+  REDEEM, which fires from `offerOnOrderDelivered` → so "on delivery" is already how it works.
+  **Create the offer and show the client.**
 
-### 5. Client item #6 — offers at checkout
-(a) checkout prompt, exact wording "You have a first time offer. Tap to use it." (FE renders it —
-backend just needs to surface that the customer holds one); (b) Quick Booking auto-applies the
-offer worth MORE on that bill, the other survives; (c) **they asked us to CONFIRM every offer is
-re-validated at attach time and the bill says why one was refused** — verify, then answer.
+### 5. ✅ Client item #6 — offers at checkout — **DONE 2026-10-08**
+- **(a) `checkoutPrompt`** on `POST /offers/booking-options`:
+  `{show, message, customerOfferId, offerName, billValue, count}`. The client's wording is a
+  constant `CHECKOUT_OFFER_PROMPT` in `offer.service.js`, shipped FROM THE BACKEND (same reason as
+  A1's dormant label — the words and the eligibility rule must not drift apart).
+- **(b) `autoApply`** + NEW `_bestByBillValue()` / `pickBestPersonalOffer()`. **WORTH = what comes
+  off THIS bill**: discount + any pickup/delivery fee the offer waives. **`creditPromised` is
+  deliberately NOT counted** — it is value on the NEXT order, so counting it could spend today's
+  better offer to bank tomorrow's. **Tie → expiring soonest** (the other still has time).
+  N1's Quick Booking should call `pickBestPersonalOffer`, not re-derive this.
+- **(c) CONFIRMED, no code.** Every offer IS re-validated at attach time: `validateAndPrice` →
+  `_offerRejection` is the single rule, shared with `getBookingOptions` so the screen and the
+  quote can never disagree, and 2.2 made booking ALWAYS call it. The bill carries why one was
+  refused — `offer.rejected[]` with `reason` + `requirement` + `unlockMessage`, returned beside
+  `data.order`. **Nothing is read from a stored "eligible" flag.** Say this back to them.
+- `personal[]` now also carries `expiresAt` (decorateOffer only returned the derived
+  `expiresInDays`, which the tie-break could not use).
 
-### 6. Client item #8 — counter payment from the wallet
-Staff pick cash / POS / transfer / wallet; wallet debits with a real ledger line; short wallet →
-rest another way. Today `intake-user.createBookOrder` just stamps `paymentStatus: SUCCESS` and
-never touches the wallet. **The client will not mark ANY counter order as wallet-paid until this
-is live**, so it is blocking them operationally. Small: point it at `WalletService.payWithWallet`,
-the same path the bot already uses correctly.
+### 6. ✅ Client item #8 — counter payment from the wallet — **DONE 2026-10-08**
+NEW **`util/counterPayment.js`** — `planCounterPayment()` (decides, writes nothing) then
+`settleCounterPayment()` (executes). `PAYMENT_METHOD` gained `CASH` + `POS`; `Payment.paymentMethod`
+enum widened; NEW `bookOrder.counterPayment {tenders[],creditApplied,cashFromWallet,collectedBy,
+collectedAt}`.
+- **Wallet movement is NOT reimplemented** — it delegates to the existing
+  `WalletService.chargeWalletForOrder` (credits oldest-expiry-first, guarded atomic `$inc`, rollback
+  if the cash leg fails, ledger line). Same "one owner of the money code" rule as 2.4.
+- **The plan runs BEFORE the order is created**, so a short wallet produces "the wallet covers ₦3,500
+  of ₦5,000 — how is the rest paid?" instead of an order sitting unpaid. Nothing is created on a
+  refusal. briefCheck asserts the ordering structurally.
+- `paymentMethod` is **OPTIONAL, default cash**, so every existing FE call keeps working.
+  `"transfer"`/`"card"` accepted as aliases; `paystack` refused (that is the customer's own app).
+- **`useCredit` defaults to FALSE** — staff must not spend a customer's reward silently, same opt-in
+  the bot uses. Credit only counts towards sufficiency when true.
+- Wallet-only → `billingType: pay-from-wallet`; a **split** stays `pay-per-item` (the wallet only
+  part-paid it).
+- **TWO BUGS FIXED IN PASSING:** the counter order's single `Payment` row was filed under the
+  **STAFF** member with the default method **`paystack`** — the one method a counter order can never
+  be — so a walk-in's payment never appeared in their own history (the 2.3 complaint, on the counter
+  path). And the customer was resolved by **`fullName` alone**, which collides; it is now phone
+  first (the canonical identity per 4.6), name as fallback.
+- The production clock now starts **after settlement**, not at creation — an unpaid counter order
+  must not start it (client item #5).
 
-### 7. Client item #9 — phone-split profiles
-Send the REPORT first (`phoneFormatBackfill.js --dry` already lists the pairs). Then merge into the
-OLDER card, carrying orders + wallet balance + messages from both, **keeping the referral code from
-the account card**, and flagging anything that cannot be combined BEFORE merging.
+### 7. ✅ Client item #9 — phone-split profiles — **DONE 2026-10-08**
+NEW **`services/profileMerge.service.js`** + `GET /api/admin/profile-duplicates` (report, writes
+nothing) and `POST /api/admin/profile-duplicates/merge` (one phone per call).
+- **THE SUBTLETY: a referral code is not on the CARD, it is on the USER account.** So "merge into
+  the older card but keep the referral code from the account card" is implemented as the surviving
+  (older) card **ADOPTING the account's `userId`** — which brings the code, the wallet and the order
+  history with it. `_plan()` is pure, so the report and the merge can never describe different
+  outcomes.
+- Survivor keeps the **furthest** stage (`STAGE_RANK`), summed counts/spend, unioned tags, widened
+  first/last order dates, the account's name over whatever a rider wrote down.
+- **BLOCKER, refused before any write: both cards linked to DIFFERENT accounts** — two logins and
+  two wallets, a user merge not a card merge.
+- Order of writes matters and is asserted: messages re-pointed → absorbed cards' **unique**
+  `normalizedPhone` `$unset` → survivor claims the canonical value → absorbed cards deleted.
+- **FOUND AND FIXED: `phoneFormatBackfill.js` was guaranteed to abort on live data.**
+  `normalizedPhone` is `unique+sparse`, so rewriting `8031234567` → `08031234567` throws E11000 when
+  the same person's other card already holds it — the exact split the script exists to report. The
+  un-caught `updateOne` aborted the whole run **after** rewriting everything before it. Now caught
+  per row, reported as "merge these two first", and the run continues.
 
 ### 8. Smaller / housekeeping
 - `GET|POST|PUT|DELETE /api/admin/hold-types` CRUD has no harness coverage (the SLA maths does, 34/34)
-- Tell the FE their two "missing endpoint" reports were a STALE DEPLOY, and point them at
-  `context/CLIENT-ANSWERS-oct2026.md` for the dormant-rate + Q1–Q8 answers they asked for again
+- **`counterPaymentStaging.js` has never been run** — needs the testingdb URI
+- ✅ FE told: `context/FE-CHANGELOG-2026-10-08.md` (their two "missing endpoint" reports were a
+  STALE DEPLOY; §1 lists the four things that need an FE change)
 - Assemble the single §1+§2+§3 client block (the original deliverable, still not assembled)
 
 

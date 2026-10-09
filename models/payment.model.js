@@ -24,9 +24,12 @@ const PaymentSchema = new mongoose.Schema(
     metadata: { type: mongoose.Schema.Types.Mixed },
     channel: { type: String }, // card, bank, etc.
     alertType: { type: String, enum: ["credit", "debit"] },
+    // `cash`/`pos` added 2026-10-08 for counter tenders (client item #8). A
+    // walk-in order used to write one row with the default `paystack`, which is
+    // the one method a counter order can never be.
     paymentMethod: {
       type: String,
-      enum: ["paystack", "bank-transfer", "wallet"],
+      enum: ["paystack", "bank-transfer", "wallet", "cash", "pos"],
       default: "paystack",
     },
     proofOfPayment: { type: String },

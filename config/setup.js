@@ -72,6 +72,32 @@ const createCrmSettings = async () => {
         crmSetting.reactivationSchedule = CrmSettingModel.DEFAULT_REACTIVATION_SCHEDULE;
         dirty = true;
       }
+      // 2026-10-08 backfill — client item #1. MUST be here and not left to the
+      // schema default: Mongoose applies defaults on CREATION, not on read, and
+      // the live CrmSetting document predates this field. Without this the
+      // registered-not-booked sequence would silently never schedule anything
+      // in production while working perfectly on a fresh database. Exactly the
+      // trap that made `walletAdjustmentLimits` read ₦0 live (see
+      // ensureWalletAdjustmentLimits below): SEEDING IS NOT MIGRATING.
+      if (
+        !crmSetting.registeredNotBookedSchedule ||
+        crmSetting.registeredNotBookedSchedule.length === 0
+      ) {
+        crmSetting.registeredNotBookedSchedule =
+          CrmSettingModel.DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE;
+        dirty = true;
+      }
+      // Same trap for the send windows. Written only when the field is ABSENT,
+      // so an admin who has already narrowed the windows is never overwritten.
+      if (!crmSetting.sendWindows || crmSetting.sendWindows.morningEndHour == null) {
+        crmSetting.sendWindows = {
+          morningStartHour: 6,
+          morningEndHour: 8,
+          eveningStartHour: 18,
+          eveningEndHour: 20,
+        };
+        dirty = true;
+      }
       // Backfill any new default template keys (order-ready, broadcast variants,
       // reduced lead copy) WITHOUT overwriting admin-edited existing keys.
       const defaults = CrmSettingModel.DEFAULT_TEMPLATES || {};
@@ -333,16 +359,37 @@ const ensureWalletAdjustmentLimits = async () => {
   }
 };
 
+// Every step below is a seed or a MIGRATION of an existing document, and none of
+// them used to be awaited: `setupApp` was async but fired all nine and printed
+// "App init successful" immediately. Three consequences, all real:
+//   * a migration could still be running when the first request arrived, so a
+//     field this code adds might be absent for the first callers;
+//   * a failure inside one was an unhandled rejection, invisible in the log
+//     beside a line claiming success;
+//   * they raced each other, so the order above meant nothing.
+// Awaited in sequence now. Each is wrapped so one failing migration can neither
+// stop the others nor bring the boot down — the server is already listening by
+// the time this runs (server.js starts HTTP first), so throwing here would take
+// down a live process over a seed.
 async function setupApp() {
-  init();
-  ensureWalletAdjustmentLimits();
-  createAdminOrderDetails();
-  createCrmSettings();
-  createRewardSettings();
-  createDefaultTemplates();
-  createDefaultComplaintTypes();
-  createDefaultHoldTypes();
-  backfillOfferTriggers();
+  const steps = [
+    ["init", init],
+    ["walletAdjustmentLimits", ensureWalletAdjustmentLimits],
+    ["adminOrderDetails", createAdminOrderDetails],
+    ["crmSettings", createCrmSettings],
+    ["rewardSettings", createRewardSettings],
+    ["communicationTemplates", createDefaultTemplates],
+    ["complaintTypes", createDefaultComplaintTypes],
+    ["holdTypes", createDefaultHoldTypes],
+    ["offerTriggerBackfill", backfillOfferTriggers],
+  ];
+  for (const [name, step] of steps) {
+    try {
+      await step();
+    } catch (error) {
+      console.error(`App init step "${name}" failed (continuing):`, error?.message || error);
+    }
+  }
   console.log("App init successful");
 }
 

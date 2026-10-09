@@ -19,6 +19,8 @@ const {
 } = require('../util/constants')
 const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
+const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
+const { isItemOnHold, onHoldScope } = require('../util/itemHold')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const { QUEUE_SORT } = require('../util/queueSort')
@@ -477,7 +479,7 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Details Updated',
                 body: `Details for an item on your order ${order.oscNumber} were updated by our team. If you have any questions, please contact support.`,
@@ -771,9 +773,14 @@ class SortAndPretreatService extends BaseService {
             // ── who is finished here, and hand them over ────────────────────
             const fresh = await BookOrderModel.findById(orderId)
             const stillHere = itemsAtStation(fresh, HERE)
+            // Done here = sorted AND pretreated (or pretreatment not required),
+            // AND not on hold. The hold test is what makes the client's second
+            // condition true: a held piece is left behind and the rest of the
+            // batch still goes, rather than one hold stopping the whole handover.
             const isDoneHere = (i) =>
                 ['complete', 'not_required'].includes(i.sortStatus) &&
-                ['complete', 'not_required'].includes(i.pretreatStatus)
+                ['complete', 'not_required'].includes(i.pretreatStatus) &&
+                !isItemOnHold(i)
             const readyIds = selected
                 .map((i) => fresh.items.id(i._id))
                 .filter((i) => i && isDoneHere(i))
@@ -919,7 +926,7 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Sorted',
                 body: `An item on your order ${order.oscNumber} was marked as sorted. We are getting it ready for the next steps!`,
@@ -1013,7 +1020,7 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Sort Undone',
                 body: `The sorted status for an item on your order ${order.oscNumber} was undone. We are reviewing it again.`,
@@ -1100,7 +1107,7 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'All Items Sorted',
                 body: `All items on your order ${order.oscNumber} have been marked as sorted. We are getting them ready for the next steps!`,
@@ -1217,7 +1224,9 @@ class SortAndPretreatService extends BaseService {
                 req.body?.sendToWash !== false &&
                 freshItem &&
                 doneSorted(freshItem) &&
-                donePretreated(freshItem)
+                donePretreated(freshItem) &&
+                // A held piece waits for its release, not for its pretreatment.
+                !isItemOnHold(freshItem)
             ) {
                 const pushed = await HandoffService.push({
                     params: { id: orderId },
@@ -1243,7 +1252,7 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Pretreated',
                 body: `An item on your order ${order.oscNumber} was marked as pretreated. We are getting it ready for the next steps!`,
@@ -1336,7 +1345,7 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Pretreat Undone',
                 body: `The pretreated status for an item on your order ${order.oscNumber} was undone. We are reviewing it again.`,
@@ -1433,12 +1442,23 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Flagged for Review',
                 body: `An item on your order ${order.oscNumber} was flagged for review. Reason: ${note}. We will get back to you with more details.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_FLAGGED,
+            })
+            // ADDED for admin (client section 10: "order flagged AND item
+            // flagged"). A flagged piece is the start of a problem, and nobody
+            // outside the station could see one before this.
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ITEM_FLAGGED,
+                title: 'Item Flagged for Review',
+                body: `Item ${itemId} on order ${order.oscNumber} was flagged at Sort & Pretreat by ${user.fullName}. Reason: ${note}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_FLAGGED,
+                recordId: order._id,
             })
             await createAuditLog({
                 userId: getObjectId(userId),
@@ -2182,14 +2202,16 @@ class SortAndPretreatService extends BaseService {
                 },
             )
 
-            await BookOrderModel.updateOne(
-                { _id: orderId },
-                buildStageUpdate(
-                    ORDER_STATUS.HOLD,
-                    stationMap[assignTo],
-                    holdNote,
-                ),
-            )
+            // CLIENT RULING 2026-10-08: a hold at this station stops ONLY THE
+            // PIECE. The order-level stage write that used to be here set
+            // `stage.status: hold`, and the station guards then refused every
+            // further action on the order — so one held piece parked its
+            // siblings. Removed: the order keeps its real station status, the
+            // other pieces keep moving, and the piece is held by its own
+            // holdDetails (util/itemHold.js). Holds Management still lists the
+            // order through the widened scope in util/holdSla.js, and the order
+            // cannot be PACKED or DISPATCHED while any piece is held.
+            // Intake & Tag and payment holds deliberately still park the order.
 
             await ActivityModel.create({
                 title: 'Item Placed on Hold',
@@ -2200,12 +2222,35 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
+            await notifyOperator({
                 userId,
                 title: 'Item Placed on Hold',
                 body: `An item on your order ${order.oscNumber} was placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} We are working to resolve this as quickly as possible.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+            })
+            // ADDED for the CUSTOMER (client decision 2026-10-08: "add that
+            // message too"). The body above was WRITTEN for the customer all
+            // along — "an item on your order" — but was only ever delivered to
+            // the operator, so the customer was never told. Now they are.
+            if (order.userId) {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'An item on your order is on hold',
+                    body: `An item on your order ${order.oscNumber} has been placed on hold. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} We are working to resolve this as quickly as possible.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                })
+            }
+            // ADDED for admin (client section 10: "item placed on hold, any
+            // station"). Held pieces are where orders quietly go late.
+            await notifyAdminEvent({
+                event: ADMIN_EVENT.ITEM_ON_HOLD,
+                title: 'Item Placed on Hold',
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} was placed on hold at Sort & Pretreat by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
+                subBody: `Order ID: ${order.oscNumber}`,
+                type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
+                recordId: order._id,
             })
             await createAuditLog({
                 userId: getObjectId(userId),
@@ -2237,7 +2282,13 @@ class SortAndPretreatService extends BaseService {
             const { page = 1, limit = 20, search = '' } = req.query
 
             const baseQuery = {
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: this station now holds a PIECE, not the
+                // order, so stage.status is no longer `hold`. Match either an
+                // order parked at order level (Intake/payment holds, and legacy
+                // rows from before this change) OR an order with a piece still
+                // held. $and, not $or — this object already has its own $or and
+                // two $or keys would silently overwrite each other.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
                     {
@@ -2333,7 +2384,13 @@ class SortAndPretreatService extends BaseService {
             // ✅ also match orders assigned from another station
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.HOLD,
+                // WIDENED 2026-10-08: this station now holds a PIECE, not the
+                // order, so stage.status is no longer `hold`. Match either an
+                // order parked at order level (Intake/payment holds, and legacy
+                // rows from before this change) OR an order with a piece still
+                // held. $and, not $or — this object already has its own $or and
+                // two $or keys would silently overwrite each other.
+                $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
                     { 'items.holdDetails.assignTo': ROLE.SORT_AND_PRETREAT },
@@ -2389,10 +2446,15 @@ class SortAndPretreatService extends BaseService {
                 reference: order.oscNumber,
             })
 
-            await createNotification({
-                userId,
+            // CLIENT SECTION 10: the station is told the job is live again; the
+            // person who released it is not. (The body was also written as if
+            // the customer would read it — "Your order" — while it was only
+            // ever sent to the operator. Reworded for its real audience.)
+            await notifyAffectedStation({
+                role: ROLE.SORT_AND_PRETREAT,
+                actorId: userId,
                 title: 'Order Released from Hold',
-                body: `Your order ${order.oscNumber} has been released from hold and is back in the sort & pretreat queue.`,
+                body: `Order ${order.oscNumber} has been released from hold and is back in the sort & pretreat queue.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })

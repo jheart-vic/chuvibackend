@@ -14,17 +14,32 @@ const UserModel = require('../models/user.model')
 const createNotification = require('./createNotification')
 const { GENERAL_STATUS } = require('./constants')
 
-async function notifyRoles({ roles, title, body, subBody, type, page, recordId }) {
+// `exceptUserId` (client section 10, 2026-10-08): never notify the person who
+// performed the action. They already know — the screen confirmed it — so a
+// message to them is the noise the client asked us to remove. Added here rather
+// than in a caller so the "affected station, never the actor" rule has exactly
+// one implementation.
+async function notifyRoles({
+    roles,
+    title,
+    body,
+    subBody,
+    type,
+    page,
+    recordId,
+    exceptUserId,
+}) {
     try {
         const wanted = (Array.isArray(roles) ? roles : [roles]).filter(Boolean)
         if (!wanted.length) return 0
 
-        const staff = await UserModel.find({
+        const query = {
             userType: { $in: wanted },
             status: GENERAL_STATUS.ACTIVE,
-        })
-            .select('_id')
-            .lean()
+        }
+        if (exceptUserId) query._id = { $ne: exceptUserId }
+
+        const staff = await UserModel.find(query).select('_id').lean()
 
         const results = await Promise.allSettled(
             staff.map((s) =>

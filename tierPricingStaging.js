@@ -258,6 +258,10 @@ async function main() {
                     isPickUp: false,
                     isDelivery: false,
                     items: upgraded,
+                    // REQUIRED since 2026-10-08 (client: staff must state how the
+                    // money arrived). Nothing to do with tier pricing, but a
+                    // counter order cannot be created without it.
+                    paymentMethod: "cash",
                 },
             })
             if (!intakeRes?.success) {

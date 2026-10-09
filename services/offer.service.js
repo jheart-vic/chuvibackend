@@ -18,6 +18,12 @@ const DAY = 24 * 60 * 60 * 1000
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
 
+// Client item #6(a), 2026-10-08 — their exact wording for the checkout prompt.
+// Shipped from here rather than written into the app so the words and the
+// eligibility rule stay together; if they want it editable it belongs on
+// CrmSetting/AdminSetting alongside the other customer-facing copy.
+const CHECKOUT_OFFER_PROMPT = 'You have a first time offer. Tap to use it.'
+
 // linkage statuses that still "hold" the offer for the customer
 const LIVE_LINKAGE_STATUSES = [
     CUSTOMER_OFFER_STATUS.ASSIGNED,
@@ -483,6 +489,16 @@ class OfferService {
                 customerOfferId: linkage._id,
                 offerId: offer._id,
                 name: offer.name,
+                // The linkage's own expiry, exposed because the auto-apply
+                // tie-break (item #6(b)) breaks ties on "expiring soonest" and
+                // decorateOffer only returns the derived expiresInDays.
+                expiresAt: linkage.expiresAt,
+                // CLIENT RULING 2026-10-08: on a FIRST order the First
+                // Experience offer always wins, whatever the bill maths says.
+                // Carried on the row so the screen can mark it too.
+                isFirstExperience: (offer.triggers || []).includes(
+                    OFFER_TRIGGER.FIRST_EXPERIENCE,
+                ) || offer.trigger === OFFER_TRIGGER.FIRST_EXPERIENCE,
                 ...this.decorateOffer(offer, { expiresAt: linkage.expiresAt }),
                 preselected:
                     String(draft.customerOfferId || '') === String(linkage._id),
@@ -527,7 +543,108 @@ class OfferService {
             })
         }
 
-        return { selected, personal, promotions, baseline }
+        // Client item #6(a), 2026-10-08. The prompt ships FROM THE BACKEND so
+        // the screen and the eligibility rule cannot disagree about whether the
+        // customer has something to use — the same reason A1's dormant-rate
+        // label moved here. The wording is the client's, verbatim.
+        const applicablePersonal = personal.filter((p) => p.applicable)
+        const best = this._bestByBillValue(applicablePersonal, draft, stats)
+        const checkoutPrompt = best
+            ? {
+                  show: true,
+                  message: CHECKOUT_OFFER_PROMPT,
+                  customerOfferId: best.customerOfferId,
+                  offerName: best.name,
+                  // What tapping it would actually take off THIS bill, so the
+                  // screen can show the number if it wants to.
+                  billValue: best._billValue,
+                  count: applicablePersonal.length,
+              }
+            : { show: false, message: null, count: 0 }
+
+        return {
+            selected,
+            personal,
+            promotions,
+            baseline,
+            checkoutPrompt,
+            // Which one Quick Booking would auto-apply (item #6(b)). Exposed on
+            // the normal booking screen too so the two paths visibly agree.
+            autoApply: best
+                ? {
+                      customerOfferId: best.customerOfferId,
+                      offerId: best.offerId,
+                      name: best.name,
+                      billValue: best._billValue,
+                      otherOffersKept: applicablePersonal.length - 1,
+                      // 'bill-value' normally; 'first-experience-override' when
+                      // the first-order rule beat a higher-value offer, so the
+                      // screen can explain why the bigger discount was not used.
+                      reason: best._wonBy || 'bill-value',
+                  }
+                : null,
+        }
+    }
+
+    // Client item #6(b): Quick Booking has nobody to choose, so it auto-applies
+    // "the one worth MORE on that bill" and the other survives for next time.
+    //
+    // WORTH = what comes off THIS bill — discount + the pickup and delivery fees
+    // the offer waives. `creditPromised` is deliberately NOT counted: it is value
+    // on the customer's NEXT order, so counting it here could spend today's
+    // better offer to bank tomorrow's. Tie → the one expiring soonest, because
+    // the other one still has time to be used.
+    _bestByBillValue(applicable, draft = {}, stats = null) {
+        if (!applicable || !applicable.length) return null
+
+        // CLIENT RULING 2026-10-08, and it OVERRIDES the bill maths below:
+        // "On a customer's first order, the First Experience offer always wins,
+        //  because it can only be used on the first order and it is what our
+        //  reps promised the customer. If another offer is applied instead, the
+        //  First Experience offer is lost for good."
+        //
+        // That asymmetry is the whole point: every other offer survives to be
+        // used later, so losing a bigger discount today costs the customer
+        // nothing permanent — losing this one costs them it entirely. Gated on
+        // `totalOrders === 0` so it only ever applies to a genuine first order.
+        if (stats && (stats.totalOrders || 0) === 0) {
+            const firstExperience = applicable.find((p) => p.isFirstExperience)
+            if (firstExperience) {
+                const b = firstExperience.benefit || {}
+                return {
+                    ...firstExperience,
+                    _billValue:
+                        (b.discount || 0) +
+                        (b.freePickup ? draft.pickupAmount || 0 : 0) +
+                        (b.freeDelivery ? draft.deliveryAmount || 0 : 0),
+                    _wonBy: 'first-experience-override',
+                }
+            }
+        }
+
+        const scored = applicable.map((p) => {
+            const b = p.benefit || {}
+            const value =
+                (b.discount || 0) +
+                (b.freePickup ? draft.pickupAmount || 0 : 0) +
+                (b.freeDelivery ? draft.deliveryAmount || 0 : 0)
+            return { ...p, _billValue: value }
+        })
+        scored.sort((a, b) => {
+            if (b._billValue !== a._billValue) return b._billValue - a._billValue
+            const ax = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity
+            const bx = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity
+            return ax - bx
+        })
+        return scored[0]
+    }
+
+    // The offer Quick Booking should attach to this draft, re-validated against
+    // the real cart (never a stored "eligible" flag — see the answer to item
+    // #6(c): validation happens at ATTACH time, every time).
+    async pickBestPersonalOffer(userId, draft = {}) {
+        const options = await this.getBookingOptions(userId, draft)
+        return options.autoApply
     }
 
     // Admin: every offer linkage for a customer (all statuses by default), so
