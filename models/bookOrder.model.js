@@ -532,6 +532,32 @@ const bookOrderSchema = new mongoose.Schema(
             _id: false,
         },
 
+        // Every change to an order's items, with who made it and why (client
+        // item #7: "every change records who and why"). An append-only trail,
+        // because the bill moved in one direction or the other each time and
+        // "the total changed" with no explanation is unreviewable.
+        //
+        // ⚠️ THIS FIELD HAD TO BE DECLARED. The first cut `$push`ed to
+        // `itemEdits` without it, and **Mongoose silently drops a write to an
+        // undeclared path** — the edit succeeded, the bill changed, the money
+        // moved, and the audit trail was simply absent with no error anywhere.
+        // Third time in this repo: `dispatchDetails.pickup.note` (brief 3.2)
+        // and the order-level `holdDetails` were the same shape. Only running
+        // it and COUNTING THE ROWS finds this class of bug.
+        itemEdits: [
+            {
+                at: { type: Date },
+                by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+                byRole: { type: String },
+                reason: { type: String },
+                previousTotal: { type: Number },
+                newTotal: { type: Number },
+                difference: { type: Number },
+                previousPieceCount: { type: Number },
+                newPieceCount: { type: Number },
+            },
+        ],
+
         // ───────────── THE PAYMENT HOLD (N1 Phase 3) ─────────────
         //
         // Client spec: once Intake has entered the real items the system

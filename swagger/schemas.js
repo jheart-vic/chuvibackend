@@ -673,6 +673,69 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     DisplayNameMap:
+ *       type: object
+ *       description: >
+ *         Labels for the values a screen shows. The admin can rename any of
+ *         them, but only the LABEL changes — the `value` is an order enum or a
+ *         pricing key and never changes.
+ *       properties:
+ *         deliverySpeeds:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *         serviceTypes:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *         serviceTiers:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *
+ *     DisplayNameEntry:
+ *       type: object
+ *       properties:
+ *         value:
+ *           type: string
+ *           example: same-day
+ *           description: The stored value. Send THIS back in any request, never the label.
+ *         label: { type: string, example: Express Same Day }
+ *         renamed:
+ *           type: boolean
+ *           example: true
+ *           description: True when an admin set this label; false when it is derived from the value.
+ *
+ *     ItemEditResult:
+ *       type: object
+ *       description: >
+ *         The outcome of entering an order's real items (client item #7).
+ *         Exactly one of `paymentHold` / `walletRefund` is set, or neither when
+ *         the total did not change.
+ *       properties:
+ *         previousTotal: { type: integer, example: 5400 }
+ *         newTotal: { type: integer, example: 8200 }
+ *         difference:
+ *           type: integer
+ *           example: 2800
+ *           description: Negative when the bill went down.
+ *         pieceCount: { type: integer, example: 4 }
+ *         paymentHold:
+ *           nullable: true
+ *           allOf: [{ $ref: '#/components/schemas/PaymentHoldResult' }]
+ *           description: Set when the total went UP and money is outstanding.
+ *         walletRefund:
+ *           nullable: true
+ *           oneOf:
+ *             - type: integer
+ *               example: 2800
+ *               description: The amount returned to the wallet.
+ *             - type: object
+ *               description: >
+ *                 Returned instead when the automatic refund failed. The
+ *                 customer is still owed it and somebody must settle it by
+ *                 hand — this is reported rather than swallowed.
+ *               properties:
+ *                 error: { type: string }
+ *                 amount: { type: integer }
+ *
  *     PaymentHoldResult:
  *       type: object
  *       description: >

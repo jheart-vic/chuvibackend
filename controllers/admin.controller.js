@@ -228,6 +228,28 @@ class AdminController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    // Renaming delivery speeds / service types / care tiers — DISPLAY NAME
+    // ONLY. The stored values are enums and pricing keys; renaming one would
+    // orphan every existing order, so this writes a label map instead.
+    async getDisplayNames(req, res) {
+        const result = await BookingWindowService.getDisplayNames()
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async updateDisplayNames(req, res) {
+        const result = await BookingWindowService.updateDisplayNames({
+            payload: req.body,
+            actorId: req.user?.id,
+        })
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
     // ── Window booking (client D1–D6). Windows are a collection rather than
     // settings fields because a morning window is coming, and the working-days
     // tick box is a settings write with its own validation.

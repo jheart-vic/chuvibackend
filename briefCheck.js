@@ -1601,6 +1601,112 @@ const run = (async () => {
         /cancellationPickupFee: 1000/.test(setupSrcN1) &&
             /cancellationReturnFee: 1000/.test(setupSrcN1))
 
+    // ─── Client item #7 — item edit and re-pricing ──────────────────────────
+    console.log('\nItem #7 — editing an order and settling the difference')
+    // "Through the same pricing + offers" is a claim about CODE PATHS, so it is
+    // asserted as one: the reprice must call the identical three steps a
+    // booking branch calls, on the same class.
+    ok('re-pricing calls the SAME three pricing steps a booking does',
+        /_repriceForItems/.test(boSrc) &&
+            /priceItems\(\{[\s\S]{0,200}serviceTypeMultiplier/.test(boSrc) &&
+            /this\._priceWithOffers\(\{[\s\S]{0,160}itemsSubtotal: priced\.total/.test(boSrc) &&
+            /const pricing = this\._buildPricing\(\{/.test(boSrc))
+    // An item edit must not quietly re-price the logistics or the tier.
+    ok('  …taking the service type, tier and speed from the ORDER, not the request',
+        /serviceType: order\.serviceType/.test(boSrc) &&
+            /serviceTier: order\.serviceTier/.test(boSrc) &&
+            /deliverySpeed: order\.deliverySpeed/.test(boSrc))
+    ok('  …and honouring the window/Anytime fee the customer actually chose',
+        /order\.scheduling\?\.pickup\?\.fee \?\? adminOrderSetting\.pickupFee/.test(boSrc))
+    ok('total UP reuses the payment hold rather than a second dunning flow',
+        /PaymentHoldService\.raise\(\{/.test(boSrc))
+    ok('total DOWN returns the difference through the ONE wallet-refund helper',
+        /refundToWallet\(\{/.test(boSrc))
+    // A waiver is permission to proceed, not money received.
+    ok('a WAIVED order is not counted as paid, so nothing is refunded',
+        /order\.paymentStatus === PAYMENT_ORDER_STATUS\.SUCCESS\s*\n?\s*\? previousTotal\s*\n?\s*: 0/.test(boSrc))
+    ok('a reason is REQUIRED and the edit is recorded with who made it',
+        /A reason is required — the bill is changing/.test(boSrc) &&
+            /itemEdits: \{/.test(boSrc))
+    // Mongoose silently drops a write to an undeclared path — the third time
+    // this repo has hit it (pickup.note, holdDetails). Only counting the rows
+    // finds it, so the field's existence is asserted here.
+    const orderModelSrc = fs.readFileSync(path.join(ROOT, 'models/bookOrder.model.js'), 'utf8')
+    ok('  …and `itemEdits` IS DECLARED on the schema (or the trail vanishes silently)',
+        /itemEdits: \[/.test(orderModelSrc))
+    ok('after tagging only an ADMIN may edit, detected from the ITEMS',
+        /taggingBegun\(order\) && actorRole !== ROLE\.ADMIN/.test(boSrc) &&
+            /requiresAdmin: true/.test(boSrc))
+
+    // The wallet refund is now one implementation, shared with cancellation.
+    const wrSrc = fs.readFileSync(path.join(ROOT, 'util/walletRefund.js'), 'utf8')
+    ok('the wallet refund does all THREE writes (balance, ledger, Payment)',
+        /\$inc: \{ balance: value \}/.test(wrSrc) &&
+            /WalletTransactionModel\.create/.test(wrSrc) &&
+            /PaymentModel\.create/.test(wrSrc))
+    ok('  …because the customer’s own history reads Payment (the 2.3 lesson)',
+        /fetch-user-transactions/.test(wrSrc))
+    ok('  …and cancellation now DELEGATES to it instead of keeping a copy',
+        (boSrc.match(/refundToWallet\(\{/g) || []).length === 2 &&
+            !/\$inc: \{ balance: cashRefunded \}/.test(boSrc))
+
+    // ─── D7, the Anytime refund payout, and display names ───────────────────
+    console.log('\nD7 confirmation at READY · the Anytime refund · display names')
+    ok('D7: the delivery window is confirmed from packAndSealComplete (READY)',
+        /confirmDeliveryWindow\(\{ orderId \}\)/.test(
+            fs.readFileSync(path.join(ROOT, 'services/qc.service.js'), 'utf8'),
+        ))
+    ok('  …and it does NOT re-price the order (they were quoted at booking)',
+        !/'scheduling\.delivery\.fee'/.test(bwSvcSrc))
+    ok('  …leaving it UNCONFIRMED when no window is free, rather than inventing a date',
+        /reason: 'no-window-available'/.test(bwSvcSrc))
+
+    // The refund reads the stored flag; by the time the job is done the cutoff
+    // has passed, so condition (a) is unanswerable after the fact.
+    ok('the Anytime refund READS windowWasBookableAtBooking, never recomputes it',
+        /windowWasBookableAtBooking: legData\.windowWasBookableAtBooking/.test(bwSvcSrc) &&
+            /W\.qualifiesForAnytimeRefund\(\{/.test(bwSvcSrc))
+    ok('  …pays through the ONE wallet-refund helper',
+        /refundToWallet\(\{/.test(bwSvcSrc))
+    ok('  …is idempotent on refund.paidAt',
+        /refund\?\.paidAt\) return \{ ok: false, reason: 'already-paid' \}/.test(bwSvcSrc))
+    // "Why was there no refund?" must have an answer later, not silence.
+    ok('  …and RECORDS a refusal with its reason instead of staying silent',
+        /refund\.qualified`\]: false/.test(bwSvcSrc) &&
+            /no cheaper option that day/.test(bwSvcSrc))
+    ok('  …and is settled from BOTH serve points (pickup and delivery)',
+        (riderSrcN1.match(/settleAnytimeRefund\(\{/g) || []).length === 2 &&
+            /leg: 'pickup'/.test(riderSrcN1) &&
+            /leg: 'delivery'/.test(riderSrcN1))
+
+    // Renaming is a LABEL layer. Renaming a stored value would fail the order
+    // enums and drop pricing to a multiplier of 1.
+    const { resolveLabel } = require(path.join(ROOT, 'util/displayName'))
+    ok('an admin label overrides the derived name, and the RAW value travels with it',
+        (() => {
+            const r = resolveLabel('deliverySpeeds', 'same-day', {
+                deliverySpeeds: new Map([['same-day', 'Express Same Day']]),
+            })
+            return r.label === 'Express Same Day' && r.value === 'same-day' && r.renamed === true
+        })())
+    ok('  …with no override it derives the label and says so',
+        (() => {
+            const r = resolveLabel('serviceTiers', 'classic', undefined)
+            return r.label === 'Classic' && r.renamed === false
+        })())
+    // A Mongoose Map on a hydrated doc, a plain object on a lean() read.
+    ok('  …reading a Mongoose Map and a lean plain object alike',
+        resolveLabel('serviceTiers', 'vip', { serviceTiers: { vip: 'Platinum' } }).label ===
+            'Platinum')
+    ok('  …and a lower-case acronym reads as one (vip → VIP, not "Vip")',
+        resolveLabel('serviceTiers', 'vip', undefined).label === 'VIP')
+    ok('renaming refuses an unknown key instead of storing a dead label',
+        /Unknown \$\{group\}/.test(bwSvcSrc) &&
+            /These are display names for existing values/.test(bwSvcSrc))
+    ok('  …and writes ONLY the label map, never a stored value',
+        /\$set\[`displayNames\.\$\{group\}`\]/.test(bwSvcSrc) &&
+            !/serviceTypes\[0\]\.name =/.test(bwSvcSrc))
+
     const crmSrc2 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
     ok('booking cancels the new sequence as well as the lead one',
         /cancelPendingMessages\(profile\._id, \[\s*CRM_WORKFLOW\.LEAD,\s*CRM_WORKFLOW\.REGISTERED_NOT_BOOKED,?\s*\]\)/.test(

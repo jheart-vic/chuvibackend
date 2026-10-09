@@ -9,8 +9,14 @@ const {
     BOOKING_TIMING,
     DISPATCH_LEG,
     AUDIT_LOG_CATEGORIES,
+    NOTIFICATION_TYPE,
+    SERVICE_TIERS,
 } = require('../util/constants')
 const W = require('../util/bookingWindow')
+// D2(c): the Anytime refund pays through the ONE wallet-refund implementation,
+// so it lands in the ledger AND in the customer's own history (the 2.3 lesson).
+const { refundToWallet } = require('../util/walletRefund')
+const createNotification = require('../util/createNotification')
 
 /**
  * WINDOW BOOKING — the data layer around the pure engine in
@@ -711,6 +717,362 @@ class BookingWindowService {
             console.error('updateWorkingDays failed:', error)
             return BaseService.sendFailedResponse({
                 error: 'Unable to update the working days.',
+            })
+        }
+    }
+
+    /**
+     * D7 — CONFIRM THE DELIVERY WINDOW WHEN THE ORDER IS MARKED READY.
+     *
+     * Pre-approved by the client ("if neither changes the shape of the data, go
+     * ahead as you recommended"). The reasoning they accepted: a standard
+     * order's delivery day is +2 and is NOT known at booking, and under D6 that
+     * day might not even be a working day. So at booking the delivery leg
+     * carries only the INTENT (timing + fee); the actual window and day are
+     * pinned here, at READY, when we know the clothes are finished.
+     *
+     * Called from `packAndSealComplete`, fire-and-forget: a scheduling
+     * refinement must never fail the act of marking an order ready. If it does
+     * fail, the order simply keeps reading "estimated" — which is what it said
+     * before, so nothing is worse than it was.
+     *
+     * Idempotent on `scheduling.delivery.confirmedAt`.
+     */
+    static async confirmDeliveryWindow({ orderId, now = new Date() }) {
+        try {
+            const order = await BookOrderModel.findById(orderId)
+                .select('scheduling deliverySpeed isDelivery oscNumber')
+                .lean()
+            if (!order) return { ok: false, reason: 'not-found' }
+            // An office collection has no delivery leg to schedule.
+            if (!order.isDelivery) return { ok: false, reason: 'no-delivery-leg' }
+            if (order.scheduling?.delivery?.confirmedAt) {
+                return { ok: false, reason: 'already-confirmed' }
+            }
+
+            const [settings, windows] = await Promise.all([
+                this.getSchedulingSettings(),
+                this.getActiveWindows(),
+            ])
+
+            // The customer asked for Anytime: honour that, and pin the day
+            // rather than a window.
+            const timing = order.scheduling?.delivery?.timing
+            if (timing === BOOKING_TIMING.ANYTIME) {
+                const serveFrom = W.anytimeServiceStart({
+                    now,
+                    workingDays: settings.workingDays,
+                    anytimeOpenFrom: settings.anytimeOpenFrom,
+                    anytimeOpenTo: settings.anytimeOpenTo,
+                })
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    {
+                        $set: {
+                            'scheduling.delivery.date': serveFrom
+                                ? W.startOfDay(serveFrom)
+                                : W.startOfDay(now),
+                            'scheduling.delivery.confirmedAt': now,
+                        },
+                    },
+                )
+                return { ok: true, timing: BOOKING_TIMING.ANYTIME }
+            }
+
+            // Otherwise find the soonest window with room, from today onward —
+            // the order is ready NOW, so there is no point offering yesterday's
+            // slot or a day that is already full.
+            const from = W.startOfDay(now)
+            const bookedCounts = await this.getBookedCounts({
+                from,
+                to: W.addDays(from, 10),
+            })
+            const slot = this._nextAvailableWindow({
+                windows,
+                from,
+                now,
+                settings,
+                bookedCounts,
+            })
+
+            if (!slot) {
+                // Nothing free within the horizon. Say so by leaving it
+                // unconfirmed rather than inventing a date the customer would
+                // then be promised — the promise keeps reading "estimated",
+                // which is honest.
+                return { ok: false, reason: 'no-window-available' }
+            }
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: {
+                        'scheduling.delivery.timing': BOOKING_TIMING.WINDOW,
+                        'scheduling.delivery.windowId': slot.window._id,
+                        'scheduling.delivery.windowName': slot.window.name,
+                        'scheduling.delivery.windowStart': slot.window.startTime,
+                        'scheduling.delivery.windowEnd': slot.window.endTime,
+                        'scheduling.delivery.date': slot.date,
+                        'scheduling.delivery.confirmedAt': now,
+                        // The fee is NOT touched. The customer was quoted at
+                        // booking and has in many cases already paid; pinning a
+                        // window at READY must not re-price the order.
+                    },
+                },
+            )
+
+            return {
+                ok: true,
+                timing: BOOKING_TIMING.WINDOW,
+                windowName: slot.window.name,
+                date: slot.date,
+            }
+        } catch (error) {
+            console.error('confirmDeliveryWindow failed:', error?.message)
+            return { ok: false, reason: 'error' }
+        }
+    }
+
+    /**
+     * D2(c) AS NARROWED — pay the Anytime refund, if it is owed.
+     *
+     * The client's rule: refund the difference between the Anytime price and
+     * the window price for that leg **only when BOTH** (a) the customer booked
+     * Anytime while that day's window could still be booked, and (b) the job
+     * was actually done inside that window. "They paid for speed and did not
+     * get it."
+     *
+     * ⚠️ CONDITION (a) IS READ FROM THE ORDER, NEVER RECOMPUTED. By the time
+     * the job is done the cutoff has long passed, so "was the window still
+     * bookable when they booked?" is unanswerable after the fact — it is
+     * stamped as `windowWasBookableAtBooking` at booking. Their examples:
+     * booked 11:00 and picked up 16:00 → refund; booked 14:30 and picked up
+     * 16:00 → no refund, because at 14:30 there was no cheaper way to be served
+     * that day.
+     *
+     * Called when a leg is actually served. Stamps `servedAt` either way, so
+     * the record of WHEN it happened exists whether or not money moved.
+     * Idempotent on `refund.paidAt`.
+     */
+    static async settleAnytimeRefund({ orderId, leg, servedAt = new Date() }) {
+        try {
+            if (!Object.values(DISPATCH_LEG).includes(leg)) {
+                return { ok: false, reason: 'bad-leg' }
+            }
+            const order = await BookOrderModel.findById(orderId)
+                .select('scheduling userId oscNumber')
+                .lean()
+            if (!order) return { ok: false, reason: 'not-found' }
+
+            const legData = order.scheduling?.[leg]
+            // Always record when the leg was served, even for a window booking
+            // that can never earn a refund — it is the other half of the test
+            // and useful on its own.
+            if (!legData?.servedAt) {
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    { $set: { [`scheduling.${leg}.servedAt`]: servedAt } },
+                )
+            }
+
+            if (!legData) return { ok: false, reason: 'not-scheduled' }
+            if (legData.timing !== BOOKING_TIMING.ANYTIME) {
+                return { ok: false, reason: 'not-anytime' }
+            }
+            if (legData.refund?.paidAt) return { ok: false, reason: 'already-paid' }
+
+            // The window the flag was measured against at booking time.
+            const window = legData.refundAgainstWindowId
+                ? await BookingWindowModel.findById(legData.refundAgainstWindowId).lean()
+                : null
+
+            const qualifies = W.qualifiesForAnytimeRefund({
+                windowWasBookableAtBooking: legData.windowWasBookableAtBooking,
+                servedAt,
+                window,
+            })
+
+            if (!qualifies) {
+                // Record the decision, so "why was there no refund?" has an
+                // answer later instead of silence.
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    {
+                        $set: {
+                            [`scheduling.${leg}.refund.qualified`]: false,
+                            [`scheduling.${leg}.refund.reason`]:
+                                legData.windowWasBookableAtBooking !== true
+                                    ? 'Booked after the window had closed, so there was no cheaper option that day.'
+                                    : 'The job was not done inside a window.',
+                        },
+                    },
+                )
+                return { ok: false, reason: 'not-qualified' }
+            }
+
+            const settings = await this.getSchedulingSettings()
+            const amount = W.anytimeRefundAmount({ leg, settings })
+            if (amount <= 0) return { ok: false, reason: 'no-difference' }
+
+            if (!order.userId) {
+                // A walk-in with no account has no wallet to credit. Recorded
+                // rather than silently skipped, so it can be settled by hand.
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    {
+                        $set: {
+                            [`scheduling.${leg}.refund.qualified`]: true,
+                            [`scheduling.${leg}.refund.amount`]: amount,
+                            [`scheduling.${leg}.refund.reason`]:
+                                'Owed, but this order has no account to credit — settle manually.',
+                        },
+                    },
+                )
+                return { ok: false, reason: 'no-account', amount }
+            }
+
+            await refundToWallet({
+                userId: order.userId,
+                amount,
+                orderId,
+                description: `Anytime ${leg} refund for order ${order.oscNumber} — served inside a window`,
+            })
+
+            await BookOrderModel.updateOne(
+                { _id: orderId },
+                {
+                    $set: {
+                        [`scheduling.${leg}.refund.qualified`]: true,
+                        [`scheduling.${leg}.refund.amount`]: amount,
+                        [`scheduling.${leg}.refund.paidAt`]: new Date(),
+                        [`scheduling.${leg}.refund.reason`]:
+                            'Paid for Anytime but served inside a window.',
+                    },
+                },
+            )
+
+            try {
+                await createNotification({
+                    userId: order.userId,
+                    title: 'Refund to your wallet',
+                    body: `We served your ${leg} inside our normal time window, so ₦${amount.toLocaleString('en-NG')} of the Anytime charge for order ${order.oscNumber} has gone back to your wallet.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+            } catch (error) {
+                console.error('anytime refund notification failed:', error?.message)
+            }
+
+            return { ok: true, amount }
+        } catch (error) {
+            console.error('settleAnytimeRefund failed:', error?.message)
+            return { ok: false, reason: 'error' }
+        }
+    }
+
+    /**
+     * DISPLAY NAMES for delivery speeds, service types and care tiers (client
+     * spec 2026-10-07: "admin must be able to rename them — display name
+     * only").
+     *
+     * ⚠️ It writes ONLY the label map, never the stored value, and the guard is
+     * the point: the keys must be values that already exist. `deliverySpeed`
+     * and `serviceTier` are enum fields on BookOrder, and
+     * `serviceTypes[].name` is matched by the pricing path — so renaming a
+     * stored value would fail validation on new orders, orphan existing ones,
+     * and silently drop pricing to a multiplier of 1. An unknown key here is
+     * refused by name rather than stored as a label nothing will ever read.
+     */
+    static async updateDisplayNames({ payload, actorId }) {
+        try {
+            const GROUPS = {
+                deliverySpeeds: Object.values(DELIVERY_SPEED),
+                serviceTypes: null, // read from settings — admin-managed list
+                serviceTiers: Object.values(SERVICE_TIERS),
+            }
+
+            const settings = await AdminSettingModel.findOne({})
+            if (!settings) {
+                return BaseService.sendFailedResponse({
+                    error: 'Admin settings not found',
+                })
+            }
+            GROUPS.serviceTypes = (settings.serviceTypes || []).map((s) => s.name)
+
+            const $set = {}
+            const applied = {}
+            for (const [group, allowed] of Object.entries(GROUPS)) {
+                const given = payload?.[group]
+                if (given === undefined) continue
+                if (!given || typeof given !== 'object' || Array.isArray(given)) {
+                    return BaseService.sendFailedResponse({
+                        error: `${group} must be an object of value → label.`,
+                    })
+                }
+                const unknown = Object.keys(given).filter(
+                    (k) => !allowed.includes(k),
+                )
+                if (unknown.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Unknown ${group}: ${unknown.join(', ')}. These are display names for existing values — valid keys are: ${allowed.join(', ')}.`,
+                    })
+                }
+                const clean = {}
+                for (const [k, v] of Object.entries(given)) {
+                    const label = String(v ?? '').trim()
+                    // An empty label means "go back to the derived name",
+                    // which is more useful than storing a blank that would
+                    // render as nothing on every card.
+                    if (label) clean[k] = label
+                }
+                $set[`displayNames.${group}`] = clean
+                applied[group] = clean
+            }
+
+            if (!Object.keys($set).length) {
+                return BaseService.sendFailedResponse({
+                    error: 'Nothing to update. Send deliverySpeeds, serviceTypes or serviceTiers.',
+                })
+            }
+
+            await AdminSettingModel.updateOne({}, { $set })
+            await this._audit(
+                actorId,
+                `Updated display names: ${Object.entries(applied)
+                    .map(([g, m]) => `${g} (${Object.keys(m).length})`)
+                    .join(', ')}`,
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    displayNames: applied,
+                    note: 'Display names only — the stored values are unchanged, so existing orders and pricing are unaffected.',
+                },
+            })
+        } catch (error) {
+            console.error('updateDisplayNames failed:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Could not update the display names.',
+            })
+        }
+    }
+
+    /** Every label as a screen should render it, with the raw value beside it. */
+    static async getDisplayNames() {
+        try {
+            const settings = await AdminSettingModel.findOne({}).lean()
+            const { labelMap } = require('../util/displayName')
+            return BaseService.sendSuccessResponse({
+                message: labelMap(settings, {
+                    speeds: Object.values(DELIVERY_SPEED),
+                    types: (settings?.serviceTypes || []).map((s) => s.name),
+                    tiers: Object.values(SERVICE_TIERS),
+                }),
+            })
+        } catch (error) {
+            console.error('getDisplayNames failed:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Could not load the display names.',
             })
         }
     }

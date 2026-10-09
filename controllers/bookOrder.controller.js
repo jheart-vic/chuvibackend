@@ -93,6 +93,18 @@ class BookOrderController extends BaseController {
         : BaseController.sendFailedResponse(res, result.data);
     }
 
+    // Client item #7: Intake enters the real items; the bill is recalculated
+    // through the same pricing + offers, and the difference becomes a payment
+    // hold or goes back to the wallet. After tagging, admin only.
+    async applyItemEdit(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.applyItemEdit(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+
     // Window booking (client D1–D5): what times this customer can actually
     // choose for one leg. A GET that intentionally WRITES — every full window
     // it drops is recorded as a deflection, because a customer moved off a full

@@ -193,6 +193,19 @@ class RiderService extends BaseService {
                 ),
             )
 
+            // D2(c): the delivery leg has just been served — settle its Anytime
+            // refund if one is owed. Fire-and-forget, like the hooks below.
+            try {
+                const BookingWindowService = require('./bookingWindow.service')
+                await BookingWindowService.settleAnytimeRefund({
+                    orderId,
+                    leg: 'delivery',
+                    servedAt: new Date(),
+                })
+            } catch (err) {
+                console.error('anytime delivery refund failed:', err?.message)
+            }
+
             crmOnOrderDelivered(order)
             offerOnOrderDelivered(order)
             referralOnOrderDelivered(order)
@@ -641,6 +654,21 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.isVerified = true
             order.markModified('dispatchDetails.pickup')
             await order.save()
+
+            // D2(c): the pickup has just been SERVED, so settle the Anytime
+            // refund if one is owed — paid for speed, served inside a window.
+            // Fire-and-forget: a refund calculation must never undo a recorded
+            // pickup, and the order keeps the unpaid state for a retry.
+            try {
+                const BookingWindowService = require('./bookingWindow.service')
+                await BookingWindowService.settleAnytimeRefund({
+                    orderId: order._id,
+                    leg: 'pickup',
+                    servedAt: new Date(),
+                })
+            } catch (err) {
+                console.error('anytime pickup refund failed:', err?.message)
+            }
 
             // The customer is told the rider's count — their clothes, their
             // bill. Non-fatal: a message must never undo a recorded pickup.

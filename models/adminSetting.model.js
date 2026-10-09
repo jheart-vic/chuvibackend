@@ -92,6 +92,34 @@ const adminSettingSchema = new mongoose.Schema(
             of: Number,
             default: undefined,
         },
+        // ADMIN-EDITABLE DISPLAY NAMES (client spec 2026-10-07: "admin must be
+        // able to rename delivery speeds / service types / care tiers —
+        // DISPLAY NAME ONLY").
+        //
+        // ⚠️ "Display name only" is not a limitation we chose, it is the only
+        // safe reading, and the trap is worth spelling out:
+        //
+        //   * `deliverySpeed` and `serviceTier` are ENUM fields on BookOrder
+        //     (`enum: Object.values(DELIVERY_SPEED)` / `SERVICE_TIERS`).
+        //     Renaming a stored value would fail validation on every new order
+        //     and orphan every existing one.
+        //   * `serviceTypes[].name` IS the value stored on the order, and
+        //     pricing matches on it (`service.name === post.serviceType`). So
+        //     editing a service type's `name` — which `updateAdminSettings`
+        //     happily allows, because it $sets anything — silently breaks
+        //     pricing for every order already placed under the old name, which
+        //     then falls back to a multiplier of 1.
+        //
+        // So renaming is a LABEL layer: keys are the stored values and never
+        // change; only what the customer and staff READ changes. A Map rather
+        // than named fields, so a new speed or tier needs a settings edit and
+        // not a deploy — the same reasoning as `walletAdjustmentLimits`.
+        displayNames: {
+            deliverySpeeds: { type: Map, of: String, default: undefined },
+            serviceTypes: { type: Map, of: String, default: undefined },
+            serviceTiers: { type: Map, of: String, default: undefined },
+        },
+
         // N1 cancellation charges (client spec 2026-10-07): "after pickup,
         // before payment, the customer pays ₦1,000 + ₦1,000 before the clothes
         // go back, EVEN IF a free-pickup offer applied."

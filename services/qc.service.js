@@ -734,6 +734,22 @@ class QCService extends BaseService {
                 },
             )
 
+            // D7 (client pre-approved): the delivery WINDOW is confirmed here,
+            // at READY — not at booking. A standard order's delivery day is +2
+            // and is unknown at booking, and under D6 it might not even be a
+            // working day. Until this runs the customer's delivery promise
+            // reads "Estimated delivery…"; afterwards it names the window.
+            //
+            // Fire-and-forget: a scheduling refinement must never fail the act
+            // of marking an order ready. On failure the promise simply stays an
+            // estimate, which is what it already said.
+            try {
+                const BookingWindowService = require('./bookingWindow.service')
+                await BookingWindowService.confirmDeliveryWindow({ orderId })
+            } catch (err) {
+                console.error('confirm delivery window (pack complete) failed:', err?.message)
+            }
+
             await ActivityModel.create({
                 title: 'Order Packed & Sealed',
                 description: `Order ${order.oscNumber} packed and sealed by ${user.fullName}. Now ready for delivery.`,

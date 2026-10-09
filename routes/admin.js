@@ -28,6 +28,7 @@ const {
     ROUTE_ADMIN_HOLD_TYPE_BY_ID,
     ROUTE_ORDER_PAYMENT_HOLD_WAIVE,
     ROUTE_ADMIN_BANK_CHECK_LIST,
+    ROUTE_ADMIN_DISPLAY_NAMES,
     ROUTE_ADMIN_BOOKING_WINDOWS,
     ROUTE_ADMIN_BOOKING_WINDOW_BY_ID,
     ROUTE_ADMIN_WORKING_DAYS,
@@ -3327,6 +3328,109 @@ router.delete(ROUTE_DELETE_ORDER_SET_ID, [adminAuth], (req, res) => {
 router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAuditLogs(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/display-names:
+ *   get:
+ *     summary: Labels for delivery speeds, service types and care tiers
+ *     description: >
+ *       Every value with the label a screen should render. `renamed` is true
+ *       where an admin has set their own label; otherwise the label is derived
+ *       from the stored value. **The raw `value` always travels beside the
+ *       label** — pricing, the enums and every query still match on it, so
+ *       nothing should have to un-prettify a label to get the identifier back.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: The labels, grouped
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/DisplayNameMap' }
+ *       401:
+ *         description: Not an admin
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *   put:
+ *     summary: Rename delivery speeds, service types or care tiers (display name only)
+ *     description: >
+ *       Writes a LABEL for an existing value. It never renames the stored
+ *       value, and that is not a limitation we chose — `deliverySpeed` and
+ *       `serviceTier` are enum fields on every order, and `serviceTypes[].name`
+ *       is what the pricing path matches on, so renaming a stored value would
+ *       fail validation on new orders, orphan existing ones and silently drop
+ *       pricing to a multiplier of 1.
+ *
+ *
+ *       Keys must be values that already exist; an unknown key is refused and
+ *       the valid ones are listed in the error. Send an **empty label** to drop
+ *       an override and go back to the derived name. Each group may be sent on
+ *       its own.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               deliverySpeeds:
+ *                 type: object
+ *                 additionalProperties: { type: string }
+ *                 example: { "same-day": "Express Same Day", "standard": "Regular" }
+ *               serviceTypes:
+ *                 type: object
+ *                 additionalProperties: { type: string }
+ *                 example: { "wash-and-iron": "Wash & Press" }
+ *               serviceTiers:
+ *                 type: object
+ *                 additionalProperties: { type: string }
+ *                 example: { "vip": "Platinum" }
+ *     responses:
+ *       200:
+ *         description: The labels now in force
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         displayNames:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: object
+ *                             additionalProperties: { type: string }
+ *                         note: { type: string, example: Display names only — the stored values are unchanged, so existing orders and pricing are unaffected. }
+ *       400:
+ *         description: An unknown key, a non-object group, or nothing to update
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_DISPLAY_NAMES, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getDisplayNames(req, res)
+})
+router.put(ROUTE_ADMIN_DISPLAY_NAMES, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.updateDisplayNames(req, res)
 })
 
 /**
