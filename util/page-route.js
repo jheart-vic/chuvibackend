@@ -198,6 +198,12 @@ exports.ROUTE_ADMIN_HOLD_TYPES = '/hold-types'
 exports.ROUTE_ADMIN_PROFILE_DUPLICATES = '/profile-duplicates'
 exports.ROUTE_ADMIN_PROFILE_DUPLICATES_MERGE = '/profile-duplicates/merge'
 exports.ROUTE_ADMIN_HOLD_TYPE_BY_ID = '/hold-types/:id'
+// Window booking (client D1–D6). Admin-managed windows + the working-days tick
+// box, plus the D5 report of windows that filled and customers moved.
+exports.ROUTE_ADMIN_BOOKING_WINDOWS = '/booking-windows'
+exports.ROUTE_ADMIN_BOOKING_WINDOW_BY_ID = '/booking-windows/:id'
+exports.ROUTE_ADMIN_WORKING_DAYS = '/working-days'
+exports.ROUTE_ADMIN_WINDOW_DEFLECTIONS = '/window-deflections'
 exports.ROUTE_SEARCH_ORDERS = '/search-orders'
 exports.ROUTE_SEARCH_ORDER_DETAIL = '/search-orders/:id'
 exports.ROUTE_ADD_ORDER_ITEM = '/add-order-item'
@@ -225,6 +231,10 @@ exports.ROUTE_ADMIN_ORDER_DETAILS = '/admin-order-details'
 exports.ROUTE_GET_ORDER_DETAIL = '/get-order-detail'
 exports.ROUTE_UPDATE_BOOK_ORDER_PAYMENT_STATUS = '/update-book-order-payment-status'
 exports.ROUTE_UPDATE_BOOK_ORDER_STAGE = '/'
+// What times a customer can actually choose, for one leg (client D1–D5). A GET,
+// but it DOES write: every full window it drops is recorded as a deflection,
+// because that fact cannot be recovered from the order afterwards.
+exports.ROUTE_BOOKING_AVAILABILITY = '/booking-availability'
 exports.ROUTE_BOOK_ORDER_HISTORY = '/book-order-history'
 exports.ROUTE_BOOK_ORDER = '/book-order'
 exports.ROUTE_FLAG_ORDER_ID = '/flag-order/:id'

@@ -214,6 +214,23 @@ const PICK_UP_TIME = {
     EVENING_TIME: '4pm-6pm',
 }
 
+/**
+ * How a leg is timed (client D1/D2, 2026-10-08). `window` = inside an admin
+ * window at the window price; `anytime` = dispatched as soon as we can, at the
+ * Anytime price. THIS is the canonical copy — `util/bookingWindow.js` imports
+ * and re-exports it rather than declaring its own, so a route validator and the
+ * scheduling engine can never disagree about the spelling of a stored value.
+ */
+const BOOKING_TIMING = {
+    WINDOW: 'window',
+    ANYTIME: 'anytime',
+}
+
+const DISPATCH_LEG = {
+    PICKUP: 'pickup',
+    DELIVERY: 'delivery',
+}
+
 const ORDER_ITEMS = {
     SHIRT: 'shirt',
     TROUSER: 'trouser',
@@ -901,4 +918,6 @@ module.exports = {
     REFERRAL_REWARD_STATUS,
     REFERRAL_LEVEL,
     BOT_INTENT,
+    BOOKING_TIMING,
+    DISPATCH_LEG,
 }

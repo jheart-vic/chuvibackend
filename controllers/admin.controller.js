@@ -1,5 +1,6 @@
 const AdminService = require('../services/admin.service')
 const ProfileMergeService = require('../services/profileMerge.service')
+const BookingWindowService = require('../services/bookingWindow.service')
 const BaseController = require('./base.controller')
 
 class AdminController extends BaseController {
@@ -193,6 +194,74 @@ class AdminController extends BaseController {
     async listHoldTypes(req, res) {
         const adminService = new AdminService()
         const result = await adminService.listHoldTypes(req)
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // ── Window booking (client D1–D6). Windows are a collection rather than
+    // settings fields because a morning window is coming, and the working-days
+    // tick box is a settings write with its own validation.
+    async listBookingWindows(req, res) {
+        const result = await BookingWindowService.listWindows()
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async createBookingWindow(req, res) {
+        const result = await BookingWindowService.createWindow({
+            payload: req.body,
+            actorId: req.user?.id,
+        })
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async updateBookingWindow(req, res) {
+        const result = await BookingWindowService.updateWindow({
+            id: req.params.id,
+            payload: req.body,
+            actorId: req.user?.id,
+        })
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async deleteBookingWindow(req, res) {
+        const result = await BookingWindowService.deleteWindow({
+            id: req.params.id,
+            actorId: req.user?.id,
+        })
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    async updateWorkingDays(req, res) {
+        const result = await BookingWindowService.updateWorkingDays({
+            workingDays: req.body?.workingDays,
+            actorId: req.user?.id,
+        })
+
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // D5: "keep the daily count of windows that filled and customers moved".
+    async getWindowDeflections(req, res) {
+        const result = await BookingWindowService.getDeflectionReport({
+            from: req.query?.from,
+            to: req.query?.to,
+        })
 
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)

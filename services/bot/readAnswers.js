@@ -49,9 +49,17 @@ module.exports = {
                 : `Order ${order.oscNumber}: *${status.replace(/-/g, ' ')}*`,
             order.serviceType ? `Service: ${order.serviceType}` : null,
             order.amount != null ? `Total: ${naira(order.amount)}` : null,
-            order.deliveryDate
-                ? `Estimated delivery: ${new Date(order.deliveryDate).toDateString()}`
-                : null,
+            // The ONE delivery sentence (client D1: the window replaces "by
+            // 7pm"). Taken from `deliveryPromise` so the bot, the app and the
+            // SMS cannot quote different times for the same order. Falls back
+            // to the old date-only line for an order presented without it.
+            // NOTE it was already correct never to print a time here —
+            // `toDateString()` drops it — which is why no customer was ever
+            // actually told 7pm.
+            order.deliveryPromise?.text ||
+                (order.deliveryDate
+                    ? `Estimated delivery: ${new Date(order.deliveryDate).toDateString()}`
+                    : null),
         ].filter(Boolean)
         let reply = bits.join('\n')
 

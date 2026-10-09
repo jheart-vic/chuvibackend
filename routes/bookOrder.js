@@ -19,6 +19,7 @@ const {
   ROUTE_CANCELLATION_REQUESTS,
   ROUTE_APPROVE_CANCELLATION_REQUEST_ID,
   ROUTE_REJECT_CANCELLATION_REQUEST_ID,
+  ROUTE_BOOKING_AVAILABILITY,
 } = require("../util/page-route");
 
 
@@ -1107,6 +1108,69 @@ router.post(ROUTE_APPROVE_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (re
 router.post(ROUTE_REJECT_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.rejectCancellationRequest(req, res);
+});
+
+/**
+ * @swagger
+ * /api/bookOrder/booking-availability:
+ *   get:
+ *     summary: Pickup/delivery times a customer can choose (client D1–D5)
+ *     description: >
+ *       The windows that are actually bookable for one leg, plus the Anytime
+ *       option. A window is unavailable for one of four reasons, named in
+ *       `unavailableReason`: the day is not a working day (D6), the window does
+ *       not run that day, its cutoff has passed, or it is full (D5).
+ *
+ *
+ *       Pass `deliverySpeed=same-day` to get the `sameDay` block, which the
+ *       client requires to be shown BEFORE the customer confirms: a same-day
+ *       pickup is an Anytime trip at the Anytime price, while delivery returns
+ *       in the evening window at the window price.
+ *
+ *
+ *       **This GET has a deliberate side effect.** Every FULL window it drops
+ *       is recorded as a deflection, because "customers moved because a window
+ *       was full" cannot be derived from saved orders afterwards — a deflected
+ *       customer leaves no trace on the order they end up with. The write is
+ *       fire-and-forget and can never delay or fail the response.
+ *     tags: [BookOrder]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: leg
+ *         required: true
+ *         schema: { type: string, enum: [pickup, delivery] }
+ *         description: Which leg to price and offer times for.
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer, default: 7, minimum: 1, maximum: 31 }
+ *         description: How many days ahead to offer.
+ *       - in: query
+ *         name: deliverySpeed
+ *         schema: { type: string, enum: [standard, express, same-day] }
+ *         description: Pass same-day to receive the same-day disclosure block.
+ *     responses:
+ *       200:
+ *         description: The offered slots, the Anytime option, and the working days
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/BookingAvailability' }
+ *       400:
+ *         description: Missing or unknown leg
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_BOOKING_AVAILABILITY, [auth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.getBookingAvailability(req, res);
 });
 
 module.exports = router;

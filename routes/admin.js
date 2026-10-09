@@ -26,6 +26,10 @@ const {
     ROUTE_ADMIN_PROFILE_DUPLICATES,
     ROUTE_ADMIN_PROFILE_DUPLICATES_MERGE,
     ROUTE_ADMIN_HOLD_TYPE_BY_ID,
+    ROUTE_ADMIN_BOOKING_WINDOWS,
+    ROUTE_ADMIN_BOOKING_WINDOW_BY_ID,
+    ROUTE_ADMIN_WORKING_DAYS,
+    ROUTE_ADMIN_WINDOW_DEFLECTIONS,
     ROUTE_SEARCH_ORDERS,
     ROUTE_SEARCH_ORDER_DETAIL,
     ROUTE_ADMIN_ORDER_DETAILS,
@@ -3321,6 +3325,306 @@ router.delete(ROUTE_DELETE_ORDER_SET_ID, [adminAuth], (req, res) => {
 router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAuditLogs(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/booking-windows:
+ *   get:
+ *     summary: List pickup/delivery time windows and the working-days setting
+ *     description: >
+ *       Client decisions D1–D6 (2026-10-08). ONE window covers both the pickup
+ *       and the delivery leg. A blank `limit` means no limit. The working days
+ *       are returned alongside, because an unticked day has no windows at all.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Every window (active and switched off) plus the working days
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         windows:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/BookingWindow' }
+ *                         workingDays:
+ *                           type: array
+ *                           items: { type: string, example: tue }
+ *       401:
+ *         description: Not an admin
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *   post:
+ *     summary: Create a time window
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, startTime, endTime]
+ *             properties:
+ *               name: { type: string, example: Evening }
+ *               startTime: { type: string, example: "15:00", description: "HH:mm, Lagos time" }
+ *               endTime: { type: string, example: "18:30" }
+ *               days:
+ *                 type: array
+ *                 items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+ *                 example: [tue, wed, thu, fri, sat, sun]
+ *               cutoffMinutes: { type: integer, example: 60, description: "Minutes before startTime that bookings close" }
+ *               limit:
+ *                 type: integer
+ *                 nullable: true
+ *                 example: 10
+ *                 description: "Shared pickup+delivery count per day. Blank/null = no limit."
+ *               isActive: { type: boolean, example: true }
+ *     responses:
+ *       200:
+ *         description: The created window
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/BookingWindow' }
+ *       400:
+ *         description: Invalid times, unknown day, or a window with that name already exists
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_BOOKING_WINDOWS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.listBookingWindows(req, res)
+})
+router.post(ROUTE_ADMIN_BOOKING_WINDOWS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.createBookingWindow(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/booking-windows/{id}:
+ *   put:
+ *     summary: Update a time window
+ *     description: >
+ *       Partial update. `endTime` is checked against the SAVED `startTime` when
+ *       only one of the two is sent, so a window cannot be left ending before
+ *       it starts.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, example: Evening }
+ *               startTime: { type: string, example: "15:00" }
+ *               endTime: { type: string, example: "18:30" }
+ *               days:
+ *                 type: array
+ *                 items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+ *               cutoffMinutes: { type: integer, example: 60 }
+ *               limit: { type: integer, nullable: true, example: 12 }
+ *               isActive: { type: boolean, example: true }
+ *     responses:
+ *       200:
+ *         description: The updated window
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/BookingWindow' }
+ *       400:
+ *         description: Invalid payload, or the name clashes with another window
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *   delete:
+ *     summary: Remove a time window (switched off instead if orders use it)
+ *     description: >
+ *       A window referenced by any order is DEACTIVATED, not deleted, so those
+ *       orders keep resolving the times their customers were promised — the same
+ *       reasoning as archived offers and archived CRM cards. `deleted` and
+ *       `deactivated` in the response say which happened.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: What happened to the window
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         deleted: { type: boolean, example: false }
+ *                         deactivated: { type: boolean, example: true }
+ *                         ordersReferencing: { type: integer, example: 4 }
+ *                         note: { type: string, example: "Evening is used by 4 order(s), so it was switched off rather than deleted. Those orders keep their times." }
+ *                         window: { $ref: '#/components/schemas/BookingWindow' }
+ *       400:
+ *         description: Window not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.put(ROUTE_ADMIN_BOOKING_WINDOW_BY_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.updateBookingWindow(req, res)
+})
+router.delete(ROUTE_ADMIN_BOOKING_WINDOW_BY_ID, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.deleteBookingWindow(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/working-days:
+ *   put:
+ *     summary: Set the working days (client D6)
+ *     description: >
+ *       The tick box per day. An unticked day has NO windows and NO Anytime
+ *       dispatch — bookings are offered the next working day — and the promised
+ *       delivery date skips it. Takes either a list of day keys or an object of
+ *       day → true/false. An EMPTY week is refused out loud rather than quietly
+ *       ignored. Ticking a day takes effect at once.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [workingDays]
+ *             properties:
+ *               workingDays:
+ *                 oneOf:
+ *                   - type: array
+ *                     items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+ *                   - type: object
+ *                     additionalProperties: { type: boolean }
+ *                 example: [tue, wed, thu, fri, sat, sun]
+ *     responses:
+ *       200:
+ *         description: The working days now in force
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         workingDays:
+ *                           type: array
+ *                           items: { type: string, example: tue }
+ *       400:
+ *         description: Unknown day, or no working day at all
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.put(ROUTE_ADMIN_WORKING_DAYS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.updateWorkingDays(req, res)
+})
+
+/**
+ * @swagger
+ * /api/admin/window-deflections:
+ *   get:
+ *     summary: Windows that filled, and customers moved (client D5)
+ *     description: >
+ *       This figure CANNOT be derived from saved orders — a customer moved off a
+ *       full window leaves no trace on the order they end up with, which looks
+ *       identical to someone who wanted that window all along. So a row is
+ *       written the moment a full window is dropped from the offered list, and
+ *       this reads them back. `shown` counts every time a full window was
+ *       offered (one customer refreshing three times is three rows);
+ *       `customersMoved` counts distinct signed-in customers.
+ *     tags: [Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date-time, description: "Exclusive upper bound" }
+ *     responses:
+ *       200:
+ *         description: One row per window per day
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         windowsThatFilled: { type: integer, example: 3 }
+ *                         note: { type: string, example: '"shown" counts every time a full window was offered; "customersMoved" counts distinct signed-in customers turned away.' }
+ *                         rows:
+ *                           type: array
+ *                           items: { $ref: '#/components/schemas/WindowDeflection' }
+ *       401:
+ *         description: Not an admin
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_WINDOW_DEFLECTIONS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getWindowDeflections(req, res)
 })
 
 module.exports = router;

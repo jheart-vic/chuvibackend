@@ -1,4 +1,5 @@
 const BookOrderService = require("../services/bookOrder.service");
+const BookingWindowService = require("../services/bookingWindow.service");
 const BaseController = require("./base.controller");
 
 class BookOrderController extends BaseController {
@@ -86,7 +87,24 @@ class BookOrderController extends BaseController {
     async getBookOrder(req, res) {
       const bookOrderService = new BookOrderService();
       const result = await bookOrderService.getBookOrder(req);
-  
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
+
+    // Window booking (client D1–D5): what times this customer can actually
+    // choose for one leg. A GET that intentionally WRITES — every full window
+    // it drops is recorded as a deflection, because a customer moved off a full
+    // window leaves no trace on the order they end up with.
+    async getBookingAvailability(req, res) {
+      const result = await BookingWindowService.getAvailability({
+        userId: req.user?.id || null,
+        leg: req.query?.leg,
+        horizonDays: req.query?.days ? Number(req.query.days) : undefined,
+        deliverySpeed: req.query?.deliverySpeed || null,
+      });
+
       return result.success
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);

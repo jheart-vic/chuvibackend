@@ -37,7 +37,17 @@ const {
     AUDIT_LOG_CATEGORIES,
     CANCELLATION_REQUEST_STATUS,
     ROLE,
+    BOOKING_TIMING,
+    DISPATCH_LEG,
 } = require('../util/constants')
+// Window booking (client D1–D8). The service does the fetching/counting; the
+// pure engine owns every rule, so nothing here re-decides a cutoff or a price.
+const BookingWindowService = require('./bookingWindow.service')
+const {
+    legFee,
+    sameDayLegPlan,
+    startOfDay: startOfLagosDay,
+} = require('../util/bookingWindow')
 const CancellationRequestModel = require('../models/cancellationRequest.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
@@ -872,6 +882,13 @@ class BookOrderService extends BaseService {
                 // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
                 // piece is priced at the order's tier, exactly as before.
                 'items.*.serviceTier': 'string|in:classic,premium,vip',
+                // Window booking (client D1–D5). OPTIONAL on purpose: an app
+                // build that sends nothing keeps booking exactly as it does
+                // today at the flat pickup/delivery fee, so this is not a
+                // breaking change. Sending a timing switches the order onto the
+                // window rules.
+                pickupTiming: 'string|in:window,anytime',
+                deliveryTiming: 'string|in:window,anytime',
             }
 
             const validateMessage = {
@@ -971,7 +988,14 @@ class BookOrderService extends BaseService {
 
             // ⏰ Booking time cutoff check — same-day before 10am, express before 2pm.
             // calculateDueDate returns null when the cutoff has passed.
-            const deliveryDate = calculateDueDate(post.deliverySpeed)
+            // D6(b): the promised date skips days the business is closed —
+            // without the working days a Saturday standard order is due Monday,
+            // and with Monday unticked it reads OVERDUE on a day nobody worked
+            // and trips the past-delivery-date hold breach.
+            const deliveryDate = calculateDueDate(
+                post.deliverySpeed,
+                adminOrderSetting.workingDays,
+            )
             if (deliveryDate === null) {
                 if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
                     return BaseService.sendFailedResponse({
@@ -982,6 +1006,99 @@ class BookOrderService extends BaseService {
                     return BaseService.sendFailedResponse({
                         error: 'Express orders must be placed before 2pm. Please select standard delivery.',
                     })
+                }
+            }
+
+            // ───────── WINDOW BOOKING (client D1–D8, 2026-10-08) ─────────
+            //
+            // Resolved HERE, before any order is created, for the same reason
+            // `planCounterPayment` plans before it settles: a refusal must
+            // leave nothing behind. A window that filled while the customer was
+            // on the screen produces a sentence, not an order parked in a
+            // window that cannot serve it.
+            //
+            // Scope note: only the PICKUP leg is fully resolved at booking.
+            // D7 (pre-approved) confirms the DELIVERY window when the order is
+            // marked READY — a standard order's delivery day is +2 and is not
+            // known yet, and under D6 it might not even be a working day. So
+            // the delivery side records the INTENT (timing + fee) only, and
+            // `deliveryDate` keeps coming from `calculateDueDate` so the queue
+            // sort, the SLA clocks and capacity are untouched by this change.
+            let scheduling = null
+            if (post.pickupTiming || post.deliveryTiming) {
+                const schedSettings =
+                    await BookingWindowService.getSchedulingSettings()
+                const schedWindows = await BookingWindowService.getActiveWindows()
+                const schedFrom = startOfLagosDay(new Date())
+                const bookedCounts = await BookingWindowService.getBookedCounts({
+                    from: schedFrom,
+                    to: new Date(schedFrom.getTime() + 32 * 86400000),
+                })
+
+                scheduling = {}
+
+                if (post.isPickUp) {
+                    // CLIENT RULING (2026-10-08): a SAME-DAY order's pickup is
+                    // an Anytime trip and pays the Anytime price — "a morning
+                    // pickup is a special trip and the customer chose speed".
+                    // Forced here rather than trusted from the client, so an
+                    // app build cannot sell same-day at the window price.
+                    const pickupTiming =
+                        post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
+                        !BookingWindowService._findMorningWindow(schedWindows)
+                            ? BOOKING_TIMING.ANYTIME
+                            : post.pickupTiming
+                    const resolved = BookingWindowService.resolveLeg({
+                        leg: DISPATCH_LEG.PICKUP,
+                        timing: pickupTiming,
+                        windowId: post.pickupWindowId,
+                        date: post.pickupDate,
+                        windows: schedWindows,
+                        settings: schedSettings,
+                        bookedCounts,
+                    })
+                    if (!resolved.ok) {
+                        return BaseService.sendFailedResponse({
+                            error: resolved.error,
+                            ...(resolved.requiresChoice && { requiresChoice: true }),
+                        })
+                    }
+                    scheduling.pickup = resolved.leg
+                    // The chosen timing now OWNS the pickup fee, replacing the
+                    // flat `pickupFee` setting. Overridden on the in-memory
+                    // settings document so all five downstream billing branches
+                    // price the leg the customer actually chose — the doc is
+                    // never saved (only `adminOrderDetails` is), and editing
+                    // one value here is safer than five parallel edits that
+                    // could drift, which is the hold-SLA lesson.
+                    adminOrderSetting.pickupFee = resolved.leg.fee
+                }
+
+                if (post.isDelivery) {
+                    const timing = post.deliveryTiming || BOOKING_TIMING.WINDOW
+                    scheduling.delivery = {
+                        timing,
+                        fee: legFee({
+                            timing,
+                            leg: DISPATCH_LEG.DELIVERY,
+                            settings: schedSettings,
+                        }),
+                    }
+                    adminOrderSetting.deliveryFee = scheduling.delivery.fee
+                }
+
+                // The same-day disclosure the client requires to be shown
+                // BEFORE confirming. Stored as shown, so a later price change
+                // cannot rewrite what the customer agreed to.
+                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    scheduling.disclosure = sameDayLegPlan({
+                        settings: schedSettings,
+                        morningWindow:
+                            BookingWindowService._findMorningWindow(schedWindows),
+                    }).disclosure
+                    if (post.disclosureAccepted) {
+                        scheduling.disclosureAcceptedAt = new Date()
+                    }
                 }
             }
 
@@ -1486,6 +1603,20 @@ class BookOrderService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order could not be created. Please try again.',
                 })
+            }
+
+            // Stamp the resolved windows. Done once here rather than in each
+            // billing branch's `create({...})`, so the three branches cannot
+                // drift apart on it — and after the `if (!newOrder)` guard
+            // above, so it can never run against a failed creation.
+            if (scheduling) {
+                await BookOrderModel.updateOne(
+                    { _id: newOrder._id },
+                    { $set: { scheduling } },
+                )
+                // Also on the in-memory document, or the response would omit
+                // the times the customer just chose.
+                newOrder.scheduling = scheduling
             }
 
             crmOnOrderCreated(newOrder)

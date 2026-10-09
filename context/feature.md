@@ -1,11 +1,195 @@
-# ███ STATUS BOARD — read this first (updated 2026-10-08, later session) ███
+# ███ STATUS BOARD — read this first (updated 2026-10-09) ███
 
 ## ███ TO BUILD — THE ONLY LIST THAT MATTERS. SURVIVES A CONTEXT CLEAR. ███
 
-**MERGE STATE IS NOW CLEAN.** PR #242 merged `feature/fix` → `origin/main` (`e0d5c3a`);
-`git log origin/main..feature/fix` is EMPTY. Every earlier note in these files about "3 commits
-unpushed, none of it is live" is STALE — all 22 fixes, N2, Section A, hold types and staff
-suspension ARE on main.
+### ⚠️ ONLY TWO THINGS ARE LEFT (confirmed with the client 2026-10-09)
+**1. N1 Quick Booking + window booking + order editing (#7) — IN PROGRESS, Phase 1 done.**
+**2. The single §1+§2+§3 client block** — the original deliverable, written LAST from shipped code.
+Everything else on this board is built. The old "⏳ still owed to them" and "configuration still to
+set up" lists are **CONCLUDED** — the client answered the ambiguous audit item 8, D7/D8 and the
+notification interpretation, and the First Experience + ₦8,000 baseline offers are set up their side.
+
+### ⚠️ MERGE STATE, STATED PRECISELY (don't repeat the earlier mistake)
+`feature/fix` **is pushed** — `origin/feature/fix` and local are 0/0. But it is **NOT merged to
+`main`**: `origin/main` is still `e0d5c3a` (PR #242) and `git log origin/main..feature/fix` lists
+**3 commits** (`620cca4`, `58070c8`, `abb68f2`). So item-level holds, the notifications policy, the
+60-day recovery window and the CRM registered-not-booked sequence are **on GitHub but not on main**.
+If Render deploys from `main`, they are not live. **"Pushed" and "merged" are different questions —
+check both, and check `origin/main`, never local `main` (which has been 127 commits behind before).**
+
+### 🔨 N1 PHASE 1 BUILT 2026-10-09 — the scheduling engine. briefCheck **236/236** (was 208)
+The foundation every other part of N1 sits on: working days, windows, Anytime, deflection logging.
+**Pure-module-first, deliberately:** `util/bookingWindow.js` takes `now` as a PARAMETER and touches
+no database, because every rule in it is a CUTOFF rule — a different answer at 14:00 than at 14:01 —
+and a function that reads the clock itself can only be tested by waiting, i.e. never. Same shape as
+`util/crmSendWindow.js`, and the reason all 28 new assertions run offline in `briefCheck.js`.
+- **NEW `util/bookingWindow.js`** — working days (D6, incl. a delivery promise that SKIPS unticked
+  days), window cutoffs (D1), per-window-per-day limits (D5, blank = no limit), Anytime hours (D2b),
+  the narrowed Anytime refund rule, leg fees, the same-day leg plan, and `buildOfferedSlots` which
+  returns `{slots, deflections}`.
+- **NEW `models/bookingWindow.model.js`** — one window covers BOTH legs (D1), so there is no `leg`
+  field. `limit: null` = no limit, deliberately nullable: a window that silently acquired a cap
+  would deflect customers with nothing on screen to explain it. **This REPLACES `pickupTimeSlots`**,
+  which was never real (free text, validator commented out, no cutoff, no limit) — leave that field
+  for one release so an old app build still renders something.
+- **NEW `models/windowDeflection.model.js`** — written when a full window is DROPPED from the
+  offered list. **This collection has to exist because "customers moved because a window was full"
+  cannot be derived from saved orders: a deflected customer leaves no trace** — their order records
+  the window they ended up with, identical to someone who wanted it all along. Note it counts
+  customers SHOWN a full window, so it is larger than "orders that changed window"; dedupe on
+  `userId+date+windowId` when reporting, not on write.
+- **`AdminSetting`: `workingDays`, `anytimeOpenFrom/To`, `anytimePickupFee/anytimeDeliveryFee`.**
+  **There is deliberately NO `windowPickupFee`/`windowDeliveryFee`** — the existing
+  `pickupFee`/`deliveryFee` (₦500 each) already ARE the client's window price, and a second pair
+  would be two sources of truth for one number. ⚠️ **Tell the client before they announce it: at
+  these defaults a WINDOW booking costs exactly what every booking costs today, so nobody pays more
+  unless they choose Anytime.**
+- **`ensureSchedulingSettings()` + `createDefaultBookingWindow()` in `config/setup.js`, both
+  registered in `setupApp`.** SEEDING IS NOT MIGRATING — **the third time this repo has paid for
+  that lesson** (inverted tier charges → `walletAdjustmentLimits` reading ₦0 live → the CRM send
+  windows). Without the per-field backfill, window booking works on a fresh DB and has **no working
+  days, no Anytime hours and no Anytime price in production.**
+- **TWO THINGS THE RULE CANNOT RECONSTRUCT LATER, so both are stored at the moment they happen:**
+  (1) the deflection row, above; (2) **`windowWasBookableAtBooking`** — the narrowed refund needs
+  "was the window still bookable when they booked?", and by the time the job is done the cutoff has
+  passed, so it is unrecoverable. `qualifiesForAnytimeRefund` READS the stored flag and never
+  re-derives it, and requires an explicit `true` so a truthy accident cannot pay a refund.
+- **⚠️ THE 19:00 COLLISION IS NOW EXPLICIT.** `calculateDueDate` promises "by 7pm"; D1 says the
+  window REPLACES that promise and the only window ends at 18:30. Both cannot be told to the
+  customer. `deliveryDayForSpeed` returns the DAY (working-day counted, no time pin) and the window
+  carries the time. **`calculateDueDate` is left alone** — it still governs the capacity cutoffs and
+  every non-windowed order.
+- **BUG THE NEW ASSERTIONS CAUGHT IMMEDIATELY:** `BOOKING_TIMING`/`DISPATCH_LEG` were added to
+  `util/constants.js` but **not to its explicit `module.exports` list**, so every fee call read
+  `undefined.ANYTIME`. `constants.js` is the canonical copy and `bookingWindow.js` imports it rather
+  than declaring its own, so a route validator and the engine cannot disagree on a stored spelling.
+
+### 🔨 N1 PHASE 2 BUILT 2026-10-09 — booking capture + admin CRUD. briefCheck **261/261**
+Swagger **66 schemas / 301 paths / 0 wrong envelopes**.
+- **NEW `services/bookingWindow.service.js`** — the data layer only. Every RULE stays in the pure
+  engine, so nothing here re-decides a cutoff or a price.
+- **NEW `GET /api/bookOrder/booking-availability?leg=&days=&deliverySpeed=`** (customer `auth`).
+  **A GET that deliberately WRITES:** every full window it drops is recorded as a deflection, and
+  the write is fire-and-forget so a statistic can never delay or fail the booking screen. Returns
+  the four reasons a window is unavailable by name (`not-working-day` / `does-not-run-that-day` /
+  `cutoff-passed` / `full`), the Anytime option **even when shut** (with the honest next service
+  time, rather than hidden and looking broken), and the `sameDay` disclosure block on
+  `deliverySpeed=same-day`.
+- **NEW admin CRUD:** `GET|POST /api/admin/booking-windows`, `PUT|DELETE
+  /api/admin/booking-windows/:id`, `PUT /api/admin/working-days`, `GET
+  /api/admin/window-deflections` (the D5 report). All `adminAuth`.
+- **`scheduling` subdoc on `BookOrder`**, no leaf defaults and absent on a non-windowed order — a
+  default-populated shape would make every legacy order look as though it had been booked into a
+  window (the same reason `pricing` has none).
+- **BOOKING IS NOT BREAKING.** `pickupTiming`/`deliveryTiming` are OPTIONAL: an app build that
+  sends nothing books exactly as today at the flat fee. Sending a timing switches that order onto
+  the window rules.
+- **Legs are resolved BEFORE the order is created** (`resolveLeg` plans, the caller writes — the
+  `planCounterPayment` shape), so a window that filled while the customer was on the screen produces
+  a sentence, not an order parked in a window that cannot serve it.
+- **ONE fee override, not five.** The chosen timing owns the leg's price via a single in-memory
+  `adminOrderSetting.pickupFee/deliveryFee` assignment, so all five downstream billing branches
+  price what the customer chose. The settings doc is **never saved** (only `adminOrderDetails` is —
+  verified). Five parallel edits is exactly how the hold-SLA table ended up as three copies that had
+  already drifted.
+- **D3 forced move built:** a full window MOVES the customer to the next free one, at the **WINDOW
+  price**, `forcedMove` + `forcedMoveFrom` recorded, **offer untouched** — the move was ours, not
+  theirs. With nothing free anywhere it refuses and points at Anytime.
+- **Same-day pickup is FORCED to Anytime pricing in the service**, not trusted from the client, so
+  no app build can sell same-day at the window price. The disclosure is **stored as shown**, so a
+  later price change cannot rewrite what the customer agreed to.
+- **A window in use is DEACTIVATED, never deleted** (orders must keep resolving the times their
+  customers were promised — the archived-offer/archived-CRM-card reasoning). The response says which
+  happened and how many orders referenced it.
+- **An EMPTY working week is refused out loud.** The engine's fallback exists so a corrupt setting
+  cannot close the business; it must not become a way for an admin to think they closed every day
+  and be wrong.
+- **THREE REAL BUGS CAUGHT BEFORE SHIPPING, all by executing the code rather than loading it:**
+  1. **`isCancelled` does not exist on `BookOrder`** — cancellation is `cancellation.cancelledAt`.
+     An `isCancelled: {$ne: true}` filter LOOKS right and **matches every document**, because `$ne`
+     also matches an absent field, so **a cancelled order would have held a window slot forever and
+     deflected customers for nothing.** briefCheck now fails if that name returns as a query key.
+  2. **`BOOKING_TIMING`/`DISPATCH_LEG` were missing from `constants.js`'s explicit `module.exports`**
+     → every fee call read `undefined.ANYTIME`.
+  3. **The audit category was `'admin'`, which is not in `AUDIT_LOG_CATEGORIES`** — the exact 2.5
+     false-failure shape (`createAuditLog` RETHROWS). Now `SYSTEM`, and wrapped.
+  Also: an unknown `leg` would have been priced as a DELIVERY (`legFee` reads "pickup, else
+  delivery"), so it is now refused by name.
+
+### ✅ ALL 20 DB HARNESSES RUN GREEN AGAINST testingdb 2026-10-09 (the user supplied the URI)
+briefCheck **275/275** offline. **NEW `windowBookingStaging.js` 35/35 — the window-booking code had
+NO DB coverage until now.** Tally: windowBooking **35** · stationFlow 97 · walletLimit 63 ·
+handoff 54 · recoveryReport 52 · counterPayment 51 · holds 48 · dispatch 46 · dispatchTag 46 ·
+planCreate 39 · staffStatus 38 · offerAdmin 37 · dashboardDecisions 36 · tierPricing 33 ·
+regNotBooked 33 · template 27 · freeLogistics 23 · subLogistics 20 · phase12 14 · bot 11.
+**All 19 pre-existing harnesses passed unchanged**, which matters because `presentOrder` is on EVERY
+order read path and `calculateDueDate` changed under them.
+- **What only a DB could prove, and now has:** the `getBookedCounts` aggregation (`$project` of a
+  two-element array → `$unwind` → `$group`) counts **both legs of one order as two places** (one
+  window serves both legs, so it is two trips); **a CANCELLED order RELEASES its slot** — the bug
+  fixed earlier, now asserted live; an order with no scheduling is counted nowhere; the settings
+  **migration** backfills onto the existing doc AND **does not overwrite an admin's edited value on
+  a second run**; the default Evening window seeds once and is **not duplicated** by a re-run; a
+  window in use is **switched off with its order count**, an unused one is really deleted; and the
+  deflection rows are **actually written**, with an anonymous browse counting as **0 customers
+  moved, not 1** (`$addToSet` collapses every null into one).
+- ⚠️ **THE HARNESS'S OWN FIRST RUN WAS GREEN FOR THE WRONG REASON — worth remembering.** Its
+  `finally` called `process.exit`, which runs BEFORE a rejection reaches `main().catch`, so a throw
+  mid-run was **invisible**: it printed "17 passed, **0 failed**" having silently skipped 20
+  assertions. Now the error is captured in a `catch`, counted as a failure, and printed under
+  `*** RUN ABORTED — remaining assertions never ran ***`. **A harness that can exit quietly is worse
+  than no harness.**
+- Two fixture bugs it found in itself, both the "never assume a shape" class: **`oscNumber` is
+  REQUIRED on `BookOrder`** (a scan of the obvious fields misses it), and **`AuditLog.userId` is
+  REQUIRED**, so `actorId: null` made every audit throw — caught and continuing, which incidentally
+  **proved the "a record of the work must never reverse the work" wrapper works in anger.** Also:
+  the test window was given `days: ['tue','wed']` and then asserted against a Saturday, so three
+  assertions failed against perfectly correct code — a fixture testing the LIMIT must not also be
+  testing the calendar.
+- The harness edits the REAL `AdminSetting` doc to prove the migration, so it restores every field
+  in `finally`; verified afterwards that `workingDays`, the Anytime hours/fees and the window fees
+  are back as they were and only the client's Evening window remains.
+
+### ✅ DELIVERYDATE RESOLVED 2026-10-09 — deadline and promise are now SEPARATE. briefCheck **275/275**
+Swagger **69 schemas / 301 paths / 0 wrong envelopes**. **NEW `context/FE-CHANGELOG-2026-10-09.md`,
+every endpoint claim verified against the built spec** (incl. that `Infinity` serialises to `null`).
+- **THE "COLLISION" WAS SMALLER THAN FIRST FRAMED, and the framing matters:** `"by 7pm"` appears
+  **nowhere** as customer-facing text — only in three comments in `util/helper.js`. The bot already
+  printed the date with `toDateString()`, which DROPS the time. The only real exposure is that the
+  API returns the raw `…T19:00:00` and the FE can render it as "7:00 PM". So it was never two
+  competing promises — it was **one internal deadline field exposed raw**.
+- **The 19:00 STAYS.** It is an end-of-day sentinel that ~10 readers compare as an instant
+  (`deliveryDate < now` = overdue, the due-today buckets, `holdSla`'s past-delivery-date branch,
+  the queue sort key). Repointing it at 18:30 would move every one of those boundaries for nothing.
+  Documented as `END-OF-DAY SENTINEL` in the code and asserted, so nobody repoints it later.
+- **D6(b) WAS A REAL BUG, not a display question — the part I had under-weighted.**
+  `calculateDueDate` did not skip closed days, so **a standard order booked Saturday was promised
+  MONDAY, when the business is shut** — and then `deliveryDate < now` marked it **OVERDUE on a day
+  nobody worked**, tripping the hold breach branch too. `calculateDueDate(speed, workingDays?)` now
+  counts WORKING days; the second arg is **optional so every existing caller is byte-identical**,
+  and both booking paths pass `adminOrderSetting.workingDays`.
+- **NEW `deliveryPromise()` + `order.deliveryPromise`**, derived in **`presentOrder` — the single
+  outward shape**, so no read path can forget it (the archived-CRM-cards lesson: a filter added at
+  13 sites is the one the 14th forgets). Carries `text` ready to display, `confirmed` (false until
+  D7 confirms at READY), and the window hours. **With no window it says the DAY only and never
+  invents a time**; `null` when there is no delivery date. The bot now quotes this instead of
+  keeping its own copy, so app/bot/SMS cannot disagree about one order.
+- **Deliberately a SECOND field, not a repurposed one:** one field doing both "when we must be
+  done" and "what we told the customer" is exactly how the hold-SLA table became three copies that
+  had already drifted.
+- ⚠️ **TELL THE CLIENT (commercial, not technical): weekend delivery promises get a day longer.**
+  A Saturday standard order moves Monday → Tuesday. It is strictly more honest, but they should
+  hear it from us before a customer does.
+
+**N1 PHASE 3 (next): the intake → payment-hold → tag chain** — rider's true count + reason, Intake
+confirming it (mismatch raises the already-seeded `count_differs_from_rider` hold, admin-only
+clear), system-computed bill (staff can NEVER type an amount), the 48h payment hold + SMS + Paystack
+link, reminders 6h/24h, admin alert at 48h, **tags never print before payment**, and the admin waiver
+that processes unpaid but **stops at dispatch**. Then Phase 4 = order editing (#7) and the D7
+delivery-window confirmation at READY. **Still open for Phase 3: whether the customer is told "by
+7pm" or the window — `deliveryDate` still comes from `calculateDueDate` (19:00) so queue sort, SLA
+clocks and capacity are untouched; D1 says the window replaces that promise, so the display has to
+pick one.**
 
 ### ✅ DONE THIS SESSION (2026-10-08, after the merge) — #8, #6, #9, #10, #2 code, + both yes/no answers
 Offline gate `briefCheck.js` is now **178/178**; swagger **62 schemas / 296 paths / 0 wrong

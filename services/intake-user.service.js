@@ -56,6 +56,11 @@ const {
     buildDispatchTagPayload,
     REPRINT_REVIEW_THRESHOLD,
 } = require('../util/dispatchTag')
+// N1: "tags never print before payment" — one gate, shared by all three tag
+// doors (generate / confirm a piece / complete tagging).
+const { itemTagGate } = require('../util/paymentGate')
+// N1: Intake's count disagreeing with the rider's STOPS the order (admin-only).
+const { raiseCountMismatchHold } = require('../util/countMismatchHold')
 const { crmOnOrderCreated, crmOnOrderDelivered } = require('../util/crmHooks')
 const { offerOnOrderDelivered } = require('../util/offerHooks')
 const {
@@ -249,7 +254,13 @@ class IntakeUserService extends BaseService {
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
-           const deliveryDate = calculateDueDate(post.deliverySpeed)
+           // D6(b): the promised date skips days the business is closed —
+           // without the working days a Saturday standard order is due Monday,
+           // and with Monday unticked it reads OVERDUE on a day nobody worked.
+           const deliveryDate = calculateDueDate(
+                post.deliverySpeed,
+                adminOrderSetting.workingDays,
+            )
             if (deliveryDate === null) {
                 if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
                     return BaseService.sendFailedResponse({
@@ -704,6 +715,63 @@ class IntakeUserService extends BaseService {
                 })
             }
 
+            // ── N1 Phase 3: Intake confirms the RIDER's count ───────────────
+            //
+            // Client spec, and they OVERRULED our proposal here: "If INTAKE's
+            // count differs from the RIDER's, the order STOPS and goes on hold
+            // — admin-only approval." Contrast with the rider's own mismatch,
+            // which is only a flag: by this point the clothes are in the
+            // building, so a disagreement is about what is physically in the
+            // bag and somebody senior has to settle it.
+            //
+            // The count is optional on this call so an order with no rider
+            // count (a walk-in, or an order booked before this shipped) still
+            // proceeds exactly as before.
+            const intakeCount =
+                req.body?.itemCount === undefined || req.body?.itemCount === null
+                    ? null
+                    : Number(req.body.itemCount)
+            if (intakeCount !== null) {
+                if (!Number.isFinite(intakeCount) || intakeCount < 0) {
+                    return BaseService.sendFailedResponse({
+                        error: 'itemCount must be a whole number of pieces.',
+                    })
+                }
+                order.counts = {
+                    ...(order.counts ? order.counts.toObject?.() ?? order.counts : {}),
+                    intake: intakeCount,
+                    intakeConfirmedAt: new Date(),
+                    intakeConfirmedBy: userId,
+                }
+                order.markModified('counts')
+
+                const riderCount = order.counts?.rider
+                if (
+                    riderCount !== null &&
+                    riderCount !== undefined &&
+                    Number(riderCount) !== intakeCount
+                ) {
+                    // STOP. Raised as the seeded `count_differs_from_rider`
+                    // hold type, which already carries requiresAdminApproval,
+                    // so the existing Holds Management screen and the SLA
+                    // machinery pick it up with no special casing.
+                    const held = await raiseCountMismatchHold({
+                        order,
+                        riderCount: Number(riderCount),
+                        intakeCount,
+                        actorId: userId,
+                    })
+                    return BaseService.sendFailedResponse({
+                        error: `Your count of ${intakeCount} does not match the rider's count of ${riderCount}. This order is on hold and needs an admin to approve it before it can move.`,
+                        countMismatch: true,
+                        riderCount: Number(riderCount),
+                        intakeCount,
+                        holdRaised: held,
+                        requiresAdminApproval: true,
+                    })
+                }
+            }
+
             order.stage.status = ORDER_STATUS.QUEUE
             order.stage.note = ''
             order.stageHistory.push({
@@ -786,6 +854,17 @@ class IntakeUserService extends BaseService {
             if (!user) {
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
+                })
+            }
+
+            // N1: the second tag door. Same gate as generating and completing,
+            // so "tags never before payment" holds however the station gets here.
+            const tagGate = itemTagGate(order)
+            if (!tagGate.ok) {
+                return BaseService.sendFailedResponse({
+                    error: tagGate.error,
+                    requiresPayment: tagGate.requiresPayment,
+                    outstandingAmount: tagGate.outstandingAmount,
                 })
             }
 
@@ -1831,6 +1910,19 @@ class IntakeUserService extends BaseService {
                     error: 'Order not found or not in tagging queue',
                 })
 
+            // N1: TAGS NEVER PRINT BEFORE PAYMENT. Checked before any write, so
+            // a refusal leaves no half-tagged order. The same gate guards
+            // confirming a tag and completing tagging, so an unpaid order
+            // cannot slip through a different door.
+            const tagGate = itemTagGate(order)
+            if (!tagGate.ok) {
+                return BaseService.sendFailedResponse({
+                    error: tagGate.error,
+                    requiresPayment: tagGate.requiresPayment,
+                    outstandingAmount: tagGate.outstandingAmount,
+                })
+            }
+
             const now = new Date()
             const updatedItems = order.items.map((item, index) => {
                 if (item.tagStatus === 'complete') return item
@@ -1898,6 +1990,18 @@ class IntakeUserService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'User not found',
                 })
+
+            // N1: the third and last tag door — this is the one that sends the
+            // order on to S2, so it is the one that must not open on an unpaid
+            // order even if the first two were somehow bypassed.
+            const tagGate = itemTagGate(order)
+            if (!tagGate.ok) {
+                return BaseService.sendFailedResponse({
+                    error: tagGate.error,
+                    requiresPayment: tagGate.requiresPayment,
+                    outstandingAmount: tagGate.outstandingAmount,
+                })
+            }
 
             const untaggedItems = order.items.filter(
                 (i) => i.tagStatus !== 'complete',

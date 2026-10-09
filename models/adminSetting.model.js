@@ -92,6 +92,41 @@ const adminSettingSchema = new mongoose.Schema(
             of: Number,
             default: undefined,
         },
+        // ─────────── WINDOW BOOKING / WORKING DAYS (client D1–D6, 2026-10-08) ───────────
+        //
+        // D6: a tick box per day. An unticked day has NO windows and NO Anytime
+        // dispatch — bookings are offered the next working day — AND the
+        // promised delivery date must skip it. Tue–Sun to start; Monday closed.
+        // Ticking a day makes it live at once (nothing caches this).
+        //
+        // Stored as day keys in `util/bookingWindow.DAY_KEYS` form.
+        // `normalizeWorkingDays` also accepts a `{mon:false,tue:true}` object,
+        // because "tick box per day" is how the client describes it and an FE
+        // may well send booleans.
+        workingDays: {
+            type: [String],
+            default: () => ['tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        },
+
+        // D2(b): Anytime dispatch is open 08:00–17:00 on a working day, "both
+        // settings". Outside those hours the app promises first thing on the
+        // next working day rather than refusing the booking.
+        anytimeOpenFrom: { type: String, default: '08:00' },
+        anytimeOpenTo: { type: String, default: '17:00' },
+
+        // The Anytime PREMIUM. Note what is NOT here: there is no
+        // `windowPickupFee`/`windowDeliveryFee`, because the existing
+        // `pickupFee`/`deliveryFee` (₦500 each) already ARE the client's window
+        // price, and a second pair of fields would be two sources of truth for
+        // one number.
+        //
+        // ⚠️ TELL THE CLIENT BEFORE THEY ANNOUNCE IT: at these defaults a
+        // WINDOW booking costs exactly what every booking costs today
+        // (500 + 500 = their ₦1,000 "inside a window" figure), so no existing
+        // customer pays more — only choosing Anytime costs extra.
+        anytimePickupFee: { type: Number, default: 1000 },
+        anytimeDeliveryFee: { type: Number, default: 1000 },
+
         walletAdjustmentLimits: {
             type: Map,
             of: Number,

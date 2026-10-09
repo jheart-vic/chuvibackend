@@ -31,6 +31,9 @@ const { offerOnOrderDelivered } = require('../util/offerHooks')
 const { referralOnOrderDelivered } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 const { markProductionClearedIfReady } = require('../util/productionClock')
+// N1 Phase 3: the rider records the TRUE count at the door.
+const sendSms = require('../util/sendSms')
+const { countPieces } = require('../util/itemSummary')
 
 class RiderService extends BaseService {
     async getRiderAssignedDeliveries(req) {
@@ -579,11 +582,89 @@ class RiderService extends BaseService {
                     error: "Provided phone number does not match customer's phone number",
                 })
             }
+            // ── N1 Phase 3: the rider records the TRUE count ────────────────
+            //
+            // Client spec: "No rider photo. The rider RECORDS the count; if it
+            // differs from the customer's he must change it and give a reason →
+            // flag 'count changed at pickup', does NOT stop the order, customer
+            // gets an SMS with the rider's count."
+            //
+            // So the ONLY hard rule here is that a DIFFERENT count needs a
+            // reason. Everything else is recorded and reported, never refused:
+            // the rider is standing at a customer's door and must not be stuck.
+            const reportedCount =
+                req.body?.itemCount === undefined || req.body?.itemCount === null
+                    ? null
+                    : Number(req.body.itemCount)
+            if (reportedCount !== null) {
+                if (!Number.isFinite(reportedCount) || reportedCount < 0) {
+                    return BaseService.sendFailedResponse({
+                        error: 'itemCount must be a whole number of pieces.',
+                    })
+                }
+                const customerCount =
+                    order.counts?.customer ?? countPieces(order.items || [])
+                const differs =
+                    customerCount !== null &&
+                    customerCount !== undefined &&
+                    Number(customerCount) !== reportedCount
+                const reason = String(req.body?.countReason || '').trim()
+                if (differs && !reason) {
+                    return BaseService.sendFailedResponse({
+                        error: `You have entered ${reportedCount} piece(s) but the customer booked ${customerCount}. Please give a reason for the change.`,
+                        requiresCountReason: true,
+                        customerCount,
+                        riderCount: reportedCount,
+                    })
+                }
+                order.counts = {
+                    ...(order.counts ? order.counts.toObject?.() ?? order.counts : {}),
+                    customer: customerCount,
+                    rider: reportedCount,
+                    riderReason: differs ? reason : undefined,
+                    riderRecordedAt: new Date(),
+                    riderRecordedBy: userId,
+                    changedAtPickup: Boolean(differs),
+                }
+                order.markModified('counts')
+                if (differs) {
+                    // A flag, NOT a hold — the client was explicit that this
+                    // does not stop the order. The hold only appears later, if
+                    // INTAKE disagrees with the rider.
+                    order.flaggedForReview = true
+                    order.flagMessage = `Count changed at pickup: customer booked ${customerCount}, rider collected ${reportedCount}. Reason: ${reason}`
+                }
+            }
+
             order.dispatchDetails.pickup.status = PICKUP_STATUS.PICKED_UP
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
             order.markModified('dispatchDetails.pickup')
             await order.save()
+
+            // The customer is told the rider's count — their clothes, their
+            // bill. Non-fatal: a message must never undo a recorded pickup.
+            if (order.counts?.changedAtPickup) {
+                try {
+                    await sendSms(
+                        order.phoneNumber,
+                        `Chuvi: we collected ${order.counts.rider} item(s) for order ${order.oscNumber} (you booked ${order.counts.customer}). Your bill will be confirmed once we check them in.`,
+                    )
+                } catch (err) {
+                    console.error('pickup count SMS failed:', err?.message)
+                }
+                try {
+                    await notifyRoles({
+                        roles: [ROLE.INTAKE_AND_TAG, ROLE.ADMIN],
+                        title: 'Count changed at pickup',
+                        body: `Order ${order.oscNumber}: rider collected ${order.counts.rider}, customer booked ${order.counts.customer}.`,
+                        subBody: order.counts.riderReason,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    })
+                } catch (err) {
+                    console.error('pickup count notify failed:', err?.message)
+                }
+            }
 
             // Processing clock (client correction 2026-10-08): the clothes are
             // now with us. If the order was already paid this is the LATER of

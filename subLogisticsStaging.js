@@ -47,6 +47,19 @@ async function main() {
     }
     const url = process.env.MONGODB_URL
     if (!url) { console.error('MONGODB_URL not set.'); process.exit(2) }
+    // SAFETY: hard-refuse the LIVE database by name. STAGING_OK=1 says 'I meant
+    // to run a destructive script'; it does not say 'against the right DB'.
+    // These harnesses create and delete rows, so the live name is refused outright.
+    {
+        const dbName =
+            (String(url).match(/\/([A-Za-z0-9_-]+)(\?|$)/) || [])[1] || '<unknown>';
+        console.log('Target DB name:', dbName);
+        if (/laundrydb/i.test(dbName)) {
+            console.error('*** "laundrydb" is the LIVE database. Refusing. ***');
+            process.exit(2);
+        }
+    }
+
     console.log('Target DB host:', url.replace(/\/\/[^@]*@/, '//***:***@').replace(/\/[^/?]+(\?|$)/, '/<db>$1'))
     await mongoose.connect(url, { serverSelectionTimeoutMS: 60000, retryWrites: true, retryReads: true })
 

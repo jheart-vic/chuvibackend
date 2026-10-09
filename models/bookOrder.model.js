@@ -236,6 +236,109 @@ const bookOrderSchema = new mongoose.Schema(
             type: String,
             // enum: Object.values(PICK_UP_TIME),
         },
+
+        // ───────────── WINDOW BOOKING (client D1–D8, 2026-10-08) ─────────────
+        //
+        // Replaces the decorative `pickupTime` above, which was free text with
+        // its validator commented out, no cutoff and no limit. `pickupTime` is
+        // still written for one release so an old app build keeps rendering.
+        //
+        // No leaf defaults, and the subdoc is left ABSENT on a non-windowed
+        // order, for the same reason `pricing` has none: a default-populated
+        // shape would make every legacy order look as though it had been booked
+        // into a window.
+        scheduling: {
+            type: {
+                pickup: {
+                    timing: { type: String }, // BOOKING_TIMING: window | anytime
+                    windowId: {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'BookingWindow',
+                    },
+                    // Denormalised so a renamed or deleted window cannot
+                    // rewrite what the customer was promised.
+                    windowName: { type: String },
+                    windowStart: { type: String }, // 'HH:mm'
+                    windowEnd: { type: String },
+                    // The Lagos day the leg is scheduled for.
+                    date: { type: Date },
+                    fee: { type: Number },
+
+                    // ⚠️ THE FACT THAT CANNOT BE RECONSTRUCTED LATER.
+                    // The narrowed Anytime refund (client 2026-10-08) pays only
+                    // when the customer booked Anytime **while that day's window
+                    // could still be booked** AND the job was then done inside
+                    // that window. By the time the job is done the cutoff has
+                    // long passed, so this is unanswerable after the fact — it
+                    // MUST be stamped at the moment of booking.
+                    // `qualifiesForAnytimeRefund` reads this and never
+                    // re-derives it. Their examples: booked 11:00 → refund;
+                    // booked 14:30 (after the 14:00 cutoff) → no refund.
+                    windowWasBookableAtBooking: { type: Boolean },
+                    // Which window it was measured against, for the refund.
+                    refundAgainstWindowId: {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'BookingWindow',
+                    },
+
+                    // D3: we moved them because the window they chose was full.
+                    // They pay the WINDOW price and KEEP their offer.
+                    forcedMove: { type: Boolean },
+                    forcedMoveFrom: { type: String },
+
+                    // When the leg was actually dispatched — the other half of
+                    // the refund test.
+                    servedAt: { type: Date },
+                    refund: {
+                        qualified: { type: Boolean },
+                        amount: { type: Number },
+                        paidAt: { type: Date },
+                        reason: { type: String },
+                    },
+                },
+                delivery: {
+                    timing: { type: String },
+                    windowId: {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'BookingWindow',
+                    },
+                    windowName: { type: String },
+                    windowStart: { type: String },
+                    windowEnd: { type: String },
+                    date: { type: Date },
+                    fee: { type: Number },
+                    windowWasBookableAtBooking: { type: Boolean },
+                    refundAgainstWindowId: {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'BookingWindow',
+                    },
+                    forcedMove: { type: Boolean },
+                    forcedMoveFrom: { type: String },
+                    servedAt: { type: Date },
+                    refund: {
+                        qualified: { type: Boolean },
+                        amount: { type: Number },
+                        paidAt: { type: Date },
+                        reason: { type: String },
+                    },
+                    // D7 (pre-approved): a standard order's delivery DAY is not
+                    // known at booking — and under D6 it might not even be a
+                    // working day — so the delivery window is confirmed when the
+                    // order is marked READY, not at booking. Until then the
+                    // fields above carry the INTENT (timing + fee) only.
+                    confirmedAt: { type: Date },
+                },
+                // The same-day disclosure the client requires to be shown
+                // BEFORE the customer confirms: same-day pickup is an Anytime
+                // trip at the Anytime price, delivery returns in the evening
+                // window. Stored as shown, so a later price change cannot
+                // rewrite what they agreed to.
+                disclosure: { type: String },
+                disclosureAcceptedAt: { type: Date },
+            },
+            default: undefined,
+            _id: false,
+        },
         serviceType: {
             type: String,
             required: true,
@@ -405,6 +508,46 @@ const bookOrderSchema = new mongoose.Schema(
         // path did not exist, so every payment hold still read against the
         // 6-hour clock. Exactly the 3.2 `dispatchDetails.pickup.note` bug again:
         // a $set to a non-schema path fails without erroring.
+        // ───────────── THE ITEM COUNT CHAIN (N1 Phase 3) ─────────────
+        //
+        // Three parties count the same bag and the client wants all three kept,
+        // because the disagreements are the whole point:
+        //   * the CUSTOMER states a count when booking;
+        //   * the RIDER records the TRUE count at the door. If it differs he
+        //     must give a reason → the order is flagged and the customer gets
+        //     an SMS, but it is **never blocked** (client overruled our
+        //     proposal to block here);
+        //   * INTAKE confirms the rider's count. If INTAKE differs from the
+        //     RIDER, the order **STOPS and goes on hold — admin-only approval**
+        //     (client overruled our "never block" proposal for this one).
+        //
+        // Kept as one subdoc rather than three loose fields so "who said what"
+        // can never be half-written, and no leaf defaults so an order booked
+        // before this shipped is distinguishable from one counted as 0.
+        counts: {
+            type: {
+                customer: { type: Number },
+                rider: { type: Number },
+                riderReason: { type: String },
+                riderRecordedAt: { type: Date },
+                riderRecordedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                },
+                intake: { type: Number },
+                intakeConfirmedAt: { type: Date },
+                intakeConfirmedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                },
+                // Set when the rider's count differed from the customer's.
+                // A flag, not a block — it exists so the office can see it.
+                changedAtPickup: { type: Boolean },
+            },
+            default: undefined,
+            _id: false,
+        },
+
         orderHold: {
             // Which KIND of hold this is (HoldType.key). Drives the time limit:
             // client section B, 2026-10-07 — a payment hold lasts days, an
