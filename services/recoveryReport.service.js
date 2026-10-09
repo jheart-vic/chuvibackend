@@ -368,12 +368,39 @@ class RecoveryReportService extends BaseService {
     async _lowRatedOrders(feedback) {
         const low = feedback.filter((f) => f.rating === 1 || f.rating === 2)
         if (!low.length) return []
-        const orders = await BookOrderModel.find({
-            _id: { $in: low.map((f) => f.orderId) },
-        })
-            .select('oscNumber fullName phoneNumber amount')
-            .lean()
+        const orderIds = low.map((f) => f.orderId)
+
+        // ── hasComplaint IS DERIVED, NEVER READ OFF THE FEEDBACK ROW ─────────
+        //
+        // FE report 2026-10-09: "hasComplaint was false for an order whose
+        // complaint was counted." It was, and the back-reference was the reason.
+        //
+        // `feedback.complaintCaseId` is written in exactly ONE place — inside
+        // `FeedbackService.submitFeedback`, and only when that same call carried
+        // `type: 'complaint'`. Every other door into `RecoveryService.openCase`
+        // leaves it unset: the in-app bot's complaint flow, a case opened by CX
+        // or an admin, and — the common one — a customer who rates 1–2 stars and
+        // THEN accepts the offer to open a complaint. Meanwhile the report's
+        // complaint figures read `ComplaintCase` directly, so the case was
+        // counted while the row beside it said there was none.
+        //
+        // So ask the collection that actually holds the answer. This is correct
+        // whichever door the complaint came through, needs no backfill, and
+        // cannot drift again if a sixth way of opening a case appears.
+        // (`openCase` now also repairs the back-reference when it is given a
+        // feedbackId — but nothing here depends on that.)
+        const [orders, complaints] = await Promise.all([
+            BookOrderModel.find({ _id: { $in: orderIds } })
+                .select('oscNumber fullName phoneNumber amount')
+                .lean(),
+            ComplaintCaseModel.find({ orderId: { $in: orderIds } })
+                .select('orderId')
+                .lean(),
+        ])
         const byId = new Map(orders.map((o) => [String(o._id), o]))
+        const withComplaint = new Set(
+            complaints.map((c) => String(c.orderId)),
+        )
         return low
             .map((f) => {
                 const order = byId.get(String(f.orderId)) || {}
@@ -385,7 +412,9 @@ class RecoveryReportService extends BaseService {
                     rating: f.rating,
                     comment: f.comment || null,
                     ratedAt: f.createdAt,
-                    hasComplaint: Boolean(f.complaintCaseId),
+                    hasComplaint:
+                        withComplaint.has(String(f.orderId)) ||
+                        Boolean(f.complaintCaseId),
                 }
             })
             .sort((a, b) => a.rating - b.rating || b.ratedAt - a.ratedAt)

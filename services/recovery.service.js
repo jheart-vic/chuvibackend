@@ -125,6 +125,29 @@ class RecoveryService {
             statusHistory: [{ to: COMPLAINT_STATUS.SUBMITTED, note: 'Complaint submitted' }],
         })
 
+        // Keep the Feedback → ComplaintCase back-reference in step whichever
+        // door opened the case. It used to be written only by
+        // `FeedbackService.submitFeedback` on a `type: 'complaint'` submission,
+        // so a case opened by the bot, by CX, or by a customer accepting the
+        // "open a complaint?" offer after a 1–2 star rating left the Feedback row
+        // saying there was no complaint (FE report 2026-10-09). The monthly
+        // report no longer depends on this field — it derives `hasComplaint`
+        // from ComplaintCase — but anything else reading the link now gets the
+        // truth. Non-fatal: a complaint must never fail over a cross-reference.
+        if (feedbackId) {
+            try {
+                await FeedbackModel.updateOne(
+                    { _id: feedbackId, complaintCaseId: { $exists: false } },
+                    { $set: { complaintCaseId: complaint._id } },
+                )
+            } catch (err) {
+                console.warn(
+                    'Feedback back-reference failed (non-fatal):',
+                    err.message,
+                )
+            }
+        }
+
         // CRM: apply Complaint + Recovery-Required tags, pause referral
         try {
             await CrmService.applyRecoveryTags(userId)

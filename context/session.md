@@ -1,5 +1,126 @@
 # Current Session Log
 
+## ███ HARNESSES RUN GREEN 2026-10-09 + TEST ACCOUNTS. URI SAVED ███
+**The testingdb URI is in `context/LOCAL-SECRETS.md`, which is GITIGNORED** — `context/` is tracked
+and pushed, so a credential in any other file there would be in the history permanently. Never
+write it into `.env`.
+- **Green against testingdb (9 harnesses, 399 assertions):** stationFlow **97** · handoff **54** ·
+  recoveryReport **52** · holds **48** · dispatch **46** · windowBooking **35** · tierPricing **33** ·
+  itemEdit **20** · phase12 **14**. briefCheck **371/371**, swagger 74/309/0.
+  windowBooking/tierPricing/phase12 are the real check on the booking change — they all run through
+  `postBookOrder` and passed UNCHANGED, which is the point of translating the count before
+  validation instead of forking a second path.
+- **NEW `seedTestCustomers.js`** — 4 first-order accounts (`below`/`at`/`above`/`spare`) for the
+  ₦3,900 / ₦4,000 / ₦8,000 offer cases the FE could not create. Uses the REAL `AuthService.createUser`
+  (the only place `new UserModel(` exists for a customer), so the CRM + referral hooks fire.
+  `--clean` removes them; live needs `--i-mean-live`.
+- ⚠️ **THE FIRST RUN SILENTLY CUT OFF ITS OWN HOOKS.** `createUser` fires `crmOnUserRegistered` /
+  `referralOnUserRegistered` WITHOUT awaiting (deliberately — CRM must never break a signup), so
+  disconnecting at the end of the loop killed them mid-write: "Operation interrupted because client
+  was closed", and the First Experience grant never completed. **A script that calls a
+  fire-and-forget hook must wait before it disconnects.** Now settles 8s and REPORTS the offer count
+  per account rather than assuming.
+- ⚠️ **testingdb has ZERO offers configured**, so no account can be granted one there and the offer
+  cases are **only testable against live** — the client set those offers up in production. The 4
+  accounts exist in testingdb and are proven to create cleanly; **the live run is NOT done and needs
+  a human decision**, because it creates real accounts and fires real workflows.
+
+## ███ N1 COUNT-ONLY QUICK BOOKING BUILT 2026-10-09 — briefCheck 371/371 ███
+Swagger 74/309/0. FE contracts: "Addendum 2" at the end of `context/FE-CHANGELOG-2026-10-09.md`.
+**NO rider photo — re-checked every client doc, most recent first: the only "+ photo" is the
+superseded 6 Oct brief line (`feature.md:1794`); the 2026-10-07 ruling says "No rider photo"
+(`feature.md:809`) and nothing after it reverses it. Do not build it.**
+- **`itemCount` on the EXISTING booking endpoint**, no second path. NEW pure
+  `util/quickBooking.js` translates the count into `items[]` **BEFORE validation**, so all three
+  billing branches, the capacity gates, pricing, offers, credit and `explodeItemsToPieces` run
+  unchanged. A fourth copy of the basket maths is exactly what item #7 refused.
+- **N LINES OF QUANTITY 1, not one line of quantity N** — the capacity gates and the subscription
+  limit all read `post.items.length` (LINES, not pieces), so this is the only shape that makes them
+  read the customer's count with no edit to any gate. ⚠️ Note the latent oddity it reveals: a NORMAL
+  booking of one line × qty 50 still counts as 1 against capacity. Existing behaviour, left alone.
+- **Placeholder price is ZERO and that is a DECISION, not an oversight.** The spec fixes the fields,
+  the capacity rule and the Intake flow but never says what a count-only order costs at booking. "Bill
+  by SMS before washing" + "the amount is checked ON THE BILL" ⇒ no laundry bill until Intake. An
+  invented per-piece estimate would quote a number nobody approved AND resolve the ₦4,000 offer
+  threshold against a guess. **Two commercial consequences to tell the client:** the customer sees no
+  laundry price at booking at all, and a subscriber's order is not counted against their plan until
+  the bill exists.
+- `billingType` forced to `pay-per-item` — nothing can be charged against an unknown amount.
+- **The Intake half was ALREADY built**: `applyItemEdit` says in its own comment it serves "BOTH
+  booking types". It now also clears `itemsPending` in the SAME write that replaces the items.
+- NEW `GET /api/intake-user/quick-bookings` (the Quick Booking card) — the three counts side by side,
+  `placeholderPieces`, `logisticsAmount`, `deliveryPromise`. Gated on `itemsPending`, NOT on "has
+  placeholder pieces", so it cannot list an order Intake has finished.
+- ⚠️ **`QUEUE_SORT` was not imported in `intake-user.service.js`** — would have been a ReferenceError
+  on the first request. Caught by loading the route tree, not by reading the diff.
+- ⚠️ **Checked, because it would have failed silently: the validator accepts `price: 0`** for
+  `integer|required` (many treat 0 as empty). Ran the synthesised payload through the REAL validator.
+- A briefCheck assertion failed on CORRECT code because its 400-char window was too small for the
+  COMMENT between the two lines it matched. **Fourth time a source-grepping test has been tripped by
+  prose** — widened and noted in the assertion itself.
+
+## ███ FE BUG REPORT 2026-10-09 — ALL FIVE FIXED. briefCheck 359/359 ███
+Swagger 74/308/0. FE contracts in the addendum at the end of
+`context/FE-CHANGELOG-2026-10-09.md`. **NOT yet run against a DB — needs the
+testingdb URI** (stationFlow/holds/recoveryReport/dispatch all cover this code).
+- **NEW `PATCH /api/admin/order/:id/release-item-hold`** (adminAuth) — the door that
+  did not exist. Optional `itemId`; omit to release all. NEW shared
+  `util/releaseItemHold.js` (`selectHeldItems`/`stampRelease`/`nothingToRelease`) so the
+  six callers stop hand-writing the three release fields. `holdDetails.releaseNote` was
+  **declared on the schema** — an undeclared path is silently dropped (4th time).
+- **All five station releases take an optional `itemId`**; a single-piece release does
+  NOT rewind the order (`orderLevelRewind = !itemId`). **Intake's tag-wipe is now scoped
+  to holds Intake RAISED** (`heldByStation`), not merely ones assigned to it — it was
+  stripping tags off an entire order to release one Wash-held garment.
+- ⚠️ **REGRESSION I NEARLY SHIPPED, caught by self-review not by a test:** gating the
+  station release on "is a piece of mine held" **refused admin's `send-to-hold` order
+  holds**, which park the order and create NO item hold — the station release is how
+  those were always cleared. Guard is now `!mine.length && !(orderParked && !itemId)`.
+  Asserted. **When you narrow a finder, ask what the OLD finder was also catching.**
+- **Press:** three queries for one screen → one `PRESS_QUEUE_FILTER()`. Wash got this
+  fix for brief 1.1; Press never did. The counter was item-level `pressConfirmedAt`
+  while both lists were unfiltered, so a started order sat in the queue AND in Active.
+- **Rider:** `rider.service.js` never called `presentOrder`, so no `deliveryPromise`, and
+  `deliveryDate` was not even selected. Five reads fixed. `getOrderDetails` had to become
+  `.lean()` — `deliveryPromise` is undeclared, so a hydrated doc drops it.
+- **`hasComplaint`** now derived from `ComplaintCase`; `openCase` also repairs the
+  back-reference. It was written in ONE place out of six doors.
+- **Count mismatch stays 400** (my call — the order did not proceed); documented with its
+  full body in swagger, which is where it actually failed.
+- **Rider pickup photo is NOT a gap** — client ruled "No rider photo" 2026-10-07.
+  **Count-only Quick Booking IS** and is next.
+
+## ███ FE BUG REPORT 2026-10-09 → `context/BACKEND-REPLY-FE-2026-10-09.md` ███
+Five reported bugs, **all five confirmed real** (no stale deploy this time), each traced to a line:
+1. **Item holds are unreleasable.** Every station offers `assignTo: ADMIN` but **no admin release
+   path exists** (`admin.service.js` never touches `items.holdDetails`), and admin's `resolveOrderHold`
+   filters `stage.status: HOLD` — which per-piece holds deliberately no longer set. Station release
+   also has no `itemId` (all-or-nothing) and Intake's version **wipes every tag + sends the order
+   back to QUEUE**, which is wrong for another station's hold. Needs a shape sign-off.
+2. **Press queue ≠ its counter** — brief 1.1 again; **Wash was fixed, Press never was.** Three
+   queries on one screen: counter is item-level `pressConfirmedAt`, both lists are unfiltered.
+3. **Rider lists carry no delivery date or promise** — `rider.service.js` never calls `presentOrder`
+   (only admin/bookOrder/intake-user do) and the `select` omits `deliveryDate`.
+4. **Count mismatch is a 400, not 200** — deliberate, and the extra fields DO survive the failure
+   envelope (`sendFailedResponse` spreads). Needs a ruling; changelog never stated a code.
+5. **`hasComplaint` reads a back-reference written in ONE place** (`submitFeedback` with
+   `type: complaint`). Any other door — bot, CX, or a 1–2★ that later opens a case — leaves it false
+   while the case still counts. Fix: derive from `ComplaintCase`, don't trust the link.
+**N1:** count-only booking IS a real gap (`items: 'array|required'`, `counts.customer` never written
+at booking, capacity gates read `post.items.length`) — mine to build. **The rider pickup photo is
+NOT a gap: the client ruled "No rider photo" on 2026-10-07** (`feature.md:809`), overruling the 6 Oct
+brief — tell the FE to stop waiting on it.
+
+## ███ OPEN ITEMS AFTER THE DEPLOY → `context/OPEN-ITEMS-2026-10-09.md` ███
+The frontend's "CHUVI Fix Status" PDF (30 done · 1 partly · 1 backend · 1 no change) is reconciled
+against the repo and `origin/main` there. Short version: **only 1.7 (a physical printer test) is
+left on the frontend**; the FE's two blocking questions are answered (phone normalisation AND the
+wallet limit defaults ARE live on `origin/main`; the Q1–Q8 answers are
+`context/CLIENT-ANSWERS-oct2026.md`, just unsent); the cancel-button question needs a decision; and
+**`ce2380b` (the service-type name guard, B3's backend half) is STILL UNMERGED** — `origin/main` is
+`0caf0b9` and `origin/main..feature/fix` is 3 commits, so the API still accepts a rename that
+silently under-prices every existing order.
+
 ## ███ READ FIRST AFTER A CLEAR — STATE AT 2026-10-09 ███
 
 **The 6 Oct brief is CODE-COMPLETE.** All 22 fixes, N2 and N1 (Quick Booking + window booking +

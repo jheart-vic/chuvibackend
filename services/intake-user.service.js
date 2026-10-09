@@ -28,6 +28,11 @@ const {
 } = require('../util/constants')
 const { onHoldScope } = require('../util/itemHold')
 const {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+} = require('../util/releaseItemHold')
+const {
     planCounterPayment,
     settleCounterPayment,
 } = require('../util/counterPayment')
@@ -46,6 +51,7 @@ const {
 const { priceItems } = require('../util/itemPricing')
 const paginate = require('../util/paginate')
 const { presentOrder } = require('../util/orderView')
+const { QUEUE_SORT } = require('../util/queueSort')
 const sendSms = require('../util/sendSms')
 const validateData = require('../util/validate')
 const { normalizeAddress, validateStructuredAddress } = require('../util/address')
@@ -2274,6 +2280,73 @@ class IntakeUserService extends BaseService {
         }
     }
 
+    // ── QUICK BOOKINGS WAITING FOR THEIR REAL CONTENTS ─────────────────────
+    //
+    // Client spec 2026-10-07, Intake's four steps: "confirm rider count → ENTER
+    // ITEMS (system computes total, intake CANNOT type an amount) → payment hold
+    // → on payment, tags print."
+    //
+    // Step 2 needs a list of its own, because a Quick Booking is invisible in
+    // the tagging queue until it HAS items — it arrives with placeholder pieces
+    // and a laundry bill of 0, and tagging must not begin before the bill is
+    // settled anyway.
+    //
+    // `itemsPending` is the gate, not "are there placeholder pieces": the
+    // re-price clears the flag in the same write that replaces the items, so an
+    // order cannot linger here after Intake has done the step.
+    async getQuickBookingQueue(req) {
+        try {
+            const { page = 1, limit = 20, search = '' } = req.query
+
+            const query = {
+                itemsPending: true,
+                'stage.status': { $ne: ORDER_STATUS.CANCELLED },
+            }
+            if (search) {
+                query.$or = [
+                    { oscNumber: { $regex: search, $options: 'i' } },
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { phoneNumber: { $regex: search, $options: 'i' } },
+                ]
+            }
+
+            const { data, pagination } = await paginate(BookOrderModel, query, {
+                page,
+                limit,
+                sort: QUEUE_SORT, // A5: delivery deadline, earliest first
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount deliveryAmount paymentStatus counts items stage stationStatus pickupAddress deliveryAddress isPickUp isDelivery deliveryDate scheduling quickBooking itemsPending createdAt',
+                lean: true,
+            })
+
+            const rows = data.map((order) => {
+                presentOrder(order)
+                return {
+                    ...order,
+                    // The three counts side by side — this screen exists to
+                    // settle them, so it must not make Intake dig for them.
+                    customerCount: order.counts?.customer ?? null,
+                    riderCount: order.counts?.rider ?? null,
+                    riderReason: order.counts?.riderReason || null,
+                    intakeCount: order.counts?.intake ?? null,
+                    placeholderPieces: (order.items || []).length,
+                    // What is already owed regardless of the contents. The
+                    // laundry portion is 0 until the items are entered, so
+                    // showing `amount` alone would read as a free order.
+                    logisticsAmount: Number(order.deliveryAmount || 0),
+                }
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: { data: rows, pagination },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to fetch quick bookings',
+            })
+        }
+    }
+
     async getHoldQueue(req) {
         try {
             const userId = req.user.id
@@ -2425,12 +2498,52 @@ class IntakeUserService extends BaseService {
                     error: 'Order not found or not assigned to this station',
                 })
 
+            // Optional `itemId` (FE report 2026-10-09) — release ONE piece
+            // rather than every piece assigned to Intake. See
+            // `util/releaseItemHold.js`.
+            const itemId = req.body?.itemId || null
             const now = new Date()
+            const mine = selectHeldItems({
+                order,
+                itemId,
+                isMine: (i) => i.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG,
+            })
+            // An ORDER-level hold (Intake's own hold, a payment hold, or admin's
+            // `send-to-hold`) parks the whole order and raises NO item hold, so
+            // it must still be clearable here — that is what this endpoint did
+            // before item holds existed, and it is the ordinary Intake case.
+            const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            if (!mine.length && !(orderParked && !itemId))
+                return BaseService.sendFailedResponse({
+                    error: nothingToRelease({
+                        itemId,
+                        where: 'for intake & tag on this order',
+                    }),
+                })
+
+            const releaseIds = new Set(mine.map((i) => String(i._id)))
+
+            // ── THE TAG RESET BELONGS TO INTAKE'S OWN HOLDS ONLY ────────────
+            //
+            // Intake is the DEFAULT assignee for the four production stations
+            // (a station may not hold for itself), so most holds Intake releases
+            // were raised at Wash, Press, Sort or QC. Wiping `tagId`/`tagStatus`
+            // is correct for a hold Intake itself raised — the piece goes back to
+            // be re-tagged — and plainly wrong for a Wash hold on one garment,
+            // where it would send the whole order back to re-tagging and strip
+            // labels off pieces that were never held (FE report 2026-10-09).
+            //
+            // `heldByStation` records where the hold was RAISED, which is the
+            // only field that can tell the two apart.
+            const raisedHere = (item) =>
+                item.holdDetails?.heldByStation ===
+                STATION_STATUS.INTAKE_AND_TAG_STATION
+
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo === ROLE.INTAKE_AND_TAG) {
-                    item.holdDetails.releasedAt = now
-                    item.holdDetails.releasedByOperatorId = userId
-                    item.holdDetails.assignTo = null
+                if (!releaseIds.has(String(item._id))) return item
+                const wasOurs = raisedHere(item)
+                stampRelease(item, { userId, now })
+                if (wasOurs) {
                     item.tagStatus = 'pending'
                     item.tagId = ''
                     item.tagState = []
@@ -2439,24 +2552,36 @@ class IntakeUserService extends BaseService {
                 return item
             })
 
+            // Send the ORDER back to the tagging queue only when this really was
+            // an Intake hold and the whole hold is being cleared. Another
+            // station's piece goes back to ITS station, which is where the piece
+            // still sits — `currentStation` was never moved by the hold.
+            const orderLevelRewind = !itemId && mine.every(raisedHere)
+
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
                         items: updatedItems,
-                        ...buildStageUpdate(
-                            ORDER_STATUS.QUEUE,
-                            STATION_STATUS.INTAKE_AND_TAG_STATION,
-                            'Released from hold',
-                        ).$set,
+                        ...(orderLevelRewind
+                            ? buildStageUpdate(
+                                  ORDER_STATUS.QUEUE,
+                                  STATION_STATUS.INTAKE_AND_TAG_STATION,
+                                  'Released from hold',
+                              ).$set
+                            : {}),
                     },
-                    $push: {
-                        stageHistory: {
-                            status: ORDER_STATUS.QUEUE,
-                            note: 'Released from hold',
-                            updatedAt: now,
-                        },
-                    },
+                    ...(orderLevelRewind
+                        ? {
+                              $push: {
+                                  stageHistory: {
+                                      status: ORDER_STATUS.QUEUE,
+                                      note: 'Released from hold',
+                                      updatedAt: now,
+                                  },
+                              },
+                          }
+                        : {}),
                 },
                 { runValidators: false }, // ✅ avoid serviceTier validation issue
             )

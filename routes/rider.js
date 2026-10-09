@@ -1245,8 +1245,19 @@ router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
  * @swagger
  * /rider/mark-pickup/{id}:
  *   put:
- *     summary: Mark an order as pickedup
- *     description: Marks the pickup as picked-up.
+ *     summary: Mark an order as pickedup (optionally recording the true count)
+ *     description: >
+ *       Marks the pickup as picked-up.
+ *
+ *       `itemCount` is the pieces the rider actually collected. If it differs
+ *       from what the customer booked, `countReason` becomes **required** and
+ *       the call answers **400** with `requiresCountReason: true` plus both
+ *       counts — resend with a reason and it goes through. That is the only
+ *       hard rule here: a differing count never blocks the pickup, it flags the
+ *       order and SMSes the customer the rider's number.
+ *
+ *       There is no photo on this endpoint, by the client's decision of
+ *       2026-10-07 ("No rider photo"), which overrode the 6 October brief.
  *     tags:
  *       - Rider
  *     security:
@@ -1272,6 +1283,14 @@ router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
  *                 type: string
  *                 example: "08123456789"
  *                 description: Customer phone number for verification
+ *               itemCount:
+ *                 type: integer
+ *                 description: Pieces actually collected. Optional.
+ *                 example: 9
+ *               countReason:
+ *                 type: string
+ *                 description: Required only when itemCount differs from the customer's count.
+ *                 example: "One shirt was not ready, customer kept it back"
  *     responses:
  *       200:
  *         description: Pickup marked as picked up successfully

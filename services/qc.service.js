@@ -16,6 +16,11 @@ const {
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const { QUEUE_SORT } = require('../util/queueSort')
 const { onHoldScope, describeHeld } = require('../util/itemHold')
+const {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+} = require('../util/releaseItemHold')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const NotificationModel = require('../models/notification.model')
@@ -1135,47 +1140,76 @@ class QCService extends BaseService {
                     error: 'Order not found or not on hold at this station',
                 })
 
+            // Optional `itemId` (FE report 2026-10-09) — release ONE piece
+            // rather than every piece assigned to this station. See
+            // `util/releaseItemHold.js`.
+            const itemId = req.body?.itemId || null
             const now = new Date()
+            const mine = selectHeldItems({
+                order,
+                itemId,
+                isMine: (i) => i.holdDetails?.assignTo === ROLE.QC,
+            })
+            // An ORDER-level hold (admin's `send-to-hold` parks the whole order
+            // at a station and raises NO item hold) still has to be clearable
+            // here — that is what this endpoint did before item holds existed.
+            const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            if (!mine.length && !(orderParked && !itemId))
+                return BaseService.sendFailedResponse({
+                    error: nothingToRelease({
+                        itemId,
+                        where: 'for QC on this order',
+                    }),
+                })
+
+            const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo === ROLE.QC) {
-                    item.holdDetails.releasedAt = now
-                    item.holdDetails.releasedByOperatorId = userId
-                    item.holdDetails.assignTo = null
-                    // ✅ reset qc status so item can be worked on again
-                    item.qcStatus = 'pending'
-                    item.qcConfirmedAt = null
-                    item.qcConfirmedByOperatorId = null
-                    item.flaggedForReview = false
-                }
+                if (!releaseIds.has(String(item._id))) return item
+                stampRelease(item, { userId, now })
+                // ✅ reset qc status so item can be worked on again
+                item.qcStatus = 'pending'
+                item.qcConfirmedAt = null
+                item.qcConfirmedByOperatorId = null
+                item.flaggedForReview = false
                 return item
             })
+
+            // Releasing one piece of several must not rewind the whole order's
+            // QC progress — the siblings never stopped.
+            const orderLevelRewind = !itemId
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
                         items: updatedItems,
-                        ...buildStageUpdate(
-                            ORDER_STATUS.QC,
-                            STATION_STATUS.QC_STATION,
-                            'Released from hold',
-                        ).$set,
+                        ...(orderLevelRewind
+                            ? buildStageUpdate(
+                                  ORDER_STATUS.QC,
+                                  STATION_STATUS.QC_STATION,
+                                  'Released from hold',
+                              ).$set
+                            : {}),
                     },
 
-                    $unset: {
-                        'qcDetails.startedAt': '',
-                        'qcDetails.passedAt': '',
-                        'qcDetails.packCompletedAt': '',
-                        'qcDetails.operatorId': '',
-                        'qcDetails.packOperatorId': '',
-                    },
-                    $push: {
-                        stageHistory: {
-                            status: ORDER_STATUS.QC,
-                            note: 'Released from hold',
-                            updatedAt: now,
-                        },
-                    },
+                    ...(orderLevelRewind
+                        ? {
+                              $unset: {
+                                  'qcDetails.startedAt': '',
+                                  'qcDetails.passedAt': '',
+                                  'qcDetails.packCompletedAt': '',
+                                  'qcDetails.operatorId': '',
+                                  'qcDetails.packOperatorId': '',
+                              },
+                              $push: {
+                                  stageHistory: {
+                                      status: ORDER_STATUS.QC,
+                                      note: 'Released from hold',
+                                      updatedAt: now,
+                                  },
+                              },
+                          }
+                        : {}),
                 },
                 { runValidators: false },
             )

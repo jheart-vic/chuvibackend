@@ -15,7 +15,22 @@ const {
 } = require('../util/constants')
 const paginate = require('../util/paginate')
 const { notifyRoles } = require('../util/notifyRoles')
-const { normalizeOrderAddresses } = require('../util/orderView')
+// FE report 2026-10-09: "the rider list sends no delivery date or promise".
+// `deliveryPromise` is derived in the one outward shape (`util/orderView.js`) so
+// that no read path has to assemble it — but this service never called into it,
+// and the selects below did not even fetch `deliveryDate`. We use
+// `addDeliveryPromise` rather than the full `presentOrder` deliberately: a rider
+// row has no need of `pricing`, and `presentOrder` would FABRICATE a pricing
+// fallback from fields these selects do not load.
+const {
+    normalizeOrderAddresses,
+    addDeliveryPromise,
+    presentOrder,
+} = require('../util/orderView')
+
+// `deliveryDate` is the deadline and `scheduling` carries the confirmed window —
+// `addDeliveryPromise` needs both. Added to every rider select.
+const PROMISE_FIELDS = 'deliveryDate scheduling'
 
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
@@ -51,11 +66,12 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: 'oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails dispatchTag createdAt',
+                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails dispatchTag createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
             const rows = data.map((order) => {
                 normalizeOrderAddresses(order)
+                addDeliveryPromise(order)
                 return {
                     ...order,
                     itemCount: (order.items || []).length,
@@ -88,12 +104,13 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: 'oscNumber fullName phoneNumber deliveryAddress serviceType serviceTier stage dispatchDetails createdAt',
+                select: `oscNumber fullName phoneNumber deliveryAddress serviceType serviceTier stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
 
             const ordersWithMeta = data.map((order) => {
                 normalizeOrderAddresses(order)
+                addDeliveryPromise(order)
                 const startedAt = order.dispatchDetails?.delivery?.startedAt
                 const estimatedDelivery = startedAt
                     ? new Date(
@@ -357,11 +374,12 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: 'oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails createdAt',
+                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
             const rows = data.map((order) => {
                 normalizeOrderAddresses(order)
+                addDeliveryPromise(order)
                 return {
                     ...order,
                     itemCount: (order.items || []).length,
@@ -396,12 +414,13 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: 'oscNumber fullName phoneNumber pickupAddress serviceType serviceTier stage dispatchDetails createdAt',
+                select: `oscNumber fullName phoneNumber pickupAddress serviceType serviceTier stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
 
             const ordersWithMeta = data.map((order) => {
                 normalizeOrderAddresses(order)
+                addDeliveryPromise(order)
                 const startedAt = order.dispatchDetails?.pickup?.updatedAt
                 const estimatedArrival = startedAt
                     ? new Date(
@@ -1024,16 +1043,21 @@ class RiderService extends BaseService {
                     error: 'Order ID is required',
                 })
 
-            const order = await BookOrderModel.findById(orderId).populate(
-                'userId',
-                'fullName email phoneNumber',
-            )
+            // `.lean()` is required, not cosmetic: `presentOrder` attaches
+            // `deliveryPromise`, which is NOT a declared schema path, and
+            // Mongoose silently drops an undeclared path on a hydrated document —
+            // the field would simply never reach the rider.
+            const order = await BookOrderModel.findById(orderId)
+                .populate('userId', 'fullName email phoneNumber')
+                .lean()
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found',
                 })
 
-            return BaseService.sendSuccessResponse({ message: order })
+            return BaseService.sendSuccessResponse({
+                message: presentOrder(order),
+            })
         } catch (error) {
             console.log('Error in getOrderDetails:', error)
             return BaseService.sendFailedResponse({

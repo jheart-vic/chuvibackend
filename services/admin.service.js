@@ -61,6 +61,11 @@ const createAuditLog = require('../util/createAuditLog')
 const createNotification = require('../util/createNotification')
 const { heldItems, onHoldScope } = require('../util/itemHold')
 const {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+} = require('../util/releaseItemHold')
+const {
     notifyAffectedStation,
     notifyAdminEvent,
     ADMIN_EVENT,
@@ -2349,6 +2354,135 @@ class AdminService extends BaseService {
             console.log(error)
             return BaseService.sendFailedResponse({
                 error: 'Failed to resolve order hold',
+            })
+        }
+    }
+
+    // ── ADMIN RELEASES AN ITEM HOLD — THE DOOR THAT DID NOT EXIST ───────────
+    //
+    // FE report 2026-10-09: "a hold on a single item can't be cleared from Admin
+    // or the station screens."
+    //
+    // Two separate holes made some holds unreleasable by ANYBODY:
+    //
+    //  1. Every station's `sendToHold` offers `assignTo: ADMIN` — it is the
+    //     first option on all four — but each station's `releaseFromHold` only
+    //     clears pieces assigned to ITS OWN role, and there is no admin station
+    //     service. Nothing in this file had ever touched `items.holdDetails`.
+    //  2. `resolveOrderHold` above cannot stand in: it finds the order with
+    //     `{'stage.status': HOLD}`, and since the client's 2026-10-08 per-piece
+    //     ruling an S2–S5 item hold deliberately no longer parks the order. It
+    //     was built for order-level holds and is left alone for those.
+    //
+    // So this is deliberately the widest release in the system: an admin may
+    // clear ANY held piece whatever it is assigned to, which is what makes the
+    // admin-assigned hold recoverable. It does NOT touch order-level holds
+    // (Intake and payment) — those keep `resolveOrderHold`, which also decides
+    // which station the order returns to.
+    //
+    // What it will NOT do, on purpose: rewind any station's progress. An admin
+    // clearing one piece must not undo work on its siblings, and the piece has
+    // never left `currentStation` — a hold writes `holdDetails`, not a move.
+    async releaseItemHold(req) {
+        try {
+            const orderId = req.params.id
+            const userId = req.user.id
+            const { itemId = null, note = '' } = req.body || {}
+
+            if (!orderId)
+                return BaseService.sendFailedResponse({
+                    error: 'Order ID is required',
+                })
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order)
+                return BaseService.sendFailedResponse({
+                    error: 'Order not found',
+                })
+
+            // No `isMine` test — that is the whole point of this endpoint.
+            const targets = selectHeldItems({
+                order,
+                itemId,
+                isMine: () => true,
+            })
+            if (!targets.length)
+                return BaseService.sendFailedResponse({
+                    error: nothingToRelease({
+                        itemId,
+                        where: 'on this order',
+                    }),
+                })
+
+            const now = new Date()
+            const releaseIds = new Set(targets.map((i) => String(i._id)))
+            // Who was supposed to deal with each piece, captured BEFORE the
+            // release nulls `assignTo` — it is gone immediately afterwards and
+            // is what tells us which station to notify.
+            const assignees = [
+                ...new Set(
+                    targets.map((i) => i.holdDetails?.assignTo).filter(Boolean),
+                ),
+            ]
+
+            order.items.forEach((item) => {
+                if (!releaseIds.has(String(item._id))) return
+                stampRelease(item, { userId, now })
+                // An admin release says "this piece is cleared", not "redo it".
+                // Each station's own release owns the redo semantics.
+                item.flaggedForReview = false
+                if (note) item.holdDetails.releaseNote = String(note).trim()
+            })
+            order.markModified('items')
+            await order.save({ validateBeforeSave: false })
+
+            const remaining = heldItems(order.items).length
+            const released = targets.length
+
+            await ActivityModel.create({
+                title: 'Item Hold Released',
+                description: `${released} piece(s) on order ${order.oscNumber} released from hold by admin${note ? `. Note: ${note}` : ''}`,
+                type: ACTIVITY_TYPE.ORDER_RELEASED_FROM_HOLD,
+                orderId: order._id,
+                userId,
+                reference: order.oscNumber,
+            })
+
+            // CLIENT SECTION 10: the station that was waiting on the piece is
+            // told; the admin who released it is not.
+            for (const role of assignees) {
+                await notifyAffectedStation({
+                    role: role,
+                    actorId: userId,
+                    title: 'Item Hold Released',
+                    body: `${released} piece(s) on order ${order.oscNumber} have been released from hold by an admin.`,
+                    subBody: `Order ID: ${order.oscNumber}`,
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+            }
+
+            await createAuditLog({
+                userId: getObjectId(userId),
+                orderId,
+                category: 'system',
+                action: `${released} item hold(s) released on order ${order.oscNumber} by admin${note ? `. Note: ${note}` : ''}`,
+            })
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    orderId: String(order._id),
+                    oscNumber: order.oscNumber,
+                    released,
+                    releasedItemIds: [...releaseIds],
+                    // So Holds Management can re-render without a second fetch,
+                    // and the operator can see whether the order is now clear.
+                    itemsStillOnHold: remaining,
+                },
+            })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Failed to release the item hold',
             })
         }
     }

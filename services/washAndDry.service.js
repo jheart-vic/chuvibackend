@@ -17,6 +17,11 @@ const {
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const { QUEUE_SORT } = require('../util/queueSort')
 const { onHoldScope } = require('../util/itemHold')
+const {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+} = require('../util/releaseItemHold')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
 const createNotification = require('../util/createNotification')
@@ -989,45 +994,77 @@ class WashAndDryService extends BaseService {
                     error: 'Order not found or not on hold at this station',
                 })
 
+            // Optional `itemId` (FE report 2026-10-09) — release ONE piece
+            // rather than every piece assigned to this station. See
+            // `util/releaseItemHold.js` for why the order-level rewind below is
+            // skipped when a single piece is named.
+            const itemId = req.body?.itemId || null
             const now = new Date()
+            const mine = selectHeldItems({
+                order,
+                itemId,
+                isMine: (i) => i.holdDetails?.assignTo === ROLE.WASH_AND_DRY,
+            })
+            // An ORDER-level hold (admin's `send-to-hold` parks the whole order
+            // at a station and raises NO item hold) still has to be clearable
+            // here — that is what this endpoint did before item holds existed,
+            // and refusing it would strand every admin-raised hold.
+            const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            if (!mine.length && !(orderParked && !itemId))
+                return BaseService.sendFailedResponse({
+                    error: nothingToRelease({
+                        itemId,
+                        where: 'for wash & dry on this order',
+                    }),
+                })
+
+            const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {
-                if (item.holdDetails?.assignTo === ROLE.WASH_AND_DRY) {
-                    item.holdDetails.releasedAt = now
-                    item.holdDetails.releasedByOperatorId = userId
-                    item.holdDetails.assignTo = null
-                    // ✅ reset wash status so item can be worked on again
-                    item.washStatus = 'pending'
-                    item.washConfirmedAt = null
-                    item.washConfirmedByOperatorId = null
-                    item.flaggedForReview = false
-                }
+                if (!releaseIds.has(String(item._id))) return item
+                stampRelease(item, { userId, now })
+                // ✅ reset wash status so item can be worked on again
+                item.washStatus = 'pending'
+                item.washConfirmedAt = null
+                item.washConfirmedByOperatorId = null
+                item.flaggedForReview = false
                 return item
             })
+
+            // Rewinding the ORDER's wash progress is right when the whole hold
+            // is being cleared, and wrong when one piece of several is: the
+            // siblings never stopped working.
+            const orderLevelRewind = !itemId
 
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
                         items: updatedItems,
-                        ...buildStageUpdate(
-                            ORDER_STATUS.WASHING,
-                            STATION_STATUS.WASH_AND_DRY_STATION,
-                            'Released from hold',
-                        ).$set,
+                        ...(orderLevelRewind
+                            ? buildStageUpdate(
+                                  ORDER_STATUS.WASHING,
+                                  STATION_STATUS.WASH_AND_DRY_STATION,
+                                  'Released from hold',
+                              ).$set
+                            : {}),
                     },
-                    $unset: {
-                        'washDetails.startedAt': '',
-                        'washDetails.movedToDryingAt': '',
-                        'washDetails.dryingCompletedAt': '',
-                        'washDetails.operatorId': '',
-                    },
-                    $push: {
-                        stageHistory: {
-                            status: ORDER_STATUS.WASHING,
-                            note: 'Released from hold',
-                            updatedAt: now,
-                        },
-                    },
+                    ...(orderLevelRewind
+                        ? {
+                              $unset: {
+                                  'washDetails.startedAt': '',
+                                  'washDetails.movedToDryingAt': '',
+                                  'washDetails.dryingCompletedAt': '',
+                                  'washDetails.operatorId': '',
+                              },
+                              $push: {
+                                  stageHistory: {
+                                      status: ORDER_STATUS.WASHING,
+                                      note: 'Released from hold',
+                                      updatedAt: now,
+                                  },
+                              },
+                          }
+                        : {}),
                 },
                 { runValidators: false },
             )
