@@ -46,6 +46,8 @@ require('./crons/offerExpiry.js')
 require('./crons/complaintSla.js')
 require('./crons/unassignedDispatchScan.js')
 require('./crons/holdSlaScan.js')
+// N1 Phase 3: payment-hold reminders at 6h / 24h, admin alert at 48h.
+require('./crons/paymentHoldReminders.js')
 
 
 const port = process.env.PORT || 7001;

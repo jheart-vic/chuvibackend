@@ -92,6 +92,80 @@ const adminSettingSchema = new mongoose.Schema(
             of: Number,
             default: undefined,
         },
+        // ADMIN-EDITABLE DISPLAY NAMES (client spec 2026-10-07: "admin must be
+        // able to rename delivery speeds / service types / care tiers —
+        // DISPLAY NAME ONLY").
+        //
+        // ⚠️ "Display name only" is not a limitation we chose, it is the only
+        // safe reading, and the trap is worth spelling out:
+        //
+        //   * `deliverySpeed` and `serviceTier` are ENUM fields on BookOrder
+        //     (`enum: Object.values(DELIVERY_SPEED)` / `SERVICE_TIERS`).
+        //     Renaming a stored value would fail validation on every new order
+        //     and orphan every existing one.
+        //   * `serviceTypes[].name` IS the value stored on the order, and
+        //     pricing matches on it (`service.name === post.serviceType`). So
+        //     editing a service type's `name` — which `updateAdminSettings`
+        //     happily allows, because it $sets anything — silently breaks
+        //     pricing for every order already placed under the old name, which
+        //     then falls back to a multiplier of 1.
+        //
+        // So renaming is a LABEL layer: keys are the stored values and never
+        // change; only what the customer and staff READ changes. A Map rather
+        // than named fields, so a new speed or tier needs a settings edit and
+        // not a deploy — the same reasoning as `walletAdjustmentLimits`.
+        displayNames: {
+            deliverySpeeds: { type: Map, of: String, default: undefined },
+            serviceTypes: { type: Map, of: String, default: undefined },
+            serviceTiers: { type: Map, of: String, default: undefined },
+        },
+
+        // N1 cancellation charges (client spec 2026-10-07): "after pickup,
+        // before payment, the customer pays ₦1,000 + ₦1,000 before the clothes
+        // go back, EVEN IF a free-pickup offer applied."
+        //
+        // Their own settings rather than being derived from `order.pricing`,
+        // and that is the whole point: an offer-covered order was billed ₦0 for
+        // logistics, so deriving the charge would make cancelling a free-pickup
+        // order cost nothing and absorb the rider's trip. The trip is real work.
+        cancellationPickupFee: { type: Number, default: 1000 },
+        cancellationReturnFee: { type: Number, default: 1000 },
+
+        // ─────────── WINDOW BOOKING / WORKING DAYS (client D1–D6, 2026-10-08) ───────────
+        //
+        // D6: a tick box per day. An unticked day has NO windows and NO Anytime
+        // dispatch — bookings are offered the next working day — AND the
+        // promised delivery date must skip it. Tue–Sun to start; Monday closed.
+        // Ticking a day makes it live at once (nothing caches this).
+        //
+        // Stored as day keys in `util/bookingWindow.DAY_KEYS` form.
+        // `normalizeWorkingDays` also accepts a `{mon:false,tue:true}` object,
+        // because "tick box per day" is how the client describes it and an FE
+        // may well send booleans.
+        workingDays: {
+            type: [String],
+            default: () => ['tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        },
+
+        // D2(b): Anytime dispatch is open 08:00–17:00 on a working day, "both
+        // settings". Outside those hours the app promises first thing on the
+        // next working day rather than refusing the booking.
+        anytimeOpenFrom: { type: String, default: '08:00' },
+        anytimeOpenTo: { type: String, default: '17:00' },
+
+        // The Anytime PREMIUM. Note what is NOT here: there is no
+        // `windowPickupFee`/`windowDeliveryFee`, because the existing
+        // `pickupFee`/`deliveryFee` (₦500 each) already ARE the client's window
+        // price, and a second pair of fields would be two sources of truth for
+        // one number.
+        //
+        // ⚠️ TELL THE CLIENT BEFORE THEY ANNOUNCE IT: at these defaults a
+        // WINDOW booking costs exactly what every booking costs today
+        // (500 + 500 = their ₦1,000 "inside a window" figure), so no existing
+        // customer pays more — only choosing Anytime costs extra.
+        anytimePickupFee: { type: Number, default: 1000 },
+        anytimeDeliveryFee: { type: Number, default: 1000 },
+
         walletAdjustmentLimits: {
             type: Map,
             of: Number,

@@ -31,6 +31,8 @@ const {
   ROUTE_INTAKE_MARK_AS_DELIVERED,
   ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID,
   ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID,
+  ROUTE_ORDER_PAYMENT_HOLD,
+  ROUTE_ORDER_PAYMENT_APPROVE_TRANSFER,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
 
@@ -2320,6 +2322,132 @@ router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID, [intakeUserAuth], (req,
 router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (req, res) => {
     const bookOrderController = new IntakeUserController()
     return bookOrderController.unassignRiderFromDeliveryOrder(req, res)
+})
+
+/**
+ * @swagger
+ * /api/intake-user/order/{id}/payment-hold:
+ *   post:
+ *     summary: Put an order on a payment hold (N1)
+ *     description: >
+ *       Raised once Intake has entered the real items. The amount is taken from
+ *       the order — **there is no way to send one**, because the client's rule
+ *       is that staff can never type an amount. An SMS and an in-app Paystack
+ *       link go to the customer, reminders follow at 6h and 24h, and an admin
+ *       is alerted at 48h.
+ *
+ *
+ *       Nothing is tagged and nothing reaches S2 while the hold is open: the
+ *       same rule applies to an ordinary unpaid booking, not just Quick
+ *       Booking. Paystack clears the hold on its own; a bank transfer is
+ *       approved through `/approve-transfer`; an admin can waive it.
+ *
+ *
+ *       Idempotent — raising it twice returns the existing hold rather than
+ *       re-sending the link or restarting the 48h clock.
+ *     tags: [IntakeUser]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string, example: Extra items found at intake }
+ *     responses:
+ *       200:
+ *         description: The hold, and the payment link if one could be created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/PaymentHoldResult' }
+ *       400:
+ *         description: Already paid, nothing outstanding, or order not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ORDER_PAYMENT_HOLD, [intakeUserAuth], (req, res) => {
+    const intakeUserController = new IntakeUserController()
+    return intakeUserController.raisePaymentHold(req, res)
+})
+
+/**
+ * @swagger
+ * /api/intake-user/order/{id}/approve-transfer:
+ *   post:
+ *     summary: Mark a bank transfer as received and release the payment hold (N1)
+ *     description: >
+ *       Intake or an admin confirms the money arrived. **A reference is
+ *       required** — the sender's name or the transfer reference — because
+ *       without it the daily bank-check list has nothing to match against the
+ *       statement.
+ *
+ *
+ *       Every approval notifies an admin, and the approval is queued on
+ *       `GET /api/admin/bank-check-list` for reconciliation. Intake is being
+ *       trusted to say the money arrived, so the review trail is the control.
+ *     tags: [IntakeUser]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reference]
+ *             properties:
+ *               reference:
+ *                 type: string
+ *                 example: Chinedu Okeke / FT24100912345
+ *                 description: The sender's name or the transfer reference.
+ *               note: { type: string, example: Paid from a different account }
+ *     responses:
+ *       200:
+ *         description: The transfer was accepted and the hold released
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         approved: { type: boolean, example: true }
+ *                         amount: { type: integer, example: 8500 }
+ *                         reference: { type: string, example: FT24100912345 }
+ *                         approvedAt: { type: string, format: date-time }
+ *                         onBankCheckList: { type: boolean, example: true }
+ *                         note: { type: string, example: An admin has been notified and this is on today’s bank-check list. }
+ *       400:
+ *         description: Missing reference, already paid, or order not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ORDER_PAYMENT_APPROVE_TRANSFER, [intakeUserAuth], (req, res) => {
+    const intakeUserController = new IntakeUserController()
+    return intakeUserController.approveTransfer(req, res)
 })
 
 module.exports = router;

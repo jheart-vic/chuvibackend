@@ -23,6 +23,7 @@
 // rider-assignment guard.
 const { PAYMENT_ORDER_STATUS } = require('./constants')
 const { describeHeld, heldItems } = require('./itemHold')
+const { dispatchPaymentGate } = require('./paymentGate')
 const { normalizeAddress } = require('./address')
 const { briefsForAll, summarize, countPieces } = require('./itemSummary')
 
@@ -76,6 +77,28 @@ function dispatchTagGate(order) {
             ok: false,
             error: `This order cannot go out yet — ${heldMessage}`,
             heldPieces: heldItems(order.items || []).length,
+        }
+    }
+
+    // N1 (client spec): an admin may WAIVE a payment hold so the order
+    // processes unpaid — **but it is STOPPED AT DISPATCH.** This is that stop,
+    // and it lives here for the same reason the held-piece check does: the gate
+    // is shared by reading the tag, printing it and the rider-assignment guard,
+    // so one check means a waived order cannot be tagged for dispatch, cannot
+    // be printed and cannot be given to a rider.
+    //
+    // Note the deliberate asymmetry with `itemTagGate`: a waiver OPENS item
+    // tagging (the order is meant to be processed) and CLOSES dispatch. The two
+    // gates give opposite answers for the same order, which is why they are two
+    // functions and not one.
+    const payment = dispatchPaymentGate(order)
+    if (!payment.ok) {
+        return {
+            ok: false,
+            error: payment.error,
+            requiresPayment: true,
+            paymentWaived: Boolean(payment.paymentWaived),
+            outstandingAmount: payment.outstandingAmount,
         }
     }
 

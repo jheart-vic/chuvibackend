@@ -447,6 +447,20 @@ async function main() {
         console.error('This script creates REAL orders/cases/feedback and may send SMS.')
         process.exit(1)
     }
+    // SAFETY: hard-refuse the LIVE database by name. STAGING_OK=1 says "I meant
+    // to run a destructive script"; it does not say "against the right DB".
+    // This one creates real orders/cases/feedback and may send SMS, so the live
+    // name is refused outright.
+    {
+        const dbName =
+            (String(mongoURL || '').match(/\/([A-Za-z0-9_-]+)(\?|$)/) || [])[1] ||
+            '<unknown>'
+        console.log('Target DB name:', dbName)
+        if (/laundrydb/i.test(dbName)) {
+            console.error('*** "laundrydb" is the LIVE database. Refusing. ***')
+            process.exit(1)
+        }
+    }
     if (process.env.NODE_ENV === 'production' && process.env.STAGING_FORCE !== '1') {
         console.error('\nRefusing to run against NODE_ENV=production (set STAGING_FORCE=1 to override).')
         process.exit(1)

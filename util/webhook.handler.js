@@ -529,6 +529,21 @@ async function handleOrderPayment(metadata, reference) {
             console.error('production clock (order payment) failed:', err?.message)
         }
 
+        // N1 Phase 3: "Paystack clears the hold automatically." This is that
+        // automatic release — the order goes back to the tagging queue and the
+        // tags can finally print. Non-fatal and AFTER the payment is saved, so
+        // a failure here can never lose a confirmed payment; the order would
+        // simply sit on its hold until someone released it.
+        try {
+            const PaymentHoldService = require('../services/paymentHold.service')
+            await PaymentHoldService.clear({
+                orderId: order._id,
+                source: 'paystack',
+            })
+        } catch (err) {
+            console.error('payment hold release (webhook) failed:', err?.message)
+        }
+
        await notifyBot({
             event: 'order-paid',
             chuviUserId: String(order.userId),

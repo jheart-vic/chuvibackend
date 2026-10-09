@@ -190,8 +190,52 @@ const normalizePhone = (phone) => {
 module.exports.normalizePhone = normalizePhone
 
 
-const calculateDueDate = (deliverySpeed) => {
+/**
+ * The order's internal DEADLINE.
+ *
+ * ⚠️ READ THIS BEFORE CHANGING THE 19:00.
+ *
+ * The time on this value is an END-OF-DAY SENTINEL, not a promise. ~10 readers
+ * compare it as an instant — `deliveryDate < now` is "overdue" on the admin
+ * dashboard, `{$gte: now, $lte: todayEnd}` is the "due today" bucket, and
+ * `util/holdSla.js` has a past-delivery-date breach branch. Repointing it at a
+ * window's end time would shift every one of those boundaries for no gain.
+ *
+ * The customer-facing promise is a SEPARATE thing and lives on
+ * `scheduling.delivery` (client D1: the window replaces the old "by 7pm"
+ * wording, which, for the record, was never actually said to a customer
+ * anywhere — it existed only in these comments, and the bot prints the date
+ * with `toDateString()`, which drops the time). Keep the two apart: one field
+ * doing both "when we must be done" and "what we told the customer" is how the
+ * hold-SLA table became three copies that had already drifted.
+ *
+ * `workingDays` (client D6(b), OPTIONAL for backward compatibility): the
+ * promised date must skip days the business is closed. Without it, a standard
+ * order booked on a Saturday is due Monday — and with Monday unticked that
+ * order is marked OVERDUE on a day nobody was working, and trips the hold
+ * breach branch. Callers that have the admin settings to hand should always
+ * pass this; omitting it keeps the original calendar-day behaviour exactly.
+ */
+const calculateDueDate = (deliverySpeed, workingDays = null) => {
     const now = new Date()
+    const { addWorkingDays } = require('./bookingWindow')
+
+    // Advance by calendar days (legacy) or working days (D6(b)), then pin the
+    // end-of-day sentinel. `addWorkingDays(date, 0)` is "today if today is a
+    // working day, else the next one", which is what same-day needs.
+    const dueDay = (daysAhead) => {
+        if (workingDays) {
+            const day = addWorkingDays(now, daysAhead, workingDays)
+            if (!day) return null // no working day within reach
+            const due = new Date(day)
+            due.setHours(19, 0, 0, 0)
+            return due
+        }
+        const due = new Date(now)
+        due.setDate(due.getDate() + daysAhead)
+        due.setHours(19, 0, 0, 0)
+        return due
+    }
 
     switch (deliverySpeed) {
         case DELIVERY_SPEED.SAME_DAY: {
@@ -203,10 +247,8 @@ const calculateDueDate = (deliverySpeed) => {
                 return null // ← signal to block the order at creation
             }
 
-            // due today by 7pm
-            const due = new Date(now)
-            due.setHours(19, 0, 0, 0)
-            return due
+            // due today by the end-of-day sentinel
+            return dueDay(0)
         }
 
         case DELIVERY_SPEED.EXPRESS: {
@@ -218,20 +260,14 @@ const calculateDueDate = (deliverySpeed) => {
                 return null // ← signal to block the order at creation
             }
 
-            // due tomorrow by 7pm
-            const due = new Date(now)
-            due.setDate(due.getDate() + 1)
-            due.setHours(19, 0, 0, 0)
-            return due
+            // due the next working day
+            return dueDay(1)
         }
 
         case DELIVERY_SPEED.STANDARD:
         default: {
-            // no cutoff for standard — due day after tomorrow by 7pm
-            const due = new Date(now)
-            due.setDate(due.getDate() + 2)
-            due.setHours(19, 0, 0, 0)
-            return due
+            // no cutoff for standard — due two working days out
+            return dueDay(2)
         }
     }
 }

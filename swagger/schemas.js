@@ -673,6 +673,327 @@
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *
+ *     DisplayNameMap:
+ *       type: object
+ *       description: >
+ *         Labels for the values a screen shows. The admin can rename any of
+ *         them, but only the LABEL changes — the `value` is an order enum or a
+ *         pricing key and never changes.
+ *       properties:
+ *         deliverySpeeds:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *         serviceTypes:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *         serviceTiers:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *
+ *     DisplayNameEntry:
+ *       type: object
+ *       properties:
+ *         value:
+ *           type: string
+ *           example: same-day
+ *           description: The stored value. Send THIS back in any request, never the label.
+ *         label: { type: string, example: Express Same Day }
+ *         renamed:
+ *           type: boolean
+ *           example: true
+ *           description: True when an admin set this label; false when it is derived from the value.
+ *
+ *     ItemEditResult:
+ *       type: object
+ *       description: >
+ *         The outcome of entering an order's real items (client item #7).
+ *         Exactly one of `paymentHold` / `walletRefund` is set, or neither when
+ *         the total did not change.
+ *       properties:
+ *         previousTotal: { type: integer, example: 5400 }
+ *         newTotal: { type: integer, example: 8200 }
+ *         difference:
+ *           type: integer
+ *           example: 2800
+ *           description: Negative when the bill went down.
+ *         pieceCount: { type: integer, example: 4 }
+ *         paymentHold:
+ *           nullable: true
+ *           allOf: [{ $ref: '#/components/schemas/PaymentHoldResult' }]
+ *           description: Set when the total went UP and money is outstanding.
+ *         walletRefund:
+ *           nullable: true
+ *           oneOf:
+ *             - type: integer
+ *               example: 2800
+ *               description: The amount returned to the wallet.
+ *             - type: object
+ *               description: >
+ *                 Returned instead when the automatic refund failed. The
+ *                 customer is still owed it and somebody must settle it by
+ *                 hand — this is reported rather than swallowed.
+ *               properties:
+ *                 error: { type: string }
+ *                 amount: { type: integer }
+ *
+ *     PaymentHoldResult:
+ *       type: object
+ *       description: >
+ *         The outcome of raising a payment hold (N1). `alreadyOnHold` is a
+ *         SUCCESS, not a failure — raising it twice reports the existing hold
+ *         rather than re-sending the link or restarting the 48h clock.
+ *       properties:
+ *         held: { type: boolean, example: true }
+ *         alreadyOnHold: { type: boolean, example: false }
+ *         amount:
+ *           type: integer
+ *           example: 8500
+ *           description: Taken from the order. There is no way to send an amount — staff can never type one.
+ *         paymentUrl:
+ *           type: string
+ *           nullable: true
+ *           example: https://checkout.paystack.com/abc123
+ *           description: >
+ *             Null for a walk-in with no account, or if Paystack could not be
+ *             reached. The hold still stands and the SMS tells the customer to
+ *             pay in the app.
+ *         raisedAt: { type: string, format: date-time }
+ *
+ *     BankCheckRow:
+ *       type: object
+ *       description: One human-approved bank transfer awaiting reconciliation (N1).
+ *       properties:
+ *         _id: { type: string }
+ *         oscNumber: { type: string, example: OSC-2026-00412 }
+ *         fullName: { type: string, example: Chinedu Okeke }
+ *         phoneNumber: { type: string, example: "08031234567" }
+ *         amount: { type: integer, example: 8500 }
+ *         paymentStatus: { type: string, example: success }
+ *         bankTransferApproval:
+ *           type: object
+ *           properties:
+ *             approvedAt: { type: string, format: date-time }
+ *             approvedByRole:
+ *               type: string
+ *               example: intake-and-tag
+ *               description: Stored rather than looked up later, because a staff member's role can change.
+ *             reference: { type: string, example: FT24100912345 }
+ *             note: { type: string, nullable: true }
+ *             amount: { type: integer, example: 8500 }
+ *             approvedBy:
+ *               type: object
+ *               properties:
+ *                 _id: { type: string }
+ *                 fullName: { type: string, example: Amaka Obi }
+ *                 userType: { type: string, example: intake-and-tag }
+ *
+ *     DeliveryPromise:
+ *       type: object
+ *       nullable: true
+ *       description: >
+ *         **The one thing to show a customer about delivery timing** (client D1,
+ *         2026-10-08: the time window replaces the old "by 7pm" wording).
+ *         Present on every order returned by the API, derived centrally so the
+ *         app, the in-app bot and SMS cannot quote different times.
+ *
+ *
+ *         ⚠️ **Render `text` — do NOT format `deliveryDate` as a time.**
+ *         `deliveryDate` is the order's internal DEADLINE and its 19:00 is an
+ *         end-of-day sentinel used for the overdue and due-today buckets and
+ *         for hold-breach checks. Showing it is what made "7:00 PM" collide
+ *         with a window that ends at 18:30. Null when the order has no delivery
+ *         date at all.
+ *       properties:
+ *         text:
+ *           type: string
+ *           example: Delivery on Tue Oct 13 2026, between 15:00 and 18:30.
+ *           description: The ready-to-display sentence. Reads "Estimated delivery…" until confirmed.
+ *         date: { type: string, format: date-time, description: Start of the promised Lagos day }
+ *         dateText: { type: string, example: Tue Oct 13 2026 }
+ *         confirmed:
+ *           type: boolean
+ *           example: true
+ *           description: >
+ *             False until the delivery window is confirmed when the order is marked
+ *             READY (D7) — a standard order's delivery day is not known at booking.
+ *             Present it as an estimate while false.
+ *         timing: { type: string, nullable: true, enum: [window, anytime], example: window }
+ *         windowId: { type: string, nullable: true }
+ *         windowName: { type: string, nullable: true, example: Evening }
+ *         windowStart: { type: string, nullable: true, example: "15:00" }
+ *         windowEnd: { type: string, nullable: true, example: "18:30" }
+ *
+ *     OrderSchedulingLeg:
+ *       type: object
+ *       description: One leg's timing as stored on the order.
+ *       properties:
+ *         timing: { type: string, enum: [window, anytime], example: window }
+ *         windowId: { type: string, nullable: true }
+ *         windowName: { type: string, nullable: true, example: Evening }
+ *         windowStart: { type: string, nullable: true, example: "15:00" }
+ *         windowEnd: { type: string, nullable: true, example: "18:30" }
+ *         date: { type: string, format: date-time, nullable: true }
+ *         fee: { type: integer, example: 500 }
+ *         forcedMove:
+ *           type: boolean
+ *           example: false
+ *           description: >
+ *             True when OUR capacity moved the customer out of the window they
+ *             chose (D3). They pay the WINDOW price and keep their offer — show
+ *             `forcedMoveFrom` so the change is explained rather than silent.
+ *         forcedMoveFrom: { type: string, nullable: true, example: Evening on 2026-10-09 }
+ *         servedAt: { type: string, format: date-time, nullable: true }
+ *         confirmedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Delivery leg only — set when the window is confirmed at READY (D7).
+ *
+ *     OrderScheduling:
+ *       type: object
+ *       nullable: true
+ *       description: >
+ *         Window-booking timing for both legs. **Absent on orders booked without
+ *         a timing**, including every order placed before window booking — do
+ *         not assume it exists.
+ *       properties:
+ *         pickup: { $ref: '#/components/schemas/OrderSchedulingLeg' }
+ *         delivery: { $ref: '#/components/schemas/OrderSchedulingLeg' }
+ *         disclosure:
+ *           type: string
+ *           nullable: true
+ *           description: >
+ *             Same-day orders only. Must be shown BEFORE the customer confirms:
+ *             the pickup is an Anytime trip at the Anytime price while delivery
+ *             returns in the evening window at the window price.
+ *           example: Same-day pickup is an Anytime trip and is charged at the Anytime rate. Delivery returns in the evening window at the window rate.
+ *         disclosureAcceptedAt: { type: string, format: date-time, nullable: true }
+ *
+ *     BookingWindow:
+ *       type: object
+ *       description: >
+ *         A pickup/delivery time window (client decisions D1–D5, 2026-10-08).
+ *         ONE window serves BOTH legs, so there is no leg field. These replace
+ *         the old `pickupTimeSlots` setting, which was free text with no cutoff
+ *         and no limit.
+ *       properties:
+ *         _id: { type: string, example: 671f2a9b4c1d2e3f44556677 }
+ *         name: { type: string, example: Evening }
+ *         startTime: { type: string, example: "15:00", description: "HH:mm, Lagos time" }
+ *         endTime: { type: string, example: "18:30" }
+ *         days:
+ *           type: array
+ *           items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+ *           example: [tue, wed, thu, fri, sat, sun]
+ *         cutoffMinutes:
+ *           type: integer
+ *           example: 60
+ *           description: Minutes before startTime that bookings close. 60 on a 15:00 window closes it at 14:00.
+ *         limit:
+ *           type: integer
+ *           nullable: true
+ *           example: 10
+ *           description: >
+ *             One shared count per day across pickups AND deliveries (D5).
+ *             **null means no limit** — raise the number when a bike is added.
+ *         isActive: { type: boolean, example: true }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *
+ *     BookingSlot:
+ *       type: object
+ *       description: One offered window on one day, as the booking screen shows it.
+ *       properties:
+ *         date: { type: string, example: "2026-10-09" }
+ *         windowId: { type: string, nullable: true, example: 671f2a9b4c1d2e3f44556677 }
+ *         name: { type: string, example: Evening }
+ *         startTime: { type: string, example: "15:00" }
+ *         endTime: { type: string, example: "18:30" }
+ *         cutoffAt: { type: string, format: date-time, nullable: true }
+ *         timing: { type: string, enum: [window, anytime], example: window }
+ *         fee: { type: integer, example: 500 }
+ *         available: { type: boolean, example: true }
+ *         remaining:
+ *           type: number
+ *           example: 4
+ *           description: Places left. A window with no limit reports Infinity, which serialises as null.
+ *         unavailableReason:
+ *           type: string
+ *           nullable: true
+ *           enum: [not-working-day, does-not-run-that-day, cutoff-passed, full]
+ *           example: null
+ *
+ *     BookingAvailability:
+ *       type: object
+ *       description: >
+ *         What a customer may choose for one leg. Includes the Anytime option
+ *         even when it is shut, with the honest next service time, rather than
+ *         hiding it and looking broken.
+ *       properties:
+ *         leg: { type: string, enum: [pickup, delivery], example: pickup }
+ *         workingDays:
+ *           type: array
+ *           items: { type: string, example: tue }
+ *         windowFee: { type: integer, example: 500 }
+ *         slots:
+ *           type: array
+ *           items: { $ref: '#/components/schemas/BookingSlot' }
+ *         anytime:
+ *           type: object
+ *           properties:
+ *             timing: { type: string, example: anytime }
+ *             fee: { type: integer, example: 1000 }
+ *             open: { type: boolean, example: true }
+ *             opensFrom: { type: string, example: "08:00" }
+ *             opensTo: { type: string, example: "17:00" }
+ *             servesFrom: { type: string, format: date-time }
+ *             note: { type: string, example: We will dispatch as soon as we can. }
+ *         sameDay:
+ *           type: object
+ *           nullable: true
+ *           description: >
+ *             Present only when deliverySpeed=same-day. The client requires this
+ *             to be shown BEFORE the customer confirms: a same-day pickup is an
+ *             Anytime trip at the Anytime price, while delivery returns in the
+ *             evening window at the window price.
+ *           properties:
+ *             pickup:
+ *               type: object
+ *               properties:
+ *                 timing: { type: string, example: anytime }
+ *                 fee: { type: integer, example: 1000 }
+ *                 windowId: { type: string, nullable: true }
+ *                 windowName: { type: string, nullable: true }
+ *             delivery:
+ *               type: object
+ *               properties:
+ *                 timing: { type: string, example: window }
+ *                 fee: { type: integer, example: 500 }
+ *             disclosure:
+ *               type: string
+ *               example: Same-day pickup is an Anytime trip and is charged at the Anytime rate. Delivery returns in the evening window at the window rate.
+ *
+ *     WindowDeflection:
+ *       type: object
+ *       description: >
+ *         One row per window per day in the D5 report: a full window was put in
+ *         front of a customer and they had to be moved. Recorded at the moment
+ *         the window is dropped, because it cannot be recovered from the order
+ *         afterwards.
+ *       properties:
+ *         date: { type: string, example: "2026-10-09" }
+ *         windowId: { type: string, nullable: true, example: 671f2a9b4c1d2e3f44556677 }
+ *         windowName: { type: string, example: Evening }
+ *         shown:
+ *           type: integer
+ *           example: 7
+ *           description: Times a full window was offered. One customer refreshing three times is three.
+ *         customersMoved:
+ *           type: integer
+ *           example: 4
+ *           description: Distinct signed-in customers turned away. Anonymous browses are not counted.
+ *         limit: { type: integer, example: 10, description: The limit in force at the time, not today's }
+ *
  *     HoldType:
  *       type: object
  *       description: >

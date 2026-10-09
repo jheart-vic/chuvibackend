@@ -1006,6 +1006,740 @@ const run = (async () => {
     ok('  …message 3 keeps the ₦8,000 line',
         /from ₦8,000/.test(rnbTexts[2]))
 
+    // ─── N1 / WINDOW BOOKING — the pure scheduling engine (client D1–D8) ─────
+    //
+    // `util/bookingWindow.js` is pure and takes `now` as a parameter precisely
+    // so these can be asserted offline. Every rule here is a CUTOFF rule — a
+    // different answer at 14:00 than at 14:01 — and a function that read the
+    // clock itself could only be tested by waiting, i.e. never.
+    console.log('\nN1 — booking windows, working days, Anytime (client D1–D8)')
+    const BW = require(path.join(ROOT, 'util/bookingWindow'))
+
+    // The client's starting window and starting week.
+    const EVENING = {
+        _id: 'w1', name: 'Evening', startTime: '15:00', endTime: '18:30',
+        days: ['tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        cutoffMinutes: 60, limit: 10, isActive: true,
+    }
+    const WDAYS = ['tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    const FEES = { pickupFee: 500, deliveryFee: 500, anytimePickupFee: 1000, anytimeDeliveryFee: 1000 }
+    // 2026-10-09 Fri · 10 Sat · 11 Sun · 12 MON (closed) · 13 Tue
+    const fri = (h, m = 0) => new Date(2026, 9, 9, h, m, 0, 0)
+    const satD = (h, m = 0) => new Date(2026, 9, 10, h, m, 0, 0)
+    const sunD = (h, m = 0) => new Date(2026, 9, 11, h, m, 0, 0)
+    const monD = (h, m = 0) => new Date(2026, 9, 12, h, m, 0, 0)
+
+    ok('a bad time string is REFUSED, never silently midnight',
+        BW.parseHhMm('3pm') === null && BW.parseHhMm('25:00') === null &&
+            BW.parseHhMm('15:70') === null && BW.parseHhMm('15:00') === 900)
+    ok('D6 Monday is closed, Friday is open',
+        BW.isWorkingDay(monD(9), WDAYS) === false &&
+            BW.isWorkingDay(fri(9), WDAYS) === true)
+    // A working-days list that normalised to [] would close the business
+    // permanently and refuse every booking, so it must never be the answer.
+    ok('an empty/garbage working-days setting falls back — it cannot close the business',
+        BW.normalizeWorkingDays([]).length === 6 &&
+            BW.normalizeWorkingDays(null).length === 6)
+    ok('  …and a {mon:false,tue:true} tick-box object is understood',
+        JSON.stringify(BW.normalizeWorkingDays({ mon: false, tue: true, wed: true })) ===
+            JSON.stringify(['tue', 'wed']))
+
+    // D6: "the promised delivery date must also skip unticked days".
+    ok('D6 standard (+2) from Saturday skips the closed Monday → Tuesday',
+        BW.deliveryDayForSpeed({ from: satD(9), deliverySpeed: DELIVERY_SPEED.STANDARD, workingDays: WDAYS }).getDate() === 13)
+    ok('D6 express (+1) from Sunday skips the closed Monday → Tuesday',
+        BW.deliveryDayForSpeed({ from: sunD(9), deliverySpeed: DELIVERY_SPEED.EXPRESS, workingDays: WDAYS }).getDate() === 13)
+    ok('  …and same-day on a closed day cannot be promised that day',
+        BW.deliveryDayForSpeed({ from: monD(9), deliverySpeed: DELIVERY_SPEED.SAME_DAY, workingDays: WDAYS }).getDate() === 13)
+
+    // D1: 15:00 window with a 60-minute cutoff closes at 14:00.
+    ok('D1 the cutoff bites exactly at 14:00 for a 15:00 window',
+        BW.isWindowBookable({ window: EVENING, date: fri(0), now: fri(13, 59), workingDays: WDAYS }) === true &&
+            BW.isWindowBookable({ window: EVENING, date: fri(0), now: fri(14, 0), workingDays: WDAYS }) === false)
+    // The cutoff governs BOOKING; it must not govern whether a dispatch
+    // physically happened inside the window (the refund test reads that).
+    ok('isWithinWindow ignores the cutoff and reads the hours only',
+        BW.isWithinWindow(fri(16), EVENING) === true &&
+            BW.isWithinWindow(fri(14, 30), EVENING) === false &&
+            BW.isWithinWindow(fri(18, 31), EVENING) === false)
+
+    ok('D5 a blank limit means NO limit (never a silent cap)',
+        BW.windowRemaining({ limit: null }, 999) === Infinity &&
+            BW.windowRemaining({ limit: undefined }, 999) === Infinity)
+    ok('  …and limit 10 is full at 10, not at 9',
+        BW.isWindowFull(EVENING, 10) === true && BW.isWindowFull(EVENING, 9) === false)
+
+    const ATS = { workingDays: WDAYS, anytimeOpenFrom: '08:00', anytimeOpenTo: '17:00' }
+    ok('D2(b) Anytime is open 08:00–17:00 on a working day only',
+        BW.isAnytimeOpen({ now: fri(11), ...ATS }) === true &&
+            BW.isAnytimeOpen({ now: fri(7, 59), ...ATS }) === false &&
+            BW.isAnytimeOpen({ now: fri(17, 1), ...ATS }) === false &&
+            BW.isAnytimeOpen({ now: monD(11), ...ATS }) === false)
+    ok('  …outside hours it promises first thing the next WORKING day (Mon closed → Tue 08:00)',
+        (() => {
+            const d = BW.anytimeServiceStart({ now: sunD(18), ...ATS })
+            return d.getDate() === 13 && d.getHours() === 8
+        })())
+
+    // THE NARROWED REFUND RULE (client 2026-10-08), in their own two examples.
+    // Reason (a) is READ FROM THE ORDER, never recomputed: by the time the job
+    // is done the cutoff has passed, so "was the window still bookable when
+    // they booked?" is unrecoverable after the fact.
+    ok("D2(c) client example: booked 11:00 while the window was open, served 16:00 → REFUND",
+        BW.qualifiesForAnytimeRefund({ windowWasBookableAtBooking: true, servedAt: fri(16), window: EVENING }) === true)
+    ok("D2(c) client example: booked 14:30 after the cutoff, served 16:00 → NO refund",
+        BW.qualifiesForAnytimeRefund({ windowWasBookableAtBooking: false, servedAt: fri(16), window: EVENING }) === false)
+    ok('  …served OUTSIDE the window → no refund (they got the speed they paid for)',
+        BW.qualifiesForAnytimeRefund({ windowWasBookableAtBooking: true, servedAt: fri(19, 30), window: EVENING }) === false)
+    ok('  …and the stored flag must be an explicit true, never a truthy accident',
+        BW.qualifiesForAnytimeRefund({ servedAt: fri(16), window: EVENING }) === false)
+
+    // The window price IS today's price — there is no second pair of settings.
+    ok('a WINDOW leg costs exactly today’s pickupFee/deliveryFee',
+        BW.legFee({ timing: 'window', leg: 'pickup', settings: FEES }) === 500 &&
+            BW.legFee({ timing: 'window', leg: 'delivery', settings: FEES }) === 500)
+    ok('  …and the refund is the Anytime PREMIUM only, not the whole fee',
+        BW.anytimeRefundAmount({ leg: 'pickup', settings: FEES }) === 500)
+
+    // Client ruling: same-day pickup is an Anytime trip at the Anytime price;
+    // delivery returns in the evening window at the window price; and it must
+    // be DISCLOSED before the customer confirms.
+    const sdPlan = BW.sameDayLegPlan({ settings: FEES })
+    ok('same-day pickup is Anytime-priced, delivery window-priced',
+        sdPlan.pickup.timing === 'anytime' && sdPlan.pickup.fee === 1000 &&
+            sdPlan.delivery.timing === 'window' && sdPlan.delivery.fee === 500)
+    ok('  …and it carries the disclosure the client requires BEFORE confirming',
+        typeof sdPlan.disclosure === 'string' && sdPlan.disclosure.length > 20)
+    ok('  …a morning window later switches it to the window price with no code change',
+        (() => {
+            const p = BW.sameDayLegPlan({ settings: FEES, morningWindow: { _id: 'm1', name: 'Morning' } })
+            return p.pickup.timing === 'window' && p.pickup.fee === 500
+        })())
+
+    // DEFLECTIONS — the number that cannot be derived from saved orders later,
+    // because a deflected customer leaves no trace on the order they end up
+    // with. It has to be written when the full window is dropped.
+    const defFull = BW.buildOfferedSlots({
+        now: fri(10), windows: [EVENING], workingDays: WDAYS,
+        bookedCounts: { '2026-10-09::w1': 10 }, horizonDays: 1, leg: 'pickup', settings: FEES,
+    })
+    ok('D5 a FULL bookable window is dropped AND logged as a deflection',
+        defFull.slots[0].available === false &&
+            defFull.slots[0].unavailableReason === 'full' &&
+            defFull.deflections.length === 1 &&
+            defFull.deflections[0].limit === 10)
+    const defLate = BW.buildOfferedSlots({
+        now: fri(14, 30), windows: [EVENING], workingDays: WDAYS,
+        bookedCounts: { '2026-10-09::w1': 10 }, horizonDays: 1, leg: 'pickup', settings: FEES,
+    })
+    ok('  …but a window already past its cutoff is NOT a deflection',
+        defLate.slots[0].unavailableReason === 'cutoff-passed' &&
+            defLate.deflections.length === 0)
+    const defClosed = BW.buildOfferedSlots({
+        now: monD(9), windows: [EVENING], workingDays: WDAYS,
+        bookedCounts: { '2026-10-12::w1': 10 }, horizonDays: 1, leg: 'pickup', settings: FEES,
+    })
+    ok('  …and neither is a closed day',
+        defClosed.slots[0].unavailableReason === 'not-working-day' &&
+            defClosed.deflections.length === 0)
+
+    // SEEDING IS NOT MIGRATING — third time in this repo. Without the backfill,
+    // window booking works on a fresh DB and has no working days in production.
+    const setupSrcN1 = fs.readFileSync(path.join(ROOT, 'config/setup.js'), 'utf8')
+    ok('the scheduling settings are MIGRATED onto the existing AdminSetting doc',
+        /ensureSchedulingSettings/.test(setupSrcN1) &&
+            /\[field\]: \{ \$exists: false \}/.test(setupSrcN1))
+    ok('  …and both new steps are registered in setupApp (an unregistered step never runs)',
+        /\["schedulingSettings", ensureSchedulingSettings\]/.test(setupSrcN1) &&
+            /\["defaultBookingWindow", createDefaultBookingWindow\]/.test(setupSrcN1))
+    const bwModelSrc = fs.readFileSync(path.join(ROOT, 'models/bookingWindow.model.js'), 'utf8')
+    ok('a window’s limit defaults to null (no limit), never to a number',
+        /limit: \{ type: Number, default: null/.test(bwModelSrc))
+
+    // ─── N1 Phase 2 — resolving a leg at booking time ───────────────────────
+    // `resolveLeg` touches no database, so every branch runs here. Loading the
+    // service would prove nothing about its method bodies (the 1.6 lesson:
+    // three ReferenceErrors passed both `node --check` and `require()`).
+    console.log('\nN1 — resolving a booking leg (D3 forced move, the refund flag)')
+    const BWS = require(path.join(ROOT, 'services/bookingWindow.service'))
+    const LATE = {
+        _id: 'w2', name: 'Late', startTime: '19:00', endTime: '21:00',
+        days: WDAYS, cutoffMinutes: 60, limit: 5, isActive: true,
+    }
+    const RSET = { workingDays: WDAYS, anytimeOpenFrom: '08:00', anytimeOpenTo: '17:00', ...FEES }
+
+    const rWin = BWS.resolveLeg({
+        leg: 'pickup', timing: 'window', windowId: 'w1', date: fri(0),
+        windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(10),
+    })
+    ok('a bookable window resolves with its hours and the window fee',
+        rWin.ok && rWin.leg.windowId === 'w1' && rWin.leg.fee === 500 &&
+            rWin.leg.windowStart === '15:00' && rWin.leg.windowEnd === '18:30')
+    ok('  …and a WINDOW leg never claims the Anytime refund flag',
+        rWin.leg.windowWasBookableAtBooking === undefined)
+
+    ok('past the cutoff it is refused, with requiresChoice so the screen can re-ask',
+        (() => {
+            const r = BWS.resolveLeg({
+                leg: 'pickup', timing: 'window', windowId: 'w1', date: fri(0),
+                windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(14, 1),
+            })
+            return !r.ok && r.requiresChoice === true
+        })())
+    ok('D6 a closed day is refused AND names the next working day',
+        (() => {
+            const r = BWS.resolveLeg({
+                leg: 'pickup', timing: 'window', windowId: 'w1', date: monD(0),
+                windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(10),
+            })
+            return !r.ok && /closed that day/i.test(r.error) && /2026-10-13/.test(r.error)
+        })())
+
+    // D3: capacity-forced move. The client was explicit — the customer pays the
+    // WINDOW price and KEEPS their offer, because the move was ours not theirs.
+    const rFull = BWS.resolveLeg({
+        leg: 'pickup', timing: 'window', windowId: 'w1', date: fri(0),
+        windows: [EVENING, LATE], settings: RSET,
+        bookedCounts: { '2026-10-09::w1': 10 }, now: fri(10),
+    })
+    ok('D3 a FULL window MOVES the customer instead of refusing them',
+        rFull.ok && rFull.leg.forcedMove === true && rFull.leg.windowId === 'w2')
+    ok('  …at the WINDOW price, and recording what they were moved from',
+        rFull.leg.fee === 500 && /Evening on 2026-10-09/.test(rFull.leg.forcedMoveFrom || ''))
+    ok('  …and with nothing free anywhere it refuses and points at Anytime',
+        (() => {
+            const counts = {}
+            // Zero-padded: `dateKey` pads, so '2026-10-9' would never match
+            // and the window would look free on the first day searched.
+            for (let i = 9; i <= 20; i += 1) {
+                counts[`2026-10-${String(i).padStart(2, '0')}::w1`] = 10
+            }
+            const r = BWS.resolveLeg({
+                leg: 'pickup', timing: 'window', windowId: 'w1', date: fri(0),
+                windows: [EVENING], settings: RSET, bookedCounts: counts, now: fri(10),
+            })
+            return !r.ok && /Anytime/.test(r.error)
+        })())
+
+    // THE UNRECOVERABLE FLAG, stamped at booking. These two cases ARE the
+    // client's refund examples, one step earlier than the pure-module test:
+    // there we asserted the rule, here we assert the flag it depends on.
+    ok('Anytime booked at 11:00 (window still open) stamps the flag TRUE',
+        (() => {
+            const r = BWS.resolveLeg({
+                leg: 'pickup', timing: 'anytime', date: fri(0),
+                windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(11),
+            })
+            return r.ok && r.leg.windowWasBookableAtBooking === true &&
+                String(r.leg.refundAgainstWindowId) === 'w1' && r.leg.fee === 1000
+        })())
+    ok('Anytime booked at 14:30 (cutoff passed) stamps it FALSE — no refund later',
+        (() => {
+            const r = BWS.resolveLeg({
+                leg: 'pickup', timing: 'anytime', date: fri(0),
+                windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(14, 30),
+            })
+            return r.ok && r.leg.windowWasBookableAtBooking === false
+        })())
+    ok('a delivery leg is priced as a DELIVERY, not silently as a pickup',
+        BWS.resolveLeg({
+            leg: 'delivery', timing: 'anytime', date: fri(0),
+            windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(11),
+        }).leg.fee === 1000)
+
+    // One validator shared by create and update, so the two cannot drift — the
+    // hold-SLA lesson (three copies of one table, already drifted).
+    ok('a blank limit is ACCEPTED (it means "no limit"), a negative one is not',
+        BWS._validateWindow({ name: 'x', startTime: '15:00', endTime: '18:30', limit: null }).length === 0 &&
+            BWS._validateWindow({ name: 'x', startTime: '15:00', endTime: '18:30', limit: '' }).length === 0 &&
+            BWS._validateWindow({ name: 'x', startTime: '15:00', endTime: '18:30', limit: -2 }).length > 0)
+    ok('  …end-before-start, a bad time and an unknown day are all refused',
+        BWS._validateWindow({ name: 'x', startTime: '18:00', endTime: '15:00' }).some((e) => /after startTime/.test(e)) &&
+            BWS._validateWindow({ name: 'x', startTime: '3pm', endTime: '18:30' }).length > 0 &&
+            BWS._validateWindow({ name: 'x', startTime: '15:00', endTime: '18:30', days: ['funday'] }).some((e) => /unknown day/.test(e)))
+    ok('  …and a blank limit is shaped to null rather than to 0',
+        BWS._shapeWindow({ limit: '' }).limit === null &&
+            JSON.stringify(BWS._shapeWindow({ days: ['TUE', 'tue', 'Wed'] }).days) === JSON.stringify(['tue', 'wed']))
+    // Recognised by its HOURS so the client can name it anything.
+    ok('the morning window is found by its hours, not by its name',
+        BWS._findMorningWindow([EVENING, { _id: 'm', name: 'Early Birds', startTime: '09:00', endTime: '12:00' }])._id === 'm' &&
+            BWS._findMorningWindow([EVENING, LATE]) === null)
+
+    // The booking integration, asserted structurally — postBookOrder needs a DB.
+    const boSrc = fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')
+    ok('window booking is OPTIONAL — an app build that sends nothing still books',
+        /pickupTiming: 'string\|in:window,anytime'/.test(boSrc) &&
+            /if \(post\.pickupTiming \|\| post\.deliveryTiming\)/.test(boSrc))
+    ok('the legs are resolved BEFORE the order is created, so a refusal leaves nothing',
+        boSrc.indexOf('BookingWindowService.resolveLeg') < boSrc.indexOf('const oscNumber = generateOscNumber()'))
+    ok('a same-day pickup is FORCED to Anytime pricing, not trusted from the client',
+        /DELIVERY_SPEED\.SAME_DAY &&\s*\n\s*!BookingWindowService\._findMorningWindow/.test(boSrc))
+    ok('the chosen timing owns the fee (one override, not five parallel edits)',
+        /adminOrderSetting\.pickupFee = resolved\.leg\.fee/.test(boSrc) &&
+            /adminOrderSetting\.deliveryFee = scheduling\.delivery\.fee/.test(boSrc))
+    ok('`scheduling` is stamped once in the common tail, after the !newOrder guard',
+        boSrc.indexOf('if (!newOrder) {') < boSrc.indexOf('{ $set: { scheduling } }'))
+    const bwSvcSrc = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
+    // Matches the field being USED in a query (`isCancelled:`), not the comment
+    // that explains why it must not be — otherwise the explanation fails the test.
+    ok('a CANCELLED order releases its window slot (there is no `isCancelled` field)',
+        /'cancellation\.cancelledAt': \{ \$exists: false \}/.test(bwSvcSrc) &&
+            !/\bisCancelled\s*:/.test(bwSvcSrc))
+    ok('the deflection write can never delay or fail the booking screen',
+        /this\._recordDeflections\(deflections, userId\)\.catch\(\(\) => \{\}\)/.test(bwSvcSrc))
+    ok('scheduling audit rows use a REAL category (there is no "admin" one)',
+        /category: AUDIT_LOG_CATEGORIES\.SYSTEM/.test(bwSvcSrc) &&
+            !/category: 'admin'/.test(bwSvcSrc))
+    ok('an unknown `leg` is refused rather than priced as a delivery',
+        /Object\.values\(DISPATCH_LEG\)\.includes\(leg\)/.test(bwSvcSrc))
+    ok('a window in use is DEACTIVATED, never deleted (orders keep their times)',
+        /window\.isActive = false/.test(bwSvcSrc) && /ordersReferencing: inUse/.test(bwSvcSrc))
+    ok('an EMPTY working week is refused out loud, not silently ignored',
+        /At least one working day is required/.test(bwSvcSrc))
+
+    // ─── D1/D6(b) — the deadline vs the promise ─────────────────────────────
+    // `deliveryDate` stays the INTERNAL deadline (its 19:00 is an end-of-day
+    // sentinel that ~10 readers compare as an instant: overdue, due-today, the
+    // hold breach branch). The customer-facing promise is a separate field.
+    console.log('\nN1 — deliveryDate stays the deadline; the promise is its own field')
+    const { calculateDueDate } = require(path.join(ROOT, 'util/helper'))
+    const { deliveryPromise } = BW
+    const { presentOrder } = require(path.join(ROOT, 'util/orderView'))
+
+    // Clock-independent invariant: whatever day the harness runs on, a
+    // working-day-aware due date must LAND on a ticked day. A frozen-date test
+    // would assert a specific calendar day and rot.
+    ok('D6(b) a working-day-aware due date always lands on a WORKING day',
+        [DELIVERY_SPEED.STANDARD, DELIVERY_SPEED.EXPRESS].every((speed) => {
+            const due = calculateDueDate(speed, WDAYS)
+            // null is legitimate past a cutoff; only a returned date is judged.
+            return due === null || BW.isWorkingDay(due, WDAYS)
+        }))
+    ok('  …and it keeps the 19:00 end-of-day sentinel, which is NOT a promise',
+        (() => {
+            const due = calculateDueDate(DELIVERY_SPEED.STANDARD, WDAYS)
+            return due !== null && due.getHours() === 19
+        })())
+    // Back-compat: the argument is optional, and omitting it must behave
+    // exactly as before, or every caller that has no settings to hand changes.
+    ok('  …while omitting workingDays keeps the original calendar behaviour',
+        (() => {
+            const legacy = calculateDueDate(DELIVERY_SPEED.STANDARD)
+            const expected = new Date()
+            expected.setDate(expected.getDate() + 2)
+            return legacy.toDateString() === expected.toDateString()
+        })())
+    const dueSrc = fs.readFileSync(path.join(ROOT, 'util/helper.js'), 'utf8')
+    ok('  …and both booking paths now pass the working days',
+        /calculateDueDate\(\s*\n?\s*post\.deliverySpeed,\s*\n?\s*adminOrderSetting\.workingDays,/.test(boSrc) &&
+            /calculateDueDate\(\s*\n?\s*post\.deliverySpeed,\s*\n?\s*adminOrderSetting\.workingDays,/.test(
+                fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8'),
+            ))
+    ok('  …and the 19:00 is documented as a sentinel so nobody repoints it at 18:30',
+        /END-OF-DAY SENTINEL/.test(dueSrc))
+
+    const EVW = { _id: 'w1', name: 'Evening', startTime: '15:00', endTime: '18:30' }
+    ok('a confirmed promise quotes the WINDOW (D1 replaces "by 7pm")',
+        deliveryPromise({ date: new Date(2026, 9, 13), window: EVW, timing: 'window', confirmed: true })
+            .text === 'Delivery on Tue Oct 13 2026, between 15:00 and 18:30.')
+    ok('  …an unconfirmed one reads as an ESTIMATE (D7 confirms at READY)',
+        (() => {
+            const p = deliveryPromise({ date: new Date(2026, 9, 13), window: EVW, timing: 'window' })
+            return p.confirmed === false && /^Estimated delivery on/.test(p.text)
+        })())
+    ok('  …Anytime promises the DAY, not a window',
+        /as soon as we can that day/.test(
+            deliveryPromise({ date: new Date(2026, 9, 13), timing: 'anytime' }).text,
+        ))
+    // The whole point: never show the deadline's time to a customer.
+    ok('  …with no window it says the day only and NEVER invents a time',
+        deliveryPromise({ date: new Date(2026, 9, 13, 19, 0, 0) }).text ===
+            'Estimated delivery on Tue Oct 13 2026.')
+    ok('  …so the 19:00 sentinel can never be echoed as "7pm"',
+        !/19:00|7 ?pm/i.test(deliveryPromise({ date: new Date(2026, 9, 13, 19, 0, 0) }).text))
+
+    // Derived in the ONE outward shape, so no read path can forget it — the
+    // archived-CRM-cards lesson (a filter added at 13 sites is the one the 14th
+    // forgets).
+    ok('presentOrder attaches the promise and leaves deliveryDate alone',
+        (() => {
+            const o = presentOrder({
+                oscNumber: 'OSC1', amount: 5000, items: [], deliveryAmount: 0,
+                deliveryDate: new Date(2026, 9, 13, 19, 0, 0),
+                scheduling: {
+                    delivery: {
+                        timing: 'window', windowId: 'w1', windowName: 'Evening',
+                        windowStart: '15:00', windowEnd: '18:30',
+                        confirmedAt: new Date(2026, 9, 12),
+                    },
+                },
+            })
+            return /between 15:00 and 18:30/.test(o.deliveryPromise.text) &&
+                o.deliveryPromise.confirmed === true &&
+                o.deliveryDate.getHours() === 19
+        })())
+    ok('  …a legacy order with no scheduling gets a day-only promise, not a fake window',
+        (() => {
+            const o = presentOrder({
+                oscNumber: 'OSC2', amount: 1, items: [], deliveryAmount: 0,
+                deliveryDate: new Date(2026, 9, 13, 19, 0, 0),
+            })
+            return o.deliveryPromise.windowName === null &&
+                o.deliveryPromise.text === 'Estimated delivery on Tue Oct 13 2026.'
+        })())
+    ok('  …and an order with no delivery date gets null, not a broken string',
+        presentOrder({ oscNumber: 'OSC3', amount: 1, items: [], deliveryAmount: 0 })
+            .deliveryPromise === null)
+    ok('the bot quotes the shared promise instead of keeping its own copy',
+        /order\.deliveryPromise\?\.text \|\|/.test(
+            fs.readFileSync(path.join(ROOT, 'services/bot/readAnswers.js'), 'utf8'),
+        ))
+
+    // ─── N1 PHASE 3 — tags never before payment; the count chain ────────────
+    console.log('\nN1 Phase 3 — payment gate, waiver, and the item-count chain')
+    const { itemTagGate, dispatchPaymentGate } = require(path.join(ROOT, 'util/paymentGate'))
+    const PAID = { paymentStatus: 'success', amount: 5000 }
+    const UNPAID = { paymentStatus: 'pending', amount: 4500 }
+    const WAIVED = { paymentStatus: 'pending', amount: 5000, paymentWaivedAt: new Date() }
+
+    ok('tags are REFUSED on an unpaid order, and the refusal names the amount',
+        (() => {
+            const g = itemTagGate(UNPAID)
+            return g.ok === false && g.requiresPayment === true &&
+                g.outstandingAmount === 4500 && /4,500/.test(g.error)
+        })())
+    ok('  …allowed once it is paid', itemTagGate(PAID).ok === true)
+    // THE ASYMMETRY IS THE WHOLE DESIGN: a waiver opens tagging and closes
+    // dispatch. Two functions, because one combined helper would have to pick
+    // an answer and would be wrong at the other end.
+    ok('a WAIVER opens tagging (the order is meant to be processed)',
+        itemTagGate(WAIVED).ok === true)
+    ok('  …and CLOSES dispatch — "processes unpaid, stopped at dispatch"',
+        (() => {
+            const g = dispatchPaymentGate(WAIVED)
+            return g.ok === false && g.paymentWaived === true
+        })())
+    // The narrowing that dispatchTagStaging forced. The dispatch tag has
+    // supported an unpaid order since 2026-09-24, printing "settle it in the
+    // app, do NOT collect cash" — so blocking every unpaid order here was
+    // wrong, and only the WAIVER is stopped.
+    ok('an ordinary UNPAID order is still dispatchable (it has its own notice)',
+        dispatchPaymentGate(UNPAID).ok === true)
+    ok('  …and a paid order passes both gates',
+        itemTagGate(PAID).ok && dispatchPaymentGate(PAID).ok)
+    // One definition of "the money is complete", shared with the processing
+    // clock — two copies would eventually disagree about a waived order.
+    const pgSrc = fs.readFileSync(path.join(ROOT, 'util/paymentGate.js'), 'utf8')
+    ok('"money complete" is IMPORTED from productionClock, never re-stated',
+        /require\('\.\/productionClock'\)/.test(pgSrc) &&
+            !/paymentStatus === PAYMENT_ORDER_STATUS\.SUCCESS/.test(pgSrc))
+
+    // The gate must sit on ALL THREE tag doors, or an unpaid order walks
+    // through whichever one was missed.
+    const iuSrc = fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8')
+    ok('all three tag doors call the gate (generate / confirm / complete)',
+        (iuSrc.match(/itemTagGate\(order\)/g) || []).length === 3,
+        `found ${(iuSrc.match(/itemTagGate\(order\)/g) || []).length}`)
+    const dtSrc = fs.readFileSync(path.join(ROOT, 'util/dispatchTag.js'), 'utf8')
+    ok('the waiver stop lives in dispatchTagGate, shared by read/print/assign',
+        /dispatchPaymentGate\(order\)/.test(dtSrc))
+
+    // The count chain. The two mismatches are deliberately NOT symmetrical:
+    // the rider's is a flag, Intake's is a hold. The client overruled us in
+    // opposite directions on each, so getting them the same way round matters.
+    const riderSrcN1 = fs.readFileSync(path.join(ROOT, 'services/rider.service.js'), 'utf8')
+    ok('a rider count that differs REQUIRES a reason',
+        /requiresCountReason: true/.test(riderSrcN1))
+    ok('  …but never blocks the pickup — it flags and SMSes the customer',
+        /order\.flaggedForReview = true/.test(riderSrcN1) &&
+            /we collected \$\{order\.counts\.rider\}/.test(riderSrcN1) &&
+            !/sendFailedResponse[\s\S]{0,200}changedAtPickup/.test(riderSrcN1))
+    ok('Intake disagreeing with the rider RAISES the hold and stops the order',
+        /raiseCountMismatchHold\(/.test(iuSrc) &&
+            /countMismatch: true/.test(iuSrc) &&
+            /requiresAdminApproval: true/.test(iuSrc))
+    const cmSrc = fs.readFileSync(path.join(ROOT, 'util/countMismatchHold.js'), 'utf8')
+    ok('  …as a REAL order-level hold, so Holds Management actually shows it',
+        /'stage\.status': ORDER_STATUS\.HOLD/.test(cmSrc) &&
+            /'orderHold\.holdTypeKey': COUNT_MISMATCH_HOLD_KEY/.test(cmSrc) &&
+            /stageHistory/.test(cmSrc) &&
+            /\$unset: \{ 'orderHold\.escalatedAt': '' \}/.test(cmSrc))
+    ok('  …using the hold type already seeded with requiresAdminApproval',
+        /count_differs_from_rider/.test(cmSrc) &&
+            /count_differs_from_rider/.test(
+                fs.readFileSync(path.join(ROOT, 'config/setup.js'), 'utf8'),
+            ))
+    // Both counts are optional, so every existing caller is unchanged — which
+    // is why all 20 harnesses passed without edits.
+    ok('both counts are OPTIONAL, so existing callers behave identically',
+        /req\.body\?\.itemCount === undefined/.test(iuSrc) &&
+            /req\.body\?\.itemCount === undefined/.test(riderSrcN1))
+
+    // ─── N1 Phase 3 — the payment hold, the waiver, the reminders ───────────
+    console.log('\nN1 Phase 3 — payment hold lifecycle and cancellation fees')
+    const PHS = require(path.join(ROOT, 'services/paymentHold.service'))
+    ok('the reminder schedule is the client’s: 6h, 24h, admin at 48h',
+        PHS.SCHEDULE.length === 3 &&
+            PHS.SCHEDULE[0].afterHours === 6 && PHS.SCHEDULE[0].audience === 'customer' &&
+            PHS.SCHEDULE[1].afterHours === 24 && PHS.SCHEDULE[1].audience === 'customer' &&
+            PHS.SCHEDULE[2].afterHours === 48 && PHS.SCHEDULE[2].audience === 'admin')
+    ok('an open hold is told apart from a cleared one',
+        PHS.isOnPaymentHold({ paymentHold: { raisedAt: new Date() } }) === true &&
+            PHS.isOnPaymentHold({ paymentHold: { raisedAt: new Date(), clearedAt: new Date() } }) === false &&
+            PHS.isOnPaymentHold({}) === false)
+
+    const phSrc = fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')
+    // "Staff can never type an amount" is enforced by there being no parameter.
+    ok('raising a hold takes NO amount — the bill comes from the order',
+        /static async raise\(\{ orderId, actorId, reason = null \}\)/.test(phSrc) &&
+            /const amount = Number\(order\.amount \|\| 0\)/.test(phSrc))
+    ok('the hold IS an ordinary order-level hold, so Holds Management shows it',
+        /'orderHold\.holdTypeKey': HoldTypeModel\.PAYMENT_HOLD_KEY/.test(phSrc) &&
+            /'stage\.status': ORDER_STATUS\.HOLD/.test(phSrc))
+    // Reminders are latched BY NAME, and the latch is claimed BEFORE the send:
+    // losing one reminder is better than messaging a customer every 20 minutes.
+    ok('each reminder is latched by NAME with $addToSet, claimed before sending',
+        /\$addToSet: \{ 'paymentHold\.remindersSent': step\.latch \}/.test(phSrc) &&
+            phSrc.indexOf("$addToSet: { 'paymentHold.remindersSent': step.latch }") <
+                phSrc.indexOf('tally.sent += 1'))
+    ok('a waiver REQUIRES a reason', /A reason is required to waive a payment hold/.test(phSrc))
+    ok('a bank transfer approval REQUIRES a matchable reference',
+        /transfer reference or the sender’s name is required/.test(phSrc))
+    ok('  …and every approval notifies an admin for the daily bank check',
+        /Bank transfer approved by Intake & Tag/.test(phSrc) &&
+            /approvedByRole/.test(phSrc))
+    // The waiver must not grow its own copy of the dispatch stop. Asserted by
+    // WHERE the gate is called, not by searching for the word "dispatch" — the
+    // waiver legitimately TELLS the customer it cannot be dispatched, so a
+    // text search fails on its own user-facing message.
+    ok('the dispatch stop is called ONLY from the shared dispatch-tag gate',
+        (() => {
+            // Comments stripped before searching. Twice this session a
+            // source-grepping assertion has failed on the prose explaining
+            // itself — the waiver's doc comment names `dispatchPaymentGate` to
+            // say where the stop lives, which is documentation, not a call.
+            const code = phSrc
+                .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/^\s*\/\/.*$/gm, '')
+            return /dispatchPaymentGate\(order\)/.test(dtSrc) &&
+                !/dispatchPaymentGate/.test(code)
+        })())
+    // Paystack clears the hold on its own; a human-approved transfer records
+    // WHO, because that is the first question asked about a bank transfer.
+    ok('the Paystack webhook releases the hold automatically',
+        /PaymentHoldService\.clear\(\{[\s\S]{0,120}source: 'paystack'/.test(
+            fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8'),
+        ))
+    ok('an admin-approved payment releases it too, recorded as bank-transfer',
+        /source: 'bank-transfer'/.test(
+            fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8'),
+        ))
+    ok('the reminder cron is REGISTERED in server.js (an unregistered cron never runs)',
+        /require\('\.\/crons\/paymentHoldReminders\.js'\)/.test(
+            fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8'),
+        ))
+
+    // Cancellation. Pure, so every tier runs here.
+    const { cancellationOutcome, taggingBegun } = require(path.join(ROOT, 'util/cancellationFees'))
+    const CSET = { cancellationPickupFee: 1000, cancellationReturnFee: 1000 }
+    const mkOrd = (o) => ({ items: [{ type: 'shirt' }], amount: 8000, dispatchDetails: { pickup: {} }, ...o })
+    ok('before pickup is FREE, and anything paid comes back in full',
+        (() => {
+            const a = cancellationOutcome({ order: mkOrd({}), settings: CSET })
+            const b = cancellationOutcome({ order: mkOrd({ paymentStatus: 'success' }), settings: CSET })
+            return a.tier === 'free' && a.feeApplied === 0 &&
+                b.tier === 'free' && b.refundToWallet === 8000
+        })())
+    ok('collected but unpaid owes ₦1,000 + ₦1,000 before the clothes go back',
+        (() => {
+            const r = cancellationOutcome({
+                order: mkOrd({ dispatchDetails: { pickup: { status: 'picked-up' } } }),
+                settings: CSET,
+            })
+            return r.tier === 'logistics' && r.feeApplied === 2000 &&
+                r.payableBeforeReturn === true
+        })())
+    // The clause that makes this file necessary: deriving the charge from
+    // `order.pricing` would make a cancelled free-pickup order cost nothing.
+    ok('  …charged even under a free-pickup offer, and said so to the customer',
+        /even if your order had free pickup/i.test(
+            cancellationOutcome({
+                order: mkOrd({ dispatchDetails: { pickup: { status: 'picked-up' } } }),
+                settings: CSET,
+            }).explanation,
+        ))
+    ok('after payment the laundry fee returns and both trips are kept',
+        (() => {
+            const r = cancellationOutcome({
+                order: mkOrd({
+                    dispatchDetails: { pickup: { status: 'picked-up' } },
+                    paymentStatus: 'success',
+                }),
+                settings: CSET,
+            })
+            return r.tier === 'post-payment' && r.feeApplied === 2000 && r.refundToWallet === 6000
+        })())
+    ok('once tagging has begun, cancellation is REFUSED',
+        (() => {
+            const r = cancellationOutcome({
+                order: mkOrd({ items: [{ type: 'shirt', tagId: 'TAG-01' }] }),
+                settings: CSET,
+            })
+            return r.allowed === false && r.tier === 'refused'
+        })())
+    // Checked on the ITEMS, not the stage: a tag is generated while the order
+    // is still in the tagging QUEUE, which the stage list treats as cancellable.
+    ok('  …detected from the ITEMS (a tag exists before the stage moves)',
+        taggingBegun({ items: [{ tagId: 'TAG-01' }] }) === true &&
+            taggingBegun({ items: [{ tagStatus: 'complete' }] }) === true &&
+            taggingBegun({ items: [{ type: 'shirt' }] }) === false)
+    ok('  …and the stricter tag rule is checked BEFORE the stage tiers',
+        boSrc.indexOf('if (taggingBegun(order))') < boSrc.indexOf('const RED = ['))
+    ok('the cancellation fee is COMPUTED, with an explicit value as an override',
+        (boSrc.match(/outcome\.feeApplied\s*\n?\s*: feeAmount/g) || []).length === 2)
+    ok('the cancellation charges are MIGRATED onto the existing settings doc',
+        /cancellationPickupFee: 1000/.test(setupSrcN1) &&
+            /cancellationReturnFee: 1000/.test(setupSrcN1))
+
+    // ─── Client item #7 — item edit and re-pricing ──────────────────────────
+    console.log('\nItem #7 — editing an order and settling the difference')
+    // "Through the same pricing + offers" is a claim about CODE PATHS, so it is
+    // asserted as one: the reprice must call the identical three steps a
+    // booking branch calls, on the same class.
+    ok('re-pricing calls the SAME three pricing steps a booking does',
+        /_repriceForItems/.test(boSrc) &&
+            /priceItems\(\{[\s\S]{0,200}serviceTypeMultiplier/.test(boSrc) &&
+            /this\._priceWithOffers\(\{[\s\S]{0,160}itemsSubtotal: priced\.total/.test(boSrc) &&
+            /const pricing = this\._buildPricing\(\{/.test(boSrc))
+    // An item edit must not quietly re-price the logistics or the tier.
+    ok('  …taking the service type, tier and speed from the ORDER, not the request',
+        /serviceType: order\.serviceType/.test(boSrc) &&
+            /serviceTier: order\.serviceTier/.test(boSrc) &&
+            /deliverySpeed: order\.deliverySpeed/.test(boSrc))
+    ok('  …and honouring the window/Anytime fee the customer actually chose',
+        /order\.scheduling\?\.pickup\?\.fee \?\? adminOrderSetting\.pickupFee/.test(boSrc))
+    ok('total UP reuses the payment hold rather than a second dunning flow',
+        /PaymentHoldService\.raise\(\{/.test(boSrc))
+    ok('total DOWN returns the difference through the ONE wallet-refund helper',
+        /refundToWallet\(\{/.test(boSrc))
+    // A waiver is permission to proceed, not money received.
+    ok('a WAIVED order is not counted as paid, so nothing is refunded',
+        /order\.paymentStatus === PAYMENT_ORDER_STATUS\.SUCCESS\s*\n?\s*\? previousTotal\s*\n?\s*: 0/.test(boSrc))
+    ok('a reason is REQUIRED and the edit is recorded with who made it',
+        /A reason is required — the bill is changing/.test(boSrc) &&
+            /itemEdits: \{/.test(boSrc))
+    // Mongoose silently drops a write to an undeclared path — the third time
+    // this repo has hit it (pickup.note, holdDetails). Only counting the rows
+    // finds it, so the field's existence is asserted here.
+    const orderModelSrc = fs.readFileSync(path.join(ROOT, 'models/bookOrder.model.js'), 'utf8')
+    ok('  …and `itemEdits` IS DECLARED on the schema (or the trail vanishes silently)',
+        /itemEdits: \[/.test(orderModelSrc))
+    ok('after tagging only an ADMIN may edit, detected from the ITEMS',
+        /taggingBegun\(order\) && actorRole !== ROLE\.ADMIN/.test(boSrc) &&
+            /requiresAdmin: true/.test(boSrc))
+
+    // The wallet refund is now one implementation, shared with cancellation.
+    const wrSrc = fs.readFileSync(path.join(ROOT, 'util/walletRefund.js'), 'utf8')
+    ok('the wallet refund does all THREE writes (balance, ledger, Payment)',
+        /\$inc: \{ balance: value \}/.test(wrSrc) &&
+            /WalletTransactionModel\.create/.test(wrSrc) &&
+            /PaymentModel\.create/.test(wrSrc))
+    ok('  …because the customer’s own history reads Payment (the 2.3 lesson)',
+        /fetch-user-transactions/.test(wrSrc))
+    ok('  …and cancellation now DELEGATES to it instead of keeping a copy',
+        (boSrc.match(/refundToWallet\(\{/g) || []).length === 2 &&
+            !/\$inc: \{ balance: cashRefunded \}/.test(boSrc))
+
+    // ─── D7, the Anytime refund payout, and display names ───────────────────
+    console.log('\nD7 confirmation at READY · the Anytime refund · display names')
+    ok('D7: the delivery window is confirmed from packAndSealComplete (READY)',
+        /confirmDeliveryWindow\(\{ orderId \}\)/.test(
+            fs.readFileSync(path.join(ROOT, 'services/qc.service.js'), 'utf8'),
+        ))
+    ok('  …and it does NOT re-price the order (they were quoted at booking)',
+        !/'scheduling\.delivery\.fee'/.test(bwSvcSrc))
+    ok('  …leaving it UNCONFIRMED when no window is free, rather than inventing a date',
+        /reason: 'no-window-available'/.test(bwSvcSrc))
+
+    // The refund reads the stored flag; by the time the job is done the cutoff
+    // has passed, so condition (a) is unanswerable after the fact.
+    ok('the Anytime refund READS windowWasBookableAtBooking, never recomputes it',
+        /windowWasBookableAtBooking: legData\.windowWasBookableAtBooking/.test(bwSvcSrc) &&
+            /W\.qualifiesForAnytimeRefund\(\{/.test(bwSvcSrc))
+    ok('  …pays through the ONE wallet-refund helper',
+        /refundToWallet\(\{/.test(bwSvcSrc))
+    ok('  …is idempotent on refund.paidAt',
+        /refund\?\.paidAt\) return \{ ok: false, reason: 'already-paid' \}/.test(bwSvcSrc))
+    // "Why was there no refund?" must have an answer later, not silence.
+    ok('  …and RECORDS a refusal with its reason instead of staying silent',
+        /refund\.qualified`\]: false/.test(bwSvcSrc) &&
+            /no cheaper option that day/.test(bwSvcSrc))
+    ok('  …and is settled from BOTH serve points (pickup and delivery)',
+        (riderSrcN1.match(/settleAnytimeRefund\(\{/g) || []).length === 2 &&
+            /leg: 'pickup'/.test(riderSrcN1) &&
+            /leg: 'delivery'/.test(riderSrcN1))
+
+    // Renaming is a LABEL layer. Renaming a stored value would fail the order
+    // enums and drop pricing to a multiplier of 1.
+    const { resolveLabel } = require(path.join(ROOT, 'util/displayName'))
+    ok('an admin label overrides the derived name, and the RAW value travels with it',
+        (() => {
+            const r = resolveLabel('deliverySpeeds', 'same-day', {
+                deliverySpeeds: new Map([['same-day', 'Express Same Day']]),
+            })
+            return r.label === 'Express Same Day' && r.value === 'same-day' && r.renamed === true
+        })())
+    ok('  …with no override it derives the label and says so',
+        (() => {
+            const r = resolveLabel('serviceTiers', 'classic', undefined)
+            return r.label === 'Classic' && r.renamed === false
+        })())
+    // A Mongoose Map on a hydrated doc, a plain object on a lean() read.
+    ok('  …reading a Mongoose Map and a lean plain object alike',
+        resolveLabel('serviceTiers', 'vip', { serviceTiers: { vip: 'Platinum' } }).label ===
+            'Platinum')
+    ok('  …and a lower-case acronym reads as one (vip → VIP, not "Vip")',
+        resolveLabel('serviceTiers', 'vip', undefined).label === 'VIP')
+    ok('renaming refuses an unknown key instead of storing a dead label',
+        /Unknown \$\{group\}/.test(bwSvcSrc) &&
+            /These are display names for existing values/.test(bwSvcSrc))
+    ok('  …and writes ONLY the label map, never a stored value',
+        /\$set\[`displayNames\.\$\{group\}`\]/.test(bwSvcSrc) &&
+            !/serviceTypes\[0\]\.name =/.test(bwSvcSrc))
+
+    // ─── The dashboard day boundary is LAGOS, not UTC ───────────────────────
+    // The TZ pin in server.js makes `setHours(0,0,0,0)` Lagos-correct, but it
+    // reaches NEITHER of the two other places that decide what day something
+    // happened on. Both filed the first hour of every Lagos day under the
+    // previous day — the same split-brain the pin exists to kill, one layer
+    // down. Found while writing the client answer for Q1.
+    console.log('\nDashboard day bucketing — Lagos, not UTC')
+    const adminSrcTz = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+    ok('every $dateToString in admin.service passes an explicit timezone',
+        (() => {
+            const re = /\$dateToString\s*:\s*\{/g
+            let m
+            let bad = 0
+            let seen = 0
+            while ((m = re.exec(adminSrcTz))) {
+                seen += 1
+                let depth = 1
+                let i = m.index + m[0].length
+                while (i < adminSrcTz.length && depth > 0) {
+                    if (adminSrcTz[i] === '{') depth += 1
+                    else if (adminSrcTz[i] === '}') depth -= 1
+                    i += 1
+                }
+                if (!/timezone/.test(adminSrcTz.slice(m.index, i))) bad += 1
+            }
+            return seen >= 2 && bad === 0
+        })())
+    // `toISOString()` CONVERTS to UTC, so a Lagos-local Date at 00:30 produced
+    // yesterday's key even with the process pinned.
+    ok('  …and no day key is built from toISOString (that is always UTC)',
+        !/toISOString\(\)\s*\.\s*split\('T'\)\[0\]/.test(adminSrcTz) &&
+            /lagosDayKey\(d\)/.test(adminSrcTz))
+
     const crmSrc2 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
     ok('booking cancels the new sequence as well as the lead one',
         /cancelPendingMessages\(profile\._id, \[\s*CRM_WORKFLOW\.LEAD,\s*CRM_WORKFLOW\.REGISTERED_NOT_BOOKED,?\s*\]\)/.test(

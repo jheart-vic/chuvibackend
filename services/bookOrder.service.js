@@ -37,7 +37,27 @@ const {
     AUDIT_LOG_CATEGORIES,
     CANCELLATION_REQUEST_STATUS,
     ROLE,
+    BOOKING_TIMING,
+    DISPATCH_LEG,
 } = require('../util/constants')
+// Window booking (client D1–D8). The service does the fetching/counting; the
+// pure engine owns every rule, so nothing here re-decides a cutoff or a price.
+const BookingWindowService = require('./bookingWindow.service')
+const {
+    legFee,
+    sameDayLegPlan,
+    startOfDay: startOfLagosDay,
+} = require('../util/bookingWindow')
+// N1: cancellation is refused once tagging begins, and the fees after pickup
+// are flat charges that ignore a free-pickup offer (the trip was still made).
+const { taggingBegun, cancellationOutcome } = require('../util/cancellationFees')
+// Client item #7: re-pricing after an item edit reuses the payment hold rather
+// than growing a second dunning flow, and the ONE wallet-refund implementation.
+const PaymentHoldService = require('./paymentHold.service')
+const { refundToWallet } = require('../util/walletRefund')
+const { countPieces } = require('../util/itemSummary')
+// The customer is told the new bill by SMS as well as in-app (client item #7).
+const sendSms = require('../util/sendSms')
 const CancellationRequestModel = require('../models/cancellationRequest.model')
 const ActivityModel = require('../models/activity.model')
 const createNotification = require('../util/createNotification')
@@ -74,6 +94,20 @@ class BookOrderService extends BaseService {
         const status = order.stage?.status
         if (status === ORDER_STATUS.CANCELLED) {
             return { tier: 'none', allowed: false, reason: 'This order is already cancelled.' }
+        }
+
+        // N1 (client spec 2026-10-07): "any time BEFORE TAGGING BEGINS; once
+        // tagged, never." This is STRICTER than the RED stage list below and
+        // has to be checked first — a tag can be generated while the order is
+        // still sitting in the tagging QUEUE, which the list below treats as
+        // Amber (cancellable on request). Without this, an order whose labels
+        // were already printed could still be cancelled by raising a request.
+        if (taggingBegun(order)) {
+            return {
+                tier: 'red',
+                allowed: false,
+                reason: 'Tagging has already started on this order, so it can no longer be cancelled. Please contact support to raise a complaint.',
+            }
         }
 
         // Any stage where work has physically begun — cannot be undone here.
@@ -158,38 +192,18 @@ class BookOrderService extends BaseService {
             feeCharged = Math.min(Math.max(0, Math.round(feeApplied) || 0), cashPaid)
             cashRefunded = Math.max(0, cashPaid - feeCharged)
             if (cashRefunded > 0) {
-                const wallet = await WalletModel.findOneAndUpdate(
-                    { userId: order.userId },
-                    {
-                        $inc: { balance: cashRefunded },
-                        $setOnInsert: { currency: 'NGN' },
-                    },
-                    { new: true, upsert: true },
-                )
-                const refundRef = generateReferenceId()
-                await WalletTransactionModel.create({
+                // Delegated to the ONE wallet-refund implementation. It does
+                // the same three writes this block always did — atomic $inc,
+                // the WalletTransaction ledger line, and the mirrored Payment
+                // row that the customer's own history actually reads (2.3).
+                // Extracted when client item #7 needed the identical thing;
+                // a second copy is how the basket maths and the hold-SLA table
+                // each ended up as three that had drifted.
+                await refundToWallet({
                     userId: order.userId,
-                    walletId: wallet._id,
-                    type: WALLET_TX_TYPE.CREDIT,
                     amount: cashRefunded,
-                    reference: refundRef,
-                    status: 'success',
+                    orderId: order._id,
                     description: `Refund for cancelled order ${order.oscNumber || order._id}`,
-                    relatedOrderId: order._id,
-                    balanceAfter: wallet.balance,
-                })
-                // Mirror it as a Payment (credit) so it shows in the customer's
-                // transaction history (fetch-user-transactions reads Payment).
-                await PaymentModel.create({
-                    userId: order.userId,
-                    amount: cashRefunded,
-                    reference: refundRef,
-                    status: 'success',
-                    type: 'refund',
-                    order: order._id,
-                    alertType: 'credit',
-                    paymentMethod: 'wallet',
-                    adminNote: `Refund for cancelled order ${order.oscNumber || order._id}`,
                 })
             }
         }
@@ -391,11 +405,23 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // N1: the fee is COMPUTED, not typed. The client set it out exactly
+            // — free before pickup, ₦1,000 + ₦1,000 once the items have been
+            // collected (even under a free-pickup offer), and after payment the
+            // laundry fee returns to the wallet while both trips are kept. An
+            // explicit `feeAmount` is still honoured as a deliberate override
+            // so existing callers and admin discretion both keep working.
+            const outcome = cancellationOutcome({ order, settings })
+            const resolvedFee =
+                req.body?.feeAmount === undefined || req.body?.feeAmount === null
+                    ? outcome.feeApplied
+                    : feeAmount
+
             const result = await this._performCancellation(order, {
                 reason,
                 performedBy: getObjectId(staffId),
                 tier: role === ROLE.ADMIN ? 'admin' : 'intake-and-tag',
-                feeApplied: feeAmount,
+                feeApplied: resolvedFee,
             })
 
             return BaseService.sendSuccessResponse({
@@ -590,11 +616,20 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // N1: same computed fee as the staff-cancel path above, so the two
+            // routes to a cancellation cannot charge different amounts for the
+            // same order.
+            const outcome = cancellationOutcome({ order, settings })
+            const resolvedFee =
+                req.body?.feeAmount === undefined || req.body?.feeAmount === null
+                    ? outcome.feeApplied
+                    : feeAmount
+
             const result = await this._performCancellation(order, {
                 reason: request.reason,
                 performedBy: getObjectId(staffId),
                 tier: 'amber',
-                feeApplied: feeAmount,
+                feeApplied: resolvedFee,
                 skipRequestId: request._id, // this request is resolved as 'approved' below
             })
 
@@ -712,6 +747,325 @@ class BookOrderService extends BaseService {
         if (breakdown.freePickup) finalTotal -= pickupFee
         finalTotal = Math.max(Math.round(finalTotal), 0)
         return { finalTotal, breakdown }
+    }
+
+    /**
+     * RE-PRICE AN ORDER AFTER ITS ITEMS CHANGE — client item #7 / N1 Phase 4.
+     *
+     * Their spec: "Intake confirms the real count and enters the actual items;
+     * the bill is RECALCULATED through the same pricing + offers; total up →
+     * the difference becomes a payment hold (same SMS + Paystack link), total
+     * down → the difference goes to the wallet; every change records who and
+     * why + an SMS with the new bill; after tagging only an admin may edit."
+     *
+     * ⚠️ IT LIVES ON THIS CLASS DELIBERATELY. "Through the same pricing +
+     * offers" is not a figure of speech — this method calls the identical three
+     * steps the booking branches call (`priceItems` → `_priceWithOffers` →
+     * `_buildPricing`) on the same instance. A separate re-pricing service
+     * would be a fourth copy of the basket maths, and there were already THREE
+     * that had silently drifted before `util/itemPricing.js` unified them
+     * (brief 1.6): two defaulted a missing tier charge to 1, the third to
+     * 1.5/2, so the same basket priced differently per screen.
+     *
+     * Returns the diff rather than acting on it; `applyItemEdit` below decides
+     * what the difference means. Writes nothing.
+     */
+    async _repriceForItems({ order, items, adminOrderSetting }) {
+        // The shape the pricing path expects. Taken from the ORDER, not from
+        // the request, so an edit cannot quietly change the service type, the
+        // tier or the speed while pretending to change only the items.
+        const post = {
+            serviceType: order.serviceType,
+            serviceTier: order.serviceTier,
+            deliverySpeed: order.deliverySpeed,
+            isPickUp: order.isPickUp,
+            isDelivery: order.isDelivery,
+            items,
+            // The offer already attached to the order, so re-pricing re-applies
+            // the customer's own offer instead of silently dropping it.
+            customerOfferId: order.customerOfferId || undefined,
+            promoOfferId: order.promoOfferId || undefined,
+        }
+
+        const matchedService = adminOrderSetting.serviceTypes.find(
+            (service) => service.name === post.serviceType,
+        )
+        const serviceTypeMultiplier = matchedService
+            ? matchedService.pricePerPiece
+            : 1
+
+        const priced = priceItems({
+            items,
+            serviceTypeMultiplier,
+            orderTier: post.serviceTier,
+            adminOrderSetting,
+        })
+
+        let speedCharge = 0
+        if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
+            speedCharge = adminOrderSetting.expressCharge
+        } else if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+            speedCharge = adminOrderSetting.sameDayCharge
+        }
+        // The window/Anytime price the customer actually chose, when there is
+        // one — otherwise the flat fee. Without this, re-pricing a windowed
+        // order would quietly reset its logistics to the default.
+        const pickupFee = post.isPickUp
+            ? order.scheduling?.pickup?.fee ?? adminOrderSetting.pickupFee ?? 0
+            : 0
+        const deliveryFee = post.isDelivery
+            ? order.scheduling?.delivery?.fee ?? adminOrderSetting.deliveryFee ?? 0
+            : 0
+        const extraDeliveryCost = speedCharge + pickupFee + deliveryFee
+
+        const { finalTotal, breakdown } = await this._priceWithOffers({
+            userId: order.userId,
+            post,
+            itemsSubtotal: priced.total,
+            extraDeliveryCost,
+            adminOrderSetting,
+        })
+
+        // Mapped exactly as the booking branches map it. `priceItems` returns
+        // `lines` (not `tierLines`) and no order-level `tierMultiplier` — that
+        // comes off the first line, and is null when the basket mixes tiers
+        // because one multiplier then says nothing (brief 1.6).
+        const pricing = this._buildPricing({
+            serviceTier: post.serviceTier,
+            itemsBase: priced.itemsBase,
+            tierMultiplier: priced.isMixedTier
+                ? null
+                : priced.lines[0]?.tierMultiplier ?? 1,
+            tierLines: priced.lines,
+            tiersUsed: priced.tiersUsed,
+            isMixedTier: priced.isMixedTier,
+            itemsSubtotal: priced.total,
+            speedCharge,
+            pickupFee,
+            deliveryFee,
+            breakdown,
+            orderTotal: finalTotal,
+        })
+
+        return { newTotal: finalTotal, pricing, breakdown, extraDeliveryCost }
+    }
+
+    /**
+     * EDIT AN ORDER'S ITEMS AND SETTLE THE DIFFERENCE — client item #7.
+     *
+     * Applies to BOTH booking types, which is why it lives here rather than on
+     * the intake service: a normal booking whose real contents differ follows
+     * exactly the same rule as a Quick Booking.
+     *
+     * The client's four rules, and where each is enforced:
+     *   * the bill is recalculated through the same pricing + offers
+     *     → `_repriceForItems`, which calls the identical three steps;
+     *   * total UP → the difference becomes a payment hold (same SMS + link)
+     *     → `PaymentHoldService.raise`, reused, so there is one payment-hold
+     *       implementation and one reminder schedule;
+     *   * total DOWN → the difference goes to the wallet;
+     *   * every change records WHO and WHY, and the customer gets the new bill;
+     *   * after tagging, only an admin may edit.
+     *
+     * ⚠️ A REASON IS REQUIRED. This moves money in both directions, and
+     * "the bill changed" with no explanation is unreviewable — the same
+     * reasoning as the waiver and the rider's count.
+     */
+    async applyItemEdit(req) {
+        try {
+            const orderId = req.params.id
+            const actorId = req.user?.id
+            const actorRole = req.user?.userType
+            const items = req.body?.items
+            const reason = String(req.body?.reason || '').trim()
+
+            if (!Array.isArray(items) || items.length === 0) {
+                return BaseService.sendFailedResponse({
+                    error: 'items is required and must list the actual pieces received.',
+                })
+            }
+            if (!reason) {
+                return BaseService.sendFailedResponse({
+                    error: 'A reason is required — the bill is changing and the customer will be told why.',
+                })
+            }
+            const badItem = items.find(
+                (i) =>
+                    !i?.type ||
+                    !Number.isFinite(Number(i?.price)) ||
+                    !Number.isFinite(Number(i?.quantity)) ||
+                    Number(i.quantity) <= 0,
+            )
+            if (badItem) {
+                return BaseService.sendFailedResponse({
+                    error: 'Every item needs a type, a price and a quantity of at least 1.',
+                })
+            }
+
+            const order = await BookOrderModel.findById(orderId)
+            if (!order) {
+                return BaseService.sendFailedResponse({ error: 'Order not found' })
+            }
+            if (order.stage?.status === ORDER_STATUS.CANCELLED) {
+                return BaseService.sendFailedResponse({
+                    error: 'This order is cancelled and cannot be edited.',
+                })
+            }
+
+            // "After tagging only an ADMIN may edit." Read off the items, for
+            // the same reason the cancellation rule is: a tag exists while the
+            // order still sits in the tagging queue, so a stage check would let
+            // a tagged order through.
+            if (taggingBegun(order) && actorRole !== ROLE.ADMIN) {
+                return BaseService.sendFailedResponse({
+                    error: 'Tagging has already started on this order, so only an admin can change its items now.',
+                    requiresAdmin: true,
+                })
+            }
+
+            const adminOrderSetting = await AdminSettingModel.findOne({})
+            if (!adminOrderSetting) {
+                return BaseService.sendFailedResponse({
+                    error: 'Admin settings not found',
+                })
+            }
+
+            const previousTotal = Number(order.amount || 0)
+            // What the customer has actually handed over. A waiver is NOT money
+            // — it is permission to proceed — so it must not be treated as a
+            // payment here, or reducing a waived order's bill would refund cash
+            // that was never received.
+            const amountPaid =
+                order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS
+                    ? previousTotal
+                    : 0
+
+            const { newTotal, pricing } = await this._repriceForItems({
+                order,
+                items,
+                adminOrderSetting,
+            })
+
+            const difference = newTotal - previousTotal
+            const outstanding = Math.max(0, newTotal - amountPaid)
+            const refundDue = Math.max(0, amountPaid - newTotal)
+
+            // Explode to pieces exactly as a booking does, so the stations see
+            // the same per-piece records they always do.
+            const explodedItems = explodeItemsToPieces(items)
+
+            const now = new Date()
+            await BookOrderModel.updateOne(
+                { _id: order._id },
+                {
+                    $set: {
+                        items: explodedItems,
+                        amount: newTotal,
+                        pricing,
+                    },
+                    $push: {
+                        itemEdits: {
+                            at: now,
+                            by: actorId,
+                            byRole: actorRole,
+                            reason,
+                            previousTotal,
+                            newTotal,
+                            difference,
+                            previousPieceCount: countPieces(order.items || []),
+                            newPieceCount: countPieces(explodedItems),
+                        },
+                    },
+                },
+                { runValidators: false },
+            )
+
+            const result = {
+                previousTotal,
+                newTotal,
+                difference,
+                pieceCount: countPieces(explodedItems),
+                paymentHold: null,
+                walletRefund: null,
+            }
+
+            // TOTAL UP → a payment hold for what is still owed. Reusing
+            // PaymentHoldService means one SMS wording, one Paystack link
+            // builder and one reminder schedule, rather than a second
+            // almost-identical dunning flow.
+            if (outstanding > 0) {
+                const held = await PaymentHoldService.raise({
+                    orderId: order._id,
+                    actorId,
+                    reason: `Bill updated to ₦${newTotal.toLocaleString('en-NG')} after the items were checked (${reason}).`,
+                })
+                result.paymentHold = held.success
+                    ? held.data?.message || null
+                    : { error: held.data?.error || 'Could not raise the payment hold.' }
+            }
+
+            // TOTAL DOWN → the difference goes back to the wallet.
+            if (refundDue > 0) {
+                try {
+                    await refundToWallet({
+                        userId: order.userId,
+                        amount: refundDue,
+                        orderId: order._id,
+                        description: `Order ${order.oscNumber} bill reduced after the items were checked (${reason})`,
+                    })
+                    result.walletRefund = refundDue
+                } catch (error) {
+                    // Reported, never swallowed silently: the customer is owed
+                    // this money and somebody has to settle it by hand.
+                    console.error('item-edit wallet refund failed:', error?.message)
+                    result.walletRefund = {
+                        error: `₦${refundDue.toLocaleString('en-NG')} could not be returned automatically — settle it manually.`,
+                        amount: refundDue,
+                    }
+                }
+            }
+
+            // The customer is told the new bill either way — "every change
+            // records who and why + an SMS with the new bill".
+            try {
+                const line =
+                    difference === 0
+                        ? `Chuvi: order ${order.oscNumber} has been checked and your bill is unchanged at ₦${newTotal.toLocaleString('en-NG')}.`
+                        : difference > 0
+                          ? `Chuvi: after checking your items, order ${order.oscNumber} comes to ₦${newTotal.toLocaleString('en-NG')} (was ₦${previousTotal.toLocaleString('en-NG')}).${outstanding > 0 ? ` ₦${outstanding.toLocaleString('en-NG')} is outstanding.` : ''}`
+                          : `Chuvi: after checking your items, order ${order.oscNumber} comes to ₦${newTotal.toLocaleString('en-NG')} (was ₦${previousTotal.toLocaleString('en-NG')}).${refundDue > 0 ? ` ₦${refundDue.toLocaleString('en-NG')} has gone back to your wallet.` : ''}`
+                if (order.phoneNumber) await sendSms(order.phoneNumber, line)
+                if (order.userId) {
+                    await createNotification({
+                        userId: order.userId,
+                        title: 'Your bill has been updated',
+                        body: line,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    })
+                }
+            } catch (error) {
+                console.error('item-edit customer message failed:', error?.message)
+            }
+
+            try {
+                await createAuditLog({
+                    userId: getObjectId(actorId),
+                    action: `Edited items on order ${order.oscNumber}: ₦${previousTotal.toLocaleString('en-NG')} → ₦${newTotal.toLocaleString('en-NG')} (${reason})`,
+                    category: AUDIT_LOG_CATEGORIES.ORDER,
+                    orderId: order._id,
+                })
+            } catch (error) {
+                console.error('item-edit audit failed:', error?.message)
+            }
+
+            return BaseService.sendSuccessResponse({ message: result })
+        } catch (error) {
+            console.log(error)
+            return BaseService.sendFailedResponse({
+                error: 'Could not update this order’s items.',
+            })
+        }
     }
 
     // Build the frozen price receipt from the components already computed in a
@@ -872,6 +1226,13 @@ class BookOrderService extends BaseService {
                 // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
                 // piece is priced at the order's tier, exactly as before.
                 'items.*.serviceTier': 'string|in:classic,premium,vip',
+                // Window booking (client D1–D5). OPTIONAL on purpose: an app
+                // build that sends nothing keeps booking exactly as it does
+                // today at the flat pickup/delivery fee, so this is not a
+                // breaking change. Sending a timing switches the order onto the
+                // window rules.
+                pickupTiming: 'string|in:window,anytime',
+                deliveryTiming: 'string|in:window,anytime',
             }
 
             const validateMessage = {
@@ -971,7 +1332,14 @@ class BookOrderService extends BaseService {
 
             // ⏰ Booking time cutoff check — same-day before 10am, express before 2pm.
             // calculateDueDate returns null when the cutoff has passed.
-            const deliveryDate = calculateDueDate(post.deliverySpeed)
+            // D6(b): the promised date skips days the business is closed —
+            // without the working days a Saturday standard order is due Monday,
+            // and with Monday unticked it reads OVERDUE on a day nobody worked
+            // and trips the past-delivery-date hold breach.
+            const deliveryDate = calculateDueDate(
+                post.deliverySpeed,
+                adminOrderSetting.workingDays,
+            )
             if (deliveryDate === null) {
                 if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
                     return BaseService.sendFailedResponse({
@@ -982,6 +1350,99 @@ class BookOrderService extends BaseService {
                     return BaseService.sendFailedResponse({
                         error: 'Express orders must be placed before 2pm. Please select standard delivery.',
                     })
+                }
+            }
+
+            // ───────── WINDOW BOOKING (client D1–D8, 2026-10-08) ─────────
+            //
+            // Resolved HERE, before any order is created, for the same reason
+            // `planCounterPayment` plans before it settles: a refusal must
+            // leave nothing behind. A window that filled while the customer was
+            // on the screen produces a sentence, not an order parked in a
+            // window that cannot serve it.
+            //
+            // Scope note: only the PICKUP leg is fully resolved at booking.
+            // D7 (pre-approved) confirms the DELIVERY window when the order is
+            // marked READY — a standard order's delivery day is +2 and is not
+            // known yet, and under D6 it might not even be a working day. So
+            // the delivery side records the INTENT (timing + fee) only, and
+            // `deliveryDate` keeps coming from `calculateDueDate` so the queue
+            // sort, the SLA clocks and capacity are untouched by this change.
+            let scheduling = null
+            if (post.pickupTiming || post.deliveryTiming) {
+                const schedSettings =
+                    await BookingWindowService.getSchedulingSettings()
+                const schedWindows = await BookingWindowService.getActiveWindows()
+                const schedFrom = startOfLagosDay(new Date())
+                const bookedCounts = await BookingWindowService.getBookedCounts({
+                    from: schedFrom,
+                    to: new Date(schedFrom.getTime() + 32 * 86400000),
+                })
+
+                scheduling = {}
+
+                if (post.isPickUp) {
+                    // CLIENT RULING (2026-10-08): a SAME-DAY order's pickup is
+                    // an Anytime trip and pays the Anytime price — "a morning
+                    // pickup is a special trip and the customer chose speed".
+                    // Forced here rather than trusted from the client, so an
+                    // app build cannot sell same-day at the window price.
+                    const pickupTiming =
+                        post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
+                        !BookingWindowService._findMorningWindow(schedWindows)
+                            ? BOOKING_TIMING.ANYTIME
+                            : post.pickupTiming
+                    const resolved = BookingWindowService.resolveLeg({
+                        leg: DISPATCH_LEG.PICKUP,
+                        timing: pickupTiming,
+                        windowId: post.pickupWindowId,
+                        date: post.pickupDate,
+                        windows: schedWindows,
+                        settings: schedSettings,
+                        bookedCounts,
+                    })
+                    if (!resolved.ok) {
+                        return BaseService.sendFailedResponse({
+                            error: resolved.error,
+                            ...(resolved.requiresChoice && { requiresChoice: true }),
+                        })
+                    }
+                    scheduling.pickup = resolved.leg
+                    // The chosen timing now OWNS the pickup fee, replacing the
+                    // flat `pickupFee` setting. Overridden on the in-memory
+                    // settings document so all five downstream billing branches
+                    // price the leg the customer actually chose — the doc is
+                    // never saved (only `adminOrderDetails` is), and editing
+                    // one value here is safer than five parallel edits that
+                    // could drift, which is the hold-SLA lesson.
+                    adminOrderSetting.pickupFee = resolved.leg.fee
+                }
+
+                if (post.isDelivery) {
+                    const timing = post.deliveryTiming || BOOKING_TIMING.WINDOW
+                    scheduling.delivery = {
+                        timing,
+                        fee: legFee({
+                            timing,
+                            leg: DISPATCH_LEG.DELIVERY,
+                            settings: schedSettings,
+                        }),
+                    }
+                    adminOrderSetting.deliveryFee = scheduling.delivery.fee
+                }
+
+                // The same-day disclosure the client requires to be shown
+                // BEFORE confirming. Stored as shown, so a later price change
+                // cannot rewrite what the customer agreed to.
+                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
+                    scheduling.disclosure = sameDayLegPlan({
+                        settings: schedSettings,
+                        morningWindow:
+                            BookingWindowService._findMorningWindow(schedWindows),
+                    }).disclosure
+                    if (post.disclosureAccepted) {
+                        scheduling.disclosureAcceptedAt = new Date()
+                    }
                 }
             }
 
@@ -1486,6 +1947,20 @@ class BookOrderService extends BaseService {
                 return BaseService.sendFailedResponse({
                     error: 'Order could not be created. Please try again.',
                 })
+            }
+
+            // Stamp the resolved windows. Done once here rather than in each
+            // billing branch's `create({...})`, so the three branches cannot
+                // drift apart on it — and after the `if (!newOrder)` guard
+            // above, so it can never run against a failed creation.
+            if (scheduling) {
+                await BookOrderModel.updateOne(
+                    { _id: newOrder._id },
+                    { $set: { scheduling } },
+                )
+                // Also on the in-memory document, or the response would omit
+                // the times the customer just chose.
+                newOrder.scheduling = scheduling
             }
 
             crmOnOrderCreated(newOrder)

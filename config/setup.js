@@ -359,6 +359,72 @@ const ensureWalletAdjustmentLimits = async () => {
   }
 };
 
+// WINDOW BOOKING / WORKING DAYS settings (client D1–D6, 2026-10-08).
+//
+// SEEDING IS NOT MIGRATING — the third time this repo has paid for that lesson
+// (the inverted tier charges, then walletAdjustmentLimits reading ₦0 in
+// production, then the CRM send-window settings silently scheduling nothing).
+// Mongoose applies a `default` ON CREATION ONLY, and the live AdminSetting
+// document predates all of this, so without an explicit backfill window booking
+// would work perfectly on a fresh database and have NO working days, NO Anytime
+// hours and NO Anytime price in production.
+//
+// Per-field and idempotent: each `$set` is guarded on that field being absent,
+// so an admin who has already unticked a day or moved the Anytime price is
+// never overwritten.
+const ensureSchedulingSettings = async () => {
+  try {
+    const DEFAULTS = {
+      workingDays: ["tue", "wed", "thu", "fri", "sat", "sun"],
+      anytimeOpenFrom: "08:00",
+      anytimeOpenTo: "17:00",
+      anytimePickupFee: 1000,
+      anytimeDeliveryFee: 1000,
+      // N1 cancellation charges — same migration, same reason.
+      cancellationPickupFee: 1000,
+      cancellationReturnFee: 1000,
+    };
+    const applied = [];
+    for (const [field, value] of Object.entries(DEFAULTS)) {
+      const res = await AdminSettingModel.updateOne(
+        { [field]: { $exists: false } },
+        { $set: { [field]: value } },
+      );
+      if (res.modifiedCount) applied.push(field);
+    }
+    if (applied.length) {
+      console.log(`Backfilled scheduling settings: ${applied.join(", ")}`);
+    }
+  } catch (error) {
+    console.error("Scheduling settings backfill failed:", error);
+  }
+};
+
+// The client's starting window: "Evening", 15:00–18:30, Tue–Sun, 60 minute
+// cutoff, limit 10 (D1). Seeded ONLY when no window exists at all, so an admin
+// who has since edited or replaced it is never second-guessed — and an admin
+// who deliberately deactivates every window does not get this one back
+// (deactivated windows still exist, so the collection is not empty).
+const createDefaultBookingWindow = async () => {
+  try {
+    const BookingWindowModel = require("../models/bookingWindow.model");
+    const count = await BookingWindowModel.estimatedDocumentCount();
+    if (count > 0) return;
+    await BookingWindowModel.create({
+      name: "Evening",
+      startTime: "15:00",
+      endTime: "18:30",
+      days: ["tue", "wed", "thu", "fri", "sat", "sun"],
+      cutoffMinutes: 60,
+      limit: 10,
+      isActive: true,
+    });
+    console.log("Seeded default booking window (Evening 15:00-18:30, limit 10)");
+  } catch (error) {
+    console.error("Default booking window seed failed:", error);
+  }
+};
+
 // Every step below is a seed or a MIGRATION of an existing document, and none of
 // them used to be awaited: `setupApp` was async but fired all nine and printed
 // "App init successful" immediately. Three consequences, all real:
@@ -382,6 +448,8 @@ async function setupApp() {
     ["complaintTypes", createDefaultComplaintTypes],
     ["holdTypes", createDefaultHoldTypes],
     ["offerTriggerBackfill", backfillOfferTriggers],
+    ["schedulingSettings", ensureSchedulingSettings],
+    ["defaultBookingWindow", createDefaultBookingWindow],
   ];
   for (const [name, step] of steps) {
     try {
