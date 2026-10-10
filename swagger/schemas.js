@@ -489,12 +489,16 @@
  *         What the customer's cancel button should offer, from the same rule the
  *         cancel endpoints enforce. `allowed` means POST cancel will succeed now;
  *         `canRequest` means self-cancel is refused but a cancellation request is
- *         accepted. Once any item is tagged the order is red and neither applies.
- *         `estimatedFee` and `refundToWallet` are null for red and none.
- *         `refundToWallet` is cash only; reward credits are restored separately.
+ *         accepted; it is false while a request is already awaiting review
+ *         (`requestPending`). Once any item is tagged the order is red and
+ *         neither applies. `estimatedFee` and `refundToWallet` are null for red
+ *         and none. `refundToWallet` is cash only; reward credits are restored
+ *         separately. Sent as `cancellationVerdict`; the order's own
+ *         `cancellation` field is the stored record of a past cancellation.
  *       properties:
  *         allowed: { type: boolean, example: false }
  *         canRequest: { type: boolean, example: true }
+ *         requestPending: { type: boolean, example: false }
  *         tier: { type: string, enum: [green, amber, red, none], example: amber }
  *         reason:
  *           type: string

@@ -645,7 +645,7 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *                                 type: string
  *                                 format: date-time
  *                                 example: "2026-01-13T13:00:00.123Z"
- *                               cancellation:
+ *                               cancellationVerdict:
  *                                 $ref: '#/components/schemas/CancellationVerdict'
  *       400:
  *         description: Invalid query parameters
@@ -769,7 +769,7 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  *                           type: string
  *                           format: date-time
  *                           example: "2026-01-13T13:00:00.123Z"
- *                         cancellation:
+ *                         cancellationVerdict:
  *                           $ref: '#/components/schemas/CancellationVerdict'
  *       400:
  *         description: Invalid order ID

@@ -57,7 +57,8 @@ Two small backend fixes from the frontend's 9 Oct "still open" list, built toget
 
 ### B. Expose the verdict on customer order reads
 
-- Add `cancellation` to each order returned by `GET /api/bookOrder/book-order-history` and
+- Add `cancellationVerdict` (not `cancellation`, which is the stored record of a past
+  cancellation) to each order returned by `GET /api/bookOrder/book-order-history` and
   `GET /api/bookOrder/book-order/:id`:
 
   ```json
@@ -74,7 +75,8 @@ Two small backend fixes from the frontend's 9 Oct "still open" list, built toget
   | Field | Meaning |
   |---|---|
   | `allowed` | The customer can self-cancel right now (`POST` cancel will succeed) |
-  | `canRequest` | Self-cancel is refused, but a cancellation request is accepted (amber) |
+  | `canRequest` | Self-cancel is refused, but a cancellation request is accepted (amber, no request already pending) |
+  | `requestPending` | An amber order already has a request awaiting review |
   | `tier` | `green`, `amber`, `red` or `none` (already cancelled), straight from `_cancelTier` |
   | `reason` | The exact refusal text the write path returns, or `null` |
   | `estimatedFee` | Green: `0` (self-cancel is free). Amber: `cancellationOutcome().feeApplied`. Red or none: `null` |
@@ -94,9 +96,17 @@ Two small backend fixes from the frontend's 9 Oct "still open" list, built toget
    **Done when:** a delivery marked failed shows in `GET` deliverable orders with
    `legStatus=failed`; `failedCount` counts it; a second boot changes nothing.
 2. [x] **Cancellation verdict on order reads**: add the helper, wire both reads, add Swagger.
-   **Done when:** each order in both responses carries `cancellation`; a tagged order
-   in the tagging queue shows `allowed: false, canRequest: false, tier: red`; the
+   **Done when:** each order in both responses carries `cancellationVerdict`; a tagged
+   order in the tagging queue shows `allowed: false, canRequest: false, tier: red`; the
    envelope check reports 0 wrong envelopes.
+3. [x] **Repair independent-review findings F-01, F-02, F-03.**
+   - F-01: the verdict is attached as `cancellationVerdict`, so the stored
+     `cancellation` record is returned unchanged.
+   - F-02: the staff `delivery_problem` report also returns an out-for-delivery order
+     to `ready`.
+   - F-03: a pending cancellation request gives `canRequest: false, requestPending: true`.
+   **Done when:** briefCheck and dispatchStaging scenarios 13 and 14 pass, and the
+   Swagger envelope check reports 0 wrong envelopes.
 
 ## Verify
 

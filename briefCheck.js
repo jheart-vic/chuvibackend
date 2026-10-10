@@ -2010,10 +2010,38 @@ const run = (async () => {
                 done.estimatedFee === null,
             JSON.stringify(done))
 
-        ok('both customer order reads attach the verdict',
-            (bookSrc.match(/\.cancellation = this\._cancellationVerdict\(/g) || [])
+        const pendingAmber = svc._cancellationVerdict(
+            {
+                ...base,
+                stage: { status: ORDER_STATUS.QUEUE },
+                dispatchDetails: { pickup: { status: 'picked-up' } },
+            },
+            settings,
+            { requestPending: true },
+        )
+        ok('amber with a request already pending: no second request offered',
+            !pendingAmber.canRequest && pendingAmber.requestPending &&
+                /already awaiting review/.test(pendingAmber.reason),
+            JSON.stringify(pendingAmber))
+        ok('a pending flag never changes a green verdict',
+            svc._cancellationVerdict(
+                { ...base, stage: { status: ORDER_STATUS.PENDING } },
+                settings,
+                { requestPending: true },
+            ).allowed === true)
+
+        // Review F-01: `cancellation` is the STORED record of a past
+        // cancellation on the schema, so the verdict must never be written there.
+        ok('both customer order reads attach the verdict as cancellationVerdict',
+            (bookSrc.match(/\.cancellationVerdict = this\._cancellationVerdict\(/g) || [])
                 .length === 2,
         )
+        ok('no read overwrites the stored cancellation record',
+            !/\.cancellation = this\._cancellationVerdict\(/.test(bookSrc))
+        ok('the stored cancellation record is still on the schema',
+            /cancellation: \{\s*cancelledAt:/.test(
+                fs.readFileSync(path.join(ROOT, 'models/bookOrder.model.js'), 'utf8'),
+            ))
     }
 
     // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
@@ -2028,6 +2056,13 @@ const run = (async () => {
             /order\.stage\.status = ORDER_STATUS\.READY[\s\S]{0,400}await order\.save\(\)/.test(
                 failFn,
             ))
+        const utilSrc = fs.readFileSync(path.join(ROOT, 'services/util.service.js'), 'utf8')
+        const problemBranch = utilSrc.slice(
+            utilSrc.indexOf("issueType === 'delivery_problem'"),
+            utilSrc.indexOf("issueType === 'walkin_problem'"),
+        )
+        ok('the staff delivery_problem report also returns an out-for-delivery order to READY',
+            /'stage\.status': ORDER_STATUS\.READY/.test(problemBranch))
         const setupSrc = fs.readFileSync(path.join(ROOT, 'config/setup.js'), 'utf8')
         ok('existing stuck failed deliveries are migrated, and the step is registered',
             /"stage\.status": ORDER_STATUS\.OUT_FOR_DELIVERY,\s*"dispatchDetails\.delivery\.status": DELIVERY_STATUS\.FAILED/.test(

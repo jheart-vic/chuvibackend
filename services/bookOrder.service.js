@@ -175,14 +175,20 @@ class BookOrderService extends BaseService {
     // the computed fee. The refund mirrors _performCancellation: cash comes back
     // only for a SUCCESS payment, and reward credits are restored separately, so
     // `refundToWallet` overstates the cash when credits paid part of the order.
-    _cancellationVerdict(order, settings) {
+    // A pending request also blocks a second one (requestCancellation), so the
+    // caller passes it in rather than this re-querying per order.
+    _cancellationVerdict(order, settings, { requestPending = false } = {}) {
         const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
         const decision = this._cancelTier(order, graceMinutes)
+        const pendingBlocks = decision.tier === 'amber' && requestPending
         const verdict = {
             allowed: decision.allowed,
-            canRequest: decision.tier === 'amber',
+            canRequest: decision.tier === 'amber' && !requestPending,
+            requestPending: pendingBlocks,
             tier: decision.tier,
-            reason: decision.reason || null,
+            reason: pendingBlocks
+                ? 'A cancellation request for this order is already awaiting review.'
+                : decision.reason || null,
             estimatedFee: null,
             refundToWallet: null,
         }
@@ -2293,9 +2299,21 @@ class BookOrderService extends BaseService {
             const total = await BookOrderModel.countDocuments(filter)
 
             presentOrders(orders)
+            // `cancellationVerdict`, not `cancellation`: that name is the stored
+            // record of a past cancellation (refund, fee, reason) on the schema.
             const settings = await AdminSettingModel.findOne({}).lean()
+            const pending = new Set(
+                (
+                    await CancellationRequestModel.distinct('orderId', {
+                        orderId: { $in: orders.map((o) => o._id) },
+                        status: CANCELLATION_REQUEST_STATUS.PENDING,
+                    })
+                ).map(String),
+            )
             for (const order of orders) {
-                order.cancellation = this._cancellationVerdict(order, settings)
+                order.cancellationVerdict = this._cancellationVerdict(order, settings, {
+                    requestPending: pending.has(String(order._id)),
+                })
             }
 
             // 5️⃣ Send response
@@ -2332,7 +2350,13 @@ class BookOrderService extends BaseService {
 
             presentOrder(bookOrder)
             const settings = await AdminSettingModel.findOne({}).lean()
-            bookOrder.cancellation = this._cancellationVerdict(bookOrder, settings)
+            const requestPending = !!(await CancellationRequestModel.exists({
+                orderId: bookOrder._id,
+                status: CANCELLATION_REQUEST_STATUS.PENDING,
+            }))
+            bookOrder.cancellationVerdict = this._cancellationVerdict(bookOrder, settings, {
+                requestPending,
+            })
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({

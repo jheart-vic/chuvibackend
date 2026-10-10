@@ -485,6 +485,99 @@ async function main() {
         await setupApp()
         const again = await BookOrderModel.findById(stuck._id).lean()
         ok(again.stageHistory.length === historyLen, 'a second boot changes nothing')
+
+        // ── 13 the staff "delivery problem" report follows the same rule ──────
+        // Review finding F-02: the second way to fail a delivery left the stage.
+        console.log('\n13 — a staff-reported delivery problem also returns to READY')
+        const problem = await BookOrderModel.create(
+            baseOrder('D4', {
+                isPickUp: false,
+                isDelivery: true,
+                stage: { status: ORDER_STATUS.OUT_FOR_DELIVERY },
+                deliveryAddress: { label: 'Home', address: '7 Marine Road', landmark: 'Opposite the blue mosque' },
+                dispatchDetails: { delivery: { rider: rider._id, status: DELIVERY_STATUS.OUT_FOR_DELIVERY } },
+            }),
+        )
+        created.orderIds.push(problem._id)
+        const UtilService = require('./services/util.service')
+        const reported = await new UtilService().reportDeliveryIssue({
+            params: { id: problem._id.toString() },
+            body: { issueType: 'delivery_problem', note: 'Wrong address' },
+            user: { id: officeStaff._id.toString() },
+        })
+        ok(reported.success === true, 'the issue is reported')
+        const afterProblem = await BookOrderModel.findById(problem._id).lean()
+        ok(afterProblem.stage.status === ORDER_STATUS.READY, 'the order is back at READY')
+        ok(
+            afterProblem.stageHistory.at(-1)?.note === 'Delivery failed: Wrong address',
+            'with the reason in the history',
+        )
+        const qp = unwrap(await intake.getDeliverableOrders({ query: { legStatus: 'failed' } }))
+        ok(
+            (qp?.data || []).some((o) => o.oscNumber === `OSC-STG${STAMP}-D4`),
+            'and it is in the failed-deliveries view',
+        )
+
+        // ── 14 the cancel verdict on real order reads ─────────────────────────
+        // F-01: the verdict must not hide the stored cancellation record.
+        // F-03: a pending request must stop "request cancellation" being offered.
+        console.log('\n14 — the cancel verdict on the customer order reads')
+        const CancellationRequestModel = require('./models/cancellationRequest.model')
+        const books = book
+        const cancelled = await BookOrderModel.create(
+            baseOrder('C1', {
+                stage: { status: ORDER_STATUS.CANCELLED },
+                cancellation: { cancelledAt: new Date(), reason: 'Changed my mind', tier: 'green', cashRefunded: 5000 },
+            }),
+        )
+        const amberOrder = await BookOrderModel.create(
+            baseOrder('C2', {
+                stage: { status: ORDER_STATUS.QUEUE },
+                dispatchDetails: { pickup: { status: PICKUP_STATUS.PICKED_UP } },
+            }),
+        )
+        created.orderIds.push(cancelled._id, amberOrder._id)
+        // Outside the free-cancel grace window, or a fresh order reads green.
+        await BookOrderModel.collection.updateOne(
+            { _id: amberOrder._id },
+            { $set: { createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) } },
+        )
+        const readOne = async (id) =>
+            unwrap(await books.getBookOrder({ params: { id: id.toString() }, user: { id: customer._id.toString() } }))
+        const c1 = await readOne(cancelled._id)
+        ok(c1?.cancellation?.cashRefunded === 5000, 'the stored cancellation record is still returned')
+        ok(c1?.cancellationVerdict?.tier === 'none', 'beside the verdict, which says nothing more can be done')
+        const before = await readOne(amberOrder._id)
+        ok(before?.cancellationVerdict?.canRequest === true, 'an amber order offers a request')
+        const req = await CancellationRequestModel.create({
+            orderId: amberOrder._id,
+            userId: customer._id,
+            reason: 'STG pending request',
+        })
+        try {
+            const single = await readOne(amberOrder._id)
+            ok(
+                single?.cancellationVerdict?.canRequest === false &&
+                    single?.cancellationVerdict?.requestPending === true,
+                'once a request is pending, the single read stops offering another',
+            )
+            const hist = unwrap(
+                await books.getBookOrderHistory({
+                    query: { limit: 50 },
+                    user: { id: customer._id.toString(), userType: ROLE.USER },
+                }),
+            )
+            const histRow = (hist?.data || []).find((o) => String(o._id) === String(amberOrder._id))
+            ok(
+                histRow?.cancellationVerdict?.requestPending === true &&
+                    histRow?.cancellationVerdict?.canRequest === false,
+                'and so does the history list',
+            )
+            const histCancelled = (hist?.data || []).find((o) => String(o._id) === String(cancelled._id))
+            ok(histCancelled?.cancellation?.cashRefunded === 5000, 'the history list keeps the stored record too')
+        } finally {
+            await CancellationRequestModel.deleteOne({ _id: req._id })
+        }
     } finally {
         const o = await BookOrderModel.deleteMany({ _id: { $in: created.orderIds } })
         const u = await UserModel.deleteMany({ _id: { $in: created.userIds } })
