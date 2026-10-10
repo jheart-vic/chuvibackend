@@ -1,5 +1,20 @@
 # Current Session Log
 
+## ███ 2026-10-10 — Fix: failed deliveries + cancel verdict (branch `fix/failed-deliveries-and-cancel-verdict`, NOT pushed) ███
+Archive: `blueprint/history/fixes/failed-deliveries-and-cancel-verdict.md`. Independent review PASSED on the
+third round (F-01..F-04 found and closed). The user opens the PR themselves.
+- **Failed delivery → READY.** Rider failure and the staff `delivery_problem` report move the stage back to
+  `ready` ONLY from `out-for-delivery` (an admin can cancel mid-run; that order must stay cancelled). A boot
+  migration (`backfillFailedDeliveryStage`) moves failures recorded before the fix. **On first deploy it moves
+  every stuck live failed delivery to `ready` at once** — the delivery queue will grow.
+- **`cancellationVerdict` on both customer order reads** — NOT `cancellation`, which is the stored record of a
+  past cancellation and was briefly hidden by the first version (F-01). Fields: `allowed`, `canRequest`,
+  `requestPending`, `tier`, `reason`, `estimatedFee`, `refundToWallet` (cash estimate; credits come back separately).
+- Gates: briefCheck 385/0 · dispatchStaging 72/0 (testingdb) · swagger 75 schemas / 309 paths / 0 wrong envelopes.
+- **Open, not blocking:** F-05 [P2] `PATCH` report-issue has no role/ownership check (any logged-in user can fail
+  any order's delivery); F-06 [P3] briefCheck's failed-delivery checks are source-text only. Also still open:
+  `GET /api/bookOrder/book-order/:id` has no ownership check.
+
 ## ███ 2026-10-09 (late) — AI Blueprint adopted; context folder MOVED ███
 - **`context/` is now `blueprint/context/`.** All path references in these docs and in three code
   comments (`handoffStaging.js`, `models/crmSetting.model.js`, `util/lagosDay.js`) were rewritten.
