@@ -169,6 +169,38 @@ class BookOrderService extends BaseService {
         }
     }
 
+    // What the customer's cancel button should offer, built only from the two
+    // rules the cancel endpoints enforce, so the button and the refusal cannot
+    // drift. Green self-cancel is always free; an approved Amber request carries
+    // the computed fee. The refund mirrors _performCancellation: cash comes back
+    // only for a SUCCESS payment, and reward credits are restored separately, so
+    // `refundToWallet` overstates the cash when credits paid part of the order.
+    _cancellationVerdict(order, settings) {
+        const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
+        const decision = this._cancelTier(order, graceMinutes)
+        const verdict = {
+            allowed: decision.allowed,
+            canRequest: decision.tier === 'amber',
+            tier: decision.tier,
+            reason: decision.reason || null,
+            estimatedFee: null,
+            refundToWallet: null,
+        }
+        const cashPaid =
+            order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS
+                ? Math.max(0, Number(order.amount) || 0)
+                : 0
+        if (decision.tier === 'green') {
+            verdict.estimatedFee = 0
+            verdict.refundToWallet = cashPaid
+        } else if (decision.tier === 'amber') {
+            const fee = cancellationOutcome({ order, settings }).feeApplied
+            verdict.estimatedFee = fee
+            verdict.refundToWallet = cashPaid - Math.min(fee, cashPaid)
+        }
+        return verdict
+    }
+
     // Shared unwind for BOTH Green self-cancel and Amber-request approval.
     // Reverses reward credits, refunds any cash paid to the wallet (minus an
     // optional Amber fee), releases the attached offer, frees a scheduled
@@ -2261,6 +2293,10 @@ class BookOrderService extends BaseService {
             const total = await BookOrderModel.countDocuments(filter)
 
             presentOrders(orders)
+            const settings = await AdminSettingModel.findOne({}).lean()
+            for (const order of orders) {
+                order.cancellation = this._cancellationVerdict(order, settings)
+            }
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({
@@ -2295,6 +2331,8 @@ class BookOrderService extends BaseService {
             }
 
             presentOrder(bookOrder)
+            const settings = await AdminSettingModel.findOne({}).lean()
+            bookOrder.cancellation = this._cancellationVerdict(bookOrder, settings)
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({

@@ -1929,6 +1929,112 @@ const run = (async () => {
             ))
     }
 
+    // ─── FE 9 Oct #5: the cancel verdict on order reads ─────────────────────
+    // The button must read the SAME rule the cancel endpoints enforce, so these
+    // drive the real service method rather than a copy of the rule.
+    console.log('\nFE #5 — cancellation verdict on order reads')
+    {
+        const BookOrderService = require(path.join(ROOT, 'services/bookOrder.service'))
+        const svc = new BookOrderService()
+        const settings = {
+            orderCancellationGraceMinutes: 15,
+            cancellationPickupFee: 1000,
+            cancellationReturnFee: 1000,
+        }
+        const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+        const base = {
+            createdAt: old,
+            amount: 5000,
+            paymentStatus: 'success',
+            items: [{}],
+            dispatchDetails: { pickup: { status: 'pending' } },
+        }
+
+        const green = svc._cancellationVerdict(
+            { ...base, stage: { status: ORDER_STATUS.PENDING } },
+            settings,
+        )
+        ok('pending, not picked up: green, self-cancel free, full cash back',
+            green.allowed && !green.canRequest && green.tier === 'green' &&
+                green.estimatedFee === 0 && green.refundToWallet === 5000 &&
+                green.reason === null,
+            JSON.stringify(green))
+
+        const amber = svc._cancellationVerdict(
+            {
+                ...base,
+                stage: { status: ORDER_STATUS.QUEUE },
+                dispatchDetails: { pickup: { status: 'picked-up' } },
+            },
+            settings,
+        )
+        ok('collected and paid, untagged: amber, request only, both trips kept',
+            !amber.allowed && amber.canRequest && amber.tier === 'amber' &&
+                amber.estimatedFee === 2000 && amber.refundToWallet === 3000,
+            JSON.stringify(amber))
+
+        const amberUnpaid = svc._cancellationVerdict(
+            {
+                ...base,
+                paymentStatus: 'pending',
+                stage: { status: ORDER_STATUS.QUEUE },
+                dispatchDetails: { pickup: { status: 'picked-up' } },
+            },
+            settings,
+        )
+        ok('collected, unpaid: fee is owed, nothing comes back',
+            amberUnpaid.estimatedFee === 2000 && amberUnpaid.refundToWallet === 0,
+            JSON.stringify(amberUnpaid))
+
+        const tagged = svc._cancellationVerdict(
+            {
+                ...base,
+                stage: { status: ORDER_STATUS.QUEUE },
+                items: [{ tagId: 'T-1' }],
+                dispatchDetails: { pickup: { status: 'picked-up' } },
+            },
+            settings,
+        )
+        ok('tagged while still in the tagging QUEUE: red, neither cancel nor request',
+            !tagged.allowed && !tagged.canRequest && tagged.tier === 'red' &&
+                /Tagging has already started/.test(tagged.reason) &&
+                tagged.estimatedFee === null && tagged.refundToWallet === null,
+            JSON.stringify(tagged))
+
+        const done = svc._cancellationVerdict(
+            { ...base, stage: { status: ORDER_STATUS.CANCELLED } },
+            settings,
+        )
+        ok('already cancelled: tier none, nothing offered',
+            !done.allowed && !done.canRequest && done.tier === 'none' &&
+                done.estimatedFee === null,
+            JSON.stringify(done))
+
+        ok('both customer order reads attach the verdict',
+            (bookSrc.match(/\.cancellation = this\._cancellationVerdict\(/g) || [])
+                .length === 2,
+        )
+    }
+
+    // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
+    console.log('\nFE — failed delivery goes back to the delivery queue')
+    {
+        const riderSrc = fs.readFileSync(path.join(ROOT, 'services/rider.service.js'), 'utf8')
+        const failFn = riderSrc.slice(
+            riderSrc.indexOf('async markOrderDeliveryAsFailed('),
+            riderSrc.indexOf('async getRiderAssignedPickups('),
+        )
+        ok('marking a delivery failed sets the stage back to READY in the same save',
+            /order\.stage\.status = ORDER_STATUS\.READY[\s\S]{0,400}await order\.save\(\)/.test(
+                failFn,
+            ))
+        const setupSrc = fs.readFileSync(path.join(ROOT, 'config/setup.js'), 'utf8')
+        ok('existing stuck failed deliveries are migrated, and the step is registered',
+            /"stage\.status": ORDER_STATUS\.OUT_FOR_DELIVERY,\s*"dispatchDetails\.delivery\.status": DELIVERY_STATUS\.FAILED/.test(
+                setupSrc,
+            ) && /\["failedDeliveryStage", backfillFailedDeliveryStage\]/.test(setupSrc))
+    }
+
     console.log(`\n${pass} passed, ${fail} failed\n`)
     process.exit(fail ? 1 : 0)
 })()

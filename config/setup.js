@@ -425,6 +425,39 @@ const createDefaultBookingWindow = async () => {
   }
 };
 
+// A failed delivery used to keep the OUT_FOR_DELIVERY stage, which hid it from
+// the delivery queue (that reads READY). The rider service now returns it to
+// READY; this moves the ones recorded before that fix. Idempotent: a second run
+// matches nothing.
+const backfillFailedDeliveryStage = async () => {
+  try {
+    const BookOrderModel = require("../models/bookOrder.model");
+    const { ORDER_STATUS, DELIVERY_STATUS } = require("../util/constants");
+    const now = new Date();
+    const res = await BookOrderModel.updateMany(
+      {
+        "stage.status": ORDER_STATUS.OUT_FOR_DELIVERY,
+        "dispatchDetails.delivery.status": DELIVERY_STATUS.FAILED,
+      },
+      {
+        $set: { "stage.status": ORDER_STATUS.READY, "stage.updatedAt": now },
+        $push: {
+          stageHistory: {
+            status: ORDER_STATUS.READY,
+            note: "Delivery failed (moved back to ready by migration)",
+            updatedAt: now,
+          },
+        },
+      },
+    );
+    if (res.modifiedCount) {
+      console.log(`Moved ${res.modifiedCount} failed deliveries back to ready`);
+    }
+  } catch (error) {
+    console.error("Failed-delivery stage backfill failed:", error);
+  }
+};
+
 // Every step below is a seed or a MIGRATION of an existing document, and none of
 // them used to be awaited: `setupApp` was async but fired all nine and printed
 // "App init successful" immediately. Three consequences, all real:
@@ -450,6 +483,7 @@ async function setupApp() {
     ["offerTriggerBackfill", backfillOfferTriggers],
     ["schedulingSettings", ensureSchedulingSettings],
     ["defaultBookingWindow", createDefaultBookingWindow],
+    ["failedDeliveryStage", backfillFailedDeliveryStage],
   ];
   for (const [name, step] of steps) {
     try {

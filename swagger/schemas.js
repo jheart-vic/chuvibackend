@@ -483,6 +483,26 @@
  *           properties:
  *             error: { type: string, example: "Something went wrong" }
  *
+ *     CancellationVerdict:
+ *       type: object
+ *       description: >
+ *         What the customer's cancel button should offer, from the same rule the
+ *         cancel endpoints enforce. `allowed` means POST cancel will succeed now;
+ *         `canRequest` means self-cancel is refused but a cancellation request is
+ *         accepted. Once any item is tagged the order is red and neither applies.
+ *         `estimatedFee` and `refundToWallet` are null for red and none.
+ *         `refundToWallet` is cash only; reward credits are restored separately.
+ *       properties:
+ *         allowed: { type: boolean, example: false }
+ *         canRequest: { type: boolean, example: true }
+ *         tier: { type: string, enum: [green, amber, red, none], example: amber }
+ *         reason:
+ *           type: string
+ *           nullable: true
+ *           example: "Your items are already on the way to us or with us. Please contact support to request a cancellation."
+ *         estimatedFee: { type: number, nullable: true, example: 2000 }
+ *         refundToWallet: { type: number, nullable: true, example: 3000 }
+ *
  *     # ── Order pricing receipt ────────────────────────────────────────────
  *     OrderPricing:
  *       type: object

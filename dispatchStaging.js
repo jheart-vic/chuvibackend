@@ -47,6 +47,7 @@ const {
     GENERAL_STATUS,
     ORDER_STATUS,
     PICKUP_STATUS,
+    DELIVERY_STATUS,
     ORDER_CHANNEL,
     SERVICE_TIERS,
     DELIVERY_SPEED,
@@ -410,6 +411,80 @@ async function main() {
                 'Opposite the filling station',
             'and the typed landmark is stored for the rider',
         )
+
+        // ── 11 a failed DELIVERY goes back to the delivery queue ──────────────
+        // It used to keep OUT_FOR_DELIVERY, so the queue (which reads READY)
+        // never showed it: failedCount stayed 0 and the office could not find it.
+        console.log('\n11 — a failed delivery is visible and can be re-run')
+        const failDelivery = await BookOrderModel.create(
+            baseOrder('D2', {
+                isPickUp: false,
+                isDelivery: true,
+                stage: { status: ORDER_STATUS.READY },
+                deliveryAddress: { label: 'Home', address: '7 Marine Road', landmark: 'Opposite the blue mosque' },
+                dispatchTag: { printedAt: new Date(), printCount: 1 },
+                dispatchDetails: { delivery: { rider: null } },
+            }),
+        )
+        created.orderIds.push(failDelivery._id)
+        const asRider = (extra = {}) => ({
+            params: { id: failDelivery._id.toString() },
+            user: { id: rider._id.toString() },
+            ...extra,
+        })
+        const assignD = await intake.assignRiderTopDeliveryOrder(
+            asStaff({ id: failDelivery._id.toString(), riderId: rider._id.toString() }),
+        )
+        ok(assignD.success === true, 'the printed delivery is assigned')
+        ok((await riderSvc.startDelivery(asRider())).success === true, 'the rider starts it')
+        const failedD = await riderSvc.markOrderDeliveryAsFailed(
+            asRider({ body: { phoneNumber: '08030000003', note: 'Gate locked' } }),
+        )
+        ok(failedD.success === true, 'the rider marks it failed')
+        const afterFail = await BookOrderModel.findById(failDelivery._id).lean()
+        ok(afterFail.stage.status === ORDER_STATUS.READY, 'the order is back at READY')
+        ok(
+            afterFail.dispatchDetails.delivery.status === DELIVERY_STATUS.FAILED,
+            'the leg still says failed',
+        )
+        ok(
+            afterFail.stageHistory.at(-1)?.note === 'Delivery failed: Gate locked',
+            'the history records why it went back',
+        )
+        const qd = unwrap(await intake.getDeliverableOrders({ query: { legStatus: 'failed' } }))
+        const dRow = (qd?.data || []).find((o) => o.oscNumber === `OSC-STG${STAMP}-D2`)
+        ok(!!dRow, 'legStatus=failed on the DELIVERY queue returns it')
+        ok(dRow?.failed === true && /Gate locked/.test(dRow?.legNote || ''), 'flagged, with the reason')
+        ok((qd?.failedCount || 0) >= 1, 'the delivery failedCount counts it')
+
+        const reassign = await intake.assignRiderTopDeliveryOrder(
+            asStaff({ id: failDelivery._id.toString(), riderId: rider._id.toString() }),
+        )
+        ok(reassign.success === true, 'the office can reassign it')
+        ok((await riderSvc.startDelivery(asRider())).success === true, 'and the rider can run it again')
+        const rerun = await BookOrderModel.findById(failDelivery._id).lean()
+        ok(rerun.stage.status === ORDER_STATUS.OUT_FOR_DELIVERY, 'which puts it back out for delivery')
+
+        // ── 12 the migration for deliveries that failed before the fix ────────
+        console.log('\n12 — failed deliveries recorded before the fix are migrated')
+        const stuck = await BookOrderModel.create(
+            baseOrder('D3', {
+                isPickUp: false,
+                isDelivery: true,
+                stage: { status: ORDER_STATUS.OUT_FOR_DELIVERY },
+                deliveryAddress: { label: 'Home', address: '7 Marine Road', landmark: 'Opposite the blue mosque' },
+                dispatchDetails: { delivery: { rider: rider._id, status: DELIVERY_STATUS.FAILED } },
+            }),
+        )
+        created.orderIds.push(stuck._id)
+        const setupApp = require('./config/setup')
+        await setupApp()
+        const migrated = await BookOrderModel.findById(stuck._id).lean()
+        ok(migrated.stage.status === ORDER_STATUS.READY, 'the stuck order is moved to READY')
+        const historyLen = migrated.stageHistory.length
+        await setupApp()
+        const again = await BookOrderModel.findById(stuck._id).lean()
+        ok(again.stageHistory.length === historyLen, 'a second boot changes nothing')
     } finally {
         const o = await BookOrderModel.deleteMany({ _id: { $in: created.orderIds } })
         const u = await UserModel.deleteMany({ _id: { $in: created.userIds } })

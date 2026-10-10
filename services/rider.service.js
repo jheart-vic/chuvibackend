@@ -323,6 +323,18 @@ class RiderService extends BaseService {
             // an instruction to the next rider.
             order.dispatchDetails.delivery.failureNote = note
             order.markModified('dispatchDetails.delivery')
+            // Back to READY, the stage before dispatch, as a failed pickup stays
+            // PENDING. Left at OUT_FOR_DELIVERY the order dropped out of the
+            // delivery queue (which reads READY) so the office could not find it
+            // to reassign, and the bot told the customer a rider was on the way.
+            const failedAt = new Date()
+            order.stage.status = ORDER_STATUS.READY
+            order.stage.updatedAt = failedAt
+            order.stageHistory.push({
+                status: ORDER_STATUS.READY,
+                note: note ? `Delivery failed: ${note}` : 'Delivery failed',
+                updatedAt: failedAt,
+            })
             await order.save()
 
             // Same as the pickup case: the rider was notifying themselves, and
