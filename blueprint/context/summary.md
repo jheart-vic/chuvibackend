@@ -1,0 +1,254 @@
+# CHUVI Backend — Program Summary
+
+Big picture of everything agreed and built beyond what AGENTS.md documents.
+Keep this updated when a phase lands or a client decision changes.
+
+## Where this came from
+
+The CRM ("smart customer notebook") shipped first (see AGENTS.md → CRM). The
+client then spec'd five new systems, all backend-first (the WhatsApp chatbot in
+`Desktop/Desktop/chatbot` reconnects LATER as a thin channel — do not build bot
+features now): **Offer System, Feedback & Recovery, Referral, Communication,
+Wallet & Credit**. In-app chat + an in-app bot (agent living in THIS backend,
+not the bot repo) are part of the plan.
+
+## Agreed build order (₦600k budget, phased)
+
+1. ✅ **Wallet & Credit** — reward credit sub-balances inside the existing wallet
+2. ⏳ **Communication layer** — one delivery pipe (in-app notification + SMS), admin templates, delivery log
+3. **Offer System** — Offer Builder (admin CRUD), CRM-event triggers, booking-time validation/pricing
+4. **Feedback & Recovery** — feedback records, complaint cases + status machine, CX role, SLA escalation cron, in-app complaint chat (REST/polling first, sockets later)
+5. **Referral** — codes/links, tracked to first completed order, % reward via Offer System
+6. **In-app bot** — agent service inside this backend (tools over services), bot↔human handover
+7. **WhatsApp reconnection** — separate budget, later
+
+## Client's final decisions (binding)
+
+- **Stacking**: baseline benefits always apply; max ONE personal offer per order; promos don't combine with personal offers unless a per-offer admin flag (`stackableWithPersonal`) allows it. Default: one promo per order.
+- **Credit expiry defaults** (per-offer overridable): referral 45d, recovery 90d, promotional 30d. (We set laundry 90d.)
+- **Complaints**: Customer Experience Officer owns all cases (new ROLE needed); first review 24h, resolution 72h; overdue auto-escalates to Ops Manager/Founder.
+- **Recovery credit approval**: CX officer ≤ ₦10,000 with evidence; above needs Ops Manager/Founder. Threshold configurable.
+- **Referral**: reward = configurable % of referred customer's first COMPLETED order (released only then); referred customer gets configurable welcome reward; no monthly cap by default but an admin-configurable cap field must exist.
+
+## Key architecture rules
+
+- Follow the repo's layered pattern exactly: routes → controllers → services → models; enums in `util/constants.js`; route strings in `util/page-route.js`; swagger JSDoc on every route; seeds in `config/setup.js`; crons required in `server.js`.
+- No mongo transactions anywhere — use per-document atomic guards + compensating updates (see walletCredit.service).
+- Money paths must be verified end-to-end with throwaway scripts against the dev DB (no test suite exists). Scripts create synthetic users and clean up after themselves.
+- Systems talk through fire-and-forget hooks (pattern: `util/crmHooks.js`) — a downstream failure must never break the calling flow.
+- Offers are created ONCE by staff; automated systems only LINK existing offers (never invent them). Credits only deduct permanently after order completion; cancelled orders restore credits (original expiry kept).
+- **Swagger docs must show real shapes.** Model shapes live once as reusable `components.schemas` in `swagger/schemas.js` (with realistic examples + spelled-out enums); route responses `$ref` them inside the standard success envelope (`{ success, message }`) — never a bare `{ description }` or placeholder `type: object`. Errors use the shared `ErrorResponse` schema. Verify the actual response key names from the service before documenting. Full pattern in AGENTS.md → API docs.
+
+## Phase status
+
+| Phase | Status | Branch/commit |
+|---|---|---|
+| 1. Wallet & Credit | ✅ committed | `e0fca80 wallet-credits done` |
+| 2. Communication layer | ✅ committed | `8eb638b all done for communicatios` |
+| 3. Offer System | ✅ committed | `aee9434 offer system done` (branch `offer-system`) |
+| 4. Feedback & Recovery | ✅ committed | `5d80b2e All done for the feedback-recovery` |
+| 5. Referral (+ advocacy levels) | ✅ committed | `proper-swagger-prt` |
+| 6. In-app bot | ✅ built + verified (18-check script + boot), awaiting commit | `proper-swagger-prt` |
+| 7. WhatsApp reconnection | later (separate budget) | — |
+
+## CURRENT WORK: Developer Brief 6 Oct 2026 — ✅ CODE-COMPLETE 2026-10-09
+
+**ALL 22 fixes, N2, and N1 (Quick Booking + window booking + payment hold + order editing) are
+BUILT AND VERIFIED, and the §1+§2+§3 deliverable is WRITTEN:
+`blueprint/context/CLIENT-DELIVERABLE-oct2026.md`.** Gates: `briefCheck` **341/341** offline · **21 DB
+harnesses** green against testingdb · swagger **74 schemas / 307 paths / 0 wrong envelopes**.
+Commands and the per-item detail are in the STATUS BOARD at the top of `blueprint/context/feature.md`, which
+remains the single place to look after a context clear.
+
+> ### ⚠️⚠️ THE ONLY THING LEFT: NOTHING IS DEPLOYED.
+> `feature/fix` is **pushed but NOT merged to `main`**. `origin/main` is at `e0d5c3a` with
+> **10 commits ahead of it**, so window booking, the payment hold, item editing, D7, the Anytime
+> refund, display names, the service-type guard, item-level holds, the notifications policy **and
+> the CRM registered-not-booked sequence the client asked to go live FIRST** are all unshipped.
+> **"Pushed" and "merged" are different questions** — check `git log origin/main..HEAD`, and never
+> reason from local `main` (it has been 127 commits behind and caused a wrong diagnosis once).
+
+**Also outstanding, none of it code:**
+- **FE adoption gap.** `GET /api/communication/templates/meta` has been LIVE since the Group 4
+  merge (it exists so the template **Key** field is a dropdown of the six valid keys) and the client
+  was seen typing into a free-text box. Three other live changes may be unadopted — `avgProcessingTime`
+  can be **null** (**unguarded, the dashboard prints "null" today**), `avgRevenuePerItem7Days`
+  replaces `avgCostPerItem7Days`, and `dormantRateLabel` ships from the backend. Keep this separate
+  from the 10 unmerged commits, which genuinely 404 and cannot be adopted yet.
+- **Two client config actions**, both assumed by shipped messages: create the **First Experience
+  offer**, and a **free-logistics offer with an ₦8,000 minimum** (the third registered-not-booked
+  message promises it and the promise is false until it exists).
+- **Two notes drafted but not sent:** the weekend date shift (Sat standard: Mon → Tue), and that a
+  window booking costs exactly what a booking costs today so only Anytime is dearer.
+- Client changelogs for the FE: `blueprint/context/FE-CHANGELOG-2026-10-09.md` is the current one, with the
+  swagger path/method/schema for every change (all verified against the built spec).
+
+Client PDF "CHUVI Digital Stack Developer Brief, Oct 6 2026 · @Cyphas", from their own testing 4–6 Oct.
+**Full plan + per-item triage is in `blueprint/context/feature.md` (CURRENT feature).**
+- **BACKEND ONLY** (the FE team has a separate repo; the user is not on it). Items tagged A (pure
+  backend) / B (FE waiting on me) / C (pure FE) / D (blocked on a client answer).
+- **Order: fixes → new features → answers.** Answers written LAST from shipped code; deliverable is
+  ONE copy/paste block (§1 status · §2 status · §3 answers as rule/formula/worked example).
+- **Their Thu 8 Oct deadline cannot cover all 22+2 — tell them early.**
+- Headline findings: 1.1 is S2-on-`stage.status` vs S3/S4-on-`items[].currentStation` (decision D3
+  coming home); 1.2 is a symptom of 1.1; 2.3 and 4.4 are confirmed bugs; 3.1 is probably the
+  dispatch-tag gate, not a failed write; **1.3 is already fixed here but unshipped — Render serves
+  `main` while the work sits on `mesage-and-alert-fix`.**
+
+## Client "Fix & Improvement Brief" (2026-08-02) — ALL 8 sections DONE, uncommitted
+
+A separate 8-section correction brief was delivered and built on branch `bot-polising`.
+Full per-section detail + verification counts are in session.md (2026-08-02 entries).
+Status:
+- ✅ §1 Registration dup-email (email+Google) · ✅ §2 CX/Admin conversations (CRM→CX,
+  admin view-all/enter/own, CX escalate) · ✅ §3 Communication config (staggered lead
+  schedule in CrmSetting, register/book stop+stage, deep links) · ✅ §5 Complaints
+  (multi-type, 48h confirm→closed, 7-day reopen, rating, tag-removal) · ✅ §6 Recovery
+  orders into the pipeline (free order, auto status sync, dashboard) · ✅ §7 Compensation
+  & wallet (cash-comp path, cumulative>₦10k→admin, confirm step, eligible value) ·
+  ✅ §8 Referral/AI (verified, no change).
+- ✅ §4 multi-criteria offer targeting — offer.triggers[] (multi-trigger, OR; legacy trigger
+  kept in sync), rules.customerGroups[] (admin-managed CRM tags, matched like tags), all four
+  categories OR-within/AND-across/empty-skip through the shared checkProfileRules; legacy
+  trigger→triggers[] backfill in setup. Verified 19/19 + boot.
+- Also uncommitted: the appliedOffers CastError HOTFIX (production bug) — commit standalone.
+- Everything since the hotfix is UNCOMMITTED pending client review. Verification scripts
+  in scratchpad (not committed).
+
+### In-app bot quick reference (Phase 6)
+
+- Hybrid: LLM classifies intent ONLY (`services/botIntent.service.js`, Claude
+  `claude-haiku-4-5` via `@anthropic-ai/sdk`, structured tool output; keyword
+  fallback when `ANTHROPIC_API_KEY` unset/errors — never hard-fails).
+  `services/botOrchestrator.service.js` routes to deterministic workflows over
+  existing systems and can only do client-approved low-risk actions.
+- **Permission boundary is structural:** high-risk actions (refund, compensation,
+  credit edits, resolve complaint, override eligibility, record/policy edits)
+  have NO intent/workflow — they can only reach a human via handoff (conversation
+  `mode: 'human'`, Customer Experience takes over). Booking is GUIDED only — the
+  bot never calls create-order.
+- Reuses Phase 4 `Conversation`/`ChatMessage` (`type: 'support'`, sender `bot`) +
+  `conversation.service.getOrCreateSupport`. Multi-turn state on
+  `conversation.botState`. Routes `/api/bot` (customer: message/conversation/
+  handoff via auth; staff: queue/reply/close via customerExperienceAuth).
+- Real-time via WebSockets (`config/socket.js`, socket.io on the HTTP server, JWT
+  handshake, rooms `user:<id>`+`staff:support`; `emitChatMessage` non-fatal, REST
+  stays source of truth). Env: `ANTHROPIC_API_KEY`, `BOT_MODEL`.
+- Phase 7 (WhatsApp) reuses this intent+workflow layer as a channel-agnostic core.
+
+### Referral quick reference (Phase 5)
+
+- User.referralCode (permanent, one per customer, lazily generated everywhere
+  it's needed). Reward is a computed % of the referred customer's first order
+  → referral.service grants a `referral` wallet credit (45d) DIRECTLY (not an
+  Offer benefit). Welcome reward = configurable `promotional` credit (30d) to
+  the referred customer on capture (RewardSetting.referralWelcomeAmount, 0=off).
+- Reward config in RewardSetting: referralRewardPercent (5), referralRewardMax
+  (null), referralMonthlyCap (null), referralWelcomeAmount (0).
+- Flow via util/referralHooks.js: register→ensureCode + capture-if-code (auth
+  ×3 paths); order-created→first-order (bookOrder+intake); order-delivered→
+  reward referrer (all 3 delivered sites); recovery.confirmResolution→
+  referralOnEligibilityRestored (releases rewards deferred while referrer had
+  an open complaint via crmProfile.referralPaused).
+- Routes /api/referral: me (page: code/link/stats/history), history, apply-code
+  (post-registration), reset-code (admin). Models: referral.model.js.
+- **Advocacy levels (added 2026-07-19, Option A):** Member/Promoter/Ambassador/
+  Champion. Level is PERMANENT (earned by lifetime successful referrals, never
+  demoted) → permanently raises reward % + unlocks an exclusive offer. Only the
+  MONTHLY free-laundry perk is activity-gated (granted the month the monthly
+  target is met, paused otherwise, auto-restored). Config lives in
+  RewardSetting.referralLevels (admin-editable). State in referralStats.model.js.
+  Engine in referral.service (recomputeLevel called on each grant + page load;
+  no cron). Reward % follows the referrer's level; monthly perk = `laundry`
+  credit (WalletCreditService, sourceRef referral-level-laundry-<lvl>-<YYYY-MM>);
+  exclusive offer linked once via offerOnTrigger(level.offerTrigger, milestoneKey
+  level-<lvl>). Notifs: referral-level-up + referral-monthly-benefit. Page adds a
+  `level` block (current/lifetime/monthly/progress/benefits).
+
+### Feedback & Recovery quick reference (Phase 4)
+
+- New ROLE `customer-experience` + `middlewares/customerExperienceAuth.js` (+admin).
+- **crmProfile.referralPaused** true while an unresolved complaint is open —
+  Phase 5 Referral MUST check it before rewarding. Helpers on CrmService:
+  `applyRecoveryTags(userId)` / `clearRecoveryTags(userId)`.
+- Recovery money reuses WalletCreditService (type 'recovery', 90d). Approval
+  gate: CX ≤ ₦10,000, admin above (RewardSetting.recoveryApprovalThreshold).
+  Approved credit fires `offerOnTrigger('recovery', {userId})`.
+- In-app chat models Conversation + ChatMessage (services/conversation.service)
+  built here for complaint conversations — **Phase 6 in-app bot reuses them**
+  (type 'support', mode 'bot'). REST/polling; sockets deferred to Phase 6.
+- Routes: /api/feedback (customer: submit, my-complaints, confirm/reject, chat,
+  complaint-types) + /api/recovery (CX/admin: queue, transition, actions,
+  credit request/approve/reject, escalate, chat, complaint-type CRUD).
+- crons/complaintSla.js hourly escalates review(24h)/resolution(72h) overdue.
+
+### Offer System quick reference (Phase 3)
+
+- Engine: `services/offer.service.js` (singleton); request layer:
+  `services/offerApi.service.js`; routes at /api/offers (admin builder CRUD +
+  performance + manual assign + linkage cancel; user my-offers / view /
+  validate / attach). Models: offer.model.js, customerOffer.model.js.
+- Events flow in via `util/offerHooks.js`: `offerOnTrigger(trigger, {userId,
+  milestoneKey})` fired from crm.service (first-experience on lead creation,
+  second-order on 1st delivery, loyalty-N every 5th, reactivation on dormancy
+  scan) and `offerOnOrderDelivered(order)` at the 3 delivered sites (intake,
+  rider, bookOrder) → redeems attached linkages + pays extra-laundry-credit
+  into the wallet (sourceRef `offer-<linkageId>` dedupe).
+- Referral phase will fire `offerOnTrigger('referral-reward', {userId,
+  milestoneKey: 'referral-<referralId>'})`; Recovery phase fires
+  `offerOnTrigger('recovery', ...)` after approval.
+- Order cancellation must call `OfferService.releaseForOrder(orderId)` (and
+  wallet reverseOrderCredits) when a cancel flow lands.
+
+### How other systems send messages (Phase 2 API)
+
+```js
+const CommunicationService = require('./services/communication.service')
+await CommunicationService.send({
+  userId, templateKey: 'offer-available', data: { offerName },
+  sourceSystem: 'offer', messageType: 'offer-available',
+  relatedRef: customerOfferId, relatedModel: 'CustomerOffer',
+})  // never throws; returns { logs }
+```
+Seeded template keys: offer-available, referral-reward, complaint-update,
+generic-announcement. Admin endpoints under /api/communication (templates CRUD,
+logs, retry-failed).
+
+## CRM backend changes still pending (from earlier plan, separate from phases)
+
+- `startLeadWorkflow`: stop auto-scheduling LEAD_OFFER/LEAD_CLOSE (client wants conversational offer/close via bot later; only welcome+qualify + timed reminders).
+- Internal endpoints for bot: "lead replied" (pause reminders), "feedback rating" (record, auto-Complaint tag on ≤2★).
+- Post-delivery T3 retention message (+7d) and subscription-intro message (3–4 orders, no complaint tags).
+- Reactivation cadence + dormancy: client must still pick manual (7/7d, 21/35d) vs spec (14/28d, 30d).
+- Termii `dnd` channel consideration in `util/sendSms.js`.
+
+## NEW PACKAGE (quoted to client 2026-08-31): Subscriber Logistics Allowance + Recurring Offers — ₦210,000
+
+Two client-approved features. **BUILD ORDER: Feature 1 FIRST (approved to start); Feature 2 DEFERRED.** Full
+deliverables/TODOs live in `blueprint/context/feature.md`. No code yet as of 2026-08-31.
+
+### Feature 1 — Per-plan free pickup/delivery allowance — ₦65,000 (current feature)
+Confirmed client decisions (2026-08-31):
+- Allowance is **PER WEEK** (changed from per-month), editable **per plan** in the admin panel.
+- **Pickup and delivery counted SEPARATELY** — an order with both consumes **2** units.
+- **Speed surcharge stays FREE always** for subscribers (even after the allowance is exhausted).
+- Once the weekly allowance is used up, the normal `pickupFee`/`deliveryFee` applies per remaining leg.
+- Admin will re-set existing plans' numbers themselves (not our task).
+- **Weekly reset ⇒ can't piggyback on the monthly Paystack renewal** (that resets `remainingItems`). Use a
+  **lazy weekly reset** at booking (store `logisticsWeekStart`; if a new week, reset the counter first) — avoids a
+  cron. **Week boundary DECIDED (2026-08-31): rolling 7-day window anchored to the subscription START** (not a
+  calendar week) — each customer's week runs from their own signup date; lazy reset advances `logisticsWeekStart` by
+  7-day steps.
+- Replaces the hardcoded `extraDeliveryCost = 0` in the subscription billing branch (bookOrder.service ~line 972).
+- No new endpoints. Files: plan.model, subscription.model, subscription.service, webhook.handler, bookOrder.service,
+  admin.service, swagger.
+
+### Feature 2 — Recurring offers (schedule + cadenced notification) — ₦145,000 (DEFERRED, not started)
+Confirmed client decisions (2026-08-31): General/Promo offers only (personal stay event-triggered); **A** = auto
+on/off on scheduled day(s)+time window (extend `isWithinWindow`, no cron); **B** = notify eligible group every
+per-offer `notifyIntervalDays` (NOT every occurrence) via **all 4 channels** (WhatsApp+SMS+in-app+email); **no send
+cap** (cadence controls cost). New daily notification cron. Fields: `recurrence{daysOfWeek,startTime,endTime}`,
+`notifyIntervalDays`, `lastNotifiedAt`. Timezone (Africa/Lagos) to confirm. Files: offer.model, offer.service,
+admin.service, new cron, server.js, swagger.
+
+Timeline for both ≈ 2 weeks + testing. FE (admin-panel fields) handled by the frontend team, not in the quote.

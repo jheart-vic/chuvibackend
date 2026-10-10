@@ -9,7 +9,7 @@
 //
 // New code should bucket dates through here instead of `setHours(0,0,0,0)` so we
 // stop adding to that pile. The existing 25 call sites are deliberately NOT
-// rewritten (see context/feature.md Part B).
+// rewritten (see blueprint/context/feature.md Part B).
 const moment = require('moment-timezone')
 
 const LAGOS = 'Africa/Lagos'

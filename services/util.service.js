@@ -9,6 +9,7 @@ const {
     NOTIFICATION_TYPE,
     PICKUP_STATUS,
     DELIVERY_STATUS,
+    ORDER_STATUS,
     ACTIVITY_TYPE,
 } = require('../util/constants')
 
@@ -175,6 +176,11 @@ class UtilService extends BaseService {
                     { runValidators: false },
                 )
             } else if (issueType === 'delivery_problem') {
+                // Same rule as the rider's failed delivery: an order failed while
+                // out for delivery returns to READY, or the delivery queue (which
+                // reads READY) never shows it.
+                const wasOut =
+                    order.stage?.status === ORDER_STATUS.OUT_FOR_DELIVERY
                 await BookOrderModel.findByIdAndUpdate(
                     orderId,
                     {
@@ -183,7 +189,22 @@ class UtilService extends BaseService {
                                 DELIVERY_STATUS.FAILED,
                             'dispatchDetails.delivery.note': note,
                             'dispatchDetails.delivery.updatedAt': now,
+                            ...(wasOut && {
+                                'stage.status': ORDER_STATUS.READY,
+                                'stage.updatedAt': now,
+                            }),
                         },
+                        ...(wasOut && {
+                            $push: {
+                                stageHistory: {
+                                    status: ORDER_STATUS.READY,
+                                    note: note
+                                        ? `Delivery failed: ${note}`
+                                        : 'Delivery failed',
+                                    updatedAt: now,
+                                },
+                            },
+                        }),
                     },
                     { runValidators: false },
                 )

@@ -1,3 +1,3 @@
 node_modules
 .env
-context/LOCAL-SECRETS.md
+blueprint/context/LOCAL-SECRETS.md

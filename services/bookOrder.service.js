@@ -169,6 +169,44 @@ class BookOrderService extends BaseService {
         }
     }
 
+    // What the customer's cancel button should offer, built only from the two
+    // rules the cancel endpoints enforce, so the button and the refusal cannot
+    // drift. Green self-cancel is always free; an approved Amber request carries
+    // the computed fee. The refund mirrors _performCancellation: cash comes back
+    // only for a SUCCESS payment, and reward credits are restored separately, so
+    // `refundToWallet` overstates the cash when credits paid part of the order.
+    // A pending request also blocks a second one (requestCancellation), so the
+    // caller passes it in rather than this re-querying per order.
+    _cancellationVerdict(order, settings, { requestPending = false } = {}) {
+        const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
+        const decision = this._cancelTier(order, graceMinutes)
+        const pendingBlocks = decision.tier === 'amber' && requestPending
+        const verdict = {
+            allowed: decision.allowed,
+            canRequest: decision.tier === 'amber' && !requestPending,
+            requestPending: pendingBlocks,
+            tier: decision.tier,
+            reason: pendingBlocks
+                ? 'A cancellation request for this order is already awaiting review.'
+                : decision.reason || null,
+            estimatedFee: null,
+            refundToWallet: null,
+        }
+        const cashPaid =
+            order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS
+                ? Math.max(0, Number(order.amount) || 0)
+                : 0
+        if (decision.tier === 'green') {
+            verdict.estimatedFee = 0
+            verdict.refundToWallet = cashPaid
+        } else if (decision.tier === 'amber') {
+            const fee = cancellationOutcome({ order, settings }).feeApplied
+            verdict.estimatedFee = fee
+            verdict.refundToWallet = cashPaid - Math.min(fee, cashPaid)
+        }
+        return verdict
+    }
+
     // Shared unwind for BOTH Green self-cancel and Amber-request approval.
     // Reverses reward credits, refunds any cash paid to the wallet (minus an
     // optional Amber fee), releases the attached offer, frees a scheduled
@@ -2261,6 +2299,22 @@ class BookOrderService extends BaseService {
             const total = await BookOrderModel.countDocuments(filter)
 
             presentOrders(orders)
+            // `cancellationVerdict`, not `cancellation`: that name is the stored
+            // record of a past cancellation (refund, fee, reason) on the schema.
+            const settings = await AdminSettingModel.findOne({}).lean()
+            const pending = new Set(
+                (
+                    await CancellationRequestModel.distinct('orderId', {
+                        orderId: { $in: orders.map((o) => o._id) },
+                        status: CANCELLATION_REQUEST_STATUS.PENDING,
+                    })
+                ).map(String),
+            )
+            for (const order of orders) {
+                order.cancellationVerdict = this._cancellationVerdict(order, settings, {
+                    requestPending: pending.has(String(order._id)),
+                })
+            }
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({
@@ -2295,6 +2349,14 @@ class BookOrderService extends BaseService {
             }
 
             presentOrder(bookOrder)
+            const settings = await AdminSettingModel.findOne({}).lean()
+            const requestPending = !!(await CancellationRequestModel.exists({
+                orderId: bookOrder._id,
+                status: CANCELLATION_REQUEST_STATUS.PENDING,
+            }))
+            bookOrder.cancellationVerdict = this._cancellationVerdict(bookOrder, settings, {
+                requestPending,
+            })
 
             // 5️⃣ Send response
             return BaseService.sendSuccessResponse({
