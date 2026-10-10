@@ -1,5 +1,20 @@
 # Current Session Log
 
+## ███ 2026-10-10 (eve) — Two more fixes, stacked branches, NOT pushed ███
+Merge order: `fix/failed-deliveries-and-cancel-verdict` → `fix/remove-dead-subscription-cron-jobs` →
+`fix/restrict-order-reads-and-issue-reports` (each branch contains the one before it). The user opens the PRs.
+- **Dead subscription crons removed** (`953540a`): `resetMonthlyLimits`, `expireSubscriptions`,
+  `cleanUpCancelledSubs` never changed a document. **The allowance resets ONLY at renewal**
+  (`util/webhook.handler.js:217`, overwrite, not add, so unused items are forfeited). No client ruling on
+  rollover exists. Still open: `reconcilePaystack` copies Paystack statuses (`non-renewing`/`attention`/
+  `complete`) that our enum rejects, and the first failed save aborts the whole loop.
+- **Access fix** (archive `blueprint/history/fixes/restrict-order-reads-and-issue-reports.md`, review PASSED):
+  report-issue = rider/intake/CX/admin, rider only on own run, never walk-in; a customer reading another's
+  order gets "Book order not found". Staff read any order. F-05 closed.
+- Ledger now: F-06, F-08 (briefCheck regex-only checks), F-07 (wrong comment at bookOrder.service.js
+  `getBookOrder`: the intake route uses a SEPARATE handler, `IntakeUserService.getBookOrder`). All P3.
+- Phone backfill: instructions given to the user (`--dry` first, then `STAGING_OK=1`); NOT run by us.
+
 ## ███ 2026-10-10 — Fix: failed deliveries + cancel verdict (branch `fix/failed-deliveries-and-cancel-verdict`, NOT pushed) ███
 Archive: `blueprint/history/fixes/failed-deliveries-and-cancel-verdict.md`. Independent review PASSED on the
 third round (F-01..F-04 found and closed). The user opens the PR themselves.
