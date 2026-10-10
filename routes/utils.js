@@ -1,5 +1,7 @@
 const UtilController = require("../controllers/util.controller");
 const auth = require("../middlewares/auth");
+const multiAuth = require("../middlewares/multiAuth");
+const { ROLE } = require("../util/constants");
 const { image_uploader, video_uploader, document_uploader } = require("../util/imageUpload");
 const {
   ROUTE_IMAGE_UPLOAD_MULTIPLE,
@@ -212,6 +214,10 @@ router.get(ROUTE_GET_HOLD_REASONS, auth, (req, res) => {
  *
  *       All three feed the `deliveryIssues` count on the admin dashboard.
  *       Sets the appropriate dispatch failure status on the order.
+ *
+ *       **Roles:** rider, intake-and-tag, customer-experience, admin (others get 403).
+ *       A rider may report only on a pickup or delivery assigned to them, and
+ *       may not report a walk-in problem.
  *     tags:
  *       - Utils
  *     security:
@@ -258,12 +264,22 @@ router.get(ROUTE_GET_HOLD_REASONS, auth, (req, res) => {
  *         description: |
  *           - Order ID is required
  *           - issueType is required or invalid
+ *           - "You are not assigned to this pickup" / "...delivery" (rider on another rider's run)
+ *           - "Walk-in problems are reported by the front desk, not a rider"
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       403:
+ *         description: The caller is not a rider, intake-and-tag, customer-experience or admin
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       404:
  *         description: Order not found
  *       500:
  *         description: Server error
  */
-router.patch(ROUTE_REPORT_DELIVERY_ISSUES, auth, (req, res) => {
+router.patch(ROUTE_REPORT_DELIVERY_ISSUES, multiAuth(ROLE.RIDER, ROLE.INTAKE_AND_TAG, ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN), (req, res) => {
     const utilController = new UtilController()
     return utilController.reportDeliveryIssue(req, res)
 })
