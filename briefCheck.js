@@ -2049,6 +2049,27 @@ const run = (async () => {
     // None of the three ever changed a document, and a working calendar reset
     // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
     // is the one place the monthly allowance is reset.
+    // ─── F-05 + order read: who may call these two routes ───────────────────
+    console.log('\nAccess: issue reports and single-order reads')
+    {
+        const utilsRoute = fs.readFileSync(path.join(ROOT, 'routes/utils.js'), 'utf8')
+        ok('report-issue is limited to rider, intake-and-tag, customer-experience and admin',
+            /router\.patch\(ROUTE_REPORT_DELIVERY_ISSUES, multiAuth\(ROLE\.RIDER, ROLE\.INTAKE_AND_TAG, ROLE\.CUSTOMER_EXPERIENCE, ROLE\.ADMIN\)/.test(
+                utilsRoute,
+            ))
+        const utilSvc = fs.readFileSync(path.join(ROOT, 'services/util.service.js'), 'utf8')
+        ok('a rider may report only on a run assigned to them',
+            /user\.userType === ROLE\.RIDER[\s\S]{0,500}dispatchDetails\?\.\[leg\]\?\.rider/.test(utilSvc))
+        const getOne = bookSrc.slice(
+            bookSrc.indexOf('async getBookOrder(req'),
+            bookSrc.indexOf('_cancellationVerdict(bookOrder'),
+        )
+        ok('a customer reading another customer\'s order gets "not found", before any verdict',
+            /req\.user\?\.userType === ROLE\.USER &&\s*String\(bookOrder\?\.userId\) !== String\(req\.user\.id\)/.test(
+                getOne,
+            ) && /if \(!bookOrder \|\| notMine\)/.test(getOne))
+    }
+
     console.log('\nSubscription allowance resets only at renewal')
     {
         const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8')
@@ -2077,8 +2098,8 @@ const run = (async () => {
             ))
         const utilSrc = fs.readFileSync(path.join(ROOT, 'services/util.service.js'), 'utf8')
         const problemBranch = utilSrc.slice(
-            utilSrc.indexOf("issueType === 'delivery_problem'"),
-            utilSrc.indexOf("issueType === 'walkin_problem'"),
+            utilSrc.indexOf("} else if (issueType === 'delivery_problem')"),
+            utilSrc.indexOf("} else if (issueType === 'walkin_problem')"),
         )
         ok('the staff delivery_problem report also returns an out-for-delivery order to READY',
             /'stage\.status': ORDER_STATUS\.READY/.test(problemBranch))

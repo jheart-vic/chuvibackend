@@ -159,6 +159,20 @@ class UtilService extends BaseService {
                     error: 'Order not found',
                 })
 
+            // A rider reports only on their own run. Walk-in collection is a
+            // front-desk report; the office roles may report on any order.
+            if (user.userType === ROLE.RIDER) {
+                if (issueType === 'walkin_problem')
+                    return BaseService.sendFailedResponse({
+                        error: 'Walk-in problems are reported by the front desk, not a rider',
+                    })
+                const leg = issueType === 'pickup_problem' ? 'pickup' : 'delivery'
+                if (String(order.dispatchDetails?.[leg]?.rider) !== String(userId))
+                    return BaseService.sendFailedResponse({
+                        error: `You are not assigned to this ${leg}`,
+                    })
+            }
+
             const now = new Date()
 
             // set the appropriate dispatch failure status

@@ -594,6 +594,56 @@ async function main() {
         } finally {
             await CancellationRequestModel.deleteOne({ _id: req._id })
         }
+
+        // ── 15 who may report an issue, and who may read an order ─────────────
+        console.log('\n15 — access: issue reports and single-order reads')
+        const [otherRider, otherCustomer] = await Promise.all([
+            UserModel.create(mk({ tag: 'rider2', fullName: 'STG Rider Two', phone: '08030000005', userType: ROLE.RIDER })),
+            UserModel.create(mk({ tag: 'cust2', fullName: 'STG Customer Two', phone: '08030000006', userType: ROLE.USER })),
+        ])
+        created.userIds.push(otherRider._id, otherCustomer._id)
+        const accessOrder = await BookOrderModel.create(
+            baseOrder('A1', {
+                isPickUp: true,
+                isDelivery: true,
+                stage: { status: ORDER_STATUS.PENDING },
+                dispatchDetails: {
+                    pickup: { rider: rider._id, status: PICKUP_STATUS.SCHEDULED },
+                    delivery: { rider: rider._id, status: DELIVERY_STATUS.READY },
+                },
+            }),
+        )
+        created.orderIds.push(accessOrder._id)
+        const util = new (require('./services/util.service'))()
+        const report = (who, issueType) =>
+            util.reportDeliveryIssue({
+                params: { id: accessOrder._id.toString() },
+                body: { issueType, note: 'STG access check' },
+                user: { id: who._id.toString() },
+            })
+        ok((await report(rider, 'pickup_problem')).success === true, 'the assigned rider can report their pickup')
+        ok((await report(rider, 'delivery_problem')).success === true, 'and their delivery')
+        const notTheirs = await report(otherRider, 'delivery_problem')
+        ok(
+            notTheirs.success === false && /not assigned to this delivery/.test(notTheirs.data?.error || ''),
+            'another rider is refused on a run that is not theirs',
+        )
+        const walkin = await report(rider, 'walkin_problem')
+        ok(walkin.success === false && /front desk/.test(walkin.data?.error || ''), 'a rider cannot report a walk-in problem')
+        ok((await report(officeStaff, 'walkin_problem')).success === true, 'intake can report on any order')
+
+        const readAs = (who) =>
+            book.getBookOrder({
+                params: { id: accessOrder._id.toString() },
+                user: { id: who._id.toString(), userType: who.userType },
+            })
+        ok((await readAs(customer)).success === true, 'the owner can read their order')
+        const peek = await readAs(otherCustomer)
+        ok(
+            peek.success === false && peek.data?.error === 'Book order not found',
+            'another customer gets "not found", the same as a missing order',
+        )
+        ok((await readAs(officeStaff)).success === true, 'staff can read any order')
     } finally {
         const o = await BookOrderModel.deleteMany({ _id: { $in: created.orderIds } })
         const u = await UserModel.deleteMany({ _id: { $in: created.userIds } })

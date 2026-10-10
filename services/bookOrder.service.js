@@ -2342,7 +2342,13 @@ class BookOrderService extends BaseService {
             }
             const bookOrder = await BookOrderModel.findById(bookOrderId).lean()
 
-            if (!bookOrder) {
+            // A customer reads only their own orders. Someone else's gets the
+            // same reply as a missing one, so order IDs cannot be probed. Staff
+            // (this handler is also mounted on the intake routes) read any order.
+            const notMine =
+                req.user?.userType === ROLE.USER &&
+                String(bookOrder?.userId) !== String(req.user.id)
+            if (!bookOrder || notMine) {
                 return BaseService.sendFailedResponse({
                     error: 'Book order not found',
                 })

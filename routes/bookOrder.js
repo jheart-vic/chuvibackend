@@ -663,6 +663,10 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  * /bookOrder/book-order/{orderId}:
  *   get:
  *     summary: Get a single book order by ID
+ *     description: >
+ *       A customer can read only their own orders; another customer's order
+ *       returns the same "Book order not found" as a missing one. Staff roles can
+ *       read any order.
  *     tags:
  *       - BookOrder
  *     parameters:
@@ -772,7 +776,12 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  *                         cancellationVerdict:
  *                           $ref: '#/components/schemas/CancellationVerdict'
  *       400:
- *         description: Invalid order ID
+ *         description: >
+ *           Invalid order ID, or "Book order not found" (also returned when a
+ *           customer asks for another customer's order)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       404:
  *         description: Order not found
  *       500:
