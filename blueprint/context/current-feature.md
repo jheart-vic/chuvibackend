@@ -107,6 +107,11 @@ Two small backend fixes from the frontend's 9 Oct "still open" list, built toget
    - F-03: a pending cancellation request gives `canRequest: false, requestPending: true`.
    **Done when:** briefCheck and dispatchStaging scenarios 13 and 14 pass, and the
    Swagger envelope check reports 0 wrong envelopes.
+4. [x] **Repair independent-review finding F-04.** A rider's failed delivery moves the
+   stage to `ready` only when the order is `out-for-delivery`, so an order an admin
+   cancelled mid-run stays cancelled.
+   **Done when:** dispatchStaging scenario 11 asserts a cancelled order stays cancelled
+   after a failed delivery, and briefCheck passes.
 
 ## Verify
 

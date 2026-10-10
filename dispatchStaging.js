@@ -465,6 +465,22 @@ async function main() {
         const rerun = await BookOrderModel.findById(failDelivery._id).lean()
         ok(rerun.stage.status === ORDER_STATUS.OUT_FOR_DELIVERY, 'which puts it back out for delivery')
 
+        // F-04: an admin can cancel mid-run, leaving the delivery leg as it was.
+        // Failing that run must not put the cancelled order back in the queue.
+        await BookOrderModel.updateOne(
+            { _id: failDelivery._id },
+            { $set: { 'stage.status': ORDER_STATUS.CANCELLED } },
+        )
+        const failCancelled = await riderSvc.markOrderDeliveryAsFailed(
+            asRider({ body: { phoneNumber: '08030000003', note: 'Returning cancelled bag' } }),
+        )
+        ok(failCancelled.success === true, 'the rider can still fail the run of a cancelled order')
+        const stillCancelled = await BookOrderModel.findById(failDelivery._id).lean()
+        ok(
+            stillCancelled.stage.status === ORDER_STATUS.CANCELLED,
+            'and the order STAYS cancelled, not back at READY',
+        )
+
         // ── 12 the migration for deliveries that failed before the fix ────────
         console.log('\n12 — failed deliveries recorded before the fix are migrated')
         const stuck = await BookOrderModel.create(

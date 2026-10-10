@@ -2056,6 +2056,10 @@ const run = (async () => {
             /order\.stage\.status = ORDER_STATUS\.READY[\s\S]{0,400}await order\.save\(\)/.test(
                 failFn,
             ))
+        ok('but only from OUT_FOR_DELIVERY, so a cancelled order stays cancelled (F-04)',
+            /if \(order\.stage\?\.status === ORDER_STATUS\.OUT_FOR_DELIVERY\) \{[\s\S]{0,120}order\.stage\.status = ORDER_STATUS\.READY/.test(
+                failFn,
+            ))
         const utilSrc = fs.readFileSync(path.join(ROOT, 'services/util.service.js'), 'utf8')
         const problemBranch = utilSrc.slice(
             utilSrc.indexOf("issueType === 'delivery_problem'"),
