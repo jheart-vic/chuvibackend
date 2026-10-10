@@ -2045,6 +2045,21 @@ const run = (async () => {
     }
 
     // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
+    // ─── Dead subscription crons removed ────────────────────────────────────
+    // None of the three ever changed a document, and a working calendar reset
+    // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
+    // is the one place the monthly allowance is reset.
+    console.log('\nSubscription allowance resets only at renewal')
+    {
+        const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8')
+        ok('server.js starts none of the three dead subscription jobs',
+            !/crons\/(resetMonthlyLimits|expireSubscriptions|cleanUpCancelledSubs)/.test(serverSrc))
+        ok('the renewal webhook still resets remainingItems to the plan limit',
+            /subscription\.remainingItems = plan\.monthlyLimits/.test(
+                fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8'),
+            ))
+    }
+
     console.log('\nFE — failed delivery goes back to the delivery queue')
     {
         const riderSrc = fs.readFileSync(path.join(ROOT, 'services/rider.service.js'), 'utf8')

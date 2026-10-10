@@ -33,10 +33,11 @@ const corsMiddleware = require('./config/cors.js');
 const setupApp = require("./config/setup.js");
 const webhookFunction = require("./util/webhook.js");
 
-require('./crons/cleanUpCancelledSubs.js')
-require('./crons/expireSubscriptions.js')
+// No calendar job resets or expires subscriptions. The renewal webhook resets
+// remainingItems on each customer's own billing date (util/webhook.handler.js),
+// Paystack events set failed/disabled, and reconcilePaystack re-syncs status. A
+// reset on the 1st would ignore billing dates and wipe mid-cycle loyalty bonuses.
 require('./crons/reconcilePaystack.js')
-require('./crons/resetMonthlyLimits.js')
 require('./crons/crmDispatcher.js')
 require('./crons/crmDormancyScan.js')
 require('./crons/sendPaymentsReminder.js')
