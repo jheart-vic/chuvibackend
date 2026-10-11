@@ -1,5 +1,21 @@
 # Current Session Log
 
+## ███ 2026-10-11 (eve) — Launch fix 1 COMPLETED (archived, work commit pending approval). Next: item 2. ███
+- Archive: `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`. Review round 1 passed with
+  F-09..F-15 (P2/P3); all fixed in `7e86ca1` and closed by round 2 (passed). F-16 [P3] open: the window-only line
+  says "Choose a time window" even when same-day forced Anytime.
+- **Behaviour the FE must know:** `feesLine` counts only offers on the bill, so the Welcome line needs
+  `customerOfferId` in the draft; `displayNames` groups are arrays of `{value,label,renamed}`.
+- Gates: briefCheck 404/0 · bookingContextStaging 30/0 (testingdb) · swagger 0 wrong · boot 7999 ok.
+- **Landing:** recorded as `pull-request` (local `main` is 149 behind origin/main and this branch is stacked on the
+  3 unmerged fix branches). PR merge order: failed-deliveries → remove-dead-subscription-cron-jobs →
+  restrict-order-reads → booking-screen-data. Nothing pushed.
+- **Item 2 (Quick Booking, nothing paid at booking) — triage done, not specced:** count-only booking still charges
+  trips + speed (+ credit opt-in) at booking; `_repriceForItems` at Intake already adds trips/speed, re-runs offers,
+  raises the hold + SMS. Payment gate is at tagging, so pickup isn't blocked. Plan: amount 0 at booking, no credit,
+  no offer attach; Anytime refund on an unbilled quick booking lowers the leg fee instead of crediting the wallet
+  (`settleAnytimeRefund` today refunds money never paid); booking-options gives no misleading gap line for a count.
+
 ## ███ 2026-10-11 (later) — Launch fix 1 BUILT, waiting on the user's yes for the checkpoint commit ███
 - Branch `fix/booking-screen-data-and-window-only-free-rule` (stacked on restrict-order-reads). All changes
   UNCOMMITTED (16 modified + LAUNCH file + blueprint/shelved/ + bookingContextStaging.js). Spec status: verified.

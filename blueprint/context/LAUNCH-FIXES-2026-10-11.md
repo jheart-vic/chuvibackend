@@ -11,7 +11,7 @@ These are corrections, so each work item goes through `/fix` (archived under
 
 | # | Work item | Client items | Est. days | Status |
 |---|---|---|---|---|
-| 1 | Booking screen data + window-only free rule | 10, 11, 12, 14, 15 + FE labels | 2 | **BUILT + VERIFIED, uncommitted** on branch `fix/booking-screen-data-and-window-only-free-rule` (briefCheck 398/0, bookingContextStaging 24/0 on testingdb, swagger 0 wrong, boot ok). Also fixed a LIVE bug: `OFFER_TRIGGER` not imported in offer.service.js since 620cca4 → booking-options failed for anyone with a personal offer. **Next: user approves the checkpoint commit → independent review (required, pricing) → /complete** |
+| 1 | Booking screen data + window-only free rule | 10, 11, 12, 14, 15 + FE labels | 2 | **DONE 2026-10-11** — archive `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`, review PASSED (2nd round; F-09..F-15 found and closed). Branch `fix/booking-screen-data-and-window-only-free-rule`, lands as a PR after the 3 earlier stacked fix PRs. Also fixed a LIVE bug: `OFFER_TRIGGER` not imported in offer.service.js since 620cca4. F-16 [P3] (window-only line wording) left open. |
 | 2 | Quick Booking: nothing paid at booking | 3 | 1 | Not started |
 | 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date | 1, 2, 9 | 2 | Ready to spec (Q1 answered) |
 | 4 | Anytime agreed parts (Intake alert, top of list, all-windows-full → Urgent at window price + offer kept + next open day, "Urgent opens at") | 13 | 1.5–2 | Ready to spec (Q2 answered) |
