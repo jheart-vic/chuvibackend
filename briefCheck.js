@@ -2144,6 +2144,33 @@ const run = (async () => {
             /\bOFFER_TRIGGER,/.test(importBlock))
     }
 
+    // ─── Hotfix: the booking body cannot set server fields ──────────────────
+    // The order was built as `{ amount: totalPrice, ..., ...post }`, so a
+    // customer could send `amount: 100` or `paymentStatus: "success"`.
+    console.log('\nHotfix — the booking body cannot set server fields')
+    {
+        const BOS = require(path.join(ROOT, 'services/bookOrder.service'))
+        const saved = BOS.customerOrderFields({
+            fullName: 'A', serviceType: 'wash-and-iron', items: [], isPickUp: true,
+            amount: 100, paymentStatus: 'success', userId: 'someone-else', stage: { status: 'delivered' },
+            pricing: {}, paymentWaivedAt: new Date(), deliveryAmount: 0, oscNumber: 'X',
+        })
+        ok('the booking body cannot set amount, payment status, owner, stage or pricing',
+            saved.fullName === 'A' && saved.isPickUp === true &&
+                ['amount', 'paymentStatus', 'userId', 'stage', 'pricing', 'paymentWaivedAt', 'deliveryAmount', 'oscNumber']
+                    .every((k) => !(k in saved)))
+        const postBook = bookSrc.slice(
+            bookSrc.indexOf('async postBookOrder('),
+            bookSrc.indexOf('async updateBookOrderPaymentStatus('),
+        )
+        ok('every order literal in postBookOrder saves the allow-list, never the raw body',
+            (postBook.match(/\.\.\.customerOrderFields\(post\),/g) || []).length === 3 &&
+                !/^\s+\.\.\.post,\s*$/m.test(postBook))
+        ok('the server-set Quick Booking fields are dropped from the body before anything reads them',
+            BOS.SERVER_SET_ON_POST.includes('quickBooking') &&
+                /const post = \{ \.\.\.\(req\.body \|\| \{\}\) \}\s*for \(const key of SERVER_SET_ON_POST\) delete post\[key\]/.test(postBook))
+    }
+
     // ─── F-05 + order read: who may call these two routes ───────────────────
     console.log('\nAccess: issue reports and single-order reads')
     {

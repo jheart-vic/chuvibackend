@@ -93,6 +93,40 @@ const {
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 
+// The order fields a customer may set from the booking request. The order used
+// to be built as `{ amount: totalPrice, ..., ...post }`, so ANY schema field in
+// the body overwrote the server's value: `amount: 100` was what Paystack then
+// charged, `paymentStatus: "success"` booked an order already marked paid. Every
+// other field (amount, payment, stage, pricing, scheduling, counts, holds…) is
+// the server's. Inputs that are read but not stored (itemCount, useCredit,
+// customerOfferId, timings, window ids…) stay on `post` for the logic.
+const CUSTOMER_ORDER_FIELDS = [
+    'fullName',
+    'phoneNumber',
+    'pickupAddress',
+    'deliveryAddress',
+    'pickupDate',
+    'pickupTime',
+    'serviceType',
+    'serviceTier',
+    'deliverySpeed',
+    'channel',
+    'billingType',
+    'items',
+    'extraNote',
+    'isPickUp',
+    'isDelivery',
+]
+// Put on `post` by the server itself (the Quick Booking normaliser), so never
+// accepted from the request.
+const SERVER_SET_ON_POST = ['quickBooking', 'itemsPending', 'counts']
+const customerOrderFields = (post) =>
+    Object.fromEntries(
+        [...CUSTOMER_ORDER_FIELDS, ...SERVER_SET_ON_POST]
+            .filter((k) => post[k] !== undefined)
+            .map((k) => [k, post[k]]),
+    )
+
 class BookOrderService extends BaseService {
     // Decide which cancellation window an order is in (client policy 2026-07-20):
     //   green  → customer self-cancels immediately (or inside the grace period)
@@ -1241,7 +1275,8 @@ class BookOrderService extends BaseService {
 
     async postBookOrder(req, res) {
         try {
-            const post = req.body
+            const post = { ...(req.body || {}) }
+            for (const key of SERVER_SET_ON_POST) delete post[key]
             const userId = req.user.id
 
             const user = await UserModel.findById(userId)
@@ -1652,7 +1687,7 @@ class BookOrderService extends BaseService {
                         ? PAYMENT_ORDER_STATUS.PENDING
                         : PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
-                    ...post,
+                    ...customerOrderFields(post),
                     deliveryDate,
                 }
 
@@ -1793,7 +1828,7 @@ class BookOrderService extends BaseService {
                     deliveryAmount: extraDeliveryCost,
                     stage,
                     stageHistory: [stageHistory],
-                    ...post,
+                    ...customerOrderFields(post),
                     deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
@@ -1953,7 +1988,7 @@ class BookOrderService extends BaseService {
                     stageHistory: [stageHistory],
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
-                    ...post,
+                    ...customerOrderFields(post),
                     deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
@@ -2489,3 +2524,6 @@ class BookOrderService extends BaseService {
 }
 
 module.exports = BookOrderService
+
+module.exports.customerOrderFields = customerOrderFields
+module.exports.SERVER_SET_ON_POST = SERVER_SET_ON_POST
