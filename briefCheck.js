@@ -2049,6 +2049,55 @@ const run = (async () => {
     // None of the three ever changed a document, and a working calendar reset
     // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
     // is the one place the monthly allowance is reset.
+    // ─── Launch fix 1: window-only free trips and the fees line ─────────────
+    // Drives the real OfferService methods; no database is touched.
+    console.log('\nLaunch fix 1 — window-only free trips and the fees line')
+    {
+        const O = require(path.join(ROOT, 'services/offer.service'))
+        const offer = (types, extra = {}) => ({
+            _id: 'o1',
+            benefits: types.map((t) => ({ benefitType: t })),
+            ...extra,
+        })
+        const trips = offer(['free-pickup', 'free-delivery'])
+        const anyPick = O.computeBenefits(trips, { pickupTiming: 'anytime', deliveryTiming: 'window' })
+        ok('an Anytime pickup keeps its fee; the window delivery is still free',
+            anyPick.freePickup === false && anyPick.anytimeKeptPickup === true &&
+                anyPick.freeDelivery === true)
+        const noTiming = O.computeBenefits(trips, {})
+        ok('a request with no timing (older app builds) is unchanged',
+            noTiming.freePickup === true && noTiming.freeDelivery === true)
+
+        const draft = { pickupAmount: 1000, deliveryAmount: 1000 }
+        const line = (args) => O.buildFeesLine({ draft, ...args })
+        ok('free-gap: a trip offer missing only its minimum shows the shortfall',
+            (() => {
+                const l = line({ tripRows: [{ kind: 'baseline', offer: trips, applicable: false, requirement: { type: 'minOrderValue', shortfall: 3200 } }] })
+                return l.type === 'free-gap' && l.amount === 3200 && l.message === 'Add ₦3,200 more for free pickup and delivery.'
+            })())
+        ok('free-reached: an applied trip offer',
+            line({ tripRows: [{ kind: 'baseline', offer: trips, applicable: true, benefit: { freePickup: true, freeDelivery: true } }] }).type === 'free-reached')
+        ok('window-only beats free-reached when a leg is Anytime',
+            (() => {
+                const l = line({ tripRows: [{ kind: 'baseline', offer: trips, applicable: true, benefit: { anytimeKeptPickup: true, freeDelivery: true } }] })
+                return l.type === 'window-only' && l.amount === 1000
+            })())
+        ok('welcome-offer wins on a first order, and only on a first order',
+            (() => {
+                const row = { kind: 'personal', customerOfferId: 'c1', offer: offer(['order-discount', 'free-pickup'], { triggers: ['first-experience'] }), applicable: true, benefit: { discount: 1000, freePickup: true } }
+                const first = line({ tripRows: [row], isFirstOrder: true, bestPersonalId: 'c1' })
+                const later = line({ tripRows: [row], isFirstOrder: false, bestPersonalId: 'c1' })
+                return first.type === 'welcome-offer' && first.amount === 2000 && later.type === 'free-reached'
+            })())
+        ok('a personal offer that auto-apply would NOT pick does not count as applied',
+            line({ tripRows: [{ kind: 'personal', customerOfferId: 'c2', offer: trips, applicable: true, benefit: { freePickup: true } }], bestPersonalId: 'c1' }).type === null)
+
+        const offerSrc = fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')
+        const importBlock = offerSrc.slice(0, offerSrc.indexOf("} = require('../util/constants')"))
+        ok('OFFER_TRIGGER is imported (getBookingOptions threw for every personal offer without it)',
+            /\bOFFER_TRIGGER,/.test(importBlock))
+    }
+
     // ─── F-05 + order read: who may call these two routes ───────────────────
     console.log('\nAccess: issue reports and single-order reads')
     {

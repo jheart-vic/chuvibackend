@@ -116,7 +116,9 @@ router.get(ROUTE_REFERRAL_HISTORY, [auth], (req, res) =>
  *                         applied: { type: boolean, example: true }
  *                         referralId: { type: string, example: 665f1c2ab9e77a0012d4e200 }
  *       400:
- *         description: Unknown/own code, or already referred
+ *         description: >
+ *           Unknown/own code, already referred, or "Referral codes can only be added
+ *           before your first order." (any non-cancelled order closes the code box)
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }

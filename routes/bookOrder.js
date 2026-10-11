@@ -20,6 +20,7 @@ const {
   ROUTE_APPROVE_CANCELLATION_REQUEST_ID,
   ROUTE_REJECT_CANCELLATION_REQUEST_ID,
   ROUTE_BOOKING_AVAILABILITY,
+  ROUTE_BOOKING_CONTEXT,
   ROUTE_ORDER_ITEMS_EDIT,
 } = require("../util/page-route");
 
@@ -1298,6 +1299,45 @@ router.patch(ROUTE_ORDER_ITEMS_EDIT, [multiAuth(ROLE.ADMIN, ROLE.INTAKE_AND_TAG)
 router.get(ROUTE_BOOKING_AVAILABILITY, [auth], (req, res) => {
   const bookOrderController = new BookOrderController();
   return bookOrderController.getBookingAvailability(req, res);
+});
+
+/**
+ * @swagger
+ * /bookOrder/booking-context:
+ *   get:
+ *     summary: Everything the booking screen shows that does not depend on the basket
+ *     description: >
+ *       The customer's renamed labels, wallet balance and reward credit, plan items
+ *       left and free pickups/deliveries left this week, the suggested payment
+ *       option, the last order's choices, whether the Welcome Offer is active, and
+ *       whether the referral code box should show. Read-only: the weekly free count
+ *       is worked out on read and never written.
+ *     tags:
+ *       - BookOrder
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The booking context
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { $ref: '#/components/schemas/BookingContext' }
+ *       400:
+ *         description: Could not load the booking details
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_BOOKING_CONTEXT, [auth], (req, res) => {
+  const bookOrderController = new BookOrderController();
+  return bookOrderController.getBookingContext(req, res);
 });
 
 module.exports = router;

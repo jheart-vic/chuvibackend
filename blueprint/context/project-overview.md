@@ -1,6 +1,6 @@
 # Chuvi Backend - Project Overview
 
-<!-- blueprint:source-hash 467e720b7056b16e3956d89ac3eccd965ac76defe69eca828376f6e97e6fca33 -->
+<!-- blueprint:source-hash 103918af72e190b51aa132ece04d4fce9b651db11579f1d69966c93e80db92af -->
 
 > Node.js/Express + MongoDB API for Chuvi Laundry (Lagos): booking, station
 > pipeline, payments, wallet, CRM, offers, recovery, referral, and an in-app bot.
@@ -51,9 +51,16 @@ Shipped (1-14):
 13. **In-app assistant bot** - LLM intent, deterministic confirmed actions, handoff, sockets.
 14. **October 2026 brief** - 22 fixes, Quick Booking, booking windows, payment hold, order editing.
 
-Next, in order (awaiting client sign-off):
+Next, after the launch work and before the first renewals in early November 2026:
 
-15. **E2E platform validation** - scripted full-journey run and baseline report. **Headline next.**
+21. **Subscription item rollover** - carry up to half the plan (rounded down) at renewal;
+    1-week grace from a failed payment (bookings stay blocked); a cancelled plan stays usable
+    until the paid month ends; plan changes start fresh; free pickups/deliveries never roll
+    over. **Headline next.**
+
+Then, in order (awaiting client sign-off):
+
+15. **E2E platform validation** - scripted full-journey run and baseline report.
 16. **Workforce Command and Staff OS** - vertical context, multi-role staff, training, standards.
 17. **Logistics System** - dispatch vertical: jobs, missions, pricing, reconciliation.
 18. **Smart Book v2** - operations, cost, reporting and learning across verticals.

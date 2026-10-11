@@ -134,6 +134,13 @@ const router = require("express").Router();
  *                               type: integer
  *                               nullable: true
  *                               example: 8
+ *                             freePickupDeliveriesLeftThisWeek:
+ *                               type: integer
+ *                               example: 1
+ *                               description: Free pickup or delivery legs left in the current week (worked out on read, so never last week's number). One order with both uses 2.
+ *                             freePickupDeliveriesPerWeek:
+ *                               type: integer
+ *                               example: 2
  *                             plan:
  *                               type: object
  *                               nullable: true

@@ -1335,6 +1335,79 @@
  *             name: { type: string, example: "First Experience" }
  *             billValue: { type: number, example: 2000 }
  *             otherOffersKept: { type: integer, example: 1 }
+ *         feesLine:
+ *           type: object
+ *           description: >
+ *             Client item 10 — the one line under the fees box. Show `message` as-is.
+ *             Priority: welcome-offer, window-only, free-reached, free-gap. Send
+ *             `pickupTiming` / `deliveryTiming` ('window' | 'anytime') and the
+ *             `pickupAmount` / `deliveryAmount` fees in the draft so it is accurate.
+ *             Free pickup and delivery from an offer apply to WINDOW bookings only.
+ *           properties:
+ *             type:
+ *               type: string
+ *               nullable: true
+ *               enum: [welcome-offer, window-only, free-reached, free-gap, null]
+ *               example: free-gap
+ *             amount: { type: number, example: 3200 }
+ *             message:
+ *               type: string
+ *               nullable: true
+ *               example: "Add ₦3,200 more for free pickup and delivery."
+ *
+ *     BookingContext:
+ *       type: object
+ *       description: >
+ *         GET /bookOrder/booking-context. Everything the booking screen shows that does
+ *         not depend on the basket. `plan` is null without an active subscription.
+ *       properties:
+ *         displayNames:
+ *           type: object
+ *           description: The admin's labels for stored codes; show these, send the codes.
+ *           properties:
+ *             deliverySpeeds: { type: object, example: { standard: "Regular", express: "Express", same-day: "Same Day" } }
+ *             serviceTypes: { type: object, example: { wash-and-iron: "Wash & Iron" } }
+ *             serviceTiers: { type: object, example: { classic: "Classic", premium: "Premium", vip: "VIP" } }
+ *         wallet:
+ *           type: object
+ *           properties:
+ *             balance: { type: number, example: 2500 }
+ *             rewardCredit: { type: number, example: 1000, description: Unexpired reward credit, all types }
+ *         plan:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             active: { type: boolean, example: true }
+ *             itemsLeft: { type: integer, example: 18 }
+ *             monthlyItems: { type: integer, example: 30 }
+ *             freePickupDeliveriesLeftThisWeek: { type: integer, example: 1 }
+ *             freePickupDeliveriesPerWeek: { type: integer, example: 2 }
+ *             weekResetsAt: { type: string, format: date-time, example: "2026-10-14T09:00:00.000Z" }
+ *         suggestedPayment:
+ *           type: string
+ *           nullable: true
+ *           enum: [pay-from-subscription, null]
+ *           description: Preselect "My plan" when set.
+ *         lastOrderChoices:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             serviceType: { type: string, example: wash-and-iron }
+ *             serviceTier: { type: string, example: classic }
+ *             deliverySpeed: { type: string, example: standard }
+ *             pickupTiming: { type: string, nullable: true, enum: [window, anytime, null], example: window }
+ *             pickupWindowId: { type: string, nullable: true, example: 665f1c2ab9e77a0012d4e300 }
+ *             pickupAddress: { type: object, nullable: true }
+ *         welcomeOffer:
+ *           type: object
+ *           properties:
+ *             active: { type: boolean, example: true }
+ *             name: { type: string, nullable: true, example: "First Experience Offer" }
+ *             endsAt: { type: string, format: date-time, nullable: true, example: "2026-10-14T18:00:00.000Z" }
+ *         canEnterReferralCode:
+ *           type: boolean
+ *           example: true
+ *           description: False once there is a referrer or any non-cancelled order; hide the code box.
  *
  *     # ── Referral ─────────────────────────────────────────────────────────
  *     Referral:

@@ -26,6 +26,10 @@ Shipped before the Blueprint was adopted (2026-10-09):
 - [x] 13. **In-app assistant bot** - intent classification, confirmed actions, human handoff, WebSockets
 - [x] 14. **October 2026 developer brief** - 22 fixes, Quick Booking, booking windows, payment hold, order editing
 
+Next, after the launch work and before the first renewals in early November 2026:
+
+- [ ] 21. **Subscription item rollover** - carry up to half the plan (rounded down) at renewal, a 1-week grace after a failed payment, and cancelled plans usable until the paid month ends (client rules 2026-10-11)
+
 Planned (order follows the program plan in `blueprint/context/chuvi-program-plan.md`):
 
 - [ ] 15. **End-to-end platform validation** - scripted run of the full journey and a written baseline report

@@ -12,6 +12,10 @@ const {
     CREDIT_TYPE,
     CREDIT_SOURCE,
     COMM_SOURCE_SYSTEM,
+    BOOKING_TIMING,
+    // Was used below but never imported, so getBookingOptions threw for every
+    // customer holding a personal offer (the Welcome Offer included).
+    OFFER_TRIGGER,
 } = require('../util/constants')
 
 const DAY = 24 * 60 * 60 * 1000
@@ -481,6 +485,10 @@ class OfferService {
             .lean()
 
         const personal = []
+        // Which evaluated offers waive a trip, kept beside the rows (not in
+        // them) so the fees line can be worked out without changing the shape
+        // the screen already reads.
+        const tripRows = []
         for (const linkage of linkages) {
             if (!linkage.offerId) continue // guard vs deleted offers
             const offer = linkage.offerId
@@ -504,6 +512,7 @@ class OfferService {
                     String(draft.customerOfferId || '') === String(linkage._id),
                 ...evald,
             })
+            tripRows.push({ kind: 'personal', customerOfferId: linkage._id, offer, ...evald })
         }
 
         // Promotions: active promotional campaigns.
@@ -525,6 +534,7 @@ class OfferService {
                 preselected: String(draft.promoOfferId || '') === String(promo._id),
                 ...evald,
             })
+            tripRows.push({ kind: 'promotion', offer: promo, ...evald })
         }
 
         // Baselines: active always-on policies.
@@ -541,6 +551,7 @@ class OfferService {
                 ...this.decorateOffer(b),
                 ...evald,
             })
+            tripRows.push({ kind: 'baseline', offer: b, ...evald })
         }
 
         // Client item #6(a), 2026-10-08. The prompt ships FROM THE BACKEND so
@@ -562,12 +573,20 @@ class OfferService {
               }
             : { show: false, message: null, count: 0 }
 
+        const feesLine = this.buildFeesLine({
+            tripRows,
+            draft,
+            isFirstOrder: (stats?.totalOrders || 0) === 0,
+            bestPersonalId: best?.customerOfferId || null,
+        })
+
         return {
             selected,
             personal,
             promotions,
             baseline,
             checkoutPrompt,
+            feesLine,
             // Which one Quick Booking would auto-apply (item #6(b)). Exposed on
             // the normal booking screen too so the two paths visibly agree.
             autoApply: best
@@ -584,6 +603,101 @@ class OfferService {
                   }
                 : null,
         }
+    }
+
+    // Client item 10, 2026-10-11: the one line under the fees box, with its
+    // amount, in priority order. Pure, so it is checked offline in briefCheck.
+    //   welcome-offer → a first order whose First Experience offer applies
+    //   window-only   → an offer would waive a trip, but that leg is Anytime
+    //   free-reached  → an applied offer waives pickup and/or delivery
+    //   free-gap      → a trip-waiving offer fails ONLY on its minimum order
+    // Only offers that would actually be on this bill count as "applied":
+    // baselines (applied by rule), the personal offer auto-apply would pick,
+    // and a promotion the customer has selected.
+    buildFeesLine({ tripRows = [], draft = {}, isFirstOrder = false, bestPersonalId = null }) {
+        const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`
+        const waives = (offer) =>
+            (offer?.benefits || []).some((b) =>
+                [OFFER_BENEFIT_TYPE.FREE_PICKUP, OFFER_BENEFIT_TYPE.FREE_DELIVERY].includes(
+                    b.benefitType,
+                ),
+            )
+        const legs = (pickup, delivery) =>
+            pickup && delivery ? 'pickup and delivery' : pickup ? 'pickup' : 'delivery'
+        const tripValue = (benefit) =>
+            (benefit?.freePickup ? draft.pickupAmount || 0 : 0) +
+            (benefit?.freeDelivery ? draft.deliveryAmount || 0 : 0)
+        const onBill = (r) =>
+            r.applicable &&
+            (r.kind === 'baseline' ||
+                (r.kind === 'personal' &&
+                    String(r.customerOfferId) === String(bestPersonalId || '')) ||
+                (r.kind === 'promotion' &&
+                    String(draft.promoOfferId || '') === String(r.offer?._id)))
+
+        if (isFirstOrder) {
+            const welcome = tripRows.find(
+                (r) =>
+                    r.kind === 'personal' &&
+                    onBill(r) &&
+                    (r.offer?.triggers || []).includes(OFFER_TRIGGER.FIRST_EXPERIENCE),
+            )
+            if (welcome) {
+                const amount = (welcome.benefit?.discount || 0) + tripValue(welcome.benefit)
+                return {
+                    type: 'welcome-offer',
+                    amount,
+                    message: `Your Welcome Offer saves you ${naira(amount)} on this order.`,
+                }
+            }
+        }
+
+        const applied = tripRows.filter(onBill)
+        const keptPickup = applied.some((r) => r.benefit?.anytimeKeptPickup)
+        const keptDelivery = applied.some((r) => r.benefit?.anytimeKeptDelivery)
+        if (keptPickup || keptDelivery) {
+            const amount =
+                (keptPickup ? draft.pickupAmount || 0 : 0) +
+                (keptDelivery ? draft.deliveryAmount || 0 : 0)
+            return {
+                type: 'window-only',
+                amount,
+                message: `Free ${legs(keptPickup, keptDelivery)} is for window bookings only. Choose a time window to save ${naira(amount)}.`,
+            }
+        }
+
+        const freePickup = applied.some((r) => r.benefit?.freePickup)
+        const freeDelivery = applied.some((r) => r.benefit?.freeDelivery)
+        if (freePickup || freeDelivery) {
+            const amount =
+                (freePickup ? draft.pickupAmount || 0 : 0) +
+                (freeDelivery ? draft.deliveryAmount || 0 : 0)
+            return {
+                type: 'free-reached',
+                amount,
+                message: `You get free ${legs(freePickup, freeDelivery)} on this order.`,
+            }
+        }
+
+        const gaps = tripRows
+            .filter(
+                (r) =>
+                    !r.applicable &&
+                    waives(r.offer) &&
+                    r.requirement?.type === 'minOrderValue',
+            )
+            .map((r) => r.requirement.shortfall)
+            .filter((n) => n > 0)
+        if (gaps.length) {
+            const amount = Math.min(...gaps)
+            return {
+                type: 'free-gap',
+                amount,
+                message: `Add ${naira(amount)} more for free pickup and delivery.`,
+            }
+        }
+
+        return { type: null, amount: 0, message: null }
     }
 
     // Client item #6(b): Quick Booking has nobody to choose, so it auto-applies
@@ -708,11 +822,22 @@ class OfferService {
                     }
                     break
                 }
+                // Client ruling 2026-10-08: free pickup and delivery are for
+                // WINDOW bookings only. An Anytime leg keeps its fee; the flag
+                // says the offer would have waived it, for the fees line.
                 case OFFER_BENEFIT_TYPE.FREE_PICKUP:
-                    result.freePickup = true
+                    if (draft.pickupTiming === BOOKING_TIMING.ANYTIME) {
+                        result.anytimeKeptPickup = true
+                    } else {
+                        result.freePickup = true
+                    }
                     break
                 case OFFER_BENEFIT_TYPE.FREE_DELIVERY:
-                    result.freeDelivery = true
+                    if (draft.deliveryTiming === BOOKING_TIMING.ANYTIME) {
+                        result.anytimeKeptDelivery = true
+                    } else {
+                        result.freeDelivery = true
+                    }
                     break
                 case OFFER_BENEFIT_TYPE.FREE_ITEMS: {
                     const items = draft.items || []
