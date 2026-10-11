@@ -9,9 +9,13 @@
  *      (the stored counter still says 0) — on booking-context AND the dashboard
  *   3  a live First Experience linkage → welcomeOffer.active, and booking-options
  *      no longer throws for a customer holding a personal offer (OFFER_TRIGGER)
- *   4  feesLine: welcome-offer on a first order
- *   5  window-only pricing: an Anytime pickup keeps its fee, a window pickup is free
- *   6  after the first order: lastOrderChoices filled, code box closed, applyCode refuses
+ *   4  feesLine: welcome-offer on a first order, only when the offer is SELECTED (F-09)
+ *   5  window-only pricing: an Anytime pickup keeps its fee, a window pickup is free;
+ *      a same-day draft is priced with the order's resolved timing (F-10); a paused
+ *      Welcome Offer reads inactive (F-14)
+ *   6  after the first order: lastOrderChoices filled, code box closed, applyCode,
+ *      captureReferral and the bot all refuse (F-11), an attached Welcome Offer
+ *      reads inactive (F-14)
  *
  * SAFETY: refuses unless STAGING_OK=1; refuses NODE_ENV=production without
  * STAGING_FORCE=1; hard-refuses any DB named laundrydb. Deletes what it creates.
@@ -32,6 +36,10 @@ const BookOrderService = require('./services/bookOrder.service')
 const UserService = require('./services/user.service')
 const ReferralApiService = require('./services/referralApi.service')
 const OfferService = require('./services/offer.service')
+const BookingWindowService = require('./services/bookingWindow.service')
+const ReferralService = require('./services/referral.service')
+const ReferralModel = require('./models/referral.model')
+const detailsFlow = require('./services/bot/details.flow')
 const {
     ROLE,
     GENERAL_STATUS,
@@ -176,16 +184,17 @@ async function main() {
         ok(withOffer?.welcomeOffer?.active === true, 'welcomeOffer.active is true')
         ok(String(withOffer?.welcomeOffer?.endsAt) === String(linkage.expiresAt), 'with its end date')
 
-        let options = null
+        const draftBase = {
+            amount: 5000,
+            pickupAmount: 1000,
+            deliveryAmount: 1000,
+            pickupTiming: 'window',
+            deliveryTiming: 'window',
+        }
+        let unselected = null
         let threw = null
         try {
-            options = await OfferService.getBookingOptions(customer._id, {
-                amount: 5000,
-                pickupAmount: 1000,
-                deliveryAmount: 1000,
-                pickupTiming: 'window',
-                deliveryTiming: 'window',
-            })
+            unselected = await OfferService.getBookingOptions(customer._id, draftBase)
         } catch (e) {
             threw = e
         }
@@ -193,7 +202,15 @@ async function main() {
 
         // ── 4 feesLine on a first order ──────────────────────────────────────
         console.log('\n4 — the fees line on a first order')
-        ok(options?.feesLine?.type === 'welcome-offer', `feesLine is welcome-offer (got ${options?.feesLine?.type})`)
+        // F-09: nothing is auto-applied on a normal booking, so an offer the
+        // customer has not selected is not on the bill and earns no line.
+        ok(unselected?.feesLine?.type !== 'welcome-offer' && unselected?.checkoutPrompt?.show === true,
+            `not selected: no Welcome line, the checkout prompt shows instead (got ${unselected?.feesLine?.type})`)
+        const options = await OfferService.getBookingOptions(customer._id, {
+            ...draftBase,
+            customerOfferId: linkage._id.toString(),
+        })
+        ok(options?.feesLine?.type === 'welcome-offer', `selected: feesLine is welcome-offer (got ${options?.feesLine?.type})`)
         ok(options?.feesLine?.amount === 2000, 'worth the two waived trips')
 
         // ── 5 window-only pricing through the real booking pricing ───────────
@@ -212,14 +229,32 @@ async function main() {
         ok(windowPrice.finalTotal === 5000, `window pickup + delivery are both free (total ${windowPrice.finalTotal})`)
         ok(anytimePrice.finalTotal === 6000, `an Anytime pickup keeps its ₦1,000 fee (total ${anytimePrice.finalTotal})`)
         const anytimeOptions = await OfferService.getBookingOptions(customer._id, {
-            amount: 5000,
-            pickupAmount: 1000,
-            deliveryAmount: 1000,
+            ...draftBase,
             pickupTiming: 'anytime',
-            deliveryTiming: 'window',
+            customerOfferId: linkage._id.toString(),
         })
         ok(anytimeOptions?.feesLine?.type === 'welcome-offer' && anytimeOptions.feesLine.amount === 1000,
             'on a first order the Welcome line now counts only the window delivery')
+
+        // F-10: a same-day draft sent as `window` is priced the way the order
+        // will be — Anytime when there is no morning window.
+        const hasMorning = !!BookingWindowService._findMorningWindow(
+            await BookingWindowService.getActiveWindows(),
+        )
+        const sameDay = await OfferService.getBookingOptions(customer._id, {
+            ...draftBase,
+            deliverySpeed: DELIVERY_SPEED.SAME_DAY,
+            customerOfferId: linkage._id.toString(),
+        })
+        const expectSameDay = hasMorning ? 2000 : 1000
+        ok(sameDay?.feesLine?.amount === expectSameDay && sameDay?.selected?.freePickup === hasMorning,
+            `same-day sent as window: the screen matches the order (morning window ${hasMorning ? 'exists' : 'missing'}, line ₦${sameDay?.feesLine?.amount})`)
+
+        // F-14: a paused Welcome Offer is not active.
+        await OfferModel.updateOne({ _id: welcome._id }, { $set: { status: OFFER_STATUS.PAUSED } })
+        const paused = unwrap(await book.getBookingContext(asCustomer))
+        ok(paused?.welcomeOffer?.active === false, 'a paused Welcome Offer reads inactive')
+        await OfferModel.updateOne({ _id: welcome._id }, { $set: { status: OFFER_STATUS.ACTIVE } })
 
         // ── 6 after the first order ──────────────────────────────────────────
         console.log('\n6 — after the first order')
@@ -247,6 +282,38 @@ async function main() {
         const apply = await referrals.applyCode({ body: { code: 'ANYCODE' }, user: { id: customer._id.toString() } })
         ok(apply.success === false && /before your first order/.test(apply.data?.error || ''),
             `applyCode refuses after the first order (${apply.data?.error})`)
+
+        // F-11: the bot and every other caller of captureReferral refuse too.
+        // A real referrer's code, so only the order rule can reject it.
+        const referrer = await UserModel.create({
+            fullName: 'STG Context Referrer',
+            email: `stg-ctx-ref-${STAMP}@example.com`,
+            phoneNumber: `0803222${String(STAMP).slice(-4)}`,
+            userType: ROLE.USER,
+            status: GENERAL_STATUS.ACTIVE,
+            isVerified: true,
+            referralCode: `STGREF${STAMP}`,
+        })
+        created.users.push(referrer._id)
+        const captured = await ReferralService.captureReferral({
+            referredUserId: customer._id,
+            code: referrer.referralCode,
+        })
+        ok(captured === null, 'captureReferral refuses a real code after the first order')
+        const botReply = await detailsFlow.applyReferralCode.call({}, customer._id, '', {
+            code: referrer.referralCode,
+        })
+        ok(/before your first order/.test(botReply?.replies?.[0] || ''),
+            `the bot refuses with the same message (${botReply?.replies?.[0]})`)
+
+        // F-14: once the Welcome Offer is attached to the placed order, it is
+        // no longer usable on a booking, so it no longer reads active.
+        await CustomerOfferModel.updateOne(
+            { _id: linkage._id },
+            { $set: { status: CUSTOMER_OFFER_STATUS.ATTACHED } },
+        )
+        const attached = unwrap(await book.getBookingContext(asCustomer))
+        ok(attached?.welcomeOffer?.active === false, 'an attached Welcome Offer reads inactive')
     } finally {
         await Promise.all([
             BookOrderModel.deleteMany({ _id: { $in: created.orders } }),
@@ -256,6 +323,7 @@ async function main() {
             PlanModel.deleteMany({ _id: { $in: created.plans } }),
             WalletModel.deleteMany({ _id: { $in: created.wallets } }),
             UserModel.deleteMany({ _id: { $in: created.users } }),
+            ReferralModel.deleteMany({ referredUserId: { $in: created.users } }),
         ])
         const left = await UserModel.countDocuments({ _id: { $in: created.users } })
         ok(left === 0, 'cleanup: nothing left behind')

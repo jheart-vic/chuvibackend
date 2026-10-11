@@ -1275,7 +1275,7 @@ const run = (async () => {
     ok('the legs are resolved BEFORE the order is created, so a refusal leaves nothing',
         boSrc.indexOf('BookingWindowService.resolveLeg') < boSrc.indexOf('const oscNumber = generateOscNumber()'))
     ok('a same-day pickup is FORCED to Anytime pricing, not trusted from the client',
-        /DELIVERY_SPEED\.SAME_DAY &&\s*\n\s*!BookingWindowService\._findMorningWindow/.test(boSrc))
+        /const pickupTiming = BookingWindowService\.resolvePickupTiming\(\{\s*deliverySpeed: post\.deliverySpeed,\s*pickupTiming: post\.pickupTiming,/.test(boSrc))
     ok('the chosen timing owns the fee (one override, not five parallel edits)',
         /adminOrderSetting\.pickupFee = resolved\.leg\.fee/.test(boSrc) &&
             /adminOrderSetting\.deliveryFee = scheduling\.delivery\.fee/.test(boSrc))
@@ -2070,27 +2070,73 @@ const run = (async () => {
 
         const draft = { pickupAmount: 1000, deliveryAmount: 1000 }
         const line = (args) => O.buildFeesLine({ draft, ...args })
+        // `selected` is validateAndPrice's quote: what the order will charge.
+        const baseSel = { baseline: [{ offerId: 'o1' }], personal: null, promotion: null }
         ok('free-gap: a trip offer missing only its minimum shows the shortfall',
             (() => {
                 const l = line({ tripRows: [{ kind: 'baseline', offer: trips, applicable: false, requirement: { type: 'minOrderValue', shortfall: 3200 } }] })
                 return l.type === 'free-gap' && l.amount === 3200 && l.message === 'Add ₦3,200 more for free pickup and delivery.'
             })())
+        ok('free-gap names only the legs the offer frees (F-13)',
+            line({ tripRows: [{ kind: 'baseline', offer: offer(['free-delivery']), applicable: false, requirement: { type: 'minOrderValue', shortfall: 500 } }] })
+                .message === 'Add ₦500 more for free delivery.')
+        ok('free-gap leaves out a leg booked Anytime, and is null when no leg is left (F-13)',
+            (() => {
+                const gapRow = { kind: 'baseline', offer: trips, applicable: false, requirement: { type: 'minOrderValue', shortfall: 500 } }
+                const one = O.buildFeesLine({ draft: { ...draft, pickupTiming: 'anytime' }, tripRows: [gapRow] })
+                const pickOnly = { ...gapRow, offer: offer(['free-pickup']) }
+                const none = O.buildFeesLine({ draft: { ...draft, pickupTiming: 'anytime' }, tripRows: [pickOnly] })
+                return one.message === 'Add ₦500 more for free delivery.' && none.type === null
+            })())
         ok('free-reached: an applied trip offer',
-            line({ tripRows: [{ kind: 'baseline', offer: trips, applicable: true, benefit: { freePickup: true, freeDelivery: true } }] }).type === 'free-reached')
+            line({ selected: baseSel, tripRows: [{ kind: 'baseline', offer: trips, applicable: true, benefit: { freePickup: true, freeDelivery: true } }] }).type === 'free-reached')
         ok('window-only beats free-reached when a leg is Anytime',
             (() => {
-                const l = line({ tripRows: [{ kind: 'baseline', offer: trips, applicable: true, benefit: { anytimeKeptPickup: true, freeDelivery: true } }] })
+                const l = line({ selected: baseSel, tripRows: [{ kind: 'baseline', offer: trips, applicable: true, benefit: { anytimeKeptPickup: true, freeDelivery: true } }] })
                 return l.type === 'window-only' && l.amount === 1000
             })())
         ok('welcome-offer wins on a first order, and only on a first order',
             (() => {
                 const row = { kind: 'personal', customerOfferId: 'c1', offer: offer(['order-discount', 'free-pickup'], { triggers: ['first-experience'] }), applicable: true, benefit: { discount: 1000, freePickup: true } }
-                const first = line({ tripRows: [row], isFirstOrder: true, bestPersonalId: 'c1' })
-                const later = line({ tripRows: [row], isFirstOrder: false, bestPersonalId: 'c1' })
+                const sel = { baseline: [], personal: { customerOfferId: 'c1' }, promotion: null }
+                const first = line({ tripRows: [row], isFirstOrder: true, selected: sel })
+                const later = line({ tripRows: [row], isFirstOrder: false, selected: sel })
                 return first.type === 'welcome-offer' && first.amount === 2000 && later.type === 'free-reached'
             })())
-        ok('a personal offer that auto-apply would NOT pick does not count as applied',
-            line({ tripRows: [{ kind: 'personal', customerOfferId: 'c2', offer: trips, applicable: true, benefit: { freePickup: true } }], bestPersonalId: 'c1' }).type === null)
+        ok('a personal trip offer the customer did NOT select is not counted (F-09)',
+            (() => {
+                const row = { kind: 'personal', customerOfferId: 'c1', offer: trips, applicable: true, benefit: { freePickup: true } }
+                const noneChosen = line({ tripRows: [row], selected: { baseline: [], personal: null, promotion: null } })
+                const otherChosen = line({ tripRows: [row], selected: { baseline: [], personal: { customerOfferId: 'c2' }, promotion: null } })
+                return noneChosen.type === null && otherChosen.type === null
+            })())
+        ok('a selected promotion that validateAndPrice rejected is not counted (F-09)',
+            line({ tripRows: [{ kind: 'promotion', offer: trips, applicable: true, benefit: { freePickup: true } }], selected: { baseline: [], personal: null, promotion: null } }).type === null)
+
+        // F-10: one same-day rule for the screen and the order.
+        const BWS = require(path.join(ROOT, 'services/bookingWindow.service'))
+        const morning = [{ startTime: '08:00', endTime: '11:00' }]
+        ok('same-day with no morning window resolves the pickup to Anytime (F-10)',
+            BWS.resolvePickupTiming({ deliverySpeed: 'same-day', pickupTiming: 'window', windows: [{ startTime: '16:00', endTime: '19:00' }] }) === 'anytime' &&
+                BWS.resolvePickupTiming({ deliverySpeed: 'same-day', pickupTiming: 'window', windows: morning }) === 'window' &&
+                BWS.resolvePickupTiming({ deliverySpeed: 'standard', pickupTiming: 'window', windows: [] }) === 'window')
+        ok('postBookOrder and getBookingOptions both use resolvePickupTiming (F-10)',
+            /BookingWindowService\.resolvePickupTiming\(/.test(bookSrc) &&
+                /BookingWindowService\.resolvePickupTiming\(/.test(
+                    fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+                ))
+
+        // F-15: free legs left this week, read-only.
+        const { freeLegsThisWeek } = require(path.join(ROOT, 'util/logisticsAllowance'))
+        ok('freeLegsThisWeek gives the full grant after the week rolled over, and never writes (F-15)',
+            (() => {
+                const now = new Date('2026-10-11T12:00:00Z')
+                const sub = { logisticsWeekStart: new Date('2026-09-30T12:00:00Z'), remainingPickupDeliveries: 0 }
+                const before = JSON.stringify(sub)
+                const r = freeLegsThisWeek(sub, { freePickupDeliveryPerWeek: 2 }, now)
+                const same = freeLegsThisWeek({ logisticsWeekStart: new Date('2026-10-10T12:00:00Z'), remainingPickupDeliveries: 1 }, { freePickupDeliveryPerWeek: 2 }, now)
+                return r.left === 2 && r.perWeek === 2 && JSON.stringify(sub) === before && same.left === 1
+            })())
 
         const offerSrc = fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')
         const importBlock = offerSrc.slice(0, offerSrc.indexOf("} = require('../util/constants')"))

@@ -40,6 +40,7 @@ const {
     ROLE,
     BOOKING_TIMING,
     CUSTOMER_OFFER_STATUS,
+    OFFER_STATUS,
     OFFER_TRIGGER,
     DISPATCH_LEG,
 } = require('../util/constants')
@@ -1463,11 +1464,11 @@ class BookOrderService extends BaseService {
                     // pickup is a special trip and the customer chose speed".
                     // Forced here rather than trusted from the client, so an
                     // app build cannot sell same-day at the window price.
-                    const pickupTiming =
-                        post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-                        !BookingWindowService._findMorningWindow(schedWindows)
-                            ? BOOKING_TIMING.ANYTIME
-                            : post.pickupTiming
+                    const pickupTiming = BookingWindowService.resolvePickupTiming({
+                        deliverySpeed: post.deliverySpeed,
+                        pickupTiming: post.pickupTiming,
+                        windows: schedWindows,
+                    })
                     const resolved = BookingWindowService.resolveLeg({
                         leg: DISPATCH_LEG.PICKUP,
                         timing: pickupTiming,
@@ -2350,7 +2351,7 @@ class BookOrderService extends BaseService {
             const CustomerOfferModel = require('../models/customerOffer.model')
             const ReferralModel = require('../models/referral.model')
 
-            const [labels, wallet, credits, subscription, lastOrder, liveOffers, referrer, hasOrder] =
+            const [labels, wallet, credits, subscription, lastOrder, liveOffers, referrer] =
                 await Promise.all([
                     BookingWindowService.getDisplayNames(),
                     WalletModel.findOne({ userId }).lean(),
@@ -2366,25 +2367,22 @@ class BookOrderService extends BaseService {
                         .sort({ createdAt: -1 })
                         .select('serviceType serviceTier deliverySpeed scheduling pickupAddress')
                         .lean(),
+                    // Only linkages a booking can still use: ATTACHED ones are
+                    // already committed to a placed order.
                     CustomerOfferModel.find({
                         userId,
                         status: {
                             $in: [
                                 CUSTOMER_OFFER_STATUS.ASSIGNED,
                                 CUSTOMER_OFFER_STATUS.VIEWED,
-                                CUSTOMER_OFFER_STATUS.ATTACHED,
                             ],
                         },
                         expiresAt: { $gt: new Date() },
                     })
                         .sort({ expiresAt: 1 })
-                        .populate('offerId', 'name triggers')
+                        .populate('offerId', 'name triggers status')
                         .lean(),
                     ReferralModel.exists({ referredUserId: userId }),
-                    BookOrderModel.exists({
-                        userId,
-                        'stage.status': { $ne: ORDER_STATUS.CANCELLED },
-                    }),
                 ])
 
             let plan = null
@@ -2400,8 +2398,10 @@ class BookOrderService extends BaseService {
                 }
             }
 
-            const welcome = (liveOffers || []).find((l) =>
-                (l.offerId?.triggers || []).includes(OFFER_TRIGGER.FIRST_EXPERIENCE),
+            const welcome = (liveOffers || []).find(
+                (l) =>
+                    l.offerId?.status === OFFER_STATUS.ACTIVE &&
+                    (l.offerId?.triggers || []).includes(OFFER_TRIGGER.FIRST_EXPERIENCE),
             )
 
             return BaseService.sendSuccessResponse({
@@ -2431,8 +2431,9 @@ class BookOrderService extends BaseService {
                         name: welcome?.offerId?.name || null,
                         endsAt: welcome?.expiresAt || null,
                     },
-                    // Same rule applyCode enforces: no referrer yet, no order yet.
-                    canEnterReferralCode: !referrer && !hasOrder,
+                    // Same rule applyCode enforces: no referrer yet, no order yet
+                    // (`lastOrder` is the latest non-cancelled order).
+                    canEnterReferralCode: !referrer && !lastOrder,
                 },
             })
         } catch (error) {

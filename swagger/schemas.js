@@ -1363,11 +1363,22 @@
  *       properties:
  *         displayNames:
  *           type: object
- *           description: The admin's labels for stored codes; show these, send the codes.
+ *           description: >
+ *             The admin's labels for stored codes, the same shape as the admin display-names
+ *             route. Show `label`, send `value`. `renamed` is true when the admin set the label.
  *           properties:
- *             deliverySpeeds: { type: object, example: { standard: "Regular", express: "Express", same-day: "Same Day" } }
- *             serviceTypes: { type: object, example: { wash-and-iron: "Wash & Iron" } }
- *             serviceTiers: { type: object, example: { classic: "Classic", premium: "Premium", vip: "VIP" } }
+ *             deliverySpeeds:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *               example: [{ value: standard, label: Regular, renamed: true }, { value: express, label: Express, renamed: false }, { value: same-day, label: Ready Today, renamed: true }]
+ *             serviceTypes:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *               example: [{ value: wash-and-iron, label: Wash & Iron, renamed: false }]
+ *             serviceTiers:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/DisplayNameEntry' }
+ *               example: [{ value: classic, label: Classic, renamed: false }, { value: premium, label: Premium, renamed: false }, { value: vip, label: VIP, renamed: false }]
  *         wallet:
  *           type: object
  *           properties:

@@ -13,6 +13,7 @@ const {
     CREDIT_SOURCE,
     COMM_SOURCE_SYSTEM,
     BOOKING_TIMING,
+    DELIVERY_SPEED,
     // Was used below but never imported, so getBookingOptions threw for every
     // customer holding a personal offer (the Welcome Offer included).
     OFFER_TRIGGER,
@@ -450,6 +451,24 @@ class OfferService {
         const now = new Date()
         const stats = await this.getCustomerStats(userId)
 
+        // Price the timing the ORDER will use, not the one the app sent: a
+        // same-day pickup with no morning window becomes Anytime and keeps its
+        // fee. Same condition as postBookOrder (timings only apply when sent).
+        if (
+            (draft.pickupTiming || draft.deliveryTiming) &&
+            draft.deliverySpeed === DELIVERY_SPEED.SAME_DAY
+        ) {
+            const BookingWindowService = require('./bookingWindow.service')
+            draft = {
+                ...draft,
+                pickupTiming: BookingWindowService.resolvePickupTiming({
+                    deliverySpeed: draft.deliverySpeed,
+                    pickupTiming: draft.pickupTiming,
+                    windows: await BookingWindowService.getActiveWindows(),
+                }),
+            }
+        }
+
         // The authoritative priced quote for the current selection (if any).
         const selected = await this.validateAndPrice(userId, draft)
 
@@ -577,7 +596,7 @@ class OfferService {
             tripRows,
             draft,
             isFirstOrder: (stats?.totalOrders || 0) === 0,
-            bestPersonalId: best?.customerOfferId || null,
+            selected,
         })
 
         return {
@@ -611,10 +630,13 @@ class OfferService {
     //   window-only   → an offer would waive a trip, but that leg is Anytime
     //   free-reached  → an applied offer waives pickup and/or delivery
     //   free-gap      → a trip-waiving offer fails ONLY on its minimum order
-    // Only offers that would actually be on this bill count as "applied":
-    // baselines (applied by rule), the personal offer auto-apply would pick,
-    // and a promotion the customer has selected.
-    buildFeesLine({ tripRows = [], draft = {}, isFirstOrder = false, bestPersonalId = null }) {
+    // Only offers that are actually on this bill count as "applied", read from
+    // `selected` (validateAndPrice, the same quote the order charges): the
+    // baselines that passed, plus the personal offer and promotion the customer
+    // SELECTED and that survived validation (a non-stackable promo does not).
+    // Nothing is auto-applied on a normal booking, so with no selection only
+    // baselines count; checkoutPrompt tells the customer they have an offer.
+    buildFeesLine({ tripRows = [], draft = {}, isFirstOrder = false, selected = null }) {
         const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`
         const waives = (offer) =>
             (offer?.benefits || []).some((b) =>
@@ -627,13 +649,20 @@ class OfferService {
         const tripValue = (benefit) =>
             (benefit?.freePickup ? draft.pickupAmount || 0 : 0) +
             (benefit?.freeDelivery ? draft.deliveryAmount || 0 : 0)
+        const baselineIds = new Set(
+            (selected?.baseline || []).map((b) => String(b.offerId)),
+        )
+        const personalId = selected?.personal?.customerOfferId
+        const promoId = selected?.promotion?.offerId
         const onBill = (r) =>
             r.applicable &&
-            (r.kind === 'baseline' ||
+            ((r.kind === 'baseline' && baselineIds.has(String(r.offer?._id))) ||
                 (r.kind === 'personal' &&
-                    String(r.customerOfferId) === String(bestPersonalId || '')) ||
+                    personalId != null &&
+                    String(r.customerOfferId) === String(personalId)) ||
                 (r.kind === 'promotion' &&
-                    String(draft.promoOfferId || '') === String(r.offer?._id)))
+                    promoId != null &&
+                    String(r.offer?._id) === String(promoId)))
 
         if (isFirstOrder) {
             const welcome = tripRows.find(
@@ -679,21 +708,36 @@ class OfferService {
             }
         }
 
+        // Name only the legs reaching the minimum would actually free: the
+        // offer's own trip benefits, minus any leg booked Anytime.
+        const gapLegs = (offer) => {
+            const types = (offer?.benefits || []).map((b) => b.benefitType)
+            return {
+                pickup:
+                    types.includes(OFFER_BENEFIT_TYPE.FREE_PICKUP) &&
+                    draft.pickupTiming !== BOOKING_TIMING.ANYTIME,
+                delivery:
+                    types.includes(OFFER_BENEFIT_TYPE.FREE_DELIVERY) &&
+                    draft.deliveryTiming !== BOOKING_TIMING.ANYTIME,
+            }
+        }
         const gaps = tripRows
             .filter(
                 (r) =>
                     !r.applicable &&
                     waives(r.offer) &&
-                    r.requirement?.type === 'minOrderValue',
+                    r.requirement?.type === 'minOrderValue' &&
+                    r.requirement.shortfall > 0,
             )
-            .map((r) => r.requirement.shortfall)
-            .filter((n) => n > 0)
+            .map((r) => ({ amount: r.requirement.shortfall, ...gapLegs(r.offer) }))
+            .filter((g) => g.pickup || g.delivery)
+            .sort((a, b) => a.amount - b.amount)
         if (gaps.length) {
-            const amount = Math.min(...gaps)
+            const { amount, pickup, delivery } = gaps[0]
             return {
                 type: 'free-gap',
                 amount,
-                message: `Add ${naira(amount)} more for free pickup and delivery.`,
+                message: `Add ${naira(amount)} more for free ${legs(pickup, delivery)}.`,
             }
         }
 

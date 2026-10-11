@@ -18,6 +18,9 @@ module.exports = {
                 state: { intent: BOT_INTENT.APPLY_REFERRAL_CODE, step: 'awaiting-code', slots: {} },
             }
         }
+        if (await ReferralService.hasPlacedOrder(userId)) {
+            return { replies: [ReferralService.REFERRAL_AFTER_FIRST_ORDER] }
+        }
         const referral = await ReferralService.captureReferral({ referredUserId: userId, code })
         if (!referral) {
             return {

@@ -263,6 +263,19 @@ class BookingWindowService {
         return morning.length ? morning[0] : null
     }
 
+    /**
+     * CLIENT RULING (2026-10-08): a SAME-DAY order's pickup is an Anytime trip
+     * when there is no morning window, and pays the Anytime price. One rule for
+     * the order (`postBookOrder`) and the booking screen (`getBookingOptions`),
+     * so the screen cannot show a free window pickup the order then charges.
+     */
+    static resolvePickupTiming({ deliverySpeed, pickupTiming, windows }) {
+        return deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
+            !this._findMorningWindow(windows)
+            ? BOOKING_TIMING.ANYTIME
+            : pickupTiming
+    }
+
     static async _recordDeflections(deflections, userId) {
         await WindowDeflectionModel.insertMany(
             deflections.map((d) => ({

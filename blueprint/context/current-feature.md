@@ -30,7 +30,10 @@ One read for everything on the booking screen that does not depend on the basket
 
 ```json
 {
-  "displayNames": { "deliverySpeeds": {}, "serviceTypes": {}, "serviceTiers": {} },
+  "displayNames": {
+    "deliverySpeeds": [{ "value": "standard", "label": "Regular", "renamed": true }],
+    "serviceTypes": [], "serviceTiers": []
+  },
   "wallet": { "balance": 2500, "rewardCredit": 1000 },
   "plan": {
     "active": true, "itemsLeft": 18, "monthlyItems": 30,
@@ -53,7 +56,8 @@ One read for everything on the booking screen that does not depend on the basket
   left, otherwise `null`. The screen preselects "My plan" from it.
 - `lastOrderChoices` comes from the customer's latest non-cancelled order, or is
   `null` when there is none.
-- `welcomeOffer.active` means a live First Experience linkage that has not expired.
+- `welcomeOffer.active` means an unused (assigned or viewed) First Experience linkage
+  that has not expired, on an offer that is active.
 - `canEnterReferralCode` is true only with no referrer on record and no
   non-cancelled order yet.
 
@@ -104,6 +108,19 @@ The response gains `feesLine`, computed from the same draft (now including timin
 personal offer, the Welcome Offer included, got "Failed to load booking offers", which is why
 the frontend saw `checkoutPrompt` empty. The import is added and briefCheck asserts it.
 
+**Found by the independent review (F-09 to F-15), fixed in scope before `/complete`:**
+
+- The fees line counts only offers that are actually on the bill: baselines that pass,
+  plus the personal offer and promotion the customer **selected** (read from
+  `selected`, the same quote the order charges). Nothing is auto-applied on a normal
+  booking, so an unselected offer gives no line; `checkoutPrompt` covers that case.
+- booking-options prices the timing the order will use: a same-day pickup with no
+  morning window is Anytime (one helper, `BookingWindowService.resolvePickupTiming`).
+- The first-order rule for referral codes lives in `captureReferral`, so the bot
+  refuses too, with the same message.
+- The free-gap message names only the legs that offer would actually free.
+- Swagger documents `displayNames` as arrays of `DisplayNameEntry`.
+
 Swagger: a `BookingContext` schema for the new route, the dashboard fields,
 `feesLine` on booking-options, and the new apply-code refusal.
 
@@ -142,3 +159,6 @@ Swagger: a `BookingContext` schema for the new route, the dashboard fields,
   returns `feesLine`.
 - **A behaviour change they should know about:** Anytime legs no longer get free
   pickup or delivery from an offer.
+- `displayNames` groups are arrays of `{ value, label, renamed }`: show `label`, send `value`.
+- `feesLine` reflects only the offers in the draft: send `customerOfferId` /
+  `promoOfferId` once the customer picks one, or the Welcome line will not show.

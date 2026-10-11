@@ -9,9 +9,7 @@ const {
     REFERRAL_SOURCE,
     REFERRAL_STATUS,
     AUDIT_LOG_CATEGORIES,
-    ORDER_STATUS,
 } = require('../util/constants')
-const BookOrderModel = require('../models/bookOrder.model')
 
 // Request-facing surface of the Referral System: the customer Referral Page,
 // applying a code post-registration, and staff code reset.
@@ -46,15 +44,11 @@ class ReferralApiService extends BaseService {
             }
 
             // Client 2026-10-11: a code can be added any time BEFORE the first
-            // order, never after, and that order is then linked to nobody. Same
-            // rule as booking-context's canEnterReferralCode.
-            const hasOrder = await BookOrderModel.exists({
-                userId: req.user.id,
-                'stage.status': { $ne: ORDER_STATUS.CANCELLED },
-            })
-            if (hasOrder) {
+            // order, never after. Checked here for the specific message;
+            // captureReferral enforces it for every entry point.
+            if (await ReferralService.hasPlacedOrder(req.user.id)) {
                 return BaseService.sendFailedResponse({
-                    error: 'Referral codes can only be added before your first order.',
+                    error: ReferralService.REFERRAL_AFTER_FIRST_ORDER,
                 })
             }
 
