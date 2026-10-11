@@ -2166,6 +2166,35 @@ const run = (async () => {
         ok('every order literal in postBookOrder saves the allow-list, never the raw body',
             (postBook.match(/\.\.\.customerOrderFields\(post\),/g) || []).length === 3 &&
                 !/^\s+\.\.\.post,\s*$/m.test(postBook))
+        // Item prices and item fields (review F-17/F-18 in this branch).
+        const { priceFromCatalog } = require(path.join(ROOT, 'util/catalogItems'))
+        const catalog = [
+            { name: 'Shirts / Tops / Blouses', price: 600 },
+            { name: 'Lab coats', price: 700 },
+        ]
+        const sets = [{ name: 'Agbada', pieces: [{ name: 'Agbada', price: 1100 }, { name: 'Trouser', price: 700 }] }]
+        const priced = priceFromCatalog(
+            [
+                { type: 'shirts-/-tops-/-blouses', price: 1, quantity: 2, qcStatus: 'passed', tagStatus: 'complete', currentStation: 'qc-station' },
+                { type: 'Lab coats', price: 1, quantity: 1, serviceTier: 'vip' },
+                { type: 'trouser', fromSet: 'Agbada', price: 1, quantity: 1 },
+            ],
+            { catalog, sets },
+        )
+        ok('item prices come from the catalog (slug, name and set piece all match), not the request',
+            priced.ok && priced.items.map((i) => i.price).join() === '600,700,700')
+        ok('only the customer item fields survive (no station, QC or tag status)',
+            priced.ok &&
+                priced.items.every((i) => Object.keys(i).every((k) => ['type', 'quantity', 'serviceTier', 'fromSet', 'price'].includes(k))) &&
+                priced.items[1].serviceTier === 'vip' && priced.items[2].fromSet === 'Agbada')
+        const unknown = priceFromCatalog([{ type: 'blanket', price: 100, quantity: 1 }], { catalog, sets })
+        ok('an item not in the catalog is refused, never booked at the price sent',
+            !unknown.ok && /We don't recognise "blanket"/.test(unknown.error))
+        ok('postBookOrder prices items from the catalog before validation, skipping only Quick Booking placeholders',
+            /\} else if \(Array\.isArray\(post\.items\) && post\.items\.length\) \{[\s\S]{0,900}priceFromCatalog\(post\.items, \{ catalog, sets \}\)[\s\S]{0,300}post\.items = fromCatalog\.items/.test(postBook) &&
+                postBook.indexOf('priceFromCatalog(post.items') < postBook.indexOf('const validateRule = {'))
+        ok('a customer cannot mark their order as the staff counter channel',
+            /if \(post\.channel === ORDER_CHANNEL\.OFFICE\) delete post\.channel/.test(postBook))
         ok('the server-set Quick Booking fields are dropped from the body before anything reads them',
             BOS.SERVER_SET_ON_POST.includes('quickBooking') &&
                 /const post = \{ \.\.\.\(req\.body \|\| \{\}\) \}\s*for \(const key of SERVER_SET_ON_POST\) delete post\[key\]/.test(postBook))

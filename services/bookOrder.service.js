@@ -43,6 +43,7 @@ const {
     OFFER_STATUS,
     OFFER_TRIGGER,
     DISPATCH_LEG,
+    ORDER_CHANNEL,
 } = require('../util/constants')
 // Window booking (client D1–D8). The service does the fetching/counting; the
 // pure engine owns every rule, so nothing here re-decides a cutoff or a price.
@@ -59,6 +60,8 @@ const {
     isCountOnlyBooking,
     applyCountOnlyBooking,
 } = require('../util/quickBooking')
+// Booking items are priced from the catalog, never the request (hotfix).
+const { priceFromCatalog } = require('../util/catalogItems')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -1277,6 +1280,9 @@ class BookOrderService extends BaseService {
         try {
             const post = { ...(req.body || {}) }
             for (const key of SERVER_SET_ON_POST) delete post[key]
+            // `office` is the staff counter's channel (intake-user booking); a
+            // customer order marked so drops out of Intake's pending list.
+            if (post.channel === ORDER_CHANNEL.OFFICE) delete post.channel
             const userId = req.user.id
 
             const user = await UserModel.findById(userId)
@@ -1316,6 +1322,24 @@ class BookOrderService extends BaseService {
                         error: normalised.error,
                     })
                 }
+            } else if (Array.isArray(post.items) && post.items.length) {
+                // Every price comes from the catalog and only the customer's
+                // item fields are kept (util/catalogItems.js). Done before
+                // validation and before any billing branch, so pricing, the
+                // subscription sum, offers and the stored pieces all see the
+                // catalog price. A Quick Booking's placeholder pieces are the
+                // server's own and skip this.
+                const [catalog, sets] = await Promise.all([
+                    OrderItemModel.find({}).select('name price').lean(),
+                    ItemSetModel.find({}).select('name pieces').lean(),
+                ])
+                const fromCatalog = priceFromCatalog(post.items, { catalog, sets })
+                if (!fromCatalog.ok) {
+                    return BaseService.sendFailedResponse({
+                        error: fromCatalog.error,
+                    })
+                }
+                post.items = fromCatalog.items
             }
 
             const validateRule = {
@@ -1333,6 +1357,7 @@ class BookOrderService extends BaseService {
                 isPickUp: 'boolean|required',
                 items: 'array|required',
                 'items.*.type': 'string|required',
+                // Set by priceFromCatalog above; the request's price is ignored.
                 'items.*.price': 'integer|required',
                 'items.*.quantity': 'integer|required',
                 // Per-item care tier (brief 1.6). OPTIONAL — omit it and the

@@ -68,3 +68,72 @@ Anytime timing for a leg it does not book (`isPickUp` or `isDelivery` false) get
 forced to Anytime by the same-day rule. Ignore a leg whose amount is 0 or that is not
 booked. Nothing current is lost.
 **Resolution:**
+
+### F-17 [P0] fixed - The booking still trusts the customer's item prices, so the bill can be set to almost anything (pre-existing)
+
+**File:** util/itemPricing.js:78
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** Pre-existing and outside the hotfix delta, but it defeats what the
+hotfix is for. `postBookOrder` checks only that `items.*.price` is an integer
+(services/bookOrder.service.js:1336). It never looks up the catalog price. The
+pay-per-item and wallet branches then price with `priceItems`, which uses
+`Number(item.price)` from the body (util/itemPricing.js:78). The subscription branch sums
+`item.price * quantity` the same way (services/bookOrder.service.js:1640). So a customer
+who sends `items: [{ type: "blanket", price: 100, quantity: 1 }]` gets an order `amount`
+of ₦100 plus fees. Paystack charges that, or the wallet is debited that, and the order is
+saved as paid. That is the same outcome as the `amount: 100` attack this fix closes. The
+in-app assistant takes its prices from the catalog (services/bot/booking.flow.js:35), so
+only direct API callers can do this.
+**Suggested fix:** In `postBookOrder`, look up each item's price on the server from
+`OrderItemModel` (and set pieces from `ItemSetModel`) by `type`. Refuse an unknown type, or
+ignore the body's price. Placeholder Quick Booking pieces keep price 0. Nothing current is
+lost.
+**Resolution:** Fixed 2026-10-11. New `util/catalogItems.js` `priceFromCatalog`: every customer booking item is priced from `OrderItem` (or its `ItemSet` piece when `fromSet` is sent), matched lowercased with whitespace as hyphens; the request's price is ignored and an unknown item is refused ("We don't recognise …"). Runs in `postBookOrder` before validation and before every billing branch (the subscription sum included); Quick Booking placeholders skip it. Production check (read-only): every customer item line in the 14 days before matched the catalog at exactly the catalog price. briefCheck + testingdb probe (a `price: 100` item booked at the catalog price; `blanket` refused, nothing created; a set piece priced from its set).
+
+### F-18 [P1] fixed - Fields inside each booked item are still copied from the body (pre-existing)
+
+**File:** util/explodeItems.js:22
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** Pre-existing. The allow-list keeps `items`, and
+`explodeItemsToPieces(post.items)` (services/bookOrder.service.js:1695/1836/1996) copies
+every field of each body item onto the stored piece. A customer can therefore set the
+staff fields on `ItemSchema`: `currentStation: "qc-station"`, `qcStatus: "passed"`,
+`tagStatus: "complete"`, `tagId`, `washStatus`, `holdDetails`, `flaggedForReview`,
+`actionLog`, and so on. A booking can arrive with its pieces already marked as past
+tagging or at QC, so it skips stations in the split flow. An offline probe of
+`customerOrderFields` followed by `explodeItemsToPieces` kept all three injected fields.
+The briefCheck hotfix assertions do not cover item subfields.
+**Suggested fix:** When the order is built, map each body item to `{ type, price,
+quantity, serviceTier, fromSet }` before it is exploded into pieces. Add a briefCheck
+assertion that an injected `currentStation`/`qcStatus` is dropped. Nothing current is lost.
+**Resolution:** Fixed 2026-10-11. `priceFromCatalog` keeps only `type`, `quantity`, `serviceTier`, `fromSet` (plus the catalog price); station, QC, tag and every other staff field is dropped. Probe: an item sent with `qcStatus: passed`, `tagStatus: complete`, `currentStation: qc-station` is stored pending at intake.
+
+### F-19 [P2] open - The staff counter booking still spreads the request body over the order (pre-existing)
+
+**File:** services/intake-user.service.js:339
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** Pre-existing, with the same pattern this hotfix removed.
+`IntakeUserService.createBookOrder` builds `{ oscNumber, amount: totalPrice,
+paymentStatus: PENDING, intakeStaffId, channel: OFFICE, stage, ..., ...post }`. The
+intake staff member's body can override `amount`, `intakeStaffId`, `stage`, `channel`,
+`userId`, `pricing`, and so on. Settlement later restamps `paymentStatus`, but `amount`
+and attribution stay as the body set them. Only intake staff and admins can reach this
+route (`intakeUserAuth`), so it is not exposed to customers. It still undermines the
+counter audit trail that FE-CHANGELOG-2026-10-08 tightened.
+**Suggested fix:** Reuse the same allow-list approach (`customerOrderFields`, or an
+intake-specific list) in place of `...post`. Nothing current is lost.
+**Resolution:**
+
+### F-20 [P3] fixed - The allow-list lets a customer set the order's channel, including "office"
+
+**File:** services/bookOrder.service.js:113
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** `channel` is on `CUSTOMER_ORDER_FIELDS`, so a customer booking can
+store `channel: "office"`, which is meant only for counter orders
+(CLIENT-ANSWERS-oct2026.md:305). A non-pickup customer order marked `office` then drops out
+of the intake pending list, which filters on `whatsapp`/`website`
+(services/intake-user.service.js:2060), and channel reporting is wrong. The impact is
+small. No money moves.
+**Suggested fix:** Accept only `website`/`whatsapp` from the customer path. Otherwise fall
+back to the schema default. Nothing current is lost.
+**Resolution:** Fixed 2026-10-11. `postBookOrder` drops `channel: "office"` (the staff counter's channel); `website` / `whatsapp` are still accepted (the WhatsApp bot books through this endpoint). Probe confirms.

@@ -350,9 +350,11 @@ async function main() {
 
         // ── 13: PER-PIECE explosion via the REAL booking path ──────────
         console.log('\n[13] per-piece explosion (real postBookOrder path)')
+        // Real catalog items: the booking prices from the catalog and refuses
+        // anything else (needs the catalog on this DB).
         const pp = await bookReal([
-            { type: 'shirt', price: 1, quantity: 3 },
-            { type: 'trouser', price: 1, quantity: 2 },
+            { type: 'shirts-/-tops-/-blouses', price: 1, quantity: 3 },
+            { type: 'trousers', price: 1, quantity: 2 },
         ])
         if (pp) {
             ok(pp.items.length === 5, `qty 3+2 exploded into 5 piece records (got ${pp.items.length})`)
@@ -361,8 +363,8 @@ async function main() {
                 'every stored piece has quantity 1',
             )
             ok(
-                pp.items.filter((i) => i.type === 'shirt').length === 3 &&
-                    pp.items.filter((i) => i.type === 'trouser').length === 2,
+                pp.items.filter((i) => i.type === 'shirts-/-tops-/-blouses').length === 3 &&
+                    pp.items.filter((i) => i.type === 'trousers').length === 2,
                 '3 shirt pieces + 2 trouser pieces',
             )
             ok(
@@ -391,8 +393,8 @@ async function main() {
                 `push returns 5 readable items (got ${rr.data.message.items?.length})`,
             )
             ok(
-                rr.data.message.summary === '3 Shirts, 2 Trousers',
-                `push summary = "3 Shirts, 2 Trousers" (got "${rr.data.message.summary}")`,
+                rr.data.message.summary === '3 Shirts / Tops / Blouses, 2 Trousers',
+                `push summary = "3 Shirts / Tops / Blouses, 2 Trousers" (got "${rr.data.message.summary}")`,
             )
             ok(
                 (rr.data.message.items[0].name && rr.data.message.items[0].tagId) !== undefined,
@@ -404,7 +406,7 @@ async function main() {
                 'confirm returns 5 accepted readable items',
             )
             ok(
-                cc.data.message.summary === '3 Shirts, 2 Trousers',
+                cc.data.message.summary === '3 Shirts / Tops / Blouses, 2 Trousers',
                 'confirm summary reads by piece name + count',
             )
             const ss2 = await svc.splitState(req(pp._id))
@@ -412,7 +414,7 @@ async function main() {
                 (s) => s.station === S.SORT_AND_PRETREAT_STATION,
             )
             ok(
-                sortStation && sortStation.count === 5 && sortStation.summary === '3 Shirts, 2 Trousers',
+                sortStation && sortStation.count === 5 && sortStation.summary === '3 Shirts / Tops / Blouses, 2 Trousers',
                 'split-state counts pieces (5) + summary per station',
             )
         }

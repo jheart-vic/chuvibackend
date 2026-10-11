@@ -121,7 +121,9 @@ async function main() {
             deliverySpeed: 'standard',
             isPickUp,
             isDelivery,
-            items: [{ type: 'shirt', price: 1, quantity: 1 }],
+            // A real catalog item: booking prices from the catalog and refuses
+            // anything else (needs the catalog on this DB).
+            items: [{ type: 'shirts-/-tops-/-blouses', price: 1, quantity: 1 }],
             // A landmark is REQUIRED on both legs since brief 3.3 (the rider
             // navigates by it), so a bare string address no longer books.
             pickupAddress: { label: 'Home', address: 'Test address, off Aroma', landmark: 'By the mast' },
