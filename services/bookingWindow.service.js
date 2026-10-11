@@ -937,8 +937,13 @@ class BookingWindowService {
                 order.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS
             ) {
                 const fee = Math.max(0, Number(legData.fee || 0) - amount)
-                await BookOrderModel.updateOne(
-                    { _id: orderId },
+                // Claimed atomically on `refund.paidAt`, so two settle calls at
+                // once cannot both lower the fee.
+                const claimed = await BookOrderModel.updateOne(
+                    {
+                        _id: orderId,
+                        [`scheduling.${leg}.refund.paidAt`]: { $exists: false },
+                    },
                     {
                         $set: {
                             [`scheduling.${leg}.fee`]: fee,
@@ -950,6 +955,7 @@ class BookingWindowService {
                         },
                     },
                 )
+                if (!claimed.modifiedCount) return { ok: false, reason: 'already-paid' }
                 return { ok: true, amount, appliedToBill: true }
             }
 

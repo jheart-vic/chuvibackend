@@ -44,6 +44,7 @@ const {
     OFFER_TYPE,
     OFFER_TRIGGER,
     DISPATCH_LEG,
+    ORDER_CHANNEL,
 } = require('../util/constants')
 // Window booking (client D1–D8). The service does the fetching/counting; the
 // pure engine owns every rule, so nothing here re-decides a cutoff or a price.
@@ -60,6 +61,8 @@ const {
     isCountOnlyBooking,
     applyCountOnlyBooking,
 } = require('../util/quickBooking')
+// Booking items are priced from the catalog, never the request (hotfix).
+const { priceFromCatalog, catalogKey } = require('../util/catalogItems')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -93,6 +96,41 @@ const {
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
+
+// The order fields a customer may set from the booking request. The order used
+// to be built as `{ amount: totalPrice, ..., ...post }`, so ANY schema field in
+// the body overwrote the server's value: `amount: 100` was what Paystack then
+// charged, `paymentStatus: "success"` booked an order already marked paid. Every
+// other field (amount, payment, stage, pricing, scheduling, counts, holds…) is
+// the server's. Inputs that are read but not stored (itemCount, useCredit,
+// customerOfferId, timings, window ids…) stay on `post` for the logic.
+const CUSTOMER_ORDER_FIELDS = [
+    'fullName',
+    'phoneNumber',
+    'pickupAddress',
+    'deliveryAddress',
+    'pickupDate',
+    'pickupTime',
+    'serviceType',
+    'serviceTier',
+    'deliverySpeed',
+    'channel',
+    'billingType',
+    'items',
+    'extraNote',
+    'isPickUp',
+    'isDelivery',
+]
+// Put on `post` by the server itself (the Quick Booking normaliser), so never
+// accepted from the request: a client-sent `quickBooking: true` zeroed a normal
+// booking's bill.
+const SERVER_SET_ON_POST = ['quickBooking', 'itemsPending', 'counts']
+const customerOrderFields = (post) =>
+    Object.fromEntries(
+        [...CUSTOMER_ORDER_FIELDS, ...SERVER_SET_ON_POST]
+            .filter((k) => post[k] !== undefined)
+            .map((k) => [k, post[k]]),
+    )
 
 class BookOrderService extends BaseService {
     // Decide which cancellation window an order is in (client policy 2026-07-20):
@@ -766,7 +804,9 @@ class BookOrderService extends BaseService {
     // live rules (never trusts a client-sent price/discount), applies the discount
     // to the item subtotal and waives pickup/delivery fees the offer covers.
     // Returns the authoritative charge total plus the validated breakdown.
-    async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting, scheduling = null }) {
+    // `repriceOrderId` is set ONLY by the Intake re-price (`_repriceForItems`),
+    // never from a request: it lets that order's own attached offers count.
+    async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting, scheduling = null, repriceOrderId = null }) {
         // This used to return early unless the customer had SELECTED an offer:
         //     if (!post.customerOfferId && !post.promoOfferId) return ...
         // BASELINE offers (what the client calls "General") are applied BY RULE
@@ -791,7 +831,7 @@ class BookOrderService extends BaseService {
             // forced to Anytime and must not get a window-only free trip.
             pickupTiming: scheduling?.pickup?.timing,
             deliveryTiming: scheduling?.delivery?.timing,
-        })
+        }, { repriceOrderId })
 
         let finalTotal = itemsSubtotal + extraDeliveryCost - (breakdown.totalDiscount || 0)
         if (breakdown.freeDelivery) finalTotal -= deliveryFee
@@ -851,9 +891,6 @@ class BookOrderService extends BaseService {
             isPickUp: order.isPickUp,
             isDelivery: order.isDelivery,
             items,
-            // Re-pricing this order: its own attached offers are not a
-            // double use (OfferService._offerRejection).
-            orderId: order._id,
             customerOfferId: attachedPersonal?._id || undefined,
             promoOfferId: attachedPromo?.offerId?._id || undefined,
         }
@@ -897,18 +934,22 @@ class BookOrderService extends BaseService {
         // Offer and then corrects the count, keeping the first pick would lose
         // the Welcome Offer for good. An offer the new pick replaces is released
         // by applyItemEdit. (An offer already attached to this order is still
-        // eligible: the pick runs with this order's id.)
+        // eligible: the pick runs as a re-price of this order.)
         let autoApplied = null
         if (order.quickBooking && order.userId) {
             post.customerOfferId = undefined
-            autoApplied = await OfferService.pickBestPersonalOffer(order.userId, {
-                ...post,
-                amount: priced.total,
-                pickupAmount: pickupFee,
-                deliveryAmount: deliveryFee,
-                pickupTiming: order.scheduling?.pickup?.timing,
-                deliveryTiming: order.scheduling?.delivery?.timing,
-            })
+            autoApplied = await OfferService.pickBestPersonalOffer(
+                order.userId,
+                {
+                    ...post,
+                    amount: priced.total,
+                    pickupAmount: pickupFee,
+                    deliveryAmount: deliveryFee,
+                    pickupTiming: order.scheduling?.pickup?.timing,
+                    deliveryTiming: order.scheduling?.delivery?.timing,
+                },
+                { repriceOrderId: order._id },
+            )
             if (autoApplied?.customerOfferId) {
                 post.customerOfferId = autoApplied.customerOfferId
             }
@@ -924,6 +965,9 @@ class BookOrderService extends BaseService {
             // windowed order would take off the wrong amount.
             adminOrderSetting: { pickupFee, deliveryFee },
             scheduling: order.scheduling,
+            // Re-pricing THIS order: its own attached offers are not a double
+            // use. Server-set only (a request's `orderId` is never read).
+            repriceOrderId: order._id,
         })
 
         // Mapped exactly as the booking branches map it. `priceItems` returns
@@ -1349,7 +1393,14 @@ class BookOrderService extends BaseService {
 
     async postBookOrder(req, res) {
         try {
-            const post = req.body
+            const post = { ...(req.body || {}) }
+            for (const key of SERVER_SET_ON_POST) delete post[key]
+            // `office` is the staff counter's channel (intake-user booking); a
+            // customer order marked so drops out of Intake's pending list.
+            // Compared the way the schema stores it (trimmed), or " office" slips by.
+            if (String(post.channel ?? '').trim().toLowerCase() === ORDER_CHANNEL.OFFICE) {
+                delete post.channel
+            }
             const userId = req.user.id
 
             const user = await UserModel.findById(userId)
@@ -1389,6 +1440,24 @@ class BookOrderService extends BaseService {
                         error: normalised.error,
                     })
                 }
+            } else if (Array.isArray(post.items) && post.items.length) {
+                // Every price comes from the catalog and only the customer's
+                // item fields are kept (util/catalogItems.js). Done before
+                // validation and before any billing branch, so pricing, the
+                // subscription sum, offers and the stored pieces all see the
+                // catalog price. A Quick Booking's placeholder pieces are the
+                // server's own and skip this.
+                const [catalog, sets] = await Promise.all([
+                    OrderItemModel.find({}).select('name price').lean(),
+                    ItemSetModel.find({}).select('name pieces active').lean(),
+                ])
+                const fromCatalog = priceFromCatalog(post.items, { catalog, sets })
+                if (!fromCatalog.ok) {
+                    return BaseService.sendFailedResponse({
+                        error: fromCatalog.error,
+                    })
+                }
+                post.items = fromCatalog.items
             }
 
             const validateRule = {
@@ -1512,6 +1581,17 @@ class BookOrderService extends BaseService {
             if (!adminOrderSetting) {
                 return BaseService.sendFailedResponse({
                     error: 'Admin settings not found',
+                })
+            }
+            // An unknown service type used to price at a ×1 multiplier and be
+            // stored as sent; only the services the admin set up are bookable.
+            if (
+                !(adminOrderSetting.serviceTypes || []).some(
+                    (s) => s.name === post.serviceType,
+                )
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please choose a service from the list.',
                 })
             }
 
@@ -1657,18 +1737,19 @@ class BookOrderService extends BaseService {
                     OrderItemModel.find({ isHeavy: true }).lean(),
                     ItemSetModel.find({ 'pieces.isHeavy': true }).lean(),
                 ])
-                const heavyItemNames = heavyItems.map((i) =>
-                    i.name.toLowerCase(),
-                )
+                // Compared with the same key the catalog pricing uses: the app
+                // sends slugs ("duvets", "king-size-duvet"), which a plain
+                // lowercase compare missed for multi-word heavy items.
+                const heavyItemNames = heavyItems.map((i) => catalogKey(i.name))
                 for (const s of sets) {
                     for (const p of s.pieces || []) {
-                        if (p.isHeavy) heavyItemNames.push(p.name.toLowerCase())
+                        if (p.isHeavy) heavyItemNames.push(catalogKey(p.name))
                     }
                 }
 
                 // ← block if any submitted item is heavy
                 const heavyItemFound = post.items.find((item) =>
-                    heavyItemNames.includes(item.type.toLowerCase()),
+                    heavyItemNames.includes(catalogKey(item.type)),
                 )
 
                 if (heavyItemFound) {
@@ -1760,7 +1841,7 @@ class BookOrderService extends BaseService {
                         ? PAYMENT_ORDER_STATUS.PENDING
                         : PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
-                    ...post,
+                    ...customerOrderFields(post),
                     deliveryDate,
                 }
 
@@ -1878,7 +1959,8 @@ class BookOrderService extends BaseService {
                 // re-price (`applyItemEdit`) adds the trips and speed, picks and
                 // attaches the offer, and raises the payment hold with the SMS.
                 // `deliveryAmount` keeps the fees as information for Intake.
-                const quickBooking = post.quickBooking === true
+                // The server's own count-only check, never a client flag.
+                const quickBooking = countOnly
 
                 // Apply any selected offer(s) server-side (authoritative price).
                 const itemsSubtotal = totalPrice
@@ -1915,7 +1997,7 @@ class BookOrderService extends BaseService {
                     deliveryAmount: extraDeliveryCost,
                     stage,
                     stageHistory: [stageHistory],
-                    ...post,
+                    ...customerOrderFields(post),
                     deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
@@ -2082,7 +2164,7 @@ class BookOrderService extends BaseService {
                     stageHistory: [stageHistory],
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     paymentDate: new Date(),
-                    ...post,
+                    ...customerOrderFields(post),
                     deliveryDate,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
@@ -2589,7 +2671,8 @@ class BookOrderService extends BaseService {
 
             // A customer reads only their own orders. Someone else's gets the
             // same reply as a missing one, so order IDs cannot be probed. Staff
-            // (this handler is also mounted on the intake routes) read any order.
+            // apps read any order through this route. (The intake route uses
+            // its own handler, IntakeUserService.getBookOrder.)
             const notMine =
                 req.user?.userType === ROLE.USER &&
                 String(bookOrder?.userId) !== String(req.user.id)
@@ -2621,3 +2704,6 @@ class BookOrderService extends BaseService {
 }
 
 module.exports = BookOrderService
+// Exposed for briefCheck: the booking body allow-list (F-18).
+module.exports.customerOrderFields = customerOrderFields
+module.exports.SERVER_SET_ON_POST = SERVER_SET_ON_POST

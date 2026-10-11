@@ -457,30 +457,36 @@ class OfferService {
     // merits (hasPersonal=false) and carry `stackableWithPersonal`; the actual
     // personal+promo combination is enforced authoritatively by validateAndPrice
     // when the customer confirms a selection.
-    async getBookingOptions(userId, draft = {}) {
+    // `repriceOrderId`: server-set only (the Quick Booking auto-pick at Intake);
+    // see _offerRejection. The HTTP route never passes it.
+    async getBookingOptions(userId, draft = {}, { repriceOrderId = null } = {}) {
         const now = new Date()
         const stats = await this.getCustomerStats(userId)
 
         // Price the timing the ORDER will use, not the one the app sent: a
         // same-day pickup with no morning window becomes Anytime and keeps its
         // fee. Same condition as postBookOrder (timings only apply when sent).
+        // Remembered so the fees line does not tell the customer to "choose a
+        // time window" when no window could free that pickup (review F-16).
+        let pickupForcedAnytime = false
         if (
             (draft.pickupTiming || draft.deliveryTiming) &&
             draft.deliverySpeed === DELIVERY_SPEED.SAME_DAY
         ) {
             const BookingWindowService = require('./bookingWindow.service')
-            draft = {
-                ...draft,
-                pickupTiming: BookingWindowService.resolvePickupTiming({
-                    deliverySpeed: draft.deliverySpeed,
-                    pickupTiming: draft.pickupTiming,
-                    windows: await BookingWindowService.getActiveWindows(),
-                }),
-            }
+            const resolved = BookingWindowService.resolvePickupTiming({
+                deliverySpeed: draft.deliverySpeed,
+                pickupTiming: draft.pickupTiming,
+                windows: await BookingWindowService.getActiveWindows(),
+            })
+            pickupForcedAnytime =
+                resolved === BOOKING_TIMING.ANYTIME &&
+                draft.pickupTiming !== BOOKING_TIMING.ANYTIME
+            draft = { ...draft, pickupTiming: resolved }
         }
 
         // The authoritative priced quote for the current selection (if any).
-        const selected = await this.validateAndPrice(userId, draft)
+        const selected = await this.validateAndPrice(userId, draft, { repriceOrderId })
 
         const evaluate = async (kind, offer, linkage) => {
             const { reason, requirement } = await this._offerRejection({
@@ -492,6 +498,7 @@ class OfferService {
                 now,
                 userId,
                 hasPersonal: false,
+                repriceOrderId,
             })
             const applicable = !reason
             return {
@@ -611,6 +618,7 @@ class OfferService {
                   draft,
                   isFirstOrder: (stats?.totalOrders || 0) === 0,
                   selected,
+                  pickupForcedAnytime,
               })
 
         return {
@@ -650,7 +658,7 @@ class OfferService {
     // SELECTED and that survived validation (a non-stackable promo does not).
     // Nothing is auto-applied on a normal booking, so with no selection only
     // baselines count; checkoutPrompt tells the customer they have an offer.
-    buildFeesLine({ tripRows = [], draft = {}, isFirstOrder = false, selected = null }) {
+    buildFeesLine({ tripRows = [], draft = {}, isFirstOrder = false, selected = null, pickupForcedAnytime = false }) {
         const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`
         const waives = (offer) =>
             (offer?.benefits || []).some((b) =>
@@ -696,8 +704,16 @@ class OfferService {
         }
 
         const applied = tripRows.filter(onBill)
-        const keptPickup = applied.some((r) => r.benefit?.anytimeKeptPickup)
-        const keptDelivery = applied.some((r) => r.benefit?.anytimeKeptDelivery)
+        // A leg only earns the "choose a window" line when a window could free
+        // it: it is booked (has a fee) and was not forced to Anytime by the
+        // same-day rule (review F-16).
+        const keptPickup =
+            applied.some((r) => r.benefit?.anytimeKeptPickup) &&
+            (draft.pickupAmount || 0) > 0 &&
+            !pickupForcedAnytime
+        const keptDelivery =
+            applied.some((r) => r.benefit?.anytimeKeptDelivery) &&
+            (draft.deliveryAmount || 0) > 0
         if (keptPickup || keptDelivery) {
             const amount =
                 (keptPickup ? draft.pickupAmount || 0 : 0) +
@@ -814,8 +830,8 @@ class OfferService {
     // The offer Quick Booking should attach to this draft, re-validated against
     // the real cart (never a stored "eligible" flag — see the answer to item
     // #6(c): validation happens at ATTACH time, every time).
-    async pickBestPersonalOffer(userId, draft = {}) {
-        const options = await this.getBookingOptions(userId, draft)
+    async pickBestPersonalOffer(userId, draft = {}, { repriceOrderId = null } = {}) {
+        const options = await this.getBookingOptions(userId, draft, { repriceOrderId })
         return options.autoApply
     }
 
@@ -956,12 +972,16 @@ class OfferService {
     //   kind: 'personal' | 'promotion' | 'baseline'
     //   linkage: required for personal; ignored otherwise
     //   hasPersonal: whether a personal offer is already applied (promo stacking)
-    //   draft.orderId: re-pricing THAT order (Intake entering the real items).
+    //   repriceOrderId: re-pricing THAT order (Intake entering the real items).
     //     An offer already attached to it is the order's own, not a double use,
-    //     and is already counted in usedCount, so it skips those two checks.
-    async _offerRejection({ kind, offer, linkage, draft, stats, now, userId, hasPersonal }) {
+    //     and is already counted in usedCount, so it skips those checks.
+    //     ⚠️ SERVER-SET ONLY. It is a separate argument, never read from the
+    //     draft, because every customer path passes the request body as the
+    //     draft: a customer-sent `orderId` would let an offer attached to one
+    //     order be spent again on another.
+    async _offerRejection({ kind, offer, linkage, draft, stats, now, userId, hasPersonal, repriceOrderId = null }) {
         now = now || new Date()
-        const orderId = draft?.orderId ? String(draft.orderId) : null
+        const orderId = repriceOrderId ? String(repriceOrderId) : null
 
         if (kind === 'personal') {
             if (!linkage || !offer) return { reason: 'Offer not found', requirement: null }
@@ -975,14 +995,20 @@ class OfferService {
                 if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status))
                     return { reason: 'Offer already used or no longer available', requirement: null }
             }
-            if (linkage.expiresAt && linkage.expiresAt < now)
-                return { reason: 'Offer has expired', requirement: null }
-            if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
-                return { reason: 'Offer is no longer active', requirement: null }
-            if (!onThisOrder && !this.hasGlobalCapacity(offer))
-                return { reason: 'Offer usage limit reached', requirement: null }
-            const p = this.checkProfileRules(offer, stats)
-            if (!p.ok) return { reason: p.reason, requirement: null }
+            // An offer attached to THIS order was valid when the customer
+            // booked with it, so expiry, a pause and the customer's later
+            // profile no longer take it away at the re-price (review F-20). Only
+            // the basket rules are re-checked, against the real count.
+            if (!onThisOrder) {
+                if (linkage.expiresAt && linkage.expiresAt < now)
+                    return { reason: 'Offer has expired', requirement: null }
+                if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
+                    return { reason: 'Offer is no longer active', requirement: null }
+                if (!this.hasGlobalCapacity(offer))
+                    return { reason: 'Offer usage limit reached', requirement: null }
+                const p = this.checkProfileRules(offer, stats)
+                if (!p.ok) return { reason: p.reason, requirement: null }
+            }
             const bk = this.checkBookingRules(offer, draft)
             if (!bk.ok) return { reason: bk.reason, requirement: bk.requirement || null }
             return { reason: null, requirement: null }
@@ -991,8 +1017,6 @@ class OfferService {
         if (kind === 'promotion') {
             if (!offer || offer.type !== OFFER_TYPE.PROMOTIONAL)
                 return { reason: 'Promotion not found', requirement: null }
-            if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
-                return { reason: 'Promotion is no longer active', requirement: null }
             const onThisOrder =
                 !!orderId &&
                 !!(await CustomerOfferModel.exists({
@@ -1001,15 +1025,23 @@ class OfferService {
                     orderId,
                     status: CUSTOMER_OFFER_STATUS.ATTACHED,
                 }))
-            if (!onThisOrder && !this.hasGlobalCapacity(offer))
-                return { reason: 'Promotion usage limit reached', requirement: null }
+            // Same rule as a personal offer: one attached to THIS order is
+            // honoured at the re-price; only its basket rules are re-checked.
+            if (!onThisOrder) {
+                if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
+                    return { reason: 'Promotion is no longer active', requirement: null }
+                if (!this.hasGlobalCapacity(offer))
+                    return { reason: 'Promotion usage limit reached', requirement: null }
+            }
             if (hasPersonal && !offer.stackableWithPersonal)
                 return {
                     reason: 'This promotion cannot be combined with a personal reward',
                     requirement: null,
                 }
-            const p = this.checkProfileRules(offer, stats)
-            if (!p.ok) return { reason: p.reason, requirement: null }
+            if (!onThisOrder) {
+                const p = this.checkProfileRules(offer, stats)
+                if (!p.ok) return { reason: p.reason, requirement: null }
+            }
             const bk = this.checkBookingRules(offer, draft)
             if (!bk.ok) return { reason: bk.reason, requirement: bk.requirement || null }
             if (offer.rules?.oneUsePerCustomer && !onThisOrder) {
@@ -1031,7 +1063,7 @@ class OfferService {
         return { reason: null, requirement: null }
     }
 
-    async validateAndPrice(userId, draft = {}) {
+    async validateAndPrice(userId, draft = {}, { repriceOrderId = null } = {}) {
         const now = new Date()
         const breakdown = {
             baseline: [],
@@ -1077,6 +1109,7 @@ class OfferService {
                 stats,
                 now,
                 userId,
+                repriceOrderId,
             })
             if (reason) {
                 breakdown.rejected.push({
@@ -1111,6 +1144,7 @@ class OfferService {
                 now,
                 userId,
                 hasPersonal: !!breakdown.personal,
+                repriceOrderId,
             })
             if (reason) {
                 breakdown.rejected.push({
@@ -1269,7 +1303,30 @@ class OfferService {
             },
             ...(only && { _id: { $in: only } }),
         })
+        // A promotion has no standing per-customer linkage: attachPromoToOrder
+        // CREATES one at attach. Resetting it to "assigned" like a personal
+        // offer turned it into a reusable personal reward (no one-use check,
+        // listed as personal, pickable by the Quick Booking auto-apply), so a
+        // released promotion's linkage is removed instead.
+        const promoIds = new Set(
+            (
+                await OfferModel.find({
+                    _id: { $in: linkages.map((l) => l.offerId) },
+                    type: OFFER_TYPE.PROMOTIONAL,
+                })
+                    .select('_id')
+                    .lean()
+            ).map((o) => String(o._id)),
+        )
         for (const linkage of linkages) {
+            if (promoIds.has(String(linkage.offerId))) {
+                await linkage.deleteOne()
+                await OfferModel.updateOne(
+                    { _id: linkage.offerId },
+                    { $inc: { usedCount: -1 } },
+                )
+                continue
+            }
             linkage.status =
                 linkage.expiresAt && linkage.expiresAt < new Date()
                     ? CUSTOMER_OFFER_STATUS.EXPIRED

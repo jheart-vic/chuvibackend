@@ -129,7 +129,7 @@ async function main() {
             oscNumber: `OSC-STG${STAMP}-${tag}`,
             paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
             // An order item's required fields are type/price/quantity — NOT `name`.
-            items: [{ type: 'Shirt', quantity: 1, price: 1000 }],
+            items: [{ type: 'shirts-/-tops-/-blouses', quantity: 1, price: 1000 }],
             ...extra,
         })
 
@@ -340,7 +340,7 @@ async function main() {
             deliverySpeed: DELIVERY_SPEED.STANDARD,
             isPickUp: true,
             isDelivery: false,
-            items: [{ type: 'shirt', price: 1, quantity: 1 }],
+            items: [{ type: 'shirts-/-tops-/-blouses', price: 1, quantity: 1 }],
             pickupAddress: addr,
             ...extra,
         })

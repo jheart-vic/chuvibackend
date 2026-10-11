@@ -73,6 +73,40 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
 - The re-price charged the order's window/Anytime trip fee but, when an offer waived the
   trip, took off the flat setting fee. It now takes off the fee the order is charged.
 
+**Found by the independent review (round 1, changes-requested), fixed in scope:**
+
+- **F-18 [P0], live before this work:** `postBookOrder` built the order as
+  `{ amount: totalPrice, …, ...post }`, so the request body overwrote any field: a
+  customer could send `amount: 100` (Paystack then charged ₦100), `paymentStatus:
+  "success"` (an unpaid order marked paid) or another `userId`. The order now saves only
+  an allow-list of the customer's fields (`CUSTOMER_ORDER_FIELDS`).
+- **F-17 [P1]:** the same-order offer exception read `orderId` from the draft, which is
+  the request body on every customer path, so an offer attached to one order could be
+  spent again on another. It is now a server-only `repriceOrderId` argument.
+- **F-19:** a client-sent `quickBooking: true` zeroed a normal booking. The server-set
+  Quick Booking fields are stripped from the body and the rule uses `countOnly`.
+- **F-21:** a released promotion linkage became a reusable personal reward; it is now
+  removed (cancellation included).
+- **F-22:** the unbilled Anytime branch claims the refund atomically.
+- **F-20 [P2], builder default — confirm with the client:** an offer attached at booking
+  is honoured at the re-price even if it expired or was paused since (personal and
+  promotional); its basket rules are still checked against the real count. Before, it was
+  dropped and the bill went up.
+
+**Round 2 (after the booking hotfix, branch `fix/booking-body-cannot-set-server-fields`):**
+
+- **Ported from the hotfix:** booking items are priced from the catalog
+  (`util/catalogItems.js`, identical to the hotfix), only `type` / `quantity` /
+  `serviceTier` / `fromSet` are kept, a quantity that is not a whole number ≥ 1 is
+  refused, unknown items and unknown service types are refused, the heavy-item check uses
+  the catalog key, and `channel: "office"` is dropped. The booking staging scripts that
+  used made-up items now use catalog items (testingdb now holds production's catalog).
+  The hotfix lands on `main` first; this branch will conflict on the same lines and is
+  resolved by keeping this version.
+- **F-16:** the window-only fees line appears only for a leg a window could free.
+- **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
+  wait for a test runner.
+
 ## Build steps
 
 1. [x] **Booking charges nothing.** Step 1 above, plus the Intake queue comment.
@@ -101,9 +135,16 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
-- **Results (2026-10-11):** briefCheck 418/0 · `quickBookingStaging.js` 28/0 on testingdb
-  (SMS and Paystack stubbed) · `itemEditStaging.js` 20/0 (stubbed) · Swagger 0 wrong
-  envelopes · boot on 7999 ok. `windowBookingStaging.js` 30/3: the 3 fail because
+- **Results (2026-10-11, round 2):** briefCheck 437/0 · quickBookingStaging 40/0 ·
+  itemEdit 20/0 · bookingContext 30/0 · subLogistics 20/0 · handoff 54/0 · dispatch 80/0 ·
+  phase12 14/0 · dashboardDecisions 45/0 · tierPricing 33/0 · freeLogistics 23/0 ·
+  dispatchTag 46/0 · counterPayment 51/0 (all on testingdb, SMS/Paystack stubbed) ·
+  Swagger 0 wrong · boot on 7999 ok.
+- **Results (2026-10-11, after the review fixes):** briefCheck 425/0 ·
+  `quickBookingStaging.js` 39/0 on testingdb (SMS and Paystack stubbed; scenarios 6–8
+  cover F-18/F-19, F-17 and F-21) · `itemEditStaging.js` 20/0, `subLogisticsStaging.js`
+  20/0, `tierPricingStaging.js` 14/0 (all stubbed) · Swagger 0 wrong envelopes · boot on
+  7999 ok. `windowBookingStaging.js` 30/3: the 3 fail because
   "tomorrow" is Monday 12 Oct, a non-working day (`not-working-day`), in window
   availability reporting this fix does not touch. `freeLogisticsStaging.js` skipped
   (no item catalog on testingdb).

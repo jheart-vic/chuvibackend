@@ -288,6 +288,15 @@ async function main() {
         ok(nFresh.pricing?.freePickupWaived === pickupFee, 'after the edit the pickup is still free')
         ok(fp.status === CUSTOMER_OFFER_STATUS.ATTACHED && String(fp.orderId) === String(n._id),
             'and the offer is still attached to the same order')
+        // F-20: paused (and past its expiry) after booking, still honoured.
+        await OfferModel.updateOne({ _id: freePick._id }, { $set: { status: OFFER_STATUS.PAUSED } })
+        await CustomerOfferModel.updateOne({ _id: freePickLink._id }, { $set: { expiresAt: new Date(Date.now() - DAY) } })
+        res = await intake(n._id, [{ type: anItem.name, price: anItem.price, quantity: 2 }], 'Back to two pieces')
+        const n20 = await BookOrderModel.findById(n._id).lean()
+        ok(res.success === true && n20.pricing?.freePickupWaived === pickupFee,
+            'an offer paused and expired after booking is still honoured on the next edit (F-20)')
+        await OfferModel.updateOne({ _id: freePick._id }, { $set: { status: OFFER_STATUS.ACTIVE } })
+        await CustomerOfferModel.updateOne({ _id: freePickLink._id }, { $set: { expiresAt: new Date(Date.now() + 7 * DAY) } })
 
         // ── 5 Anytime refund on an unbilled Quick Booking ────────────────────
         console.log('\n5 — Anytime pickup served in a window, before the bill exists')
@@ -340,7 +349,91 @@ async function main() {
                 `the pickup fee drops to the window price (₦${anytimeFee} → ₦${u5.scheduling.pickup.fee})`)
             const walletRefunds = await PaymentModel.countDocuments({ order: unbilled._id })
             ok(walletRefunds === 0, 'no wallet refund was written')
+            const again = await BookingWindowService.settleAnytimeRefund({
+                orderId: unbilled._id,
+                leg: 'pickup',
+                servedAt: new Date(),
+            })
+            const u5b = await BookOrderModel.findById(unbilled._id).lean()
+            ok(again.ok === false && u5b.scheduling.pickup.fee === anytimeFee - refund,
+                'a second settle does not lower the fee again (F-22)')
         }
+
+        // ── 6 the booking body cannot set server fields (F-18, F-19) ─────────
+        console.log('\n6 — the booking body cannot set amount, payment status, owner or quickBooking')
+        const third = await mkUser('ccc')
+        const sneaky = await book.createOrder({
+            userId: third._id.toString(),
+            payload: payload({
+                fullName: 'STG QB Third',
+                phoneNumber: '08034440003',
+                items: [{ type: anItem.name, price: anItem.price, quantity: 1 }],
+                amount: 100,
+                paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+                userId: customer._id.toString(),
+                quickBooking: true,
+                itemsPending: true,
+            }),
+        })
+        ok(sneaky.success === true, `the booking itself still works (${sneaky.success ? 'ok' : JSON.stringify(sneaky.data)})`)
+        const s6 = sneaky.data?.order
+        if (s6?._id) created.orders.push(s6._id)
+        ok(s6?.amount === unit + pickupFee + deliveryFee,
+            `amount is the server's (₦${s6?.amount}), not the ₦100 sent`)
+        ok(s6?.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS, 'it is not marked paid')
+        ok(String(s6?.userId) === String(third._id), 'it belongs to the caller, not the userId sent')
+        ok(!s6?.quickBooking && !s6?.itemsPending && sneaky.data?.paymentRequired === undefined,
+            'a client-sent quickBooking flag does not zero a normal booking (F-19)')
+
+        // ── 7 a smuggled orderId cannot reuse an attached offer (F-17) ───────
+        console.log('\n7 — an offer attached to one order cannot be spent again on another')
+        const replay = await book.createOrder({
+            userId: second._id.toString(),
+            payload: payload({
+                fullName: 'STG QB Second',
+                phoneNumber: '08034440002',
+                items: [{ type: anItem.name, price: anItem.price, quantity: 1 }],
+                customerOfferId: freePickLink._id.toString(),
+                orderId: String(n._id),
+            }),
+        })
+        const r7 = replay.data?.order
+        if (r7?._id) created.orders.push(r7._id)
+        ok(replay.success === true && r7?.pricing?.freePickupWaived === 0,
+            `the second order pays the pickup (waived ₦${r7?.pricing?.freePickupWaived})`)
+        ok((replay.data?.offer?.rejected || []).some((x) => /already applied/i.test(x.reason)),
+            'and the offer is reported as already applied')
+
+        // ── 8 a released promotion is removed, not made personal (F-21) ──────
+        console.log('\n8 — a released promotion does not become a personal reward')
+        const promo = await OfferModel.create({
+            name: `STG QB Promo ${STAMP}`,
+            headline: 'Promo',
+            type: OFFER_TYPE.PROMOTIONAL,
+            status: OFFER_STATUS.ACTIVE,
+            stackableWithPersonal: true,
+            benefits: [{ benefitType: OFFER_BENEFIT_TYPE.ORDER_DISCOUNT, amount: 100 }],
+        })
+        created.offers.push(promo._id)
+        const withPromo = await book.createOrder({
+            userId: third._id.toString(),
+            payload: payload({
+                fullName: 'STG QB Third',
+                phoneNumber: '08034440003',
+                items: [{ type: anItem.name, price: anItem.price, quantity: 1 }],
+                promoOfferId: String(promo._id),
+            }),
+        })
+        const p8 = withPromo.data?.order
+        if (p8?._id) created.orders.push(p8._id)
+        const attachedPromo = await CustomerOfferModel.findOne({ orderId: p8?._id, offerId: promo._id }).lean()
+        ok(!!attachedPromo, 'the promotion is attached at booking')
+        const OfferService = require('./services/offer.service')
+        await OfferService.releaseForOrder(p8._id, { reason: 'STG release' })
+        const leftover = await CustomerOfferModel.countDocuments({ userId: third._id, offerId: promo._id })
+        const promoAfter = await OfferModel.findById(promo._id).lean()
+        ok(leftover === 0, 'its linkage is removed, not reset to an assigned personal reward')
+        ok((promoAfter.usedCount || 0) === 0, 'and its usage slot is given back')
     } catch (e) {
         thrown = e
     } finally {

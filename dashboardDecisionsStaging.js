@@ -79,7 +79,7 @@ const mkOrder = async (tag, over = {}) => {
         amount: 5000,
         oscNumber: `OSC-A${STAMP}-${tag}`,
         paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
-        items: [{ type: 'shirt', price: 1000, quantity: 1 }],
+        items: [{ type: 'shirts-/-tops-/-blouses', price: 1000, quantity: 1 }],
         stage: { status: ORDER_STATUS.QUEUE },
         ...over,
     })
@@ -134,11 +134,11 @@ async function run() {
 
         const o1 = await mkOrder('REV1', {
             amount: 60000,
-            items: [{ type: 'shirt', price: 1000, quantity: 40 }],
+            items: [{ type: 'shirts-/-tops-/-blouses', price: 1000, quantity: 40 }],
         })
         const o2 = await mkOrder('REV2', {
             amount: 30000,
-            items: [{ type: 'shirt', price: 1000, quantity: 15 }],
+            items: [{ type: 'shirts-/-tops-/-blouses', price: 1000, quantity: 15 }],
         })
         await BookOrderModel.updateOne({ _id: o1._id }, { $set: { paymentDate: dayA } })
         await BookOrderModel.updateOne({ _id: o2._id }, { $set: { paymentDate: dayB } })
@@ -401,7 +401,7 @@ async function run() {
             channel: ORDER_CHANNEL.WEBSITE,
             billingType: 'pay-per-item',
             paymentMethod: 'wallet',
-            items: [{ type: 'shirt', price: 1000, quantity: 2 }],
+            items: [{ type: 'shirts-/-tops-/-blouses', price: 1000, quantity: 2 }],
             isPickUp: true,
             pickupAddress: pickup,
             deliverySameAsPickup: true,
@@ -439,7 +439,7 @@ async function run() {
             channel: ORDER_CHANNEL.WEBSITE,
             billingType: 'pay-per-item',
             paymentMethod: 'wallet',
-            items: [{ type: 'shirt', price: 1000, quantity: 2 }],
+            items: [{ type: 'shirts-/-tops-/-blouses', price: 1000, quantity: 2 }],
             isPickUp: true,
             isDelivery: true,
             pickupAddress: pickup,
@@ -512,7 +512,7 @@ async function serviceTypeNameGuard() {
         deliverySpeed: DELIVERY_SPEED.STANDARD,
         channel: ORDER_CHANNEL.OFFICE,
         amount: 1000,
-        items: [{ type: 'shirt', price: 700, quantity: 1 }],
+        items: [{ type: 'shirts-/-tops-/-blouses', price: 700, quantity: 1 }],
     })
     created.orders.push(order._id)
 

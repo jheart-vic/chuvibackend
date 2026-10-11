@@ -48,7 +48,7 @@ async function main() {
     const admin = new AdminService()
     const intake = new IntakeUserService()
     const book = new BookOrderService()
-    const items = [{ type: 'shirt', price: 1, quantity: 1 }]
+    const items = [{ type: 'shirts-/-tops-/-blouses', price: 1, quantity: 1 }]
 
     try {
         // ── PHASE 1: STRUCTURED ADDRESSES ──────────────────────────────

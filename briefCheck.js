@@ -2063,11 +2063,6 @@ const run = (async () => {
             ))
     }
 
-    // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
-    // ─── Dead subscription crons removed ────────────────────────────────────
-    // None of the three ever changed a document, and a working calendar reset
-    // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
-    // is the one place the monthly allowance is reset.
     // ─── Launch fix 1: window-only free trips and the fees line ─────────────
     // Drives the real OfferService methods; no database is touched.
     console.log('\nLaunch fix 1 — window-only free trips and the fees line')
@@ -2171,16 +2166,66 @@ const run = (async () => {
         const O = require(path.join(ROOT, 'services/offer.service'))
         const offer = { _id: 'o1', type: 'personal', status: 'active', benefits: [], rules: {} }
         const linkage = { _id: 'l1', status: 'attached', orderId: 'ord1' }
-        const reject = (draft) =>
-            O._offerRejection({ kind: 'personal', offer, linkage, draft, stats: { totalOrders: 0 }, userId: 'u1' })
-        const own = await reject({ orderId: 'ord1' })
-        const other = await reject({ orderId: 'ord2' })
+        const reject = (draft, repriceOrderId) =>
+            O._offerRejection({ kind: 'personal', offer, linkage, draft, stats: { totalOrders: 0 }, userId: 'u1', repriceOrderId })
+        const own = await reject({}, 'ord1')
+        const other = await reject({}, 'ord2')
         const fresh = await reject({})
         ok('re-pricing an order keeps the offer attached to THAT order',
             own.reason === null)
         ok('an offer attached to another order, or a new booking, is still refused',
             other.reason === 'Offer already applied to an order' &&
                 fresh.reason === 'Offer already applied to an order')
+        // F-20: an offer attached to THIS order is honoured at the re-price even
+        // if it expired or was paused since; a new booking still refuses it.
+        const stale = { ...offer, status: 'paused' }
+        const staleLink = { ...linkage, expiresAt: new Date(Date.now() - 86400000) }
+        const honoured = await O._offerRejection({ kind: 'personal', offer: stale, linkage: staleLink, draft: {}, stats: { totalOrders: 3 }, userId: 'u1', repriceOrderId: 'ord1' })
+        const expiredNew = await O._offerRejection({ kind: 'personal', offer: stale, linkage: { ...staleLink, status: 'assigned', orderId: undefined }, draft: {}, stats: { totalOrders: 0 }, userId: 'u1' })
+        ok('an offer attached at booking is honoured at the re-price even if it expired or was paused since (F-20)',
+            honoured.reason === null && /expired|no longer active/.test(expiredNew.reason || ''))
+        const minRule = await O._offerRejection({ kind: 'personal', offer: { ...offer, rules: { minOrderValue: 5000 } }, linkage, draft: { amount: 1000 }, stats: {}, userId: 'u1', repriceOrderId: 'ord1' })
+        ok('but its basket rules are still checked against the real count',
+            /Minimum order value/.test(minRule.reason || ''))
+
+        // F-16: the window-only line only when a window could free the leg.
+        const keptRow = { kind: 'baseline', offer: { _id: 'b1', benefits: [{ benefitType: 'free-pickup' }] }, applicable: true, benefit: { anytimeKeptPickup: true } }
+        const selB = { baseline: [{ offerId: 'b1' }] }
+        const forced = O.buildFeesLine({ tripRows: [keptRow], draft: { pickupAmount: 1000 }, selected: selB, pickupForcedAnytime: true })
+        const freeLeg = O.buildFeesLine({ tripRows: [keptRow], draft: { pickupAmount: 0 }, selected: selB })
+        const real = O.buildFeesLine({ tripRows: [keptRow], draft: { pickupAmount: 1000 }, selected: selB })
+        ok('no "choose a time window" when same-day forced the pickup to Anytime, or the leg costs nothing (F-16)',
+            forced.type !== 'window-only' && freeLeg.type !== 'window-only' && real.type === 'window-only')
+
+        // F-17: every customer path passes the request body as the draft, so a
+        // customer-sent orderId must never unlock an attached offer.
+        const smuggled = await reject({ orderId: 'ord1' })
+        ok('a customer-sent orderId in the draft is ignored (no double use of an attached offer)',
+            smuggled.reason === 'Offer already applied to an order')
+        ok('only the server re-price passes the same-order id',
+            /repriceOrderId: order\._id,/.test(bookSrc) &&
+                !/draft\??\.orderId/.test(fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')))
+
+        // F-18 / F-19: only the customer's own fields are saved from the body.
+        const BOS = require(path.join(ROOT, 'services/bookOrder.service'))
+        const saved = BOS.customerOrderFields({
+            fullName: 'A', serviceType: 'wash-and-iron', items: [], isPickUp: true,
+            amount: 100, paymentStatus: 'success', userId: 'someone-else', stage: { status: 'delivered' },
+            pricing: {}, paymentWaivedAt: new Date(), deliveryAmount: 0, oscNumber: 'X',
+        })
+        ok('the booking body cannot set amount, payment status, owner, stage or pricing (F-18)',
+            saved.fullName === 'A' && saved.isPickUp === true &&
+                ['amount', 'paymentStatus', 'userId', 'stage', 'pricing', 'paymentWaivedAt', 'deliveryAmount', 'oscNumber']
+                    .every((k) => !(k in saved)))
+        ok('every order literal in postBookOrder saves the allow-list, never the raw body',
+            (bookSrc.match(/\.\.\.customerOrderFields\(post\),/g) || []).length === 3 &&
+                !/^\s+\.\.\.post,\s*$/m.test(
+                    bookSrc.slice(bookSrc.indexOf('async postBookOrder('), bookSrc.indexOf('async updateBookOrderPaymentStatus(')),
+                ))
+        ok('a client-sent quickBooking flag is dropped before anything reads it (F-19)',
+            BOS.SERVER_SET_ON_POST.includes('quickBooking') &&
+                /for \(const key of SERVER_SET_ON_POST\) delete post\[key\]/.test(bookSrc) &&
+                /const quickBooking = countOnly/.test(bookSrc))
         ok('booking-options gives a Quick Booking draft the "pay nothing now" line',
             O.QUICK_BOOKING_FEES_LINE.type === 'quick-booking' &&
                 O.QUICK_BOOKING_FEES_LINE.amount === 0 &&
@@ -2217,10 +2262,71 @@ const run = (async () => {
 
         const bwSrc = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
         ok('an unbilled Quick Booking served in a window has its leg fee lowered, not a wallet refund',
-            /order\.itemsPending === true &&\s*order\.paymentStatus !== PAYMENT_ORDER_STATUS\.SUCCESS[\s\S]{0,300}\[`scheduling\.\$\{leg\}\.fee`\]: fee/.test(
+            /order\.itemsPending === true &&\s*order\.paymentStatus !== PAYMENT_ORDER_STATUS\.SUCCESS[\s\S]{0,800}\[`scheduling\.\$\{leg\}\.fee`\]: fee/.test(
                 bwSrc,
             ) &&
                 bwSrc.indexOf('appliedToBill: true') < bwSrc.indexOf('await refundToWallet({'))
+        ok('and the fee is lowered once, claimed atomically on refund.paidAt (F-22)',
+            /\[`scheduling\.\$\{leg\}\.refund\.paidAt`\]: \{ \$exists: false \}/.test(bwSrc) &&
+                /if \(!claimed\.modifiedCount\) return \{ ok: false, reason: 'already-paid' \}/.test(bwSrc))
+        ok('a released promotion linkage is removed, not turned into a personal reward (F-21)',
+            /promoIds\.has\(String\(linkage\.offerId\)\)\) \{\s*await linkage\.deleteOne\(\)/.test(
+                fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+            ))
+    }
+
+    // ─── Booking items priced from the catalog (ported from the hotfix) ─────
+    // Item prices and item fields came from the request, so `price: 100` or a
+    // quantity of 0 set the bill, and staff fields were copied onto pieces.
+    console.log('\nBooking items — catalog prices, customer fields, quantities')
+    {
+        const postBook = bookSrc.slice(
+            bookSrc.indexOf('async postBookOrder('),
+            bookSrc.indexOf('async updateBookOrderPaymentStatus('),
+        )
+        const { priceFromCatalog, catalogKey } = require(path.join(ROOT, 'util/catalogItems'))
+        const catalog = [
+            { name: 'Shirts / Tops / Blouses', price: 600 },
+            { name: 'Lab coats', price: 700 },
+        ]
+        const sets = [{ name: 'Agbada', pieces: [{ name: 'Agbada', price: 1100 }, { name: 'Trouser', price: 700 }] }]
+        const priced = priceFromCatalog(
+            [
+                { type: 'shirts-/-tops-/-blouses', price: 1, quantity: 2, qcStatus: 'passed', tagStatus: 'complete', currentStation: 'qc-station' },
+                { type: 'Lab coats', price: 1, quantity: 1, serviceTier: 'vip' },
+                { type: 'trouser', fromSet: 'Agbada', price: 1, quantity: 1 },
+            ],
+            { catalog, sets },
+        )
+        ok('item prices come from the catalog (slug, name and set piece all match), not the request',
+            priced.ok && priced.items.map((i) => i.price).join() === '600,700,700')
+        ok('only the customer item fields survive (no station, QC or tag status)',
+            priced.ok &&
+                priced.items.every((i) => Object.keys(i).every((k) => ['type', 'quantity', 'serviceTier', 'fromSet', 'price'].includes(k))) &&
+                priced.items[1].serviceTier === 'vip' && priced.items[2].fromSet === 'Agbada')
+        const unknown = priceFromCatalog([{ type: 'blanket', price: 100, quantity: 1 }], { catalog, sets })
+        ok('an item not in the catalog is refused, never booked at the price sent',
+            !unknown.ok && /We don't recognise "blanket"/.test(unknown.error))
+        const badQty = [0, -5, '-5', 1.5, 'two', undefined].map(
+            (quantity) => priceFromCatalog([{ type: 'Lab coats', quantity }], { catalog, sets }),
+        )
+        ok('a zero, negative, fractional or missing quantity is refused (no ₦0 or negative lines)',
+            badQty.every((r) => !r.ok && /quantity of at least 1/.test(r.error)))
+        const inactive = priceFromCatalog([{ type: 'trouser', fromSet: 'Agbada', quantity: 1 }], {
+            catalog,
+            sets: [{ ...sets[0], active: false }],
+        })
+        ok('a piece from a deactivated set cannot be booked', !inactive.ok)
+        ok('postBookOrder prices items from the catalog before validation, skipping only Quick Booking placeholders',
+            /\} else if \(Array\.isArray\(post\.items\) && post\.items\.length\) \{[\s\S]{0,900}priceFromCatalog\(post\.items, \{ catalog, sets \}\)[\s\S]{0,300}post\.items = fromCatalog\.items/.test(postBook) &&
+                postBook.indexOf('priceFromCatalog(post.items') < postBook.indexOf('const validateRule = {'))
+        ok('the subscription heavy-item check uses the same name key as pricing',
+            /heavyItemNames\.includes\(catalogKey\(item\.type\)\)/.test(postBook) &&
+                catalogKey('King size Duvet') === catalogKey('king-size-duvet'))
+        ok('an unknown service type is refused before pricing',
+            /\(adminOrderSetting\.serviceTypes \|\| \[\]\)\.some\(\s*\(s\) => s\.name === post\.serviceType,?\s*\)/.test(postBook))
+        ok('a customer cannot mark their order as the staff counter channel',
+            /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
     }
 
     // ─── F-05 + order read: who may call these two routes ───────────────────
@@ -2244,6 +2350,10 @@ const run = (async () => {
             ) && /if \(!bookOrder \|\| notMine\)/.test(getOne))
     }
 
+    // ─── Dead subscription crons removed ────────────────────────────────────
+    // None of the three ever changed a document, and a working calendar reset
+    // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
+    // is the one place the monthly allowance is reset.
     console.log('\nSubscription allowance resets only at renewal')
     {
         const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8')
@@ -2255,6 +2365,7 @@ const run = (async () => {
             ))
     }
 
+    // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
     console.log('\nFE — failed delivery goes back to the delivery queue')
     {
         const riderSrc = fs.readFileSync(path.join(ROOT, 'services/rider.service.js'), 'utf8')
