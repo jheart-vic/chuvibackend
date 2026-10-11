@@ -254,6 +254,7 @@ exports.ROUTE_UPDATE_BOOK_ORDER_STAGE = '/'
 // but it DOES write: every full window it drops is recorded as a deflection,
 // because that fact cannot be recovered from the order afterwards.
 exports.ROUTE_BOOKING_AVAILABILITY = '/booking-availability'
+exports.ROUTE_BOOKING_CONTEXT = '/booking-context'
 exports.ROUTE_BOOK_ORDER_HISTORY = '/book-order-history'
 exports.ROUTE_BOOK_ORDER = '/book-order'
 exports.ROUTE_FLAG_ORDER_ID = '/flag-order/:id'

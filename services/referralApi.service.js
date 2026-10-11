@@ -43,6 +43,15 @@ class ReferralApiService extends BaseService {
                 })
             }
 
+            // Client 2026-10-11: a code can be added any time BEFORE the first
+            // order, never after. Checked here for the specific message;
+            // captureReferral enforces it for every entry point.
+            if (await ReferralService.hasPlacedOrder(req.user.id)) {
+                return BaseService.sendFailedResponse({
+                    error: ReferralService.REFERRAL_AFTER_FIRST_ORDER,
+                })
+            }
+
             const referral = await ReferralService.captureReferral({
                 referredUserId: req.user.id,
                 code: req.body.code,

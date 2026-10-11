@@ -3,6 +3,7 @@ const ReferralModel = require('../models/referral.model')
 const ReferralStatsModel = require('../models/referralStats.model')
 const UserModel = require('../models/user.model')
 const CrmProfileModel = require('../models/crmProfile.model')
+const BookOrderModel = require('../models/bookOrder.model')
 const WalletCreditService = require('./walletCredit.service')
 const CommunicationService = require('./communication.service')
 const { offerOnTrigger } = require('../util/offerHooks')
@@ -14,7 +15,13 @@ const {
     CREDIT_TYPE,
     CREDIT_SOURCE,
     COMM_SOURCE_SYSTEM,
+    ORDER_STATUS,
 } = require('../util/constants')
+
+// Client 2026-10-11: a referral code can be added any time BEFORE the first
+// order, never after, and that order is then linked to nobody.
+const REFERRAL_AFTER_FIRST_ORDER =
+    'Referral codes can only be added before your first order.'
 
 // The "smart recommendation tracker": permanent per-customer codes, referral
 // records tracked to the referred customer's first completed order, then a
@@ -68,10 +75,22 @@ class ReferralService {
 
     // ─── capture (registration) ──────────────────────────────────────────────
 
+    // Has this customer placed a (non-cancelled) order? Once they have, no
+    // referral code may be added. Shared by every place a code is entered
+    // (applyCode, the bot, booking-context's canEnterReferralCode).
+    async hasPlacedOrder(userId) {
+        return !!(await BookOrderModel.exists({
+            userId,
+            'stage.status': { $ne: ORDER_STATUS.CANCELLED },
+        }))
+    }
+
     // Links a newly-registered customer to the referrer who owns `code`.
-    // Rejects self-referral and duplicate referrals. Grants the welcome reward.
+    // Rejects self-referral, duplicate referrals and a customer who has already
+    // ordered. Grants the welcome reward.
     async captureReferral({ referredUserId, code, source = REFERRAL_SOURCE.CODE }) {
         if (!referredUserId || !code) return null
+        if (await this.hasPlacedOrder(referredUserId)) return null
         const normalized = String(code).trim().toUpperCase()
 
         const referrer = await UserModel.findOne({ referralCode: normalized }).lean()
@@ -653,3 +672,4 @@ class ReferralService {
 }
 
 module.exports = new ReferralService()
+module.exports.REFERRAL_AFTER_FIRST_ORDER = REFERRAL_AFTER_FIRST_ORDER

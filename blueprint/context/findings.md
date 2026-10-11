@@ -51,3 +51,20 @@ at lines 2047-2051 now sit above the Access block instead of their own sections.
 **Suggested fix:** Move the two headers to their sections. When `/tests` adds a runner,
 drive `reportDeliveryIssue` and `getBookOrder` with stubbed models. Nothing current is lost.
 **Resolution:**
+
+### F-16 [P3] open - The window-only fees line says "Choose a time window" when a window cannot help
+
+**File:** services/offer.service.js:694
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: quality)
+**Why it matters:** The window-only message always ends "Choose a time window to save ₦X".
+On a same-day order with no morning window, `resolvePickupTiming` forces the pickup to
+Anytime even when the customer picked a window, so the customer sees advice they cannot
+follow. The amount is also the client-sent `draft.pickupAmount` (usually the window
+fee), not the Anytime fee the order charges. Separately, `computeBenefits` flags
+`anytimeKeptPickup`/`anytimeKeptDelivery` from the timing alone, so a draft that sends an
+Anytime timing for a leg it does not book (`isPickUp` or `isDelivery` false) gets
+"... save ₦0." The bill is right in every case. Only the line's wording or amount is off.
+**Suggested fix:** Skip the window-only row (or give it same-day wording) when the leg was
+forced to Anytime by the same-day rule. Ignore a leg whose amount is 0 or that is not
+booked. Nothing current is lost.
+**Resolution:**

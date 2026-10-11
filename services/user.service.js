@@ -29,6 +29,7 @@ const NotificationModel = require('../models/notification.model')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const SubscriptionModel = require('../models/subscription.model')
+const { freeLegsThisWeek } = require('../util/logisticsAllowance')
 const paginate = require('../util/paginate')
 const bcrypt = require('bcryptjs')
 const createAuditLog = require('../util/createAuditLog')
@@ -108,6 +109,16 @@ class UserService extends BaseService {
                                   : null,
                               remainingItems:
                                   subscription.remainingItems ?? null,
+                              ...(() => {
+                                  const free = freeLegsThisWeek(
+                                      subscription,
+                                      subscription.planId,
+                                  )
+                                  return {
+                                      freePickupDeliveriesLeftThisWeek: free.left,
+                                      freePickupDeliveriesPerWeek: free.perWeek,
+                                  }
+                              })(),
                           }
                         : null,
                 },

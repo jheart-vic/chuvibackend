@@ -84,6 +84,14 @@ class BookOrderController extends BaseController {
         ? BaseController.sendSuccessResponse(res, result.data)
         : BaseController.sendFailedResponse(res, result.data);
     }
+    async getBookingContext(req, res) {
+      const bookOrderService = new BookOrderService();
+      const result = await bookOrderService.getBookingContext(req);
+
+      return result.success
+        ? BaseController.sendSuccessResponse(res, result.data)
+        : BaseController.sendFailedResponse(res, result.data);
+    }
     async getBookOrder(req, res) {
       const bookOrderService = new BookOrderService();
       const result = await bookOrderService.getBookOrder(req);

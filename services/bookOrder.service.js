@@ -7,6 +7,7 @@ const { explodeItemsToPieces } = require('../util/explodeItems')
 const {
     applyWeeklyReset,
     computeLogisticsCharge,
+    freeLegsThisWeek,
 } = require('../util/logisticsAllowance')
 const BookOrderModel = require('../models/bookOrder.model')
 const ItemSetModel = require('../models/itemSet.model')
@@ -38,6 +39,9 @@ const {
     CANCELLATION_REQUEST_STATUS,
     ROLE,
     BOOKING_TIMING,
+    CUSTOMER_OFFER_STATUS,
+    OFFER_STATUS,
+    OFFER_TRIGGER,
     DISPATCH_LEG,
 } = require('../util/constants')
 // Window booking (client D1–D8). The service does the fetching/counting; the
@@ -761,7 +765,7 @@ class BookOrderService extends BaseService {
     // live rules (never trusts a client-sent price/discount), applies the discount
     // to the item subtotal and waives pickup/delivery fees the offer covers.
     // Returns the authoritative charge total plus the validated breakdown.
-    async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting }) {
+    async _priceWithOffers({ userId, post, itemsSubtotal, extraDeliveryCost, adminOrderSetting, scheduling = null }) {
         // This used to return early unless the customer had SELECTED an offer:
         //     if (!post.customerOfferId && !post.promoOfferId) return ...
         // BASELINE offers (what the client calls "General") are applied BY RULE
@@ -782,6 +786,10 @@ class BookOrderService extends BaseService {
             amount: itemsSubtotal, // discount is capped at the item subtotal
             deliveryAmount: deliveryFee,
             pickupAmount: pickupFee,
+            // The RESOLVED timings, not the request's: a same-day pickup is
+            // forced to Anytime and must not get a window-only free trip.
+            pickupTiming: scheduling?.pickup?.timing,
+            deliveryTiming: scheduling?.delivery?.timing,
         })
 
         let finalTotal = itemsSubtotal + extraDeliveryCost - (breakdown.totalDiscount || 0)
@@ -866,6 +874,7 @@ class BookOrderService extends BaseService {
             itemsSubtotal: priced.total,
             extraDeliveryCost,
             adminOrderSetting,
+            scheduling: order.scheduling,
         })
 
         // Mapped exactly as the booking branches map it. `priceItems` returns
@@ -1455,11 +1464,11 @@ class BookOrderService extends BaseService {
                     // pickup is a special trip and the customer chose speed".
                     // Forced here rather than trusted from the client, so an
                     // app build cannot sell same-day at the window price.
-                    const pickupTiming =
-                        post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-                        !BookingWindowService._findMorningWindow(schedWindows)
-                            ? BOOKING_TIMING.ANYTIME
-                            : post.pickupTiming
+                    const pickupTiming = BookingWindowService.resolvePickupTiming({
+                        deliverySpeed: post.deliverySpeed,
+                        pickupTiming: post.pickupTiming,
+                        windows: schedWindows,
+                    })
                     const resolved = BookingWindowService.resolveLeg({
                         leg: DISPATCH_LEG.PICKUP,
                         timing: pickupTiming,
@@ -1762,6 +1771,7 @@ class BookOrderService extends BaseService {
                         itemsSubtotal,
                         extraDeliveryCost,
                         adminOrderSetting,
+                        scheduling,
                     })
                 offerBreakdown = breakdown
                 totalPrice = finalTotal
@@ -1906,6 +1916,7 @@ class BookOrderService extends BaseService {
                         itemsSubtotal,
                         extraDeliveryCost,
                         adminOrderSetting,
+                        scheduling,
                     })
                 offerBreakdown = breakdown
                 totalPrice = finalTotal
@@ -2331,6 +2342,108 @@ class BookOrderService extends BaseService {
             return BaseService.sendFailedResponse({ error })
         }
     }
+    // Everything the booking screen shows that does not depend on the basket
+    // (client items 11, 12, 14 and 15, and the customer-readable labels). One
+    // read, so the screen and the rules behind each number cannot drift.
+    async getBookingContext(req) {
+        try {
+            const userId = req.user.id
+            const CustomerOfferModel = require('../models/customerOffer.model')
+            const ReferralModel = require('../models/referral.model')
+
+            const [labels, wallet, credits, subscription, lastOrder, liveOffers, referrer] =
+                await Promise.all([
+                    BookingWindowService.getDisplayNames(),
+                    WalletModel.findOne({ userId }).lean(),
+                    WalletCreditService.getCreditBalances(userId),
+                    SubscriptionModel.findOne({ userId, status: 'active' })
+                        .sort({ createdAt: -1 })
+                        .populate('planId')
+                        .lean(),
+                    BookOrderModel.findOne({
+                        userId,
+                        'stage.status': { $ne: ORDER_STATUS.CANCELLED },
+                    })
+                        .sort({ createdAt: -1 })
+                        .select('serviceType serviceTier deliverySpeed scheduling pickupAddress')
+                        .lean(),
+                    // Only linkages a booking can still use: ATTACHED ones are
+                    // already committed to a placed order.
+                    CustomerOfferModel.find({
+                        userId,
+                        status: {
+                            $in: [
+                                CUSTOMER_OFFER_STATUS.ASSIGNED,
+                                CUSTOMER_OFFER_STATUS.VIEWED,
+                            ],
+                        },
+                        expiresAt: { $gt: new Date() },
+                    })
+                        .sort({ expiresAt: 1 })
+                        .populate('offerId', 'name triggers status')
+                        .lean(),
+                    ReferralModel.exists({ referredUserId: userId }),
+                ])
+
+            let plan = null
+            if (subscription?.planId) {
+                const free = freeLegsThisWeek(subscription, subscription.planId)
+                plan = {
+                    active: true,
+                    itemsLeft: subscription.remainingItems ?? 0,
+                    monthlyItems: subscription.planId.monthlyLimits ?? null,
+                    freePickupDeliveriesLeftThisWeek: free.left,
+                    freePickupDeliveriesPerWeek: free.perWeek,
+                    weekResetsAt: free.weekResetsAt,
+                }
+            }
+
+            const welcome = (liveOffers || []).find(
+                (l) =>
+                    l.offerId?.status === OFFER_STATUS.ACTIVE &&
+                    (l.offerId?.triggers || []).includes(OFFER_TRIGGER.FIRST_EXPERIENCE),
+            )
+
+            return BaseService.sendSuccessResponse({
+                message: {
+                    displayNames: labels?.data?.message || null,
+                    wallet: {
+                        balance: wallet?.balance ?? 0,
+                        rewardCredit: credits?.total ?? 0,
+                    },
+                    plan,
+                    suggestedPayment:
+                        plan && plan.itemsLeft > 0
+                            ? BILLING_TYPE.PAY_FROM_SUBSCRIPTION
+                            : null,
+                    lastOrderChoices: lastOrder
+                        ? {
+                              serviceType: lastOrder.serviceType,
+                              serviceTier: lastOrder.serviceTier,
+                              deliverySpeed: lastOrder.deliverySpeed,
+                              pickupTiming: lastOrder.scheduling?.pickup?.timing || null,
+                              pickupWindowId: lastOrder.scheduling?.pickup?.windowId || null,
+                              pickupAddress: lastOrder.pickupAddress || null,
+                          }
+                        : null,
+                    welcomeOffer: {
+                        active: Boolean(welcome),
+                        name: welcome?.offerId?.name || null,
+                        endsAt: welcome?.expiresAt || null,
+                    },
+                    // Same rule applyCode enforces: no referrer yet, no order yet
+                    // (`lastOrder` is the latest non-cancelled order).
+                    canEnterReferralCode: !referrer && !lastOrder,
+                },
+            })
+        } catch (error) {
+            console.error('getBookingContext failed:', error)
+            return BaseService.sendFailedResponse({
+                error: 'Unable to load your booking details right now.',
+            })
+        }
+    }
+
     async getBookOrder(req, res) {
         try {
             const bookOrderId = req.params.id

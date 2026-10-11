@@ -1,5 +1,48 @@
 # Current Session Log
 
+## ███ 2026-10-11 (eve) — Launch fix 1 COMPLETED (archived, work commit pending approval). Next: item 2. ███
+- Archive: `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`. Review round 1 passed with
+  F-09..F-15 (P2/P3); all fixed in `7e86ca1` and closed by round 2 (passed). F-16 [P3] open: the window-only line
+  says "Choose a time window" even when same-day forced Anytime.
+- **Behaviour the FE must know:** `feesLine` counts only offers on the bill, so the Welcome line needs
+  `customerOfferId` in the draft; `displayNames` groups are arrays of `{value,label,renamed}`.
+- Gates: briefCheck 404/0 · bookingContextStaging 30/0 (testingdb) · swagger 0 wrong · boot 7999 ok.
+- **Landing:** recorded as `pull-request` (local `main` is 149 behind origin/main and this branch is stacked on the
+  3 unmerged fix branches). PR merge order: failed-deliveries → remove-dead-subscription-cron-jobs →
+  restrict-order-reads → booking-screen-data. Nothing pushed.
+- **Item 2 (Quick Booking, nothing paid at booking) — triage done, not specced:** count-only booking still charges
+  trips + speed (+ credit opt-in) at booking; `_repriceForItems` at Intake already adds trips/speed, re-runs offers,
+  raises the hold + SMS. Payment gate is at tagging, so pickup isn't blocked. Plan: amount 0 at booking, no credit,
+  no offer attach; Anytime refund on an unbilled quick booking lowers the leg fee instead of crediting the wallet
+  (`settleAnytimeRefund` today refunds money never paid); booking-options gives no misleading gap line for a count.
+
+## ███ 2026-10-11 (later) — Launch fix 1 BUILT, waiting on the user's yes for the checkpoint commit ███
+- Branch `fix/booking-screen-data-and-window-only-free-rule` (stacked on restrict-order-reads). All changes
+  UNCOMMITTED (16 modified + LAUNCH file + blueprint/shelved/ + bookingContextStaging.js). Spec status: verified.
+- Gates: briefCheck 398/0 · `bookingContextStaging.js` 24/0 on testingdb · swagger 76 schemas / 310 paths / 0 wrong · boot ok.
+- **Live bug found + fixed:** offer.service.js used `OFFER_TRIGGER` without importing it (since 620cca4, 9 Oct) →
+  booking-options threw for every customer holding a personal offer (Welcome Offer included) → FE saw checkoutPrompt empty.
+- **Next:** user says yes → checkpoint commit of ALL dirty files → independent review subagent (required: pricing
+  change) → /complete (archive, work commit, no push).
+- **Client answered the 3 questions** — verbatim + rulings in LAUNCH-FIXES-2026-10-11.md and memory
+  `chuvi-launch-fixes-oct2026`. Items 3, 4, 6 are ready to spec. Ready Today = pickup before 12:00, never Sunday.
+
+## ███ 2026-10-11 — LAUNCH FIXES ARE THE CURRENT WORK. READ `LAUNCH-FIXES-2026-10-11.md` FIRST. ███
+- The client tested the customer app and sent 15 corrections; the frontend built theirs and listed ours.
+  **Everything (client + frontend messages verbatim, the triage, the 9-item status board, the 3 open client
+  questions) is in `blueprint/context/LAUNCH-FIXES-2026-10-11.md`.** Do these BEFORE subscription rollover
+  (build plan item 21, rules in memory `chuvi-subscription-rollover`), which must be live before early Nov.
+- **Active spec = launch work item 1** (`current-feature.md`): booking screen data + the window-only free rule.
+  Branch to create on `/implement`: `fix/booking-screen-data-and-window-only-free-rule`. Not built yet.
+- **Shelved:** the P3 cleanup spec (F-06..F-08) is at `blueprint/shelved/behavioural-checks-and-comment-cleanup.md`.
+- **Git state:** HEAD is `fix/restrict-order-reads-and-issue-reports` (`912d520`). Uncommitted: build plan +
+  overview (rollover added as item 21, overview hash refreshed), the new spec, `blueprint/shelved/`, this file,
+  the launch-fixes file. Three fix branches await PRs, stacked, merge in order: failed-deliveries →
+  remove-dead-subscription-cron-jobs → restrict-order-reads-and-issue-reports. Nothing pushed.
+- **Bugs found in triage, not yet fixed:** reg-not-booked schedule silently not saved; Quick Booking charges
+  trips at booking; Google phone not normalised; apply-code after first order; free trips not window-only;
+  Anytime has no Intake alert / top-of-list; full window refuses instead of keeping the offer.
+
 ## ███ 2026-10-10 (eve) — Two more fixes, stacked branches, NOT pushed ███
 Merge order: `fix/failed-deliveries-and-cancel-verdict` → `fix/remove-dead-subscription-cron-jobs` →
 `fix/restrict-order-reads-and-issue-reports` (each branch contains the one before it). The user opens the PRs.

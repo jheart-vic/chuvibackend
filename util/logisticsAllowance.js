@@ -58,4 +58,24 @@ function computeLogisticsCharge({
     return result
 }
 
-module.exports = { applyWeeklyReset, computeLogisticsCharge, WEEK_MS }
+// What My Plan should show: the free legs left in the CURRENT week. The stored
+// counter is only reset lazily at booking, so a raw read can still hold last
+// week's number. Runs the same reset on a copy, so a read never writes.
+function freeLegsThisWeek(subscription, plan, now = new Date()) {
+    const copy = applyWeeklyReset(
+        {
+            logisticsWeekStart: subscription.logisticsWeekStart,
+            startDate: subscription.startDate,
+            remainingPickupDeliveries: subscription.remainingPickupDeliveries,
+        },
+        plan,
+        now,
+    )
+    return {
+        left: Math.max(0, Number(copy.remainingPickupDeliveries) || 0),
+        perWeek: Number(plan?.freePickupDeliveryPerWeek) || 0,
+        weekResetsAt: new Date(new Date(copy.logisticsWeekStart).getTime() + WEEK_MS),
+    }
+}
+
+module.exports = { applyWeeklyReset, computeLogisticsCharge, freeLegsThisWeek, WEEK_MS }
