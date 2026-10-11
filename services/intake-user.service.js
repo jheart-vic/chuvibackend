@@ -2333,9 +2333,10 @@ class IntakeUserService extends BaseService {
                     riderReason: order.counts?.riderReason || null,
                     intakeCount: order.counts?.intake ?? null,
                     placeholderPieces: (order.items || []).length,
-                    // What is already owed regardless of the contents. The
-                    // laundry portion is 0 until the items are entered, so
-                    // showing `amount` alone would read as a free order.
+                    // The trip and speed fees the bill will add once the items
+                    // are entered, BEFORE any free pickup/delivery offer is
+                    // checked. Nothing is owed yet: a Quick Booking pays
+                    // nothing at booking (client, 11 Oct 2026), so `amount` is 0.
                     logisticsAmount: Number(order.deliveryAmount || 0),
                 }
             })

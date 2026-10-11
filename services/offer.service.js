@@ -29,6 +29,16 @@ const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
 // CrmSetting/AdminSetting alongside the other customer-facing copy.
 const CHECKOUT_OFFER_PROMPT = 'You have a first time offer. Tap to use it.'
 
+// Client, 11 Oct 2026: a Quick Booking pays nothing at booking; trips go on
+// the SMS bill and the free-trip offer is checked after counting.
+const { isCountOnlyBooking } = require('../util/quickBooking')
+const QUICK_BOOKING_FEES_LINE = Object.freeze({
+    type: 'quick-booking',
+    amount: 0,
+    message:
+        'You pay nothing now. Pickup and delivery are added to your bill after we count, and any free pickup and delivery offer is checked then.',
+})
+
 // linkage statuses that still "hold" the offer for the customer
 const LIVE_LINKAGE_STATUSES = [
     CUSTOMER_OFFER_STATUS.ASSIGNED,
@@ -592,12 +602,16 @@ class OfferService {
               }
             : { show: false, message: null, count: 0 }
 
-        const feesLine = this.buildFeesLine({
-            tripRows,
-            draft,
-            isFirstOrder: (stats?.totalOrders || 0) === 0,
-            selected,
-        })
+        // A Quick Booking (a count, no basket) pays nothing now; any line
+        // worked out from its empty basket ("Add ₦4,000 more…") would mislead.
+        const feesLine = isCountOnlyBooking(draft)
+            ? QUICK_BOOKING_FEES_LINE
+            : this.buildFeesLine({
+                  tripRows,
+                  draft,
+                  isFirstOrder: (stats?.totalOrders || 0) === 0,
+                  selected,
+              })
 
         return {
             selected,
@@ -942,20 +956,30 @@ class OfferService {
     //   kind: 'personal' | 'promotion' | 'baseline'
     //   linkage: required for personal; ignored otherwise
     //   hasPersonal: whether a personal offer is already applied (promo stacking)
+    //   draft.orderId: re-pricing THAT order (Intake entering the real items).
+    //     An offer already attached to it is the order's own, not a double use,
+    //     and is already counted in usedCount, so it skips those two checks.
     async _offerRejection({ kind, offer, linkage, draft, stats, now, userId, hasPersonal }) {
         now = now || new Date()
+        const orderId = draft?.orderId ? String(draft.orderId) : null
 
         if (kind === 'personal') {
             if (!linkage || !offer) return { reason: 'Offer not found', requirement: null }
-            if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status))
-                return { reason: 'Offer already applied to an order', requirement: null }
-            if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status))
-                return { reason: 'Offer already used or no longer available', requirement: null }
+            const onThisOrder =
+                !!orderId &&
+                linkage.status === CUSTOMER_OFFER_STATUS.ATTACHED &&
+                String(linkage.orderId) === orderId
+            if (!onThisOrder) {
+                if (COMMITTED_LINKAGE_STATUSES.includes(linkage.status))
+                    return { reason: 'Offer already applied to an order', requirement: null }
+                if (!APPLICABLE_LINKAGE_STATUSES.includes(linkage.status))
+                    return { reason: 'Offer already used or no longer available', requirement: null }
+            }
             if (linkage.expiresAt && linkage.expiresAt < now)
                 return { reason: 'Offer has expired', requirement: null }
             if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
                 return { reason: 'Offer is no longer active', requirement: null }
-            if (!this.hasGlobalCapacity(offer))
+            if (!onThisOrder && !this.hasGlobalCapacity(offer))
                 return { reason: 'Offer usage limit reached', requirement: null }
             const p = this.checkProfileRules(offer, stats)
             if (!p.ok) return { reason: p.reason, requirement: null }
@@ -969,7 +993,15 @@ class OfferService {
                 return { reason: 'Promotion not found', requirement: null }
             if (offer.status !== OFFER_STATUS.ACTIVE || !this.isWithinWindow(offer, now))
                 return { reason: 'Promotion is no longer active', requirement: null }
-            if (!this.hasGlobalCapacity(offer))
+            const onThisOrder =
+                !!orderId &&
+                !!(await CustomerOfferModel.exists({
+                    offerId: offer._id,
+                    userId,
+                    orderId,
+                    status: CUSTOMER_OFFER_STATUS.ATTACHED,
+                }))
+            if (!onThisOrder && !this.hasGlobalCapacity(offer))
                 return { reason: 'Promotion usage limit reached', requirement: null }
             if (hasPersonal && !offer.stackableWithPersonal)
                 return {
@@ -980,7 +1012,7 @@ class OfferService {
             if (!p.ok) return { reason: p.reason, requirement: null }
             const bk = this.checkBookingRules(offer, draft)
             if (!bk.ok) return { reason: bk.reason, requirement: bk.requirement || null }
-            if (offer.rules?.oneUsePerCustomer) {
+            if (offer.rules?.oneUsePerCustomer && !onThisOrder) {
                 const used = await CustomerOfferModel.findOne({
                     offerId: offer._id,
                     userId,
@@ -1227,12 +1259,15 @@ class OfferService {
     }
 
     // Order cancelled/corrected → the offer must not be consumed.
-    async releaseForOrder(orderId, { reason = 'Order cancelled' } = {}) {
+    // `only`: release just these linkage ids (a re-price that no longer
+    // applies an attached offer), leaving the order's other offers attached.
+    async releaseForOrder(orderId, { reason = 'Order cancelled', only = null } = {}) {
         const linkages = await CustomerOfferModel.find({
             orderId,
             status: {
                 $in: [CUSTOMER_OFFER_STATUS.ATTACHED, CUSTOMER_OFFER_STATUS.REDEEMED],
             },
+            ...(only && { _id: { $in: only } }),
         })
         for (const linkage of linkages) {
             linkage.status =
@@ -1350,3 +1385,4 @@ class OfferService {
 }
 
 module.exports = new OfferService()
+module.exports.QUICK_BOOKING_FEES_LINE = QUICK_BOOKING_FEES_LINE

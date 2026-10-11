@@ -2163,6 +2163,66 @@ const run = (async () => {
             /\bOFFER_TRIGGER,/.test(importBlock))
     }
 
+    // ─── Launch fix 2: Quick Booking pays nothing at booking ────────────────
+    // Client 11 Oct: trips go on the SMS bill; the free-trip offer is checked
+    // after counting. Pure parts driven for real; the rest checked in source.
+    console.log('\nLaunch fix 2 — Quick Booking pays nothing at booking')
+    {
+        const O = require(path.join(ROOT, 'services/offer.service'))
+        const offer = { _id: 'o1', type: 'personal', status: 'active', benefits: [], rules: {} }
+        const linkage = { _id: 'l1', status: 'attached', orderId: 'ord1' }
+        const reject = (draft) =>
+            O._offerRejection({ kind: 'personal', offer, linkage, draft, stats: { totalOrders: 0 }, userId: 'u1' })
+        const own = await reject({ orderId: 'ord1' })
+        const other = await reject({ orderId: 'ord2' })
+        const fresh = await reject({})
+        ok('re-pricing an order keeps the offer attached to THAT order',
+            own.reason === null)
+        ok('an offer attached to another order, or a new booking, is still refused',
+            other.reason === 'Offer already applied to an order' &&
+                fresh.reason === 'Offer already applied to an order')
+        ok('booking-options gives a Quick Booking draft the "pay nothing now" line',
+            O.QUICK_BOOKING_FEES_LINE.type === 'quick-booking' &&
+                O.QUICK_BOOKING_FEES_LINE.amount === 0 &&
+                /You pay nothing now/.test(O.QUICK_BOOKING_FEES_LINE.message) &&
+                /isCountOnlyBooking\(draft\)\s*\?\s*QUICK_BOOKING_FEES_LINE/.test(
+                    fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+                ))
+
+        const ppi = bookSrc.slice(
+            bookSrc.indexOf('} else if (post.billingType === BILLING_TYPE.PAY_PER_ITEM) {'),
+            bookSrc.indexOf('} else if (post.billingType === BILLING_TYPE.PAY_FROM_WALLET) {'),
+        )
+        ok('a Quick Booking is created with nothing due and no offer priced',
+            /if \(quickBooking\) \{\s*totalPrice = 0\s*\} else \{[\s\S]{0,400}_priceWithOffers/.test(ppi))
+        ok('and spends no reward credit at booking',
+            /const useCredit =\s*!quickBooking &&/.test(ppi))
+        ok('the booking response says no payment step for a Quick Booking',
+            /newOrder\.quickBooking && \{ paymentRequired: false \}/.test(bookSrc))
+
+        const reprice = bookSrc.slice(
+            bookSrc.indexOf('async _repriceForItems('),
+            bookSrc.indexOf('async applyItemEdit('),
+        )
+        ok('the re-price finds the order\'s offers through their linkages, not order fields that are never stored',
+            !/customerOfferId: order\.customerOfferId/.test(reprice) &&
+                /orderId: order\._id,\s*status: CUSTOMER_OFFER_STATUS\.ATTACHED/.test(reprice))
+        ok('a Quick Booking re-runs the auto-apply pick against the real basket on every edit',
+            /if \(order\.quickBooking && order\.userId\) \{\s*post\.customerOfferId = undefined[\s\S]{0,200}pickBestPersonalOffer/.test(reprice))
+        ok('a waived trip takes off the fee this order is charged, not the flat setting',
+            /adminOrderSetting: \{ pickupFee, deliveryFee \}/.test(reprice))
+        ok('the edit releases offers the new bill drops and attaches the ones it adds',
+            /_settleOfferLinkages\(\{ order, breakdown, attached \}\)/.test(bookSrc) &&
+                /releaseForOrder\(order\._id, \{[\s\S]{0,120}only: stale/.test(bookSrc))
+
+        const bwSrc = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
+        ok('an unbilled Quick Booking served in a window has its leg fee lowered, not a wallet refund',
+            /order\.itemsPending === true &&\s*order\.paymentStatus !== PAYMENT_ORDER_STATUS\.SUCCESS[\s\S]{0,300}\[`scheduling\.\$\{leg\}\.fee`\]: fee/.test(
+                bwSrc,
+            ) &&
+                bwSrc.indexOf('appliedToBill: true') < bwSrc.indexOf('await refundToWallet({'))
+    }
+
     // ─── F-05 + order read: who may call these two routes ───────────────────
     console.log('\nAccess: issue reports and single-order reads')
     {

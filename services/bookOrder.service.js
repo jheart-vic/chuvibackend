@@ -41,6 +41,7 @@ const {
     BOOKING_TIMING,
     CUSTOMER_OFFER_STATUS,
     OFFER_STATUS,
+    OFFER_TYPE,
     OFFER_TRIGGER,
     DISPATCH_LEG,
 } = require('../util/constants')
@@ -821,6 +822,25 @@ class BookOrderService extends BaseService {
      * what the difference means. Writes nothing.
      */
     async _repriceForItems({ order, items, adminOrderSetting }) {
+        // The offers already attached to THIS order. The order document has no
+        // `customerOfferId`/`promoOfferId` fields (the schema is strict, so the
+        // booking's values were never stored); an offer is tied to an order
+        // through its CustomerOffer linkage. Reading `order.customerOfferId`
+        // here, as this used to, dropped every edited order's offer.
+        const CustomerOfferModel = require('../models/customerOffer.model')
+        const attached = await CustomerOfferModel.find({
+            orderId: order._id,
+            status: CUSTOMER_OFFER_STATUS.ATTACHED,
+        })
+            .populate('offerId', 'type')
+            .lean()
+        const attachedPersonal = attached.find(
+            (l) => l.offerId?.type === OFFER_TYPE.PERSONAL,
+        )
+        const attachedPromo = attached.find(
+            (l) => l.offerId?.type === OFFER_TYPE.PROMOTIONAL,
+        )
+
         // The shape the pricing path expects. Taken from the ORDER, not from
         // the request, so an edit cannot quietly change the service type, the
         // tier or the speed while pretending to change only the items.
@@ -831,10 +851,11 @@ class BookOrderService extends BaseService {
             isPickUp: order.isPickUp,
             isDelivery: order.isDelivery,
             items,
-            // The offer already attached to the order, so re-pricing re-applies
-            // the customer's own offer instead of silently dropping it.
-            customerOfferId: order.customerOfferId || undefined,
-            promoOfferId: order.promoOfferId || undefined,
+            // Re-pricing this order: its own attached offers are not a
+            // double use (OfferService._offerRejection).
+            orderId: order._id,
+            customerOfferId: attachedPersonal?._id || undefined,
+            promoOfferId: attachedPromo?.offerId?._id || undefined,
         }
 
         const matchedService = adminOrderSetting.serviceTypes.find(
@@ -868,12 +889,40 @@ class BookOrderService extends BaseService {
             : 0
         const extraDeliveryCost = speedCharge + pickupFee + deliveryFee
 
+        // QUICK BOOKING (client item #6(b), 2026-10-08): nobody chose an offer
+        // at booking, so the one worth MORE on this bill is applied, with the
+        // First Experience override on a first order. Picked against the real
+        // basket, which is the client's "checked after counting" — and picked
+        // AGAIN on every edit: if Intake first counts too few for the Welcome
+        // Offer and then corrects the count, keeping the first pick would lose
+        // the Welcome Offer for good. An offer the new pick replaces is released
+        // by applyItemEdit. (An offer already attached to this order is still
+        // eligible: the pick runs with this order's id.)
+        let autoApplied = null
+        if (order.quickBooking && order.userId) {
+            post.customerOfferId = undefined
+            autoApplied = await OfferService.pickBestPersonalOffer(order.userId, {
+                ...post,
+                amount: priced.total,
+                pickupAmount: pickupFee,
+                deliveryAmount: deliveryFee,
+                pickupTiming: order.scheduling?.pickup?.timing,
+                deliveryTiming: order.scheduling?.delivery?.timing,
+            })
+            if (autoApplied?.customerOfferId) {
+                post.customerOfferId = autoApplied.customerOfferId
+            }
+        }
+
         const { finalTotal, breakdown } = await this._priceWithOffers({
             userId: order.userId,
             post,
             itemsSubtotal: priced.total,
             extraDeliveryCost,
-            adminOrderSetting,
+            // A waived trip takes off the fee THIS order is charged (its
+            // window/Anytime price), not the flat setting, or a free trip on a
+            // windowed order would take off the wrong amount.
+            adminOrderSetting: { pickupFee, deliveryFee },
             scheduling: order.scheduling,
         })
 
@@ -898,7 +947,19 @@ class BookOrderService extends BaseService {
             orderTotal: finalTotal,
         })
 
-        return { newTotal: finalTotal, pricing, breakdown, extraDeliveryCost }
+        return {
+            newTotal: finalTotal,
+            pricing,
+            breakdown,
+            extraDeliveryCost,
+            // For applyItemEdit to settle the linkages: what was attached
+            // before, and what the new bill actually applies.
+            attached: attached.map((l) => ({
+                id: String(l._id),
+                offerId: String(l.offerId?._id || l.offerId),
+            })),
+            autoApplied: autoApplied?.customerOfferId ? autoApplied : null,
+        }
     }
 
     /**
@@ -991,11 +1052,12 @@ class BookOrderService extends BaseService {
                     ? previousTotal
                     : 0
 
-            const { newTotal, pricing } = await this._repriceForItems({
-                order,
-                items,
-                adminOrderSetting,
-            })
+            const { newTotal, pricing, breakdown, attached } =
+                await this._repriceForItems({
+                    order,
+                    items,
+                    adminOrderSetting,
+                })
 
             const difference = newTotal - previousTotal
             const outstanding = Math.max(0, newTotal - amountPaid)
@@ -1037,6 +1099,12 @@ class BookOrderService extends BaseService {
                 },
                 { runValidators: false },
             )
+
+            // The bill's offers become the order's offers: an attached offer
+            // the new bill no longer applies is released (so it is not spent on
+            // delivery), and one it newly applies (a Quick Booking's auto-pick)
+            // is attached. Release first: an order holds one personal offer.
+            await this._settleOfferLinkages({ order, breakdown, attached })
 
             const result = {
                 previousTotal,
@@ -1212,6 +1280,46 @@ class BookOrderService extends BaseService {
 
     // After the order is saved, attach the validated offer linkage(s) so they
     // redeem on delivery / release on cancel. Non-fatal — the order already exists.
+    // After a re-price: keep the attached offers the new bill still applies,
+    // release the rest, attach the newly applied ones. Non-fatal, like the
+    // booking-time attach: the bill is already correct either way.
+    async _settleOfferLinkages({ order, breakdown, attached = [] }) {
+        if (!order?.userId) return
+        try {
+            const personalId = breakdown?.personal?.customerOfferId
+                ? String(breakdown.personal.customerOfferId)
+                : null
+            const promoId = breakdown?.promotion?.offerId
+                ? String(breakdown.promotion.offerId)
+                : null
+            const kept = (l) => l.id === personalId || l.offerId === promoId
+            const stale = attached.filter((l) => !kept(l)).map((l) => l.id)
+            if (stale.length) {
+                await OfferService.releaseForOrder(order._id, {
+                    reason: 'No longer applies after the items were checked',
+                    only: stale,
+                })
+            }
+            const isAttached = (pred) => attached.some((l) => kept(l) && pred(l))
+            await this._attachOffersToOrder(
+                order.userId,
+                {
+                    personal:
+                        personalId && !isAttached((l) => l.id === personalId)
+                            ? breakdown.personal
+                            : null,
+                    promotion:
+                        promoId && !isAttached((l) => l.offerId === promoId)
+                            ? breakdown.promotion
+                            : null,
+                },
+                order._id,
+            )
+        } catch (e) {
+            console.warn('settle offer linkages after re-price failed (non-fatal):', e.message)
+        }
+    }
+
     async _attachOffersToOrder(userId, breakdown, orderId) {
         if (!breakdown) return
         if (breakdown.personal?.customerOfferId) {
@@ -1762,19 +1870,33 @@ class BookOrderService extends BaseService {
                     : 0
                 let extraDeliveryCost = speedCharge + pickupFee + deliveryFee
 
+                // QUICK BOOKING (client, 11 Oct 2026): "Nothing is paid at
+                // booking, not even pickup and delivery. Those fees go on the
+                // SMS bill, because the free pickup and delivery offer can only
+                // be checked after counting." So the order is created with
+                // nothing due, no credit spent and no offer attached; Intake's
+                // re-price (`applyItemEdit`) adds the trips and speed, picks and
+                // attaches the offer, and raises the payment hold with the SMS.
+                // `deliveryAmount` keeps the fees as information for Intake.
+                const quickBooking = post.quickBooking === true
+
                 // Apply any selected offer(s) server-side (authoritative price).
                 const itemsSubtotal = totalPrice
-                const { finalTotal, breakdown } =
-                    await this._priceWithOffers({
-                        userId,
-                        post,
-                        itemsSubtotal,
-                        extraDeliveryCost,
-                        adminOrderSetting,
-                        scheduling,
-                    })
-                offerBreakdown = breakdown
-                totalPrice = finalTotal
+                if (quickBooking) {
+                    totalPrice = 0
+                } else {
+                    const { finalTotal, breakdown } =
+                        await this._priceWithOffers({
+                            userId,
+                            post,
+                            itemsSubtotal,
+                            extraDeliveryCost,
+                            adminOrderSetting,
+                            scheduling,
+                        })
+                    offerBreakdown = breakdown
+                    totalPrice = finalTotal
+                }
 
                 const stage = {
                     status: ORDER_STATUS.PENDING,
@@ -1806,9 +1928,11 @@ class BookOrderService extends BaseService {
                 // balance is still settled through the normal per-item payment
                 // flow (Paystack), so we lower the order's payable amount by the
                 // credit applied; a fully-covered order needs no further payment.
-                // Committing at booking matches how offers are counted.
+                // Committing at booking matches how offers are counted. A Quick
+                // Booking has no bill yet, so there is nothing to spend it on.
                 const useCredit =
-                    post.useCredit === true || post.useCredit === 'true'
+                    !quickBooking &&
+                    (post.useCredit === true || post.useCredit === 'true')
                 let creditApplied = 0
                 if (useCredit) {
                     const creditResult =
@@ -1839,9 +1963,12 @@ class BookOrderService extends BaseService {
                     tiersUsed: priced.tiersUsed,
                     isMixedTier: priced.isMixedTier,
                     itemsSubtotal,
-                    speedCharge,
-                    pickupFee,
-                    deliveryFee,
+                    // Nothing is charged on a Quick Booking until Intake prices
+                    // it, so its receipt shows no fees yet (the re-price
+                    // replaces this whole block).
+                    speedCharge: quickBooking ? 0 : speedCharge,
+                    pickupFee: quickBooking ? 0 : pickupFee,
+                    deliveryFee: quickBooking ? 0 : deliveryFee,
                     breakdown: offerBreakdown,
                     creditApplied,
                     orderTotal: newOrder.amount,
@@ -1857,7 +1984,9 @@ class BookOrderService extends BaseService {
                 await createNotification({
                     userId: userId,
                     title: 'Order Created Successfully',
-                    body: `Your laundry order has been received. We will pick it up shortly.${creditNote}`,
+                    body: quickBooking
+                        ? 'Your laundry order has been received. You pay nothing now. After we count your clothes, we send your bill by SMS, with pickup and delivery included.'
+                        : `Your laundry order has been received. We will pick it up shortly.${creditNote}`,
                     subBody: `Order ID: ${oscNumber}.`,
                     type: NOTIFICATION_TYPE.ORDER_CREATED,
                 })
@@ -2099,6 +2228,9 @@ class BookOrderService extends BaseService {
                 order: newOrder,
                 offer,
                 ...(logisticsPaymentUrl && { logisticsPaymentUrl }),
+                // Quick Booking: no payment step; the bill comes by SMS after
+                // Intake counts (client, 11 Oct 2026).
+                ...(newOrder.quickBooking && { paymentRequired: false }),
             })
         } catch (error) {
             console.log(error)

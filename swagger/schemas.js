@@ -1343,11 +1343,13 @@
  *             `pickupTiming` / `deliveryTiming` ('window' | 'anytime') and the
  *             `pickupAmount` / `deliveryAmount` fees in the draft so it is accurate.
  *             Free pickup and delivery from an offer apply to WINDOW bookings only.
+ *             A Quick Booking draft (`itemCount` with no `items`) always gets
+ *             `quick-booking` (amount 0): nothing is paid now, trips go on the SMS bill.
  *           properties:
  *             type:
  *               type: string
  *               nullable: true
- *               enum: [welcome-offer, window-only, free-reached, free-gap, null]
+ *               enum: [welcome-offer, window-only, free-reached, free-gap, quick-booking, null]
  *               example: free-gap
  *             amount: { type: number, example: 3200 }
  *             message:

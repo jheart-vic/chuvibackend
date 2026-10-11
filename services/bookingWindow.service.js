@@ -11,6 +11,7 @@ const {
     AUDIT_LOG_CATEGORIES,
     NOTIFICATION_TYPE,
     SERVICE_TIERS,
+    PAYMENT_ORDER_STATUS,
 } = require('../util/constants')
 const W = require('../util/bookingWindow')
 // D2(c): the Anytime refund pays through the ONE wallet-refund implementation,
@@ -873,7 +874,7 @@ class BookingWindowService {
                 return { ok: false, reason: 'bad-leg' }
             }
             const order = await BookOrderModel.findById(orderId)
-                .select('scheduling userId oscNumber')
+                .select('scheduling userId oscNumber itemsPending paymentStatus')
                 .lean()
             if (!order) return { ok: false, reason: 'not-found' }
 
@@ -926,6 +927,31 @@ class BookingWindowService {
             const settings = await this.getSchedulingSettings()
             const amount = W.anytimeRefundAmount({ leg, settings })
             if (amount <= 0) return { ok: false, reason: 'no-difference' }
+
+            // A Quick Booking whose bill does not exist yet has paid nothing
+            // (client, 11 Oct 2026), so there is nothing to refund. The leg's
+            // fee is lowered instead, and Intake's re-price reads it, so the
+            // SMS bill charges the window price.
+            if (
+                order.itemsPending === true &&
+                order.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS
+            ) {
+                const fee = Math.max(0, Number(legData.fee || 0) - amount)
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    {
+                        $set: {
+                            [`scheduling.${leg}.fee`]: fee,
+                            [`scheduling.${leg}.refund.qualified`]: true,
+                            [`scheduling.${leg}.refund.amount`]: amount,
+                            [`scheduling.${leg}.refund.paidAt`]: new Date(),
+                            [`scheduling.${leg}.refund.reason`]:
+                                'Served inside a window, so the bill charges the window price.',
+                        },
+                    },
+                )
+                return { ok: true, amount, appliedToBill: true }
+            }
 
             if (!order.userId) {
                 // A walk-in with no account has no wallet to credit. Recorded

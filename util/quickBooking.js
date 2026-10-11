@@ -48,8 +48,12 @@
 // the ₦4,000 offer threshold resolve against a guess. The spec is explicit that
 // "the amount is checked ON THE BILL", and the real bill is computed at Intake
 // by `_repriceForItems`, which re-runs pricing AND offers. So the laundry
-// portion is 0 at booking and the logistics fees — which do NOT depend on the
-// contents — are charged normally.
+// portion is 0 at booking.
+//
+// CLIENT, 11 Oct 2026: the logistics fees are NOT charged at booking either:
+// "Nothing is paid at booking, not even pickup and delivery. Those fees go on
+// the SMS bill, because the free pickup and delivery offer can only be checked
+// after counting." postBookOrder creates the order with nothing due.
 
 const QUICK_BOOKING_ITEM_TYPE = 'unspecified-item'
 
