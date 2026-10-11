@@ -2190,11 +2190,36 @@ const run = (async () => {
         const unknown = priceFromCatalog([{ type: 'blanket', price: 100, quantity: 1 }], { catalog, sets })
         ok('an item not in the catalog is refused, never booked at the price sent',
             !unknown.ok && /We don't recognise "blanket"/.test(unknown.error))
+        // Round 2: quantity (F-21), deactivated sets, decimals, duplicates (F-24).
+        const badQty = [0, -5, '-5', 1.5, 'two', undefined].map(
+            (quantity) => priceFromCatalog([{ type: 'Lab coats', quantity }], { catalog, sets }),
+        )
+        ok('a zero, negative, fractional or missing quantity is refused (no ₦0 or negative lines)',
+            badQty.every((r) => !r.ok && /quantity of at least 1/.test(r.error)))
+        const strQty = priceFromCatalog([{ type: 'Lab coats', quantity: '3' }], { catalog, sets })
+        ok('a numeric-string quantity is stored as a number',
+            strQty.ok && strQty.items[0].quantity === 3)
+        const inactive = priceFromCatalog([{ type: 'trouser', fromSet: 'Agbada', quantity: 1 }], {
+            catalog,
+            sets: [{ ...sets[0], active: false }],
+        })
+        ok('a piece from a deactivated set cannot be booked', !inactive.ok)
+        const decimals = priceFromCatalog([{ type: 'odd', quantity: 1 }], {
+            catalog: [{ name: 'Odd', price: 349.6 }, { name: 'odd', price: 1 }],
+        })
+        ok('catalog prices are whole naira and the first of two clashing names wins',
+            decimals.ok && decimals.items[0].price === 350)
+        const { catalogKey } = require(path.join(ROOT, 'util/catalogItems'))
+        ok('the subscription heavy-item check uses the same name key as pricing',
+            /heavyItemNames\.includes\(catalogKey\(item\.type\)\)/.test(postBook) &&
+                catalogKey('King size Duvet') === catalogKey('king-size-duvet'))
+        ok('an unknown service type is refused before pricing',
+            /\(adminOrderSetting\.serviceTypes \|\| \[\]\)\.some\(\s*\(s\) => s\.name === post\.serviceType,?\s*\)/.test(postBook))
         ok('postBookOrder prices items from the catalog before validation, skipping only Quick Booking placeholders',
             /\} else if \(Array\.isArray\(post\.items\) && post\.items\.length\) \{[\s\S]{0,900}priceFromCatalog\(post\.items, \{ catalog, sets \}\)[\s\S]{0,300}post\.items = fromCatalog\.items/.test(postBook) &&
                 postBook.indexOf('priceFromCatalog(post.items') < postBook.indexOf('const validateRule = {'))
         ok('a customer cannot mark their order as the staff counter channel',
-            /if \(post\.channel === ORDER_CHANNEL\.OFFICE\) delete post\.channel/.test(postBook))
+            /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
         ok('the server-set Quick Booking fields are dropped from the body before anything reads them',
             BOS.SERVER_SET_ON_POST.includes('quickBooking') &&
                 /const post = \{ \.\.\.\(req\.body \|\| \{\}\) \}\s*for \(const key of SERVER_SET_ON_POST\) delete post\[key\]/.test(postBook))

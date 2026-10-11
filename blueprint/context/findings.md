@@ -69,7 +69,7 @@ forced to Anytime by the same-day rule. Ignore a leg whose amount is 0 or that i
 booked. Nothing current is lost.
 **Resolution:**
 
-### F-17 [P0] fixed - The booking still trusts the customer's item prices, so the bill can be set to almost anything (pre-existing)
+### F-17 [P0] closed - The booking still trusts the customer's item prices, so the bill can be set to almost anything (pre-existing)
 
 **File:** util/itemPricing.js:78
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
@@ -89,8 +89,9 @@ only direct API callers can do this.
 ignore the body's price. Placeholder Quick Booking pieces keep price 0. Nothing current is
 lost.
 **Resolution:** Fixed 2026-10-11. New `util/catalogItems.js` `priceFromCatalog`: every customer booking item is priced from `OrderItem` (or its `ItemSet` piece when `fromSet` is sent), matched lowercased with whitespace as hyphens; the request's price is ignored and an unknown item is refused ("We don't recognise …"). Runs in `postBookOrder` before validation and before every billing branch (the subscription sum included); Quick Booking placeholders skip it. Production check (read-only): every customer item line in the 14 days before matched the catalog at exactly the catalog price. briefCheck + testingdb probe (a `price: 100` item booked at the catalog price; `blanket` refused, nothing created; a set piece priced from its set).
+Closed 2026-10-11 by /audit independent (round 2): verified. `priceFromCatalog` runs before validation and every billing branch, overwrites any request price, and refuses unknown types. Offline probe: `price: 1` on catalog items came back at catalog price, `blanket` was refused. A zero or negative `quantity` still lowers the bill, but that is a separate input, tracked as F-21.
 
-### F-18 [P1] fixed - Fields inside each booked item are still copied from the body (pre-existing)
+### F-18 [P1] closed - Fields inside each booked item are still copied from the body (pre-existing)
 
 **File:** util/explodeItems.js:22
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
@@ -107,6 +108,7 @@ The briefCheck hotfix assertions do not cover item subfields.
 quantity, serviceTier, fromSet }` before it is exploded into pieces. Add a briefCheck
 assertion that an injected `currentStation`/`qcStatus` is dropped. Nothing current is lost.
 **Resolution:** Fixed 2026-10-11. `priceFromCatalog` keeps only `type`, `quantity`, `serviceTier`, `fromSet` (plus the catalog price); station, QC, tag and every other staff field is dropped. Probe: an item sent with `qcStatus: passed`, `tagStatus: complete`, `currentStation: qc-station` is stored pending at intake.
+Closed 2026-10-11 by /audit independent (round 2): verified. Items are rebuilt from `CUSTOMER_ITEM_FIELDS` plus the catalog price before `explodeItemsToPieces`. The only other source of items is the server's own Quick Booking placeholders. The briefCheck assertion covers `qcStatus`/`tagStatus`/`currentStation`.
 
 ### F-19 [P2] open - The staff counter booking still spreads the request body over the order (pre-existing)
 
@@ -137,3 +139,72 @@ small. No money moves.
 **Suggested fix:** Accept only `website`/`whatsapp` from the customer path. Otherwise fall
 back to the schema default. Nothing current is lost.
 **Resolution:** Fixed 2026-10-11. `postBookOrder` drops `channel: "office"` (the staff counter's channel); `website` / `whatsapp` are still accepted (the WhatsApp bot books through this endpoint). Probe confirms.
+Reopened 2026-10-11 by /audit independent (round 2): the check is a strict `post.channel === 'office'` (services/bookOrder.service.js:1285). The BookOrder schema's `channel` has `trim: true` before its enum, so `channel: " office"` passes the check and is stored as `office`. Suggested fix: accept only `website`/`whatsapp` (allow-list after trim and lowercase), and drop anything else.
+Fixed again 2026-10-11 (round 3). The channel is compared trimmed and lowercased, as the schema stores it, so " office" is dropped too.
+
+### F-21 [P0] fixed - A zero or negative item quantity still lets the customer set the bill
+
+**File:** services/bookOrder.service.js:1362
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** Pre-existing, but it reopens the hole F-17 closed. `items.*.quantity` is
+only `integer|required`, and validatorjs accepts `0`, `-5` and the string `"-5"`.
+`priceItems` (util/itemPricing.js:80) multiplies by `Number(quantity)`, and so does the
+subscription sum (services/bookOrder.service.js:1665). Meanwhile `explodeItemsToPieces`
+stores `Math.max(1, qty)` pieces. Offline probe: two `duvet` lines at quantity 0 plus a
+shirt line at `"-5"` priced the items at -₦3,000 and stored 3 pieces. In the wallet branch,
+`chargeWalletForOrder` debits nothing when the amount is 0 or less, and the order is saved
+`paymentStatus: success` (services/bookOrder.service.js:2014). Pay-per-item charges only
+the fees, or less. So a direct API caller gets real pieces washed for ₦0, and negative
+lines cancel the cost of paid lines. `applyItemEdit` already refuses `quantity <= 0`
+(services/bookOrder.service.js:984), but booking does not.
+**Suggested fix:** In `priceFromCatalog`, or the validator, refuse any item whose quantity
+is not a whole number of at least 1. Store `Number(quantity)` so later reads cannot see a
+string. Add a briefCheck assertion. Nothing current is lost.
+**Resolution:**
+Fixed 2026-10-11. `priceFromCatalog` refuses any item whose quantity is not a whole number of at least 1 ("Each item needs a whole-number quantity of at least 1.") and stores the quantity as a number. briefCheck drives 0, -5, "-5", 1.5, "two" and missing.
+
+### F-22 [P2] fixed - The subscription heavy-item block misses slug and padded item names (pre-existing)
+
+**File:** services/bookOrder.service.js:1622
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** The heavy check compares `item.type.toLowerCase()` with the catalog name
+lowercased. The app sends slugs (`king-size-duvet`), and `priceFromCatalog` also accepts
+`" Duvet "`. So any multi-word heavy item from the app, or any heavy item with padding,
+is booked under a subscription that does not cover heavy items. The hotfix now
+guarantees every item matched a catalog entry by `catalogKey`, so the fix is cheap.
+**Suggested fix:** Compare with `catalogKey` on both sides, and key set pieces by `fromSet`.
+Better still, have `priceFromCatalog` return `isHeavy` per item. Nothing current is lost.
+**Resolution:**
+Fixed 2026-10-11. The subscription heavy-item check compares `catalogKey` on both sides, the same key pricing uses, so slugged heavy items are caught.
+
+### F-23 [P2] fixed - An unknown serviceType prices the basket at multiplier 1 (pre-existing)
+
+**File:** services/bookOrder.service.js:1794
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** `serviceType` is only `string|required`, and the schema enum is
+commented out. Both priced branches fall back to `serviceTypeMultiplier = 1` when the
+name is not in `adminOrderSetting.serviceTypes` (lines 1794 and 1937). If any configured
+`pricePerPiece` is above 1, a customer who sends `serviceType: "x"` pays the catalog base,
+and the order is stored with a service the stations do not know. Production
+multipliers were not visible to this review. Raise to P1 if any is above 1.
+**Suggested fix:** Refuse a `serviceType` that is not in `adminOrderSetting.serviceTypes`.
+Nothing current is lost.
+**Resolution:**
+Fixed 2026-10-11. An unknown `serviceType` is refused ("Please choose a service from the list.") before any pricing. Production multipliers are x1 / x0.7 / x0.6 (read-only check), so the old x1 fallback never discounted, but it stored made-up service types.
+
+### F-24 [P3] fixed - Catalog matching edge cases: inactive sets, duplicate names, decimal prices, stale docs
+
+**File:** util/catalogItems.js:37
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: quality)
+**Why it matters:** The booking loads `ItemSetModel.find({})`, while the customer catalog
+lists only `active: true` sets (services/admin.service.js:3543). That lets a deactivated
+set's pieces still be booked. Two catalog names that share one `catalogKey` silently take
+the last price. A catalog price with decimals (the schema allows it) fails the
+`items.*.price: integer` rule, and every booking of that item is refused with "items.0.price
+must be an integer". The create-book-order Swagger still lists `items[].price` as required,
+but the body's price is now ignored.
+**Suggested fix:** Filter sets by `active: true`, and round or refuse non-integer catalog
+prices in the admin path, or relax the rule to `numeric`. Note in Swagger that `price` is
+ignored. Nothing current is lost.
+**Resolution:**
+Fixed 2026-10-11. Deactivated sets are skipped, catalog prices are rounded to whole naira, the first of two clashing names wins, and Swagger documents `items[].price` as ignored (no longer required) with `quantity` minimum 1.

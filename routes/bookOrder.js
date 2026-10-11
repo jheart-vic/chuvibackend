@@ -194,19 +194,30 @@ const {
  *                   type: object
  *                   required:
  *                     - type
- *                     - price
  *                     - quantity
  *                   properties:
  *                     type:
  *                       type: string
- *                       enum: [shirt, trouser, blanket]
- *                       example: trouser
+ *                       example: trousers
+ *                       description: >
+ *                         A catalog item's name (or its slug, e.g. "shirts-/-tops-/-blouses"),
+ *                         or a set piece's name together with `fromSet`.
+ *                     fromSet:
+ *                       type: string
+ *                       example: Agbada
+ *                       description: The set the piece was picked from, when it came from a set.
  *                     price:
  *                       type: integer
  *                       example: 700
+ *                       description: >
+ *                         IGNORED. The server prices every item from the catalog (the item,
+ *                         or its set piece when `fromSet` is sent). An item that is not in
+ *                         the catalog is refused ("We don't recognise …").
  *                     quantity:
  *                       type: integer
+ *                       minimum: 1
  *                       example: 5
+ *                       description: A whole number of at least 1.
  *                     serviceTier:
  *                       type: string
  *                       enum: [classic, premium, vip]

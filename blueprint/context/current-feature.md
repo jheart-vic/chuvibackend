@@ -50,6 +50,12 @@ Must not break: any booking branch (pay-per-item, wallet, subscription, Quick Bo
   kept from each item; station, QC, tag and other staff fields are dropped.
 - **Channel (F-20).** A customer cannot mark an order `office` (the staff counter's
   channel). `website` / `whatsapp` are still accepted.
+- **Round 2 (changes-requested) repairs:** a zero, negative or fractional item quantity
+  is refused (F-21 [P0]: two lines at 0 plus one at -5 priced -₦3,000 and a wallet order
+  was saved paid for ₦0); `" office"` is compared trimmed (F-20); the subscription
+  heavy-item check uses the same name key as pricing (F-22); an unknown service type is
+  refused (F-23); deactivated sets are skipped, catalog prices are whole naira, the first
+  of two clashing names wins, and Swagger marks `items[].price` as ignored (F-24).
 - **Left open — F-19 [P2]:** the staff counter booking (`intake-user` `createBookOrder`)
   still spreads its body; only intake staff and admins reach it.
 - **What can now be refused:** an old app build listing an item no longer in the
@@ -86,3 +92,6 @@ Must not break: any booking branch (pay-per-item, wallet, subscription, Quick Bo
   Booking staging on testingdb, all stubbed: subLogistics 20/0, freeLogistics 23/0,
   tierPricing 33/0, dispatchTag 46/0, handoff 54/0, dispatch 80/0, phase12 14/0,
   dashboardDecisions 45/0, bookingContext 30/0.
+- **Results after round 2 repairs (2026-10-11):** briefCheck 418/0, probe 14/14,
+  subLogistics 20/0, handoff 54/0, dispatch 80/0, dashboardDecisions 45/0, tierPricing
+  33/0, freeLogistics 23/0.

@@ -34,11 +34,33 @@ const catalogKey = (s) =>
  * @returns {{ ok: true, items } | { ok: false, error, unknown }}
  */
 function priceFromCatalog(items, { catalog = [], sets = [] } = {}) {
-    const single = new Map(catalog.map((c) => [catalogKey(c.name), Number(c.price)]))
+    // Whole naira (the booking validator requires an integer price). The first
+    // entry wins if two catalog names normalise to the same key.
+    const naira = (n) => Math.round(Number(n))
+    const single = new Map()
+    for (const c of catalog) {
+        const key = catalogKey(c.name)
+        if (!single.has(key)) single.set(key, naira(c.price))
+    }
     const setPieces = new Map()
     for (const s of sets) {
+        if (s.active === false) continue // a deactivated set cannot be booked
         for (const p of s.pieces || []) {
-            setPieces.set(`${catalogKey(s.name)}::${catalogKey(p.name)}`, Number(p.price))
+            const key = `${catalogKey(s.name)}::${catalogKey(p.name)}`
+            if (!setPieces.has(key)) setPieces.set(key, naira(p.price))
+        }
+    }
+
+    // A quantity of 0 or less priced the line at zero or below while still
+    // storing a piece (review F-21): a whole number of at least 1, always.
+    for (const raw of items || []) {
+        const q = Number(raw?.quantity)
+        if (!Number.isInteger(q) || q < 1) {
+            return {
+                ok: false,
+                unknown: [],
+                error: 'Each item needs a whole-number quantity of at least 1.',
+            }
         }
     }
 
@@ -48,6 +70,7 @@ function priceFromCatalog(items, { catalog = [], sets = [] } = {}) {
         for (const k of CUSTOMER_ITEM_FIELDS) {
             if (raw?.[k] !== undefined) item[k] = raw[k]
         }
+        item.quantity = Number(item.quantity)
         const key = catalogKey(item.type)
         const price = item.fromSet
             ? setPieces.get(`${catalogKey(item.fromSet)}::${key}`)

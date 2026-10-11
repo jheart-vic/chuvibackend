@@ -61,7 +61,7 @@ const {
     applyCountOnlyBooking,
 } = require('../util/quickBooking')
 // Booking items are priced from the catalog, never the request (hotfix).
-const { priceFromCatalog } = require('../util/catalogItems')
+const { priceFromCatalog, catalogKey } = require('../util/catalogItems')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -1282,7 +1282,10 @@ class BookOrderService extends BaseService {
             for (const key of SERVER_SET_ON_POST) delete post[key]
             // `office` is the staff counter's channel (intake-user booking); a
             // customer order marked so drops out of Intake's pending list.
-            if (post.channel === ORDER_CHANNEL.OFFICE) delete post.channel
+            // Compared the way the schema stores it (trimmed), or " office" slips by.
+            if (String(post.channel ?? '').trim().toLowerCase() === ORDER_CHANNEL.OFFICE) {
+                delete post.channel
+            }
             const userId = req.user.id
 
             const user = await UserModel.findById(userId)
@@ -1331,7 +1334,7 @@ class BookOrderService extends BaseService {
                 // server's own and skip this.
                 const [catalog, sets] = await Promise.all([
                     OrderItemModel.find({}).select('name price').lean(),
-                    ItemSetModel.find({}).select('name pieces').lean(),
+                    ItemSetModel.find({}).select('name pieces active').lean(),
                 ])
                 const fromCatalog = priceFromCatalog(post.items, { catalog, sets })
                 if (!fromCatalog.ok) {
@@ -1464,6 +1467,17 @@ class BookOrderService extends BaseService {
             if (!adminOrderSetting) {
                 return BaseService.sendFailedResponse({
                     error: 'Admin settings not found',
+                })
+            }
+            // An unknown service type used to price at a ×1 multiplier and be
+            // stored as sent; only the services the admin set up are bookable.
+            if (
+                !(adminOrderSetting.serviceTypes || []).some(
+                    (s) => s.name === post.serviceType,
+                )
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Please choose a service from the list.',
                 })
             }
 
@@ -1609,18 +1623,19 @@ class BookOrderService extends BaseService {
                     OrderItemModel.find({ isHeavy: true }).lean(),
                     ItemSetModel.find({ 'pieces.isHeavy': true }).lean(),
                 ])
-                const heavyItemNames = heavyItems.map((i) =>
-                    i.name.toLowerCase(),
-                )
+                // Compared with the same key the catalog pricing uses: the app
+                // sends slugs ("duvets", "king-size-duvet"), which a plain
+                // lowercase compare missed for multi-word heavy items.
+                const heavyItemNames = heavyItems.map((i) => catalogKey(i.name))
                 for (const s of sets) {
                     for (const p of s.pieces || []) {
-                        if (p.isHeavy) heavyItemNames.push(p.name.toLowerCase())
+                        if (p.isHeavy) heavyItemNames.push(catalogKey(p.name))
                     }
                 }
 
                 // ← block if any submitted item is heavy
                 const heavyItemFound = post.items.find((item) =>
-                    heavyItemNames.includes(item.type.toLowerCase()),
+                    heavyItemNames.includes(catalogKey(item.type)),
                 )
 
                 if (heavyItemFound) {
