@@ -175,7 +175,11 @@ class IntakeUserService extends BaseService {
                 // UI default, not a server fallback, because a server fallback
                 // is exactly what "mandatory" rules out.
                 // ⚠️ BREAKING for any app build that does not send it yet.
-                paymentMethod: 'string|required',
+                // Still mandatory: planCounterPayment refuses a missing or
+                // blank value with a sentence for the operator, before any
+                // order exists (the validator's text was "paymentMethod is
+                // required", which staff could not act on).
+                paymentMethod: 'string',
                 secondaryPaymentMethod: 'string',
             }
 

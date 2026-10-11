@@ -282,13 +282,16 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                           example: "₦3,500 by wallet + ₦1,500 by cash"
  *       400:
  *         description: >
- *           Validation error, or the counter payment cannot be settled — an unknown payment method, a
- *           wallet asked for on a walk-in with no customer account, or a wallet that cannot cover the
- *           bill with no `secondaryPaymentMethod`. In all three cases NO order is created and no money
- *           moves; the message names the amounts.
+ *           Validation error, or the counter payment cannot be settled — no payment method ("Choose how
+ *           the customer paid: cash, POS, bank transfer or wallet."), an unknown one ("… is not a counter
+ *           payment method. Pick one of: cash, POS, bank transfer, wallet."), a wallet asked for on a
+ *           walk-in with no customer account, or a wallet that cannot cover the bill with no
+ *           `secondaryPaymentMethod`. In every case NO order is created and no money moves; the
+ *           message names the amounts.
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *             example: { success: false, data: { error: "Choose how the customer paid: cash, POS, bank transfer or wallet." } }
  *       500:
  *         description: Server error
  */

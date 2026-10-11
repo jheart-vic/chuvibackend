@@ -158,8 +158,8 @@ async function main() {
         let { r } = await place({ paymentMethod: undefined })
         ok(r.success === false, 'creating a counter order without a tender is REFUSED')
         ok(
-            /paymentMethod/i.test(JSON.stringify(r.data?.error || '')),
-            `and the refusal names the missing field (${JSON.stringify(r.data?.error)})`,
+            /Choose how the customer paid/.test(JSON.stringify(r.data?.error || '')),
+            `and the refusal tells the operator what to pick (${JSON.stringify(r.data?.error)})`,
         )
         let order
         ;({ r, order } = await place({ paymentMethod: 'cash' }))

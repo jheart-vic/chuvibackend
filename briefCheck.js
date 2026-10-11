@@ -588,6 +588,25 @@ const run = (async () => {
     })
     ok('a ₦0 bill charges nothing rather than writing an empty wallet line',
         zeroPlan.ok && zeroPlan.plan.tenders.length === 0)
+    // Client report 11 Oct: S1 booking "always" failed on the payment method.
+    // Still mandatory, but refused in words the counter operator can act on.
+    const missing = await Promise.all(
+        [undefined, null, '', '   '].map((method) =>
+            counter.planCounterPayment({ customerId: null, total: 5000, method }),
+        ),
+    )
+    ok('a missing or blank tender is refused with the operator sentence, never a field name',
+        missing.every((p) => !p.ok && p.error === counter.MISSING_COUNTER_METHOD) &&
+            counter.MISSING_COUNTER_METHOD ===
+                'Choose how the customer paid: cash, POS, bank transfer or wallet.')
+    ok('every spelling the S1 screen may send is still accepted',
+        ['cash', 'Cash', 'POS', 'card', 'transfer', 'Bank Transfer', 'bank-transfer', 'wallet'].every(
+            (m) => counter.normalizeCounterMethod(m) !== null,
+        ))
+    ok('there is still no server-side fallback to cash (the tender stays mandatory)',
+        !/\|\|\s*PAYMENT_METHOD\.CASH|\|\|\s*'cash'/.test(
+            intakeSrc.slice(intakeSrc.indexOf('const tenderMethod'), intakeSrc.indexOf('const paymentPlan')),
+        ))
     ok('intake no longer stamps a counter order paid before the money moves',
         !/paymentStatus: PAYMENT_ORDER_STATUS\.SUCCESS,\n\s*billingType/.test(intakeSrc) &&
             /settleCounterPayment\(\{/.test(intakeSrc))

@@ -64,6 +64,11 @@ function methodLabel(method) {
 const methodList = () =>
     COUNTER_PAYMENT_METHODS.map((m) => methodLabel(m)).join(', ')
 
+// Client 2026-10-08: the tender is mandatory. Said to the operator at the
+// counter, not as a field name ("paymentMethod is required" was the old text).
+const MISSING_COUNTER_METHOD =
+    'Choose how the customer paid: cash, POS, bank transfer or wallet.'
+
 // What the wallet can actually put towards this bill right now. Credits are
 // only counted when the customer opted in, because they are only SPENT then —
 // counting them otherwise would promise money the charge will not use.
@@ -89,6 +94,9 @@ async function planCounterPayment({
     secondaryMethod,
     useCredit = false,
 }) {
+    if (method == null || String(method).trim() === '') {
+        return { ok: false, error: MISSING_COUNTER_METHOD }
+    }
     const primary = normalizeCounterMethod(method)
     if (!primary) {
         return {
@@ -274,6 +282,7 @@ async function settleCounterPayment({ order, plan, customerId, staffId }) {
 
 module.exports = {
     DEFAULT_COUNTER_METHOD,
+    MISSING_COUNTER_METHOD,
     normalizeCounterMethod,
     methodLabel,
     methodList,
