@@ -2322,6 +2322,72 @@ const run = (async () => {
             ) && /\["failedDeliveryStage", backfillFailedDeliveryStage\]/.test(setupSrc))
     }
 
+    console.log('\nLaunch fix 6 — registration welcome and the schedule save')
+    {
+        const { normalizeSchedule } = require(path.join(ROOT, 'services/crm.service'))
+        const { renderTemplate } = require(path.join(ROOT, 'services/crmMessenger.service'))
+        const CrmSet = require(path.join(ROOT, 'models/crmSetting.model'))
+        const { CRM_MESSAGE_TYPE: CMT } = require(path.join(ROOT, 'util/constants'))
+        const REG = [CMT.REG_NOT_BOOKED_1, CMT.REG_NOT_BOOKED_2, CMT.REG_NOT_BOOKED_3, CMT.REG_NOT_BOOKED_MARK_PROSPECT]
+        const keys = ['messageType', 'enabled', 'delayMinutes', 'cancelIfOrdered', 'anchor', 'preferSlot']
+        const def = CrmSet.DEFAULT_REGISTERED_NOT_BOOKED_SCHEDULE
+        const round = normalizeSchedule(JSON.parse(JSON.stringify(def)), 'registeredNotBookedSchedule', REG)
+        ok('the default registered-not-booked schedule saves unchanged (anchor and slot kept)',
+            !round.error && def.every((s, i) => keys.every((k) => s[k] === round.normalized[i][k])))
+        ok('two offer-end steps at minute 0 in different windows do not clash',
+            !normalizeSchedule([
+                { messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' },
+                { messageType: CMT.REG_NOT_BOOKED_3, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'morning' },
+            ], 'x', REG).error)
+        ok('two offer-end steps in the same window and minute clash',
+            !!normalizeSchedule([
+                { messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' },
+                { messageType: CMT.REG_NOT_BOOKED_3, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' },
+            ], 'x', REG).error)
+        ok('two workflow-start steps in the same minute clash, whatever the window',
+            !!normalizeSchedule([
+                { messageType: CMT.REG_NOT_BOOKED_1, delayMinutes: 60, preferSlot: 'morning' },
+                { messageType: CMT.REG_NOT_BOOKED_MARK_PROSPECT, delayMinutes: 60, preferSlot: 'evening' },
+            ], 'x').error)
+        ok('an unknown anchor or slot is refused',
+            !!normalizeSchedule([{ messageType: CMT.REG_NOT_BOOKED_1, delayMinutes: 1, anchor: 'noon' }], 'x').error &&
+                !!normalizeSchedule([{ messageType: CMT.REG_NOT_BOOKED_1, delayMinutes: 1, preferSlot: 'noon' }], 'x').error)
+        ok('the welcome is never a schedule step',
+            !!normalizeSchedule([{ messageType: CMT.REGISTRATION_WELCOME, delayMinutes: 1 }], 'leadSchedule').error)
+        ok('updateSettings saves registeredNotBookedSchedule',
+            /\[\s*'registeredNotBookedSchedule',\s*registeredNotBookedSchedule,/.test(
+                fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8'),
+            ))
+        const tpl = CrmSet.DEFAULT_TEMPLATES[CMT.REGISTRATION_WELCOME]
+        const text = renderTemplate(tpl, { fullName: 'Ada Obi' }, { offerEndDay: 'Friday 16 October' })
+        ok('{{offerEndDay}} and {{firstName}} render in the welcome',
+            /Hello Ada,/.test(text) && /by Friday 16 October/.test(text) && !/{{/.test(text))
+        ok('the no-offer welcome has no end-day placeholder',
+            !/offerEndDay/.test(CrmSet.DEFAULT_TEMPLATES[CMT.REGISTRATION_WELCOME_NO_OFFER]))
+        const { welcomeOfferEndDay } = require(path.join(ROOT, 'services/crm.service'))
+        const win = { morningStartHour: 6, morningEndHour: 8, eveningStartHour: 18, eveningEndHour: 20 }
+        ok('F-51: an offer ending 01:00 Thursday names Wednesday as the last day',
+            welcomeOfferEndDay(new Date('2026-10-15T00:00:00Z'), win) === 'Wednesday 14 October')
+        ok('F-51: an offer ending 15:00 Thursday names Thursday',
+            welcomeOfferEndDay(new Date('2026-10-15T14:00:00Z'), win) === 'Thursday 15 October')
+        ok('F-52: an offer-end step with a delay is refused',
+            !!normalizeSchedule([{ messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 60, anchor: 'offer-end', preferSlot: 'evening' }], 'x', REG).error)
+        ok('F-52: offer-end "any" and "evening" land in the same window and clash',
+            !!normalizeSchedule([
+                { messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'any' },
+                { messageType: CMT.REG_NOT_BOOKED_3, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' },
+            ], 'x', REG).error)
+        ok('F-54: an offer-end anchor is refused outside the registered-not-booked schedule',
+            !!normalizeSchedule([{ messageType: CMT.LEAD_OFFER, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' }], 'leadSchedule').error)
+        ok('F-54: the registered-not-booked schedule still accepts it',
+            !normalizeSchedule([{ messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' }], 'registeredNotBookedSchedule',
+                [CMT.REG_NOT_BOOKED_1, CMT.REG_NOT_BOOKED_2, CMT.REG_NOT_BOOKED_3, CMT.REG_NOT_BOOKED_MARK_PROSPECT]).error)
+        ok('F-50: the phone step sets the phone only while it is still empty',
+            /findOneAndUpdate\(\s*\{\s*_id: userId, phoneNumber: \{ \$in: \[null, ''\] \} \}/.test(
+                fs.readFileSync(path.join(ROOT, 'services/user.service.js'), 'utf8'),
+            ))
+    }
+
     console.log(`\n${pass} passed, ${fail} failed\n`)
     process.exit(fail ? 1 : 0)
 })()

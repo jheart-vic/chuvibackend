@@ -13,13 +13,21 @@ These are corrections, so each work item goes through `/fix` (archived under
 |---|---|---|---|---|
 | 1 | Booking screen data + window-only free rule | 10, 11, 12, 14, 15 + FE labels | 2 | **DONE 2026-10-11** — archive `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`, review PASSED (2nd round; F-09..F-15 found and closed). Branch `fix/booking-screen-data-and-window-only-free-rule`, lands as a PR after the 3 earlier stacked fix PRs. Also fixed a LIVE bug: `OFFER_TRIGGER` not imported in offer.service.js since 620cca4. F-16 [P3] (window-only line wording) left open. |
 | 2 | Quick Booking: nothing paid at booking | 3 | 1 | **DONE 2026-10-12** — archive `blueprint/history/fixes/quick-booking-nothing-paid-at-booking.md`, review PASSED (round 10). Branch `fix/quick-booking-nothing-paid-at-booking`, lands as a PR after the S1 PR; conflicts with the booking hotfix (dced480) in `bookOrder.service.js` — keep this branch's version. Grew well past client item 3: it also closes holes still live on `main` until it merges (F-38 re-used Paystack reference activates a plan, F-45 free `subscribe-plan`, F-49 every `charge.failed` returns 500, hotfix F-28 plan-items race). FE notes: FE-CHANGELOG-2026-10-11 §3. Open: F-47 [P3] (→ item 9). Client to confirm: plans count pieces; F-20 (offer honoured at re-price after expiry); 200-piece cap. |
-| 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date | 1, 2, 9 | 2 | Ready to spec (Q1 answered) |
+| 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date **+ 3b daily floor limit** (+ set items on plans, 200-piece message) | 1, 2, 9 + item-2 answers | 2 → **3.5–4** | Ready to spec (Q1, 3b and big-order spreading all answered 12 Oct) |
 | 4 | Anytime agreed parts (Intake alert, top of list, all-windows-full → Urgent at window price + offer kept + next open day, "Urgent opens at") | 13 | 1.5–2 | Ready to spec (Q2 answered) |
 | 5 | Google sign-up: terms, referral code, phone normalisation | 5 | 1 | Not started |
-| 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | Ready to spec (Q3 answered) |
+| 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | **DONE 2026-10-12**. Archive `blueprint/history/fixes/registration-welcome-sms-and-schedule-save.md`; review PASSED (3 rounds; F-50..F-54 closed). Branch `fix/registration-welcome-sms-and-schedule-save`, stacked on item 2 (now merged). FE notes in FE-CHANGELOG-2026-10-11 §4. **Ask the client:** the welcome goes out immediately, outside the send windows (builder default), and F-55 (windows on the other follow-ups). |
 | 7 | Written explanations for 1 and 7a–7p | 1, 7 | 1 | Not started |
 | 8 | Clear test data, keep settings | 8 | 0.5 | Run LAST, at the client's time (likely Thursday night) |
 | 9 | Subscription rollover | build plan 21 | 3.5–4.5 | After 1–8. Rules in memory `chuvi-subscription-rollover` |
+
+**Follow-ups found along the way (not client items, small, each its own `/fix`):**
+- **F-55: CRM windows.** Lead and reactivation messages honour each step's morning/evening
+  window (user decision 2026-10-12). Post-delivery stays immediate and refuses a window.
+- **Sort station.** "Mark as pretreated" reports success even when the handoff to Wash &
+  Dry fails, so staff see "done" while the pieces stay put. Show the failure. Also two old
+  orders (OSC-20260721-414321, OSC-20260608-206700) have an item with no station. Fixing
+  them is a production data write and needs the user's yes.
 
 Total for 1–8 ≈ 9–10 days. Item 6 needs no frontend work (FE already built the settings
 group, schedule card and the per-customer Scheduled Follow-ups tab).
@@ -42,6 +50,149 @@ group, schedule card and the per-customer Scheduled Follow-ups tab).
    the offer ends**.
 
 Status board effect: items 3, 4 and 6 are no longer waiting on the client.
+
+## Item 2 follow-up questions — ANSWERED 2026-10-12 (binding)
+
+Verbatim:
+
+> 1. Yes. Plan items count pieces. A line of 3 shirts uses 3 plan items. Heavy and set items
+>    (duvets, suits and the like) are still not covered by plans.
+> 2. Yes. If the offer was valid when they booked, honour it, even if it expires before we
+>    count. The minimum amount is still checked on the counted bill. If the booking is
+>    cancelled, the offer goes with it, and a new booking made after the offer ends does not
+>    get it.
+> 3. 200 is enough for one booking. Above 200, show: "For more than 200 pieces, call or
+>    WhatsApp us on +234 707 325 4943 and we will plan it with you." Also, please confirm
+>    that a large order pushes the ready date out when the floor is full, instead of
+>    promising the normal time.
+
+Checked against item 2's code (2026-10-12):
+
+1. Pieces: matches. Heavy items are refused on a plan, including heavy set pieces.
+   **Gap:** a set item that is not marked heavy (a suit) is still accepted on a plan, so
+   set items need refusing too.
+2. Matches F-20 as built: the offer is honoured at the re-price, and the basket minimum is
+   checked on the counted bill. On cancel, `releaseForOrder` returns a personal offer to the
+   customer only while it is still valid; past its end it becomes `expired`, and a new
+   booking can't use an ended offer. Promotions are removed (F-21). Reading used: "goes with
+   it" means the grace ends with that booking.
+3. The cap stays at 200. **Gap:** both refusals (`util/catalogItems.js`,
+   `util/quickBooking.js`) need the client's exact text.
+   **Capacity: NO, it does not push the ready date out today.** `postBookOrder` reads the
+   speed capacities from `AdminOrderDetails`, but those fields are commented out of that
+   schema (they live on `AdminSetting`). So `sameDayCapacity` etc. are `undefined`, and
+   every gate (`items.length > undefined`) and decrement is a silent no-op. The gates only
+   exist in the plan branch anyway, they count lines rather than pieces, and the counters are
+   never reset. Even when they worked, a full floor refused same-day/express and only
+   added a message for standard; the stored ready date never moved. A real "floor full →
+   later ready date" rule is new work that needs client numbers (see the item 3 notes).
+
+## Daily floor limit (item 3b) — ANSWERED 2026-10-12 (binding)
+
+Verbatim:
+
+> 1. One number for the whole floor, counted in pieces, as a setting I can change. Start at
+>    150 pieces a day. Inside that, the fast speeds get their own smaller limits, also
+>    settings:
+>    • Ready Today: 30 pieces a day
+>    • Express: 50 pieces a day
+>    • Regular uses the rest
+>    Sunday is a half day, so it gets half the limit. Monday gets nothing. For now count
+>    every piece the same, whatever the service.
+> 2. When a day is full, show the next day with room before they book, for example "Ready
+>    Thursday instead of Wednesday". Do not refuse the order.
+> 3. When Ready Today or Express is full for a day, grey that speed out with "Full today".
+>    Do not offer it with a later date. Regular still shows, with its date moved if needed.
+> 4. Yes. For Quick Booking, count the number the customer enters when they book, and
+>    correct it when Intake counts. Once a customer has booked, keep their date even if the
+>    count changes. The new count only affects the bookings after them.
+
+## Item 3 scope (to spec with `/fix` — builds 3 and 3b together)
+
+**From the 11 Oct answers (Q1):**
+- **Ready date:** count from the day AFTER pickup, with day weights Tue–Sat 1, Sun 0.5,
+  Mon 0. The order is ready by 19:00 on the day the count is reached.
+- **Ready Today:** counts the pickup day itself. Offered only for a pickup before 12:00,
+  never on Sunday. This replaces the "booked before 10am" gate.
+- **Anytime per date:** availability per date, not one "now" answer.
+
+**From the 12 Oct answers (3b, daily floor limit):**
+- **Settings:**
+  - floor limit **150 pieces/day**;
+  - **Ready Today 30**, **Express 50** inside it;
+  - Regular uses the rest;
+  - Sunday is half of each limit, Monday 0;
+  - every piece counts the same.
+- **Day full:**
+  - **Regular** moves to the next day with room and shows the new date before booking
+    ("Ready Thursday instead of Wednesday"). Never refused.
+  - **Ready Today / Express** are greyed out with "Full today" and never offered with a
+    later date.
+- **Quick Booking** counts the entered number at booking, and Intake's count corrects
+  it. A booked order **keeps its date**; a changed count affects only later bookings.
+- **Replaces** the dead per-speed counters (`AdminOrderDetails` / `AdminSetting`
+  `*Capacity`), which never worked.
+
+**Carried from the 12 Oct item-2 answers (small, unrelated to dates):**
+- Refuse **set items** on a plan, not only heavy ones.
+- Above 200 pieces, both refusals read exactly: "For more than 200 pieces, call or WhatsApp
+  us on +234 707 325 4943 and we will plan it with you."
+
+**Builder readings to state in the spec (confirm if the client disagrees):**
+- **What a day's limit counts:** the pieces of orders whose READY date is that day. A day is
+  "full" for an order when the order's pieces don't fit in what's left.
+- **"Regular uses the rest":** one shared pool of 150. Ready Today and Express are capped at
+  30 and 50 inside it, and Regular takes whatever is left (not a fixed 70).
+- **Cancelled orders free their pieces;** every booking channel counts (app, assistant, S1
+  counter, plans).
+- **Express / Ready Today need room in BOTH** their own share and the day's floor total (if
+  Regular has used the floor, a fast speed with share left is still full).
+
+## Orders bigger than one day's room — ANSWERED 2026-10-12 (binding)
+
+Verbatim:
+
+> *Orders bigger than one day's limit*
+> Please spread it over the days. Don't wait for an empty day.
+>
+> *How it works*
+> 1. The order takes whatever room is left on the first day that has room.
+> 2. The rest goes on the next working day, and so on until every piece fits. Sunday counts
+>    as 75. Monday is skipped.
+> 3. The ready date is the last of those days.
+> 4. The customer sees one ready date only. The split is just for our count.
+>
+> *Examples*
+> Tuesday has 40 pieces of room left. A 180 piece order puts 40 on Tuesday and 140 on
+> Wednesday. Ready date shows Wednesday.
+>
+> A 100 piece order on Sunday puts 75 on Sunday, skips Monday, and puts 25 on Tuesday. Ready
+> date shows Tuesday.
+>
+> *Express and Ready Today*
+> These can't be spread over days. If the order is bigger than the room left in that speed's
+> share (Express 50, Ready Today 30), grey it out and show:
+> "Too many pieces for Express. Choose Standard, or call us on +234 707 325 4943."
+>
+> *Why*
+> The floor washes a big bag in batches across the day and the next anyway. Waiting for an
+> empty day could push a big customer a week out, block that whole day for everyone else, and
+> still go over the limit.
+
+What this means for item 3:
+- **Regular never waits for an empty day.** It fills the room left on its first possible
+  ready day, then each next working day (Sunday 75, Monday skipped) until every piece is
+  placed. The ready date is the last day used. The order stores its per-day split for the
+  count, and the customer sees only the one date.
+- **This applies to every Regular order, not only big ones.** An order that doesn't fit in
+  a day's remaining room spills to the next day instead of moving wholesale. So "Ready
+  Thursday instead of Wednesday" appears only when Wednesday has no room at all.
+- **Ready Today / Express are never split.** If the order is bigger than the room left in
+  that speed's share, the speed is greyed out with "Too many pieces for Express. Choose
+  Standard, or call us on +234 707 325 4943." Ready Today uses the same text, naming Ready
+  Today. When the share is simply used up, it shows "Full today".
+- **Booked orders keep their split and date.** Intake's count corrects the stored split
+  for later bookings only.
 
 ### The client's answers, verbatim
 

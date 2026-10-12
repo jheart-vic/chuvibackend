@@ -14,7 +14,12 @@ const moment = require('moment-timezone')
 
 // Client decision: reporting months run on Lagos time, not UTC.
 const LAGOS = 'Africa/Lagos'
-const { sendCrmMessage, getCrmSettings } = require('./crmMessenger.service')
+const { sendCrmMessage, getCrmSettings, renderTemplate } = require('./crmMessenger.service')
+const sendSms = require('../util/sendSms')
+const createNotification = require('../util/createNotification')
+const OfferModel = require('../models/offer.model')
+const CustomerOfferModel = require('../models/customerOffer.model')
+const { NOTIFICATION_TYPE, CUSTOMER_OFFER_STATUS } = require('../util/constants')
 // Client item #1: the follow-up sequence is anchored to the First Experience
 // offer's expiry, so registration must know the linkage it just created.
 const OfferService = require('./offer.service')
@@ -78,6 +83,109 @@ const channelToTag = (channel) => {
 
 const isExpressSpeed = (speed) =>
     speed === DELIVERY_SPEED.EXPRESS || speed === DELIVERY_SPEED.SAME_DAY
+
+const REGISTERED_NOT_BOOKED_TYPES = [
+    CRM_MESSAGE_TYPE.REG_NOT_BOOKED_1,
+    CRM_MESSAGE_TYPE.REG_NOT_BOOKED_2,
+    CRM_MESSAGE_TYPE.REG_NOT_BOOKED_3,
+    CRM_MESSAGE_TYPE.REG_NOT_BOOKED_MARK_PROSPECT,
+]
+
+// Validates one admin-edited workflow schedule and enforces staggering, so
+// messages never all fire at once. Returns { normalized } or { error }.
+//
+// `anchor` and `preferSlot` are kept (launch item 6): dropping them turned the
+// registered-not-booked messages 2 and 3, positioned from the Welcome Offer's
+// end, into plain delays from sign-up. Workflow-start steps clash when they
+// share a minute; offer-end steps (delay always 0) clash when they land in the
+// same window — messages 2 and 3 sit one in the evening, one in the morning.
+// The registration welcome is sent at sign-up, never as a schedule step.
+const WELCOME_TYPES = [
+    CRM_MESSAGE_TYPE.REGISTRATION_WELCOME,
+    CRM_MESSAGE_TYPE.REGISTRATION_WELCOME_NO_OFFER,
+]
+const SCHEDULE_TYPES = Object.values(CRM_MESSAGE_TYPE).filter((t) => !WELCOME_TYPES.includes(t))
+
+const normalizeSchedule = (schedule, label, allowedTypes = SCHEDULE_TYPES) => {
+    if (!Array.isArray(schedule)) {
+        return { error: `${label} must be an array` }
+    }
+    const anchors = Object.values(CRM_SCHEDULE_ANCHOR)
+    const slots = Object.values(CRM_SEND_SLOT)
+    const seen = new Set()
+    const normalized = []
+    for (const step of schedule) {
+        if (!step || !allowedTypes.includes(step.messageType)) {
+            return {
+                error: `Invalid ${label} step message type: ${step?.messageType}`,
+            }
+        }
+        const delayMinutes = Number(step.delayMinutes)
+        if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
+            return {
+                error: `Invalid delayMinutes for ${step.messageType}`,
+            }
+        }
+        const anchor = step.anchor ?? CRM_SCHEDULE_ANCHOR.WORKFLOW_START
+        if (!anchors.includes(anchor)) {
+            return { error: `Invalid anchor for ${step.messageType}: ${anchor}` }
+        }
+        // Only the registered-not-booked workflow knows the offer's end; every
+        // other workflow would read such a step as delay 0 (review F-54).
+        if (anchor === CRM_SCHEDULE_ANCHOR.OFFER_END && !allowedTypes.every((t) => REGISTERED_NOT_BOOKED_TYPES.includes(t))) {
+            return {
+                error: `${label} steps can't be counted from the offer's end: only the "Registered, not booked" messages can.`,
+            }
+        }
+        const preferSlot = step.preferSlot ?? CRM_SEND_SLOT.ANY
+        if (!slots.includes(preferSlot)) {
+            return { error: `Invalid preferSlot for ${step.messageType}: ${preferSlot}` }
+        }
+        // An offer-end step is placed only by its window (startRegisteredNotBooked-
+        // Workflow: morning → the morning it ends, anything else → the evening
+        // before); a delay would be silently ignored, so it is refused (F-52).
+        if (anchor === CRM_SCHEDULE_ANCHOR.OFFER_END && delayMinutes !== 0) {
+            return {
+                error: `delayMinutes must be 0 for ${step.messageType}: a step counted from the offer's end goes in its send window (the evening before the offer ends, or the morning it ends), not after a delay.`,
+            }
+        }
+        const enabled = step.enabled !== false
+        if (enabled) {
+            const key =
+                anchor === CRM_SCHEDULE_ANCHOR.OFFER_END
+                    ? `${anchor}|${preferSlot === CRM_SEND_SLOT.MORNING ? 'morning' : 'evening'}`
+                    : `${anchor}|${delayMinutes}`
+            if (seen.has(key)) {
+                return {
+                    error:
+                        anchor === CRM_SCHEDULE_ANCHOR.OFFER_END
+                            ? `Two ${label} messages are set for the same window around the offer's end. Put one in the morning window and the other in the evening window.`
+                            : `Two ${label} messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
+                }
+            }
+            seen.add(key)
+        }
+        normalized.push({
+            messageType: step.messageType,
+            enabled,
+            delayMinutes,
+            cancelIfOrdered: step.cancelIfOrdered !== false,
+            anchor,
+            preferSlot,
+        })
+    }
+    return { normalized }
+}
+
+// The welcome's {{offerEndDay}}: the LAST DAY the Welcome Offer can be used,
+// by the same rule as messages 2 and 3 — an offer ending before the morning
+// window closes (08:00) counts as ending the day before, so "by Thursday" is
+// never promised for an offer that ends at 01:00 Thursday (F-51).
+const welcomeOfferEndDay = (offerEndsAt, windows) => {
+    const lastDay = moment(offerEndsAt).tz(LAGOS)
+    if (offerEndSchedule(offerEndsAt, windows).shifted) lastDay.subtract(1, 'day')
+    return lastDay.format('dddd D MMMM')
+}
 
 class CrmService {
     // ─── Profile resolution ──────────────────────────────────────────────────
@@ -550,6 +658,119 @@ class CrmService {
                 )
             }
         }
+
+        // ── LAUNCH ITEM 6 (client 2026-10-11) ──────────────────────────────
+        // The welcome: in-app now, SMS now when the account has a phone
+        // (Google/Apple add theirs later — handleProfileCompleted). After the
+        // grant so it can name the day the Welcome Offer ends, and after the
+        // sequence is queued so a slow SMS provider never delays it (F-53).
+        try {
+            await this.sendRegistrationWelcome({ user, profile, offerEndsAt, inApp: true })
+        } catch (err) {
+            console.warn('registration welcome failed (non-fatal):', err?.message)
+        }
+    }
+
+    // ─── Registration welcome (launch item 6) ─────────────────────────────────
+    //
+    // Client, 2026-10-11: "Send it by SMS and as an in app notification, so they
+    // see it on their phone even before they open the app. The email can stay as
+    // it is." The text is the editable `registration-welcome` template, with the
+    // Welcome Offer's end day; `registration-welcome-no-offer` when there is no
+    // live offer, so the SMS never prints a blank day.
+    //
+    // Sent IMMEDIATELY, not held for the follow-up send windows: it answers the
+    // customer's own sign-up, like the order and payment messages.
+    //
+    // By SMS itself (not the WhatsApp-first CRM chain): the client asked for SMS.
+    // Once per customer: a logged SMS success is never repeated.
+    async sendRegistrationWelcome({ user, profile, offerEndsAt, inApp = false }) {
+        const settings = await getCrmSettings()
+        const hasOffer = offerEndsAt && new Date(offerEndsAt) > new Date()
+        const messageType = hasOffer
+            ? CRM_MESSAGE_TYPE.REGISTRATION_WELCOME
+            : CRM_MESSAGE_TYPE.REGISTRATION_WELCOME_NO_OFFER
+        const template =
+            settings.templates.get(messageType) ||
+            CrmSettingModel.DEFAULT_TEMPLATES[messageType]
+        const content = renderTemplate(template, { fullName: user.fullName }, {
+            offerEndDay: hasOffer ? welcomeOfferEndDay(offerEndsAt, settings.sendWindows) : '',
+        })
+        if (!content) return
+
+        if (inApp) {
+            try {
+                await createNotification({
+                    userId: user._id,
+                    title: 'Welcome to Chuvi Laundry',
+                    body: content,
+                    type: NOTIFICATION_TYPE.SYSTEM,
+                })
+            } catch (err) {
+                console.warn('registration welcome notice failed (non-fatal):', err?.message)
+            }
+        }
+
+        if (!user.phoneNumber) return
+        if (
+            profile &&
+            (await CrmMessageLogModel.exists({
+                profileId: profile._id,
+                messageType: { $in: [CRM_MESSAGE_TYPE.REGISTRATION_WELCOME, CRM_MESSAGE_TYPE.REGISTRATION_WELCOME_NO_OFFER] },
+                channel: 'sms',
+                success: true,
+            }))
+        ) {
+            return
+        }
+        let success = false
+        try {
+            await sendSms(user.phoneNumber, content)
+            success = true
+        } catch (err) {
+            console.warn('registration welcome SMS failed (non-fatal):', err?.message)
+        }
+        if (profile) {
+            try {
+                await CrmMessageLogModel.create({
+                    profileId: profile._id,
+                    workflow: CRM_WORKFLOW.REGISTERED_NOT_BOOKED,
+                    messageType,
+                    channel: success ? 'sms' : null,
+                    content,
+                    success,
+                    error: success ? undefined : 'SMS failed',
+                })
+            } catch (err) {
+                console.warn('registration welcome log failed:', err?.message)
+            }
+        }
+    }
+
+    // Google/Apple sign-ups add their phone after registering
+    // (userService.completeProfile): their welcome SMS goes now, once, with the
+    // Welcome Offer's end day read at this moment (ended → the no-offer text).
+    async handleProfileCompleted(user) {
+        if (!user?.phoneNumber) return
+        const profile = await CrmProfileModel.findOne({ userId: user._id })
+        const firstExperience = await OfferModel.find({
+            $or: [
+                { triggers: OFFER_TRIGGER.FIRST_EXPERIENCE },
+                { trigger: OFFER_TRIGGER.FIRST_EXPERIENCE },
+            ],
+        })
+            .select('_id')
+            .lean()
+        const linkage = firstExperience.length
+            ? await CustomerOfferModel.findOne({
+                  userId: user._id,
+                  offerId: { $in: firstExperience.map((o) => o._id) },
+                  status: { $in: [CUSTOMER_OFFER_STATUS.ASSIGNED, CUSTOMER_OFFER_STATUS.VIEWED] },
+              })
+                  .sort({ expiresAt: -1 })
+                  .lean()
+            : null
+        await this.sendRegistrationWelcome({ user, profile, offerEndsAt: linkage?.expiresAt || null })
     }
 
     // Order placed: the lead has converted out of the sales sequence.
@@ -1732,6 +1953,7 @@ class CrmService {
                 leadSchedule,
                 postDeliverySchedule,
                 reactivationSchedule,
+                registeredNotBookedSchedule,
                 orderReadyDelayMinutes,
             } = req.body
             const settings = await getCrmSettings()
@@ -1778,56 +2000,23 @@ class CrmService {
                 }
             }
 
-            // Admin sets each workflow's message sequence + delivery times.
-            // Validate every step and enforce staggering (no two enabled steps in
-            // the same minute) so messages never all fire at once. Returns either
-            // { normalized } or { error }.
-            const validTypes = Object.values(CRM_MESSAGE_TYPE)
-            const normalizeSchedule = (schedule, label) => {
-                if (!Array.isArray(schedule)) {
-                    return { error: `${label} must be an array` }
-                }
-                const seenMinutes = new Set()
-                const normalized = []
-                for (const step of schedule) {
-                    if (!step || !validTypes.includes(step.messageType)) {
-                        return {
-                            error: `Invalid ${label} step message type: ${step?.messageType}`,
-                        }
-                    }
-                    const delayMinutes = Number(step.delayMinutes)
-                    if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
-                        return {
-                            error: `Invalid delayMinutes for ${step.messageType}`,
-                        }
-                    }
-                    const enabled = step.enabled !== false
-                    if (enabled) {
-                        if (seenMinutes.has(delayMinutes)) {
-                            return {
-                                error: `Two ${label} messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
-                            }
-                        }
-                        seenMinutes.add(delayMinutes)
-                    }
-                    normalized.push({
-                        messageType: step.messageType,
-                        enabled,
-                        delayMinutes,
-                        cancelIfOrdered: step.cancelIfOrdered !== false,
-                    })
-                }
-                return { normalized }
-            }
-
+            // Admin sets each workflow's message sequence + delivery times
+            // (validated and staggered by normalizeSchedule below).
+            // `registeredNotBookedSchedule` was missing here, so its changes
+            // were dropped while the save reported success (launch item 6).
             const scheduleUpdates = [
                 ['leadSchedule', leadSchedule],
                 ['postDeliverySchedule', postDeliverySchedule],
                 ['reactivationSchedule', reactivationSchedule],
+                [
+                    'registeredNotBookedSchedule',
+                    registeredNotBookedSchedule,
+                    REGISTERED_NOT_BOOKED_TYPES,
+                ],
             ]
-            for (const [field, value] of scheduleUpdates) {
+            for (const [field, value, allowedTypes] of scheduleUpdates) {
                 if (value === undefined) continue
-                const { normalized, error } = normalizeSchedule(value, field)
+                const { normalized, error } = normalizeSchedule(value, field, allowedTypes)
                 if (error) return BaseService.sendFailedResponse({ error })
                 settings[field] = normalized
             }
@@ -1867,3 +2056,5 @@ module.exports = new CrmService()
 // thresholds in profileMerge.service.js is exactly the drift that let the tier
 // pricing maths disagree with itself in brief 1.6.
 module.exports.countStage = countStage
+module.exports.normalizeSchedule = normalizeSchedule
+module.exports.welcomeOfferEndDay = welcomeOfferEndDay

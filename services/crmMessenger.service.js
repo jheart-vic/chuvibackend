@@ -58,12 +58,14 @@ const linkLineFor = (messageType, profile, recordId) => {
     return ''
 }
 
-const renderTemplate = (template, profile) => {
+// `vars.offerEndDay`: the registration welcome's Welcome Offer end day.
+const renderTemplate = (template, profile, vars = {}) => {
     const name = profile.fullName || 'there'
     const firstName = name.split(' ')[0]
     return (template || '')
         .replace(/{{\s*name\s*}}/g, name)
         .replace(/{{\s*firstName\s*}}/g, firstName)
+        .replace(/{{\s*offerEndDay\s*}}/g, vars.offerEndDay || '')
 }
 
 const getCrmSettings = async () => {

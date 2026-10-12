@@ -9,6 +9,14 @@ const crmOnUserRegistered = (user) => {
     )
 }
 
+// A Google/Apple customer added their phone: their welcome SMS goes now.
+const crmOnProfileCompleted = (user) => {
+    if (!user) return
+    CrmService.handleProfileCompleted(user).catch((err) =>
+        console.warn('CRM profile-completed hook failed (non-fatal):', err.message),
+    )
+}
+
 const crmOnOrderCreated = (order) => {
     if (!order) return
     // §6: free recovery orders are not real purchases — exclude from CRM accounting.
@@ -51,6 +59,7 @@ const crmOnOrderCancelled = (order) => {
 
 module.exports = {
     crmOnUserRegistered,
+    crmOnProfileCompleted,
     crmOnOrderCreated,
     crmOnOrderDelivered,
     crmOnOrderReady,

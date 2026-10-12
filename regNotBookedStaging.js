@@ -25,6 +25,10 @@
  */
 process.env.TZ = process.env.TZ_OVERRIDE || 'Africa/Lagos'
 require('dotenv').config()
+// Registering now sends the welcome SMS (launch item 6): never text the test
+// numbers for real.
+const smsPath = require.resolve('./util/sendSms')
+require.cache[smsPath] = { id: smsPath, filename: smsPath, loaded: true, exports: async () => ({ stubbed: true }) }
 const mongoose = require('mongoose')
 const UserModel = require('./models/user.model')
 const CrmProfileModel = require('./models/crmProfile.model')

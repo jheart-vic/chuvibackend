@@ -432,6 +432,16 @@
  *             - { messageType: reactivation-2, enabled: true, delayMinutes: 20160, cancelIfOrdered: true }
  *             - { messageType: reactivation-3, enabled: true, delayMinutes: 60480, cancelIfOrdered: true }
  *             - { messageType: reactivation-mark-churned, enabled: true, delayMinutes: 80640, cancelIfOrdered: true }
+ *         registeredNotBookedSchedule:
+ *           type: array
+ *           description: "Registered-but-not-booked sequence (client item #1, 2026-10-08). Message 1 counts from registration; messages 2 and 3 are placed from the Welcome Offer's end (evening the day before, morning on the day); day 7 moves the customer to the prospect list. Saves since 2026-10-12 (launch item 6)."
+ *           items:
+ *             $ref: '#/components/schemas/CrmScheduleStep'
+ *           example:
+ *             - { messageType: reg-not-booked-1, enabled: true, delayMinutes: 1440, cancelIfOrdered: true, anchor: workflow-start, preferSlot: any }
+ *             - { messageType: reg-not-booked-2, enabled: true, delayMinutes: 0, cancelIfOrdered: true, anchor: offer-end, preferSlot: evening }
+ *             - { messageType: reg-not-booked-3, enabled: true, delayMinutes: 0, cancelIfOrdered: true, anchor: offer-end, preferSlot: morning }
+ *             - { messageType: reg-not-booked-mark-prospect, enabled: true, delayMinutes: 10080, cancelIfOrdered: true, anchor: workflow-start, preferSlot: any }
  *         orderReadyDelayMinutes:
  *           type: number
  *           description: "Minutes after an order becomes ready before the Order Ready message sends (0 = immediately)."
@@ -444,6 +454,8 @@
  *         enabled: { type: boolean, example: true }
  *         delayMinutes: { type: number, description: Minutes after the workflow's anchor event this step fires, example: 1440 }
  *         cancelIfOrdered: { type: boolean, description: Drop this step if the customer books before it fires, example: true }
+ *         anchor: { type: string, enum: [workflow-start, offer-end], description: "What the step is timed from. workflow-start = delayMinutes after the workflow begins. offer-end = the customer's Welcome Offer end (registered-not-booked messages 2 and 3): delayMinutes must be 0, and preferSlot places it (morning = the morning it ends; evening/any = the evening before).", example: workflow-start }
+ *         preferSlot: { type: string, enum: [any, morning, evening], description: Which daily send window the step prefers, example: any }
  *
  *     CrmError:
  *       type: object
