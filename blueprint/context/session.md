@@ -1,5 +1,37 @@
 # Current Session Log
 
+## ███ 2026-10-12 — Launch fix 2 (Quick Booking, nothing paid at booking) COMPLETED. Next: item 3. ███
+- Archive `blueprint/history/fixes/quick-booking-nothing-paid-at-booking.md` (30 closed findings + round-10 receipt).
+  Review took 10 rounds; the final rounds were all payment hardening. Work commit is the user's to make; the user
+  pushes and opens the PR (lands after the S1 PR). **Merge conflict expected** with the booking hotfix `dced480`
+  (already on origin/main) in `services/bookOrder.service.js`: keep THIS branch's version (it contains the hotfix).
+- What it fixes that is still LIVE on main until it merges: F-38 (re-used Paystack reference activates a plan for
+  ₦100), F-45 (`POST /subscription/subscribe-plan` gave an active plan with no payment — now always refused; user
+  confirmed the app subscribes only via checkout and nobody used it), F-49 (`charge.failed` never imported → every
+  event 500; now marks our pending card checkout failed and tells only its owner once: WhatsApp + in-app "Payment
+  not completed" + email, user-approved), hotfix F-28 (plan-items race).
+- New customer messages (user-approved wording): "Plan renewal payment received" (renewal we couldn't apply; admins
+  get "Plan renewal payment not applied") and "Payment not completed". FE notes: FE-CHANGELOG-2026-10-11 §3.
+- Gates (final): briefCheck 462/0 · quickBookingStaging 67/0 · F-45/F-46 probe 15/0 · F-48/F-49 probe 15/0 · plan
+  probe 5/5 · 13 other staging scripts green (round 8) · Swagger 0 wrong · boot 7999 ok. testingdb has no active
+  admin user, so admin-alert probes must create one.
+- Still open: F-47 [P3] duplicate subscription docs → item 9 (rollover); F-06/F-08 by design.
+- **Ask the client:** plans count pieces (3 shirts = 3 items)? F-20 (offer attached at booking honoured at the
+  re-price even after it expires)? Is the 200-piece cap enough?
+- Offered, not done: delete the `../chuvibackend-hotfix` worktree when the user says so.
+
+## ███ 2026-10-11 (late) — Fix: S1 booking payment method COMPLETED. Next: restore item 2 spec. ███
+- Client: S1 (intake) booking "always" failed on the payment method. Cause: the 8 Oct FE changelog said
+  `paymentMethod` was optional/default cash; the backend made it REQUIRED the same day (client: mandatory, cash
+  pre-selected on screen) and no correction was sent. Backend change is the message only ("Choose how the customer
+  paid: cash, POS, bank transfer or wallet."), still mandatory, no fallback. **S1 keeps failing until the FE sends
+  `paymentMethod`** — note to send: `blueprint/context/FE-CHANGELOG-2026-10-11.md` (also carries fix 1's FE changes).
+- Archive `blueprint/history/fixes/s1-booking-payment-method-message.md`. Branch `fix/s1-booking-payment-method-message`
+  stacked on fix 1; PR after fix 1's. Gates: briefCheck 407/0, counterPaymentStaging 51/0 (testingdb), swagger 0.
+- testingdb had no AdminSetting doc; booting the app once against it seeded the defaults.
+- **Item 2 spec is shelved** at `blueprint/shelved/quick-booking-nothing-paid-at-booking.md`; move it back into
+  `current-feature.md` on a new branch `fix/quick-booking-nothing-paid-at-booking` stacked on this one, then /implement.
+
 ## ███ 2026-10-11 (eve) — Launch fix 1 COMPLETED (archived, work commit pending approval). Next: item 2. ███
 - Archive: `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`. Review round 1 passed with
   F-09..F-15 (P2/P3); all fixed in `7e86ca1` and closed by round 2 (passed). F-16 [P3] open: the window-only line

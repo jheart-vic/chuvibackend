@@ -23,21 +23,6 @@ assertions, by contrast, drive the real `_cancellationVerdict`.
 Nothing current is lost.
 **Resolution:**
 
-### F-07 [P3] open - The getBookOrder comment and the spec say the intake route shares this handler; it does not
-
-**File:** services/bookOrder.service.js:2345
-**Found:** 2026-10-10 by /audit independent (scope: current; lens: quality)
-**Why it matters:** The new comment says staff reads go through this handler because "this
-handler is also mounted on the intake routes", and the spec says the same about
-routes/intake-user.js:481. That route actually calls `IntakeUserController.getBookOrder`,
-which uses `IntakeUserService.getBookOrder` (services/intake-user.service.js:563), a
-separate handler behind `intakeUserAuth`. Behaviour is unaffected: staff of every role
-still read any order through `/bookOrder/book-order/:id`, and the intake route was never
-open to customers. The wrong comment could mislead the next change to either handler.
-**Suggested fix:** Reword the comment to say staff apps read any order through this route,
-and drop the intake-route claim. Nothing current is lost.
-**Resolution:**
-
 ### F-08 [P3] open - The new access checks in briefCheck only match source text, and the section headers above them are misplaced
 
 **File:** briefCheck.js:2047
@@ -50,25 +35,15 @@ gate. Separately, the orphaned "FE 9 Oct" and "Dead subscription crons removed" 
 at lines 2047-2051 now sit above the Access block instead of their own sections.
 **Suggested fix:** Move the two headers to their sections. When `/tests` adds a runner,
 drive `reportDeliveryIssue` and `getBookOrder` with stubbed models. Nothing current is lost.
+**Resolution:** Partly fixed 2026-10-11: the "FE 9 Oct" and "Dead subscription crons removed" headers now sit above their own sections. The source-text-only access checks stay as they are until a test runner exists (same as F-06).
+
+### F-47 [P3] open - A first plan charge always creates a new subscription document, so a re-subscriber can hold two (pre-existing; deferred to launch item 9)
+
+**File:** util/webhook.handler.js (`handleNormalSubscription` lookup filter)
+**Found:** 2026-10-12 by /audit independent (round 8, Remaining risk)
+**Why it matters:** The lookup filters on a `user` field that is not in the subscription schema, so with Mongoose 8 (`strictQuery` false) it never matches and every first charge creates a new document. A customer who re-subscribes after a failed renewal can end up with two, and `subscription.create` may attach the new Paystack code to the old one, after which a renewal is reported as unapplied (F-46 now catches that).
+**Suggested fix:** Look up by `userId`, and decide the re-subscribe rules with the subscription rollover work (launch item 9), which rebuilds this area.
 **Resolution:**
-
-### F-16 [P3] open - The window-only fees line says "Choose a time window" when a window cannot help
-
-**File:** services/offer.service.js:694
-**Found:** 2026-10-11 by /audit independent (scope: current; lens: quality)
-**Why it matters:** The window-only message always ends "Choose a time window to save ₦X".
-On a same-day order with no morning window, `resolvePickupTiming` forces the pickup to
-Anytime even when the customer picked a window, so the customer sees advice they cannot
-follow. The amount is also the client-sent `draft.pickupAmount` (usually the window
-fee), not the Anytime fee the order charges. Separately, `computeBenefits` flags
-`anytimeKeptPickup`/`anytimeKeptDelivery` from the timing alone, so a draft that sends an
-Anytime timing for a leg it does not book (`isPickUp` or `isDelivery` false) gets
-"... save ₦0." The bill is right in every case. Only the line's wording or amount is off.
-**Suggested fix:** Skip the window-only row (or give it same-day wording) when the leg was
-forced to Anytime by the same-day rule. Ignore a leg whose amount is 0 or that is not
-booked. Nothing current is lost.
-**Resolution:**
-
 ### F-19 [P2] open - The staff counter booking still spreads the request body over the order (pre-existing)
 
 **File:** services/intake-user.service.js:339

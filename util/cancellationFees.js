@@ -77,13 +77,21 @@ function cancellationOutcome({ order, settings, amountPaid = null }) {
 
     const pickupStatus = order?.dispatchDetails?.pickup?.status
     const collected = pickupStatus === 'picked-up'
+    // Part-paid: the bill rose after a payment and the balance is still due
+    // (F-30). What was paid counts as paid.
+    const partPaid =
+        order?.paymentStatus !== 'success' && Number(order?.balanceDue || 0) > 0
+            ? Math.max(0, Number(order?.amount || 0) - Number(order.balanceDue))
+            : 0
     const paid =
-        order?.paymentStatus === 'success' || Boolean(order?.paymentWaivedAt)
+        order?.paymentStatus === 'success' ||
+        Boolean(order?.paymentWaivedAt) ||
+        partPaid > 0
     const paidAmount =
         amountPaid === null || amountPaid === undefined
-            ? paid
+            ? order?.paymentStatus === 'success' || order?.paymentWaivedAt
                 ? Number(order?.amount || 0)
-                : 0
+                : partPaid
             : Number(amountPaid)
 
     // BEFORE PICKUP = FREE. Nothing has been collected, so no trip was made.

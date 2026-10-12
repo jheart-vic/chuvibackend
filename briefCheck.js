@@ -588,6 +588,25 @@ const run = (async () => {
     })
     ok('a ₦0 bill charges nothing rather than writing an empty wallet line',
         zeroPlan.ok && zeroPlan.plan.tenders.length === 0)
+    // Client report 11 Oct: S1 booking "always" failed on the payment method.
+    // Still mandatory, but refused in words the counter operator can act on.
+    const missing = await Promise.all(
+        [undefined, null, '', '   '].map((method) =>
+            counter.planCounterPayment({ customerId: null, total: 5000, method }),
+        ),
+    )
+    ok('a missing or blank tender is refused with the operator sentence, never a field name',
+        missing.every((p) => !p.ok && p.error === counter.MISSING_COUNTER_METHOD) &&
+            counter.MISSING_COUNTER_METHOD ===
+                'Choose how the customer paid: cash, POS, bank transfer or wallet.')
+    ok('every spelling the S1 screen may send is still accepted',
+        ['cash', 'Cash', 'POS', 'card', 'transfer', 'Bank Transfer', 'bank-transfer', 'wallet'].every(
+            (m) => counter.normalizeCounterMethod(m) !== null,
+        ))
+    ok('there is still no server-side fallback to cash (the tender stays mandatory)',
+        !/\|\|\s*PAYMENT_METHOD\.CASH|\|\|\s*'cash'/.test(
+            intakeSrc.slice(intakeSrc.indexOf('const tenderMethod'), intakeSrc.indexOf('const paymentPlan')),
+        ))
     ok('intake no longer stamps a counter order paid before the money moves',
         !/paymentStatus: PAYMENT_ORDER_STATUS\.SUCCESS,\n\s*billingType/.test(intakeSrc) &&
             /settleCounterPayment\(\{/.test(intakeSrc))
@@ -1493,8 +1512,8 @@ const run = (async () => {
     const phSrc = fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')
     // "Staff can never type an amount" is enforced by there being no parameter.
     ok('raising a hold takes NO amount — the bill comes from the order',
-        /static async raise\(\{ orderId, actorId, reason = null \}\)/.test(phSrc) &&
-            /const amount = Number\(order\.amount \|\| 0\)/.test(phSrc))
+        /static async raise\(\{ orderId, actorId, reason = null, keepClockFrom = null \}\)/.test(phSrc) &&
+            /const amount = amountDue\(order\)/.test(phSrc))
     ok('the hold IS an ordinary order-level hold, so Holds Management shows it',
         /'orderHold\.holdTypeKey': HoldTypeModel\.PAYMENT_HOLD_KEY/.test(phSrc) &&
             /'stage\.status': ORDER_STATUS\.HOLD/.test(phSrc))
@@ -1626,7 +1645,11 @@ const run = (async () => {
         /refundToWallet\(\{/.test(boSrc))
     // A waiver is permission to proceed, not money received.
     ok('a WAIVED order is not counted as paid, so nothing is refunded',
-        /order\.paymentStatus === PAYMENT_ORDER_STATUS\.SUCCESS\s*\n?\s*\? previousTotal\s*\n?\s*: 0/.test(boSrc))
+        (() => {
+            const { amountPaidSoFar } = require(path.join(ROOT, 'util/paymentGate'))
+            return /const amountPaid = amountPaidSoFar\(order\)/.test(boSrc) &&
+                amountPaidSoFar({ paymentStatus: 'pending', paymentWaivedAt: new Date(), amount: 5000 }) === 0
+        })())
     ok('a reason is REQUIRED and the edit is recorded with who made it',
         /A reason is required — the bill is changing/.test(boSrc) &&
             /itemEdits: \{/.test(boSrc))
@@ -2044,11 +2067,6 @@ const run = (async () => {
             ))
     }
 
-    // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
-    // ─── Dead subscription crons removed ────────────────────────────────────
-    // None of the three ever changed a document, and a working calendar reset
-    // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
-    // is the one place the monthly allowance is reset.
     // ─── Launch fix 1: window-only free trips and the fees line ─────────────
     // Drives the real OfferService methods; no database is touched.
     console.log('\nLaunch fix 1 — window-only free trips and the fees line')
@@ -2259,6 +2277,10 @@ const run = (async () => {
             ) && /if \(!bookOrder \|\| notMine\)/.test(getOne))
     }
 
+    // ─── Dead subscription crons removed ────────────────────────────────────
+    // None of the three ever changed a document, and a working calendar reset
+    // would ignore billing dates and wipe loyalty bonuses. The renewal webhook
+    // is the one place the monthly allowance is reset.
     console.log('\nSubscription allowance resets only at renewal')
     {
         const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8')
@@ -2270,6 +2292,7 @@ const run = (async () => {
             ))
     }
 
+    // ─── FE 9 Oct: a failed delivery returns to READY ───────────────────────
     console.log('\nFE — failed delivery goes back to the delivery queue')
     {
         const riderSrc = fs.readFileSync(path.join(ROOT, 'services/rider.service.js'), 'utf8')

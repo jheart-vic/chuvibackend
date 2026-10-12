@@ -175,7 +175,11 @@ class IntakeUserService extends BaseService {
                 // UI default, not a server fallback, because a server fallback
                 // is exactly what "mandatory" rules out.
                 // ⚠️ BREAKING for any app build that does not send it yet.
-                paymentMethod: 'string|required',
+                // Still mandatory: planCounterPayment refuses a missing or
+                // blank value with a sentence for the operator, before any
+                // order exists (the validator's text was "paymentMethod is
+                // required", which staff could not act on).
+                paymentMethod: 'string',
                 secondaryPaymentMethod: 'string',
             }
 
@@ -314,7 +318,20 @@ class IntakeUserService extends BaseService {
             delete post.useCredit
 
             const oscNumber = generateOscNumber()
+            // Only the order's own fields come from the staff request; amount,
+            // payment, stage, channel, billing type and attribution are the
+            // server's (review F-19: the body was spread last and could set
+            // any of them). Spread FIRST, so the server's values below win.
+            const STAFF_ORDER_FIELDS = [
+                'fullName', 'phoneNumber', 'pickupAddress', 'deliveryAddress',
+                'pickupDate', 'pickupTime', 'serviceType', 'serviceTier',
+                'deliverySpeed', 'items', 'extraNote', 'isPickUp', 'isDelivery',
+            ]
+            const staffFields = Object.fromEntries(
+                STAFF_ORDER_FIELDS.filter((k) => post[k] !== undefined).map((k) => [k, post[k]]),
+            )
             const newOrderItem = {
+                ...staffFields,
                 oscNumber,
                 amount: totalPrice,
                 // PENDING until the tender is actually settled below. It used to
@@ -336,7 +353,6 @@ class IntakeUserService extends BaseService {
                     },
                 ],
                 ...(customerId && { userId: customerId }),
-                ...post,
                 deliveryDate,
             }
             const newOrder = new BookOrderModel(newOrderItem)
@@ -2329,9 +2345,10 @@ class IntakeUserService extends BaseService {
                     riderReason: order.counts?.riderReason || null,
                     intakeCount: order.counts?.intake ?? null,
                     placeholderPieces: (order.items || []).length,
-                    // What is already owed regardless of the contents. The
-                    // laundry portion is 0 until the items are entered, so
-                    // showing `amount` alone would read as a free order.
+                    // The trip and speed fees the bill will add once the items
+                    // are entered, BEFORE any free pickup/delivery offer is
+                    // checked. Nothing is owed yet: a Quick Booking pays
+                    // nothing at booking (client, 11 Oct 2026), so `amount` is 0.
                     logisticsAmount: Number(order.deliveryAmount || 0),
                 }
             })

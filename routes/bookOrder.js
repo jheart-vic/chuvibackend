@@ -139,17 +139,22 @@ const {
  *
  *                   The order is created with `quickBooking: true`,
  *                   `itemsPending: true`, `counts.customer` set to this number,
- *                   and that many placeholder pieces. **Its laundry bill is 0
- *                   until Intake enters the real pieces** — `amount` at booking
- *                   is the logistics fees only. The real bill is computed by
- *                   `PATCH /orders/{id}/items`, which then raises the payment
- *                   hold and sends the customer the SMS and Paystack link.
+ *                   and that many placeholder pieces. **Nothing is paid at
+ *                   booking, not even pickup and delivery** (client, 11 Oct
+ *                   2026): `amount` is 0, no credit is spent, no offer is
+ *                   attached, and the response carries `paymentRequired: false`
+ *                   (show no payment step). `deliveryAmount` holds the trip and
+ *                   speed fees the bill will add. The real bill is computed by
+ *                   `PATCH /orders/{id}/items`: trips and speed are added, the
+ *                   offer worth most on that bill is applied and attached (the
+ *                   First Experience offer on a first order), and the payment
+ *                   hold is raised with the SMS and Paystack link.
  *
  *                   Because there is no bill yet, `billingType` is forced to
  *                   `pay-per-item` — a wallet or a subscription cannot be
  *                   charged against an unknown amount; the customer's plan is
- *                   settled at Intake instead. Offers are likewise resolved
- *                   against the real bill, not against zero.
+ *                   settled at Intake instead. `customerOfferId`, `promoOfferId`
+ *                   and `useCredit` are not used on a Quick Booking.
  *
  *                   Ignored if `items` is also supplied (the real basket wins).
  *                   Must be a whole number from 1 to 200.
@@ -349,6 +354,12 @@ const {
  *                             properties:
  *                               which: { type: string, example: personal }
  *                               reason: { type: string, example: "Minimum 2 items" }
+ *                     paymentRequired:
+ *                       type: boolean
+ *                       example: false
+ *                       description: >
+ *                         Only on a Quick Booking (`itemCount`), and always false: show no
+ *                         payment step. The bill comes by SMS after Intake counts the clothes.
  *       400:
  *         description: Validation error or bad request
  *         content:

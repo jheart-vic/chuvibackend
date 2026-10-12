@@ -1641,6 +1641,8 @@ class AdminService extends BaseService {
             if (payment.type === 'order' && payment.order) {
                 await BookOrderModel.findByIdAndUpdate(payment.order, {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+                    // Approved as paid: nothing is owed any more (F-34).
+                    $unset: { balanceDue: '' },
                 })
                 // N1 Phase 3: a bank transfer approved here must also release
                 // the payment hold, or the order stays frozen with its money

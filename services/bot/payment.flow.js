@@ -13,6 +13,7 @@ const WalletCreditService = require('../walletCredit.service')
 const WalletModel = require('../../models/wallet.model')
 const BookOrderModel = require('../../models/bookOrder.model')
 const createAuditLog = require('../../util/createAuditLog')
+const { orderPayableGate, amountDue } = require('../../util/paymentGate')
 const {
     BOT_INTENT,
     BILLING_TYPE,
@@ -270,7 +271,15 @@ module.exports = {
                 replies: ["You don't have any unpaid orders right now — nothing to pay. Anything else?"],
             }
         }
-        if (!order.amount || order.amount <= 0) {
+        // A Quick Booking waiting to be counted has no bill yet (review F-24):
+        // say so, rather than "fully covered".
+        const payable = orderPayableGate(order)
+        if (!payable.ok) {
+            return { replies: [`Order ${order.oscNumber}: ${payable.error}`] }
+        }
+        // The outstanding balance when the bill went up after a payment (F-30).
+        const due = amountDue(order)
+        if (!due || due <= 0) {
             return {
                 replies: [`Order ${order.oscNumber} is already fully covered — there's nothing left to pay.`],
             }
@@ -280,10 +289,12 @@ module.exports = {
         const { cash, creditTotal, available } = await this._walletAvailable(userId)
 
         const lines = [
-            `Order ${order.oscNumber} comes to ${naira(order.amount)}.`,
+            Number(order.balanceDue) > 0
+                ? `Order ${order.oscNumber} has ${naira(due)} left to pay after its bill was updated.`
+                : `Order ${order.oscNumber} comes to ${naira(due)}.`,
             `Your wallet has ${naira(cash)} cash${creditTotal ? ` + ${naira(creditTotal)} reward credit` : ''} (${naira(available)} available).`,
         ]
-        if (available < order.amount) {
+        if (available < due) {
             lines.push(
                 `That's not quite enough to cover it. You can top up in the app${creditTotal ? ' — your reward credit is used first' : ''}. Would you like me to connect you to a person?`,
             )
@@ -298,7 +309,7 @@ module.exports = {
             state: {
                 intent: BOT_INTENT.APPLY_PAYMENT,
                 step: 'confirm-pay',
-                slots: { payOrderId: String(order._id), payAmount: order.amount, payOsc: order.oscNumber },
+                slots: { payOrderId: String(order._id), payAmount: due, payOsc: order.oscNumber },
             },
         }
     },

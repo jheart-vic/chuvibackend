@@ -8,6 +8,7 @@ const sendSms = require('../util/sendSms')
 const createNotification = require('../util/createNotification')
 const { notifyRoles } = require('../util/notifyRoles')
 const { markProductionClearedIfReady } = require('../util/productionClock')
+const { orderPayableGate, amountDue } = require('../util/paymentGate')
 const {
     ORDER_STATUS,
     STATION_STATUS,
@@ -70,7 +71,10 @@ class PaymentHoldService {
      * not re-send the link or reset the 48h clock, because a second Intake tap
      * would otherwise give the customer a fresh deadline.
      */
-    static async raise({ orderId, actorId, reason = null }) {
+    // `keepClockFrom`: the hold this one REPLACES ({ raisedAt, remindersSent }).
+    // A changed bill must not restart the 6h/24h reminders or push back the
+    // 48h admin escalation (review F-37).
+    static async raise({ orderId, actorId, reason = null, keepClockFrom = null }) {
         try {
             const order = await BookOrderModel.findById(orderId)
             if (!order) {
@@ -96,8 +100,9 @@ class PaymentHoldService {
             }
 
             // The amount comes from the order. There is deliberately no
-            // parameter for it.
-            const amount = Number(order.amount || 0)
+            // parameter for it. It is the outstanding balance when an earlier
+            // payment no longer covers the bill (F-30), else the order amount.
+            const amount = amountDue(order)
             if (amount <= 0) {
                 return BaseService.sendFailedResponse({
                     error: 'This order has no outstanding amount, so no payment hold is needed.',
@@ -121,10 +126,13 @@ class PaymentHoldService {
                         stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION,
                         'orderHold.holdTypeKey': HoldTypeModel.PAYMENT_HOLD_KEY,
                         paymentHold: {
-                            raisedAt: now,
+                            raisedAt: keepClockFrom?.raisedAt || now,
                             raisedBy: actorId || undefined,
                             amount,
                             paymentUrl: paymentUrl || undefined,
+                            ...(keepClockFrom?.remindersSent?.length && {
+                                remindersSent: keepClockFrom.remindersSent,
+                            }),
                         },
                     },
                     // A fresh hold has not escalated — same reasoning as every
@@ -184,7 +192,10 @@ class PaymentHoldService {
      * human looking at a bank app). Clearing a hold on an order this function
      * had also marked paid would hide which one actually happened.
      */
-    static async clear({ orderId, source, actorId = null }) {
+    // `quiet`: the hold is being REPLACED because the bill changed (an item
+    // edit, or a short card payment), not because money arrived — no
+    // "payment received" message, and the history says so (review F-37).
+    static async clear({ orderId, source, actorId = null, quiet = false }) {
         try {
             const order = await BookOrderModel.findById(orderId)
             if (!order) return { ok: false, reason: 'not-found' }
@@ -213,7 +224,9 @@ class PaymentHoldService {
                     $push: {
                         stageHistory: {
                             status: ORDER_STATUS.QUEUE,
-                            note: `Payment confirmed (${source}) — released from payment hold.`,
+                            note: quiet
+                                ? `Payment hold replaced (${source}) — the bill changed.`
+                                : `Payment confirmed (${source}) — released from payment hold.`,
                             updatedAt: now,
                         },
                     },
@@ -229,21 +242,25 @@ class PaymentHoldService {
                 console.error('production clock (payment hold cleared):', error?.message)
             }
 
-            try {
-                await createNotification({
-                    userId: order.userId,
-                    title: 'Payment received',
-                    body: `Thank you — payment for order ${order.oscNumber} has been received and we have started work.`,
-                    subBody: `Order ID: ${order.oscNumber}`,
-                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
-                })
-            } catch (error) {
-                console.error('payment cleared notification failed:', error?.message)
+            if (!quiet) {
+                try {
+                    await createNotification({
+                        userId: order.userId,
+                        title: 'Payment received',
+                        body: `Thank you — payment for order ${order.oscNumber} has been received and we have started work.`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    })
+                } catch (error) {
+                    console.error('payment cleared notification failed:', error?.message)
+                }
             }
 
             await this._log(
                 actorId,
-                `Payment hold cleared on order ${order.oscNumber} (${source})`,
+                quiet
+                    ? `Payment hold on order ${order.oscNumber} replaced (${source}) — the bill changed`
+                    : `Payment hold cleared on order ${order.oscNumber} (${source})`,
                 order._id,
             )
 
@@ -478,11 +495,16 @@ class PaymentHoldService {
                     error: 'This order is already marked paid.',
                 })
             }
+            // An uncounted Quick Booking has no bill yet; approving a transfer
+            // now would mark it paid at ₦0 (review F-31).
+            const payable = orderPayableGate(order)
+            if (!payable.ok) {
+                return BaseService.sendFailedResponse({ error: payable.error })
+            }
 
             const now = new Date()
-            const amount = Number(
-                order.paymentHold?.amount || order.amount || 0,
-            )
+            // What is owed NOW, not a figure an older hold recorded (F-33).
+            const amount = amountDue(order)
 
             // The order is marked paid HERE, by a human, which is exactly why
             // the review trail below exists.
@@ -503,6 +525,8 @@ class PaymentHoldService {
                             amount,
                         },
                     },
+                    // The outstanding balance is settled (F-30).
+                    $unset: { balanceDue: '' },
                 },
                 { runValidators: false },
             )

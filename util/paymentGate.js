@@ -109,9 +109,58 @@ function dispatchPaymentGate(order) {
     return { ok: true }
 }
 
+/**
+ * May the customer pay this order now?
+ *
+ * A Quick Booking is created with nothing due (client, 11 Oct 2026): its bill
+ * does not exist until Intake enters the items. Paying it before then paid ₦0,
+ * stamped it `success`, and the real bill was then refused as "already paid"
+ * and the order went through unpaid (review F-24). So no payment path accepts
+ * an order still waiting for its items; the customer pays the SMS bill.
+ */
+function orderPayableGate(order) {
+    if (!order) return { ok: false, error: 'Order not found' }
+    const { awaitingRealItems } = require('./quickBooking')
+    if (awaitingRealItems(order)) {
+        return {
+            ok: false,
+            error: "There's nothing to pay yet. We send your bill by SMS after we count your clothes.",
+            billPending: true,
+        }
+    }
+    return { ok: true }
+}
+
+/**
+ * What a payment for this order should collect right now: the outstanding
+ * balance when an earlier payment no longer covers the bill (F-30), otherwise
+ * the order's amount. Every payment path (hold, Paystack, wallet, assistant)
+ * reads this one definition.
+ */
+function amountDue(order) {
+    const balance = Number(order?.balanceDue || 0)
+    return balance > 0 ? balance : Number(order?.amount || 0)
+}
+
+/**
+ * What the customer has actually paid on this order so far: the whole amount
+ * when it is paid, the part before a raised bill when a balance is still due
+ * (F-30), otherwise nothing. Refunds read this so a part-paid order gives back
+ * what was paid.
+ */
+function amountPaidSoFar(order) {
+    const amount = Number(order?.amount || 0)
+    if (order?.paymentStatus === 'success') return amount
+    const balance = Number(order?.balanceDue || 0)
+    return balance > 0 ? Math.max(0, amount - balance) : 0
+}
+
 module.exports = {
     itemTagGate,
     dispatchPaymentGate,
+    orderPayableGate,
+    amountDue,
+    amountPaidSoFar,
     // Re-exported so a caller never reaches for a second definition.
     moneyIsComplete,
 }

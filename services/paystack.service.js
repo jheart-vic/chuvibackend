@@ -11,6 +11,7 @@ const BookOrderModel = require("../models/bookOrder.model");
 const { generateReferenceId, getObjectId } = require("../util/helper");
 const PaymentModel = require("../models/payment.model");
 const createAuditLog = require("../util/createAuditLog");
+const { orderPayableGate, amountDue } = require("../util/paymentGate");
 
 
 class PaystackService extends BaseService {
@@ -61,6 +62,16 @@ class PaystackService extends BaseService {
         if(!order){
           return BaseService.sendFailedResponse({error: 'Order not found'})
         }
+        // Already paid: no checkout, or the money would be taken with nothing
+        // to credit it against (F-34).
+        if(order.paymentStatus === 'success'){
+          return BaseService.sendFailedResponse({error: 'This order has already been paid.'})
+        }
+        // A Quick Booking has no bill until Intake counts (review F-24).
+        const payable = orderPayableGate(order)
+        if(!payable.ok){
+          return BaseService.sendFailedResponse({error: payable.error})
+        }
       }
 
       if(transactionType === 'subscription'){
@@ -82,11 +93,13 @@ class PaystackService extends BaseService {
 
       const reference = generateReferenceId()
       let amount = 0
-      amount = transactionType === 'subscription' ? plan.price * 100 : order.amount * 100
+      // An order pays its outstanding balance when one is set (F-30).
+      amount = transactionType === 'subscription' ? plan.price * 100 : amountDue(order) * 100
 
       if(transactionType == 'order' && orderId){
         const orderPaymentExists = await PaymentModel.findOne({userId, order: orderId})
-        if(orderPaymentExists && orderPaymentExists.status == 'success'){
+        // A second payment is right when the bill went up after the first (F-30).
+        if(orderPaymentExists && orderPaymentExists.status == 'success' && !(Number(order.balanceDue) > 0)){
           return BaseService.sendFailedResponse({error: "You have already made a payment for this order."})
         }
       }
@@ -100,10 +113,21 @@ class PaystackService extends BaseService {
         ...(orderId && {order: orderId}),
         type: transactionType,
         ...(transactionType == 'wallet-top-up' && {alertType: 'credit'}),
+        // What THIS checkout asked for, recorded server-side: the webhook
+        // never credits more than this, and a subscription must match its
+        // plan (review F-38/F-39). The event's own metadata is not trusted.
+        metadata: {
+          expectedAmount: amount / 100,
+          ...(plan && { planId: String(plan._id) }),
+        },
     })
 
-
-      const response = await paystackAxios.post(
+      // A checkout Paystack refuses must not leave a reusable pending row (F-38).
+      const initialize = (url, body) => paystackAxios.post(url, body).catch(async (err) => {
+        await PaymentModel.updateOne({ reference }, { $set: { status: 'failed', 'metadata.initRefused': true } }).catch(() => {})
+        throw err
+      })
+      const response = await initialize(
         "/transaction/initialize",
         {
           email,
