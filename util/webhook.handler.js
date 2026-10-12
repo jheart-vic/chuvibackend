@@ -162,6 +162,10 @@ async function handleChargeSuccess(data) {
             payment = new PaymentModel({
                 userId: user._id,
                 reference,
+                // `type` is required: without it this fallback failed
+                // validation and the payment was dropped silently.
+                type: metadata.transactionType,
+                ...(metadata.orderId && { order: metadata.orderId }),
             })
         }
         payment.paidAt = new Date(data.paid_at)
@@ -175,7 +179,9 @@ async function handleChargeSuccess(data) {
         // 🛒 ORDER PAYMENT FLOW
         // ==========================
         if (metadata.transactionType === 'order') {
-            await handleOrderPayment(metadata, reference)
+            // What Paystack actually collected (kobo → naira), so the order is
+            // settled against the money received, not the link's old figure.
+            await handleOrderPayment(metadata, reference, Number(data.amount) / 100)
             return
         }
 
@@ -491,7 +497,7 @@ async function handleNormalSubscription(data) {
     }
 }
 
-async function handleOrderPayment(metadata, reference) {
+async function handleOrderPayment(metadata, reference, paidNaira = null) {
     try {
         const { orderId } = metadata
 
@@ -506,8 +512,51 @@ async function handleOrderPayment(metadata, reference) {
             return
         }
 
-        // 🔒 Idempotency guard
+        const { amountDue } = require('./paymentGate')
+        const { refundToWallet } = require('./walletRefund')
+        const paid = Number.isFinite(paidNaira) && paidNaira > 0 ? paidNaira : null
+
+        // 🔒 Idempotency guard. The same reference never reaches here twice
+        // (the Payment row check above), so a payment on an order that is
+        // already paid is a SECOND, separate payment — two checkouts, or a link
+        // opened before an admin marked it paid. The money is the customer's:
+        // it goes back to their wallet instead of being kept without credit.
         if (order.paymentStatus === 'success') {
+            if (paid && order.userId) {
+                try {
+                    await refundToWallet({
+                        userId: order.userId,
+                        amount: paid,
+                        orderId: order._id,
+                        description: `Second payment on order ${order.oscNumber}, which was already paid, returned`,
+                    })
+                } catch (err) {
+                    console.error('duplicate order payment refund failed — settle manually:', err?.message)
+                }
+            }
+            return
+        }
+
+        // Settle against what was actually COLLECTED (review F-33): a link
+        // opened before Intake raised the bill pays the old figure.
+        const due = amountDue(order)
+        if (paid !== null && paid + 0.5 < due) {
+            // Underpaid: keep it unpaid with the rest as its balance, and send
+            // a fresh hold (and link) for exactly that remainder.
+            const remaining = Math.round(due - paid)
+            order.balanceDue = remaining
+            order.reference = reference
+            await order.save()
+            try {
+                const PaymentHoldService = require('../services/paymentHold.service')
+                await PaymentHoldService.clear({ orderId: order._id, source: 'paystack-partial' })
+                await PaymentHoldService.raise({
+                    orderId: order._id,
+                    reason: `₦${paid.toLocaleString('en-NG')} received; ₦${remaining.toLocaleString('en-NG')} is still due.`,
+                })
+            } catch (err) {
+                console.error('re-raising the hold for an underpaid order failed:', err?.message)
+            }
             return
         }
 
@@ -519,6 +568,21 @@ async function handleOrderPayment(metadata, reference) {
         order.balanceDue = undefined
 
         await order.save()
+
+        // Overpaid (a link opened before the bill went DOWN): the excess goes
+        // back to the wallet (review F-33).
+        if (paid !== null && paid - 0.5 > due && order.userId) {
+            try {
+                await refundToWallet({
+                    userId: order.userId,
+                    amount: Math.round(paid - due),
+                    orderId: order._id,
+                    description: `Order ${order.oscNumber} overpaid after its bill changed — excess returned`,
+                })
+            } catch (err) {
+                console.error('order overpayment refund failed — settle manually:', err?.message)
+            }
+        }
 
         // Processing clock (client correction 2026-10-08): the money is now
         // complete. If the clothes are already with us this is the LATER of the

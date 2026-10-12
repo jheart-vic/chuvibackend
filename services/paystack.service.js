@@ -62,6 +62,11 @@ class PaystackService extends BaseService {
         if(!order){
           return BaseService.sendFailedResponse({error: 'Order not found'})
         }
+        // Already paid: no checkout, or the money would be taken with nothing
+        // to credit it against (F-34).
+        if(order.paymentStatus === 'success'){
+          return BaseService.sendFailedResponse({error: 'This order has already been paid.'})
+        }
         // A Quick Booking has no bill until Intake counts (review F-24).
         const payable = orderPayableGate(order)
         if(!payable.ok){

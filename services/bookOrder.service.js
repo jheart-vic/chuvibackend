@@ -1179,6 +1179,18 @@ class BookOrderService extends BaseService {
                 walletRefund: null,
             }
 
+            // A hold left open by an earlier edit carries the OLD amount and
+            // link (raising is idempotent). Clear it first, then raise for what
+            // is owed now; owing nothing, the order is simply released
+            // (review F-33).
+            if (PaymentHoldService.isOnPaymentHold(order)) {
+                await PaymentHoldService.clear({
+                    orderId: order._id,
+                    source: 'item-edit',
+                    actorId,
+                })
+            }
+
             // TOTAL UP → a payment hold for what is still owed. Reusing
             // PaymentHoldService means one SMS wording, one Paystack link
             // builder and one reminder schedule, rather than a second
@@ -2419,6 +2431,8 @@ class BookOrderService extends BaseService {
                 })
             }
             bookOrder.paymentStatus = status
+            // Marked paid by an admin: nothing is owed any more (F-34).
+            if (status === PAYMENT_ORDER_STATUS.SUCCESS) bookOrder.balanceDue = undefined
             await bookOrder.save()
 
             return BaseService.sendSuccessResponse({

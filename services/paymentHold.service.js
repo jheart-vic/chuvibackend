@@ -488,7 +488,8 @@ class PaymentHoldService {
             }
 
             const now = new Date()
-            const amount = Number(order.paymentHold?.amount || amountDue(order))
+            // What is owed NOW, not a figure an older hold recorded (F-33).
+            const amount = amountDue(order)
 
             // The order is marked paid HERE, by a human, which is exactly why
             // the review trail below exists.

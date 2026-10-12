@@ -2364,6 +2364,18 @@ const run = (async () => {
                 const out = cancellationOutcome({ order: { amount: 6000, balanceDue: 1500, paymentStatus: 'pending', items: [] }, settings: {} })
                 return out.refundToWallet === 4500
             })())
+        const whSrc = fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')
+        ok('the card webhook settles against the amount Paystack collected: short leaves a balance and a fresh hold, over refunds the excess, a second payment on a paid order is refunded (F-33)',
+            /handleOrderPayment\(metadata, reference, Number\(data\.amount\) \/ 100\)/.test(whSrc) &&
+                /if \(paid !== null && paid \+ 0\.5 < due\)/.test(whSrc) &&
+                /if \(paid !== null && paid - 0\.5 > due && order\.userId\)/.test(whSrc) &&
+                /Second payment on order/.test(whSrc))
+        ok('an item edit clears an open hold before raising one for what is owed now (F-33)',
+            /if \(PaymentHoldService\.isOnPaymentHold\(order\)\) \{\s*await PaymentHoldService\.clear\(\{\s*orderId: order\._id,\s*source: 'item-edit'/.test(bookSrc))
+        ok('admin mark-paid clears the balance and Paystack refuses a paid order (F-34)',
+            /if \(status === PAYMENT_ORDER_STATUS\.SUCCESS\) bookOrder\.balanceDue = undefined/.test(bookSrc) &&
+                /\$unset: \{ balanceDue: '' \}/.test(fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')) &&
+                /This order has already been paid\./.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')))
         ok('staff cannot approve a transfer on an uncounted Quick Booking (F-31)',
             /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')))
         ok('the personal-offer list skips promotion linkages (F-29)',

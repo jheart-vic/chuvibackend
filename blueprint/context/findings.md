@@ -192,7 +192,7 @@ F-17 case to the `_offerRejection` assertions.
 Fixed 2026-10-12. New `orderPayableGate` (util/paymentGate.js): an order still waiting for its items is not payable ("There's nothing to pay yet. We send your bill by SMS after we count your clothes."). Checked first by `WalletService.payWithWallet`, `PaystackService.initializePayment` (order) and the assistant's "use my balance". The Intake re-price clears `itemsPending` before it raises the hold, so the SMS bill and its Paystack link still work. quickBookingStaging scenario 9 (wallet and real card init both refused, order stays unpaid).
 Closed 2026-10-12 by /audit independent (round 3): every customer path that can charge or mark an uncounted order paid is gated. `payWithWallet` (wallet.service.js:189-193, also the only wallet path the assistant uses, payment.flow.js:112), `initializePayment` for orders (paystack.service.js:65-69, also used by the hold's link builder and the assistant's card link), and the assistant's lookup (payment.flow.js:274-279). The booking-time wallet charges (bookOrder.service.js:1917, 2223) cannot run for a Quick Booking because `applyCountOnlyBooking` forces pay-per-item. The webhook can only confirm a Paystack reference that `initializePayment` created, so it is gated upstream. `applyItemEdit` sets `itemsPending: false` and the real items in one `updateOne` before `PaymentHoldService.raise` builds the link, so the bill's Paystack link and wallet payment work. Offline probe: `orderPayableGate` refuses `itemsPending: true`/unset with placeholder pieces and null, and allows `itemsPending: false` and real items. Remaining staff-only gap recorded as F-31.
 
-### F-29 [P3] fixed - On a re-price, an order's attached promotion can be offered as its "personal" offer and applied twice
+### F-29 [P3] closed - On a re-price, an order's attached promotion can be offered as its "personal" offer and applied twice
 
 **File:** services/offer.service.js:518
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
@@ -200,8 +200,9 @@ Closed 2026-10-12 by /audit independent (round 3): every customer path that can 
 **Suggested fix:** In `getBookingOptions`, skip linkages whose `offerId.type` is not PERSONAL (the same filter `getCustomerOffers` uses at offer.service.js:440), or restrict the new `$or` branch to personal offers.
 **Resolution:**
 Fixed 2026-10-12. The personal-offer list in `getBookingOptions` skips promotion linkages, so the re-pick can never take an attached promotion as the personal offer. briefCheck.
+Closed 2026-10-12 by /audit independent (round 4): offer.service.js:541 skips `OFFER_TYPE.PROMOTIONAL` linkages before `evaluate('personal', ...)`, so `pickBestPersonalOffer` cannot return the attached promotion; briefCheck 450/0.
 
-### F-30 [P2] fixed - A paid order whose bill goes up at the item edit stays marked paid (pre-existing, outside this delta)
+### F-30 [P2] closed - A paid order whose bill goes up at the item edit stays marked paid (pre-existing, outside this delta)
 
 **File:** services/bookOrder.service.js:1094 (with services/paymentHold.service.js:80)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -209,8 +210,9 @@ Fixed 2026-10-12. The personal-offer list in `getBookingOptions` skips promotion
 **Suggested fix:** Fix in its own change. When a paid order's bill rises, reset `paymentStatus` to pending (or record the paid amount separately) and raise the hold for the outstanding difference only.
 **Resolution:**
 Fixed 2026-10-12. New `balanceDue` on the order. When the item edit raises the bill of a paid (or part-paid) order, it goes back to unpaid with only the difference due; `amountDue` makes the payment hold, the Paystack link, the wallet payment and the assistant collect that balance, and the webhook, the wallet payment and a transfer approval clear it. Paystack allows a second card payment only while a balance is due. The wallet payment now also releases a payment hold and starts the processing clock, as the webhook does. A cancelled part-paid order refunds what was paid (`amountPaidSoFar`, used by the cancel verdict, `_performCancellation` and `cancellationOutcome`). quickBookingStaging scenario 11 (paid ₦421,000, edited to ₦1,261,000, hold and balance ₦840,000, wallet pays it, paid once in total, hold cleared).
+Closed 2026-10-12 by /audit independent (round 4): the first raise on a paid order now goes pending with `balanceDue` = difference and a fresh hold for that difference; hold, Paystack init, wallet and assistant all read `amountDue`; webhook, wallet and approveTransfer clear it; cancel refunds use `amountPaidSoFar` (waiver excluded, credits subtracted). Offline probe of up/up/down/down sequences gives the right status, balance and refund at each step. Residual hold/link staleness on a SECOND re-price is recorded as F-33; admin mark-paid paths that leave `balanceDue` set as F-34.
 
-### F-31 [P3] fixed - Staff bank-transfer approval can still mark an uncounted Quick Booking paid at ₦0
+### F-31 [P3] closed - Staff bank-transfer approval can still mark an uncounted Quick Booking paid at ₦0
 
 **File:** services/paymentHold.service.js:463
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -218,11 +220,31 @@ Fixed 2026-10-12. New `balanceDue` on the order. When the item edit raises the b
 **Suggested fix:** Refuse `approveTransfer` while `awaitingRealItems(order)` ("Enter the items first; there is no bill yet").
 **Resolution:**
 Fixed 2026-10-12. `approveTransfer` checks `orderPayableGate` first. quickBookingStaging scenario 12.
+Closed 2026-10-12 by /audit independent (round 4): paymentHold.service.js:485-488 refuses before any write, after the already-paid check.
 
-### F-32 [P2] fixed - The staff counter booking spread the request body over the order (carried over from the hotfix's F-19)
+### F-32 [P2] closed - The staff counter booking spread the request body over the order (carried over from the hotfix's F-19)
 
 **File:** services/intake-user.service.js:339
 **Found:** 2026-10-11 by /audit independent of the booking hotfix (its F-19); carried into this work item 2026-10-12
 **Why it matters:** `IntakeUserService.createBookOrder` built the order as `{ ..., amount, paymentStatus, intakeStaffId, channel: OFFICE, stage, ...post }`, so the staff request could override amount, attribution, stage, channel, owner and pricing. Intake staff and admins only, but it undermined the counter audit trail.
 **Suggested fix:** An allow-list of the order's own fields in place of `...post`.
 **Resolution:** Fixed 2026-10-12. Only `STAFF_ORDER_FIELDS` (name, phone, addresses, pickup date and time, service, care level, speed, items, note, pickup/delivery) are taken from the request, spread first so the server's values win. counterPaymentStaging 51/0; briefCheck.
+Closed 2026-10-12 by /audit independent (round 4): the allow-list matches every order field in the documented `/intake-user/create-book-order` request (routes/intake-user.js:62-150); `paymentMethod`/`secondaryPaymentMethod`/`useCredit` are still read from `post` before the build, and `items` is re-set from `post.items` after it, so nothing the counter app sends is lost.
+
+### F-33 [P2] fixed - A second re-price while a payment hold is open keeps the old hold amount and Paystack link, so the customer can pay the wrong figure
+
+**File:** services/bookOrder.service.js:1186 (with services/paymentHold.service.js:86-97, util/webhook.handler.js:509-519)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** `applyItemEdit` calls `PaymentHoldService.raise` whenever something is outstanding, but `raise` is idempotent: if a hold is already open it returns the old `paymentHold.amount` and `paymentUrl` without changing them. The webhook marks the order paid on any confirmed reference for it and clears `balanceDue`, without comparing what was paid to `amountDue(order)`. Example: paid ₦5,000, edited to ₦6,000 (balance and hold ₦1,000, link initialised for ₦1,000), then edited again to ₦7,000 (balance ₦2,000, hold still ₦1,000). The reminders keep sending "₦1,000" with the old link. Paying that link marks the order fully paid, and ₦1,000 is never collected. `approveTransfer` also records the stale `paymentHold.amount` on the bank-check list. In the other direction, edited back down to ₦5,500 the balance is ₦500 but the link still charges ₦1,000. Edited down to ₦4,000, the order becomes `success` with a ₦1,000 wallet refund, but the hold stays open: the order sits at `stage: hold` (Intake must release it by hand) with a live ₦1,000 link. If the customer pays it, the webhook returns early on the paid order and the money is taken with nothing credited. A card checkout opened before an edit and completed after it has the same effect. The idempotent hold and the webhook with no amount check were already there at 502dc0f for never-paid orders. F-30 now lets paid orders reach this too, and adds the case of a paid order left on an open hold.
+**Suggested fix:** In `applyItemEdit`, when a payment hold is already open, refresh it to the new `amountDue` with a new link, or clear it and raise a new one. When nothing is outstanding any more, clear it (`PaymentHoldService.clear`, source `item-edit`). In `handleOrderPayment`, compare `metadata.amount` with `amountDue(order)`: if it is short, take what was paid off `balanceDue` and leave the order pending; if the order is already paid or the payment is over, credit the excess to the wallet. Nothing current is lost.
+**Resolution:**
+Fixed 2026-10-12. (1) `applyItemEdit` clears an open payment hold before raising one for what is owed now (owing nothing → released), and `approveTransfer` records `amountDue(order)`, not an older hold figure. (2) The card webhook settles against what Paystack collected (`data.amount`): short → unpaid with the rest as `balanceDue` and a fresh hold; over → paid and the excess to the wallet; a separate payment on an order already paid → refunded to the wallet (the pre-existing "two checkouts" loss). Also fixed: the webhook's missing-Payment fallback never set the required `type`, so it failed validation and dropped the payment. quickBookingStaging 11 (second edit refreshes the hold, paid once in total) and 13 (short by ₦1,000 → ₦1,000 due and held; remainder settles and clears the hold; a stray ₦500 returns to the wallet).
+
+### F-34 [P3] fixed - Admin mark-paid paths leave `balanceDue` set, which lets a second card payment start on a paid order
+
+**File:** services/bookOrder.service.js:2421, services/admin.service.js:1643 (with services/paystack.service.js:94-100)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** `updateBookOrderPaymentStatus` and the admin Payment approval set `paymentStatus: success` but do not unset `balanceDue`, unlike the webhook, the wallet and `approveTransfer`. `initializePayment` never checks `order.paymentStatus`. Its only duplicate guard is now bypassed while `balanceDue > 0`, so on such an order it still opens a Paystack checkout for the balance. If that is paid, the webhook returns early on the already-paid order: the customer is charged and nothing is credited. `updateBookOrderPaymentStatus` also leaves the hold and its pre-initialised link open. These are admin override paths and need a deliberate action, so this is low risk.
+**Suggested fix:** Unset `balanceDue` wherever an order is marked `success`. In `initializePayment`, refuse an order whose `paymentStatus` is already `success`. Nothing current is lost.
+**Resolution:**
+Fixed 2026-10-12. Both admin mark-paid paths clear `balanceDue`, and `initializePayment` refuses an order already paid ("This order has already been paid."). briefCheck.

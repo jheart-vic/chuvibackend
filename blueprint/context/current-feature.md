@@ -128,6 +128,15 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   - **F-31:** staff transfer approval checks `orderPayableGate`.
   - **F-32 (the hotfix's F-19):** the staff counter booking keeps only the order's own
     fields from its request.
+- **Round 4 passed; its non-blocking findings fixed (round 5):**
+  - **F-33 [P2]:** a second edit while a hold was open kept the old amount and link, and
+    the card webhook never checked what was paid. The edit now clears an open hold before
+    raising one for what is owed now; the webhook settles against the amount Paystack
+    collected (short → the rest stays due with a fresh hold; over → excess to the wallet;
+    a separate payment on an already-paid order → refunded to the wallet). Also fixed: the
+    webhook's missing-Payment fallback dropped payments (required `type` never set).
+  - **F-34 [P3]:** admin mark-paid clears the balance; Paystack refuses an order already
+    paid.
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -160,6 +169,12 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 5):** briefCheck 453/0 · quickBookingStaging 56/0
+  (11: second edit refreshes the hold; 13: webhook short / remainder / duplicate) · plan
+  probe 5/5 · itemEdit 20/0 · bookingContext 30/0 · subLogistics 20/0 · counterPayment
+  51/0 · dispatch 80/0 · handoff 54/0 · phase12 14/0 · dashboardDecisions 45/0 ·
+  tierPricing 33/0 · freeLogistics 23/0 · dispatchTag 46/0 · holds 48/0 · windowBooking
+  35/0 · Swagger 0 wrong · boot on 7999 ok.
 - **Results (2026-10-12, round 4):** briefCheck 450/0 · quickBookingStaging 52/0
   (scenarios 11–12 cover F-30 and F-31) · plan probe 5/5 · itemEdit 20/0 · bookingContext
   30/0 · subLogistics 20/0 · counterPayment 51/0 · dispatch 80/0 · handoff 54/0 · phase12

@@ -501,13 +501,19 @@ async function main() {
             `it goes back to unpaid with only the difference due (₦${up11.balanceDue} of ₦${up11.amount})`)
         ok(up11.paymentHold?.raisedAt && up11.paymentHold.amount === expectedBalance,
             `the payment hold asks for the difference only (₦${up11.paymentHold?.amount})`)
+        // F-33: a second edit while that hold is open refreshes it.
+        res = await intake(o11._id, [{ type: anItem.name, price: anItem.price, quantity: 4 }], 'One more piece')
+        const up11b = await BookOrderModel.findById(o11._id).lean()
+        const expectedBalance2 = up11b.amount - paidOrder.amount
+        ok(res.success === true && up11b.balanceDue === expectedBalance2 && up11b.paymentHold?.amount === expectedBalance2,
+            `a second edit refreshes the hold to the new balance (₦${up11b.paymentHold?.amount}), not the old ₦${expectedBalance}`)
         const balancePay = await new WalletService11().payWithWallet({ body: { bookOrderId: String(o11._id) }, user: { id: String(fifth._id) } })
         const settled11 = await BookOrderModel.findById(o11._id).lean()
         const walletAfter = await WalletModel11.findOne({ userId: fifth._id }).lean()
         ok(balancePay.success === true && settled11.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS && !settled11.balanceDue,
             'paying the balance from the wallet settles the order')
-        ok(walletAfter.balance === 10000000 - up11.amount,
-            `the wallet paid the bill exactly once in total (₦${10000000 - walletAfter.balance} = ₦${up11.amount})`)
+        ok(walletAfter.balance === 10000000 - up11b.amount,
+            `the wallet paid the bill exactly once in total (₦${10000000 - walletAfter.balance} = ₦${up11b.amount})`)
         ok(settled11.paymentHold?.clearedAt, 'and the payment hold is cleared')
         await WalletModel11.deleteOne({ userId: fifth._id })
 
@@ -523,6 +529,39 @@ async function main() {
         const after12 = await BookOrderModel.findById(o9._id).lean()
         ok(approve.success === false && after12.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS,
             `refused, the order stays unpaid (${approve.data?.error})`)
+
+        // ── 13 the card webhook settles against the money received (F-33) ───
+        console.log('\n13 — the card webhook settles against what was actually paid')
+        const sixth = await mkUser('ffffff')
+        const { handleChargeSuccess } = require('./util/webhook.handler')
+        const cardBooking = await book.createOrder({
+            userId: sixth._id.toString(),
+            payload: payload({ fullName: 'STG QB Sixth', phoneNumber: '08034440006', items: [{ type: anItem.name, price: anItem.price, quantity: 1 }] }),
+        })
+        const o13 = cardBooking.data?.order
+        if (o13?._id) created.orders.push(o13._id)
+        const charge = (ref, naira) =>
+            handleChargeSuccess({
+                reference: `STGQB-${STAMP}-${ref}`,
+                amount: naira * 100,
+                paid_at: new Date().toISOString(),
+                channel: 'card',
+                customer: { email: sixth.email },
+                metadata: { transactionType: 'order', orderId: String(o13._id), amount: naira },
+            })
+        await charge('a', o13.amount - 1000)
+        const short = await BookOrderModel.findById(o13._id).lean()
+        ok(short.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS && short.balanceDue === 1000 && short.paymentHold?.amount === 1000,
+            `paying ₦1,000 short leaves it unpaid with ₦${short.balanceDue} due and a hold for it`)
+        await charge('b', 1000)
+        const full = await BookOrderModel.findById(o13._id).lean()
+        ok(full.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS && !full.balanceDue && full.paymentHold?.clearedAt,
+            'paying the remainder settles it and clears the hold')
+        await charge('c', 500)
+        const WalletModel13 = require('./models/wallet.model')
+        const w13 = await WalletModel13.findOne({ userId: sixth._id }).lean()
+        ok((w13?.balance || 0) === 500, `a second payment on a paid order goes back to the wallet (₦${w13?.balance || 0})`)
+        PaymentModel.deleteMany({ reference: { $regex: `^STGQB-${STAMP}-` } }).catch(() => {})
     } catch (e) {
         thrown = e
     } finally {
