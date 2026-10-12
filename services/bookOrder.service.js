@@ -1183,11 +1183,18 @@ class BookOrderService extends BaseService {
             // link (raising is idempotent). Clear it first, then raise for what
             // is owed now; owing nothing, the order is simply released
             // (review F-33).
-            if (PaymentHoldService.isOnPaymentHold(order)) {
+            const replacedHold = PaymentHoldService.isOnPaymentHold(order)
+                ? {
+                      raisedAt: order.paymentHold.raisedAt,
+                      remindersSent: order.paymentHold.remindersSent || [],
+                  }
+                : null
+            if (replacedHold) {
                 await PaymentHoldService.clear({
                     orderId: order._id,
                     source: 'item-edit',
                     actorId,
+                    quiet: true,
                 })
             }
 
@@ -1200,6 +1207,7 @@ class BookOrderService extends BaseService {
                     orderId: order._id,
                     actorId,
                     reason: `Bill updated to ₦${newTotal.toLocaleString('en-NG')} after the items were checked (${reason}).`,
+                    keepClockFrom: replacedHold,
                 })
                 result.paymentHold = held.success
                     ? held.data?.message || null

@@ -1512,7 +1512,7 @@ const run = (async () => {
     const phSrc = fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')
     // "Staff can never type an amount" is enforced by there being no parameter.
     ok('raising a hold takes NO amount — the bill comes from the order',
-        /static async raise\(\{ orderId, actorId, reason = null \}\)/.test(phSrc) &&
+        /static async raise\(\{ orderId, actorId, reason = null, keepClockFrom = null \}\)/.test(phSrc) &&
             /const amount = amountDue\(order\)/.test(phSrc))
     ok('the hold IS an ordinary order-level hold, so Holds Management shows it',
         /'orderHold\.holdTypeKey': HoldTypeModel\.PAYMENT_HOLD_KEY/.test(phSrc) &&
@@ -2365,13 +2365,26 @@ const run = (async () => {
                 return out.refundToWallet === 4500
             })())
         const whSrc = fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')
-        ok('the card webhook settles against the amount Paystack collected: short leaves a balance and a fresh hold, over refunds the excess, a second payment on a paid order is refunded (F-33)',
+        ok('the card webhook settles against the amount Paystack collected: short leaves a balance and a fresh hold, over refunds the excess (F-33)',
             /handleOrderPayment\(metadata, reference, Number\(data\.amount\) \/ 100\)/.test(whSrc) &&
                 /if \(paid !== null && paid \+ 0\.5 < due\)/.test(whSrc) &&
-                /if \(paid !== null && paid - 0\.5 > due && order\.userId\)/.test(whSrc) &&
-                /Second payment on order/.test(whSrc))
+                /if \(paid !== null && paid - 0\.5 > due && order\.userId\)/.test(whSrc))
+        ok('a payment with no checkout of ours is never processed, and top-ups credit what was collected, to the payer (F-35)',
+            /const existing = await PaymentModel\.findOne\(\{ reference \}\)\.lean\(\)\s*if \(!existing\) \{[\s\S]{0,900}return\s*\}/.test(whSrc) &&
+                !/new PaymentModel\(/.test(whSrc.slice(whSrc.indexOf('async function handleChargeSuccess'), whSrc.indexOf('async function handleOrderPayment'))) &&
+                /String\(payerId\) !== String\(userId\)/.test(whSrc) &&
+                /\$inc: \{ balance: amount \}/.test(whSrc))
+        ok('the reference is claimed atomically, and a payment on an already-paid order is flagged, not refunded (F-36)',
+            /PaymentModel\.findOneAndUpdate\(\s*\{ reference, status: \{ \$ne: 'success' \} \}/.test(whSrc) &&
+                /Payment on an order already paid/.test(whSrc) &&
+                !/Second payment on order/.test(whSrc))
+        ok('a replaced hold is quiet and keeps its reminder clock (F-37)',
+            /quiet: true/.test(bookSrc) && /keepClockFrom: replacedHold/.test(bookSrc) &&
+                /if \(!quiet\) \{/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')) &&
+                /raisedAt: keepClockFrom\?\.raisedAt \|\| now/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')))
         ok('an item edit clears an open hold before raising one for what is owed now (F-33)',
-            /if \(PaymentHoldService\.isOnPaymentHold\(order\)\) \{\s*await PaymentHoldService\.clear\(\{\s*orderId: order\._id,\s*source: 'item-edit'/.test(bookSrc))
+            /const replacedHold = PaymentHoldService\.isOnPaymentHold\(order\)/.test(bookSrc) &&
+                /if \(replacedHold\) \{\s*await PaymentHoldService\.clear\(\{\s*orderId: order\._id,\s*source: 'item-edit'/.test(bookSrc))
         ok('admin mark-paid clears the balance and Paystack refuses a paid order (F-34)',
             /if \(status === PAYMENT_ORDER_STATUS\.SUCCESS\) bookOrder\.balanceDue = undefined/.test(bookSrc) &&
                 /\$unset: \{ balanceDue: '' \}/.test(fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')) &&

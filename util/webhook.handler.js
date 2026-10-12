@@ -148,32 +148,49 @@ async function handleChargeSuccess(data) {
             return
         }
 
-        // 2️⃣ Idempotency — never process the same reference twice
-        let payment = await PaymentModel.findOne({ reference })
-
-        if (payment && payment.status === 'success') {
-            console.log('Payment already made:', reference)
+        // 2️⃣ Only a payment THIS server started is processed. Every checkout
+        //    we open writes a pending Payment row first (initializePayment /
+        //    wallet top-up). A signed event with no such row was started
+        //    elsewhere — e.g. with the public key and made-up metadata
+        //    ({ transactionType: 'wallet-top-up', amount: 1000000 }) — so it
+        //    is never acted on; an admin is told to look (review F-35).
+        const existing = await PaymentModel.findOne({ reference }).lean()
+        if (!existing) {
+            console.error('Paystack payment with no matching checkout — not processed:', reference)
+            try {
+                const { notifyRoles } = require('./notifyRoles')
+                const { ROLE } = require('./constants')
+                await notifyRoles({
+                    roles: [ROLE.ADMIN],
+                    title: 'Unmatched Paystack payment',
+                    body: `A payment of ₦${(Number(data.amount) / 100).toLocaleString('en-NG')} (reference ${reference}) from ${userEmail} did not match any checkout we started, so nothing was credited. Check it in Paystack.`,
+                    type: NOTIFICATION_TYPE.SYSTEM,
+                })
+            } catch (err) {
+                console.error('unmatched payment alert failed:', err?.message)
+            }
             return
         }
 
-        // 3️⃣ Record the payment (create if the pending record is missing —
-        //    previously this crashed on null and the whole flow died silently)
+        // 3️⃣ Claim the reference ATOMICALLY, so two copies of one event (or a
+        //    retry racing the first) cannot both be processed (review F-36).
+        const payment = await PaymentModel.findOneAndUpdate(
+            { reference, status: { $ne: 'success' } },
+            {
+                $set: {
+                    paidAt: new Date(data.paid_at),
+                    metadata,
+                    status: 'success',
+                    amount: metadata.amount,
+                    channel: data.channel,
+                },
+            },
+            { new: true },
+        )
         if (!payment) {
-            payment = new PaymentModel({
-                userId: user._id,
-                reference,
-                // `type` is required: without it this fallback failed
-                // validation and the payment was dropped silently.
-                type: metadata.transactionType,
-                ...(metadata.orderId && { order: metadata.orderId }),
-            })
+            console.log('Payment already made:', reference)
+            return
         }
-        payment.paidAt = new Date(data.paid_at)
-        payment.metadata = metadata
-        payment.status = 'success'
-        payment.amount = metadata.amount
-        payment.channel = data.channel
-        await payment.save()
 
         // ==========================
         // 🛒 ORDER PAYMENT FLOW
@@ -186,7 +203,11 @@ async function handleChargeSuccess(data) {
         }
 
         if (metadata.transactionType === 'wallet-top-up') {
-            await handleWalletTopUp(metadata, reference)
+            // Credit what Paystack COLLECTED, to the person who PAID (F-35).
+            await handleWalletTopUp(metadata, reference, {
+                paidNaira: Number(data.amount) / 100,
+                payerId: user._id,
+            })
             return
         }
 
@@ -516,22 +537,27 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
         const { refundToWallet } = require('./walletRefund')
         const paid = Number.isFinite(paidNaira) && paidNaira > 0 ? paidNaira : null
 
-        // 🔒 Idempotency guard. The same reference never reaches here twice
-        // (the Payment row check above), so a payment on an order that is
-        // already paid is a SECOND, separate payment — two checkouts, or a link
-        // opened before an admin marked it paid. The money is the customer's:
-        // it goes back to their wallet instead of being kept without credit.
+        // 🔒 Already paid. The same reference never reaches here twice (it is
+        // claimed atomically above), but this can still be the SAME money
+        // seen twice — a delayed Paystack retry after staff marked the order
+        // paid from the customer's receipt — or a genuine second checkout.
+        // The two cannot be told apart here, so nothing is credited
+        // automatically: an admin is told to check and refund if it is a
+        // real second payment (review F-36).
         if (order.paymentStatus === 'success') {
-            if (paid && order.userId) {
+            if (paid) {
+                console.error(`Order ${order.oscNumber} was already paid; payment ${reference} of ₦${paid} needs review`)
                 try {
-                    await refundToWallet({
-                        userId: order.userId,
-                        amount: paid,
-                        orderId: order._id,
-                        description: `Second payment on order ${order.oscNumber}, which was already paid, returned`,
+                    const { notifyRoles } = require('./notifyRoles')
+                    const { ROLE } = require('./constants')
+                    await notifyRoles({
+                        roles: [ROLE.ADMIN],
+                        title: 'Payment on an order already paid',
+                        body: `Order ${order.oscNumber} was already marked paid when a card payment of ₦${paid.toLocaleString('en-NG')} (reference ${reference}) arrived. If it is a genuine second payment, refund it to the customer's wallet.`,
+                        type: NOTIFICATION_TYPE.SYSTEM,
                     })
                 } catch (err) {
-                    console.error('duplicate order payment refund failed — settle manually:', err?.message)
+                    console.error('already-paid alert failed:', err?.message)
                 }
             }
             return
@@ -544,15 +570,19 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
             // Underpaid: keep it unpaid with the rest as its balance, and send
             // a fresh hold (and link) for exactly that remainder.
             const remaining = Math.round(due - paid)
+            const replacedHold = order.paymentHold?.raisedAt && !order.paymentHold?.clearedAt
+                ? { raisedAt: order.paymentHold.raisedAt, remindersSent: order.paymentHold.remindersSent || [] }
+                : null
             order.balanceDue = remaining
             order.reference = reference
             await order.save()
             try {
                 const PaymentHoldService = require('../services/paymentHold.service')
-                await PaymentHoldService.clear({ orderId: order._id, source: 'paystack-partial' })
+                await PaymentHoldService.clear({ orderId: order._id, source: 'paystack-partial', quiet: true })
                 await PaymentHoldService.raise({
                     orderId: order._id,
                     reason: `₦${paid.toLocaleString('en-NG')} received; ₦${remaining.toLocaleString('en-NG')} is still due.`,
+                    keepClockFrom: replacedHold,
                 })
             } catch (err) {
                 console.error('re-raising the hold for an underpaid order failed:', err?.message)
@@ -634,12 +664,18 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
     }
 }
 
-async function handleWalletTopUp(metadata, reference) {
+async function handleWalletTopUp(metadata, reference, { paidNaira = null, payerId = null } = {}) {
     try {
         const { userId } = metadata
 
         if (!userId) {
             console.warn('User Id missing in metadata')
+            return
+        }
+        // A top-up is for the person who paid. Metadata naming someone else is
+        // not trusted (review F-35).
+        if (payerId && String(payerId) !== String(userId)) {
+            console.error(`Wallet top-up ${reference}: metadata user ${userId} is not the payer ${payerId} — not credited`)
             return
         }
 
@@ -649,16 +685,23 @@ async function handleWalletTopUp(metadata, reference) {
             return
         }
 
+        // Credit what Paystack COLLECTED, never the metadata's figure (F-35).
+        const amount = Number(paidNaira)
+        if (!Number.isFinite(amount) || amount <= 0) {
+            console.error(`Wallet top-up ${reference}: no collected amount — not credited`)
+            return
+        }
+
         // Credit the wallet (capture the result so we can report the new balance)
         const updatedWallet = await WalletModel.findOneAndUpdate(
             { userId },
-            { $inc: { balance: metadata.amount } },
+            { $inc: { balance: amount } },
             { upsert: true, new: true },
         )
         await WalletTransactionModel.create({
             userId,
             type: 'credit',
-            amount: metadata.amount,
+            amount,
             status: 'success',
         })
 
@@ -667,7 +710,7 @@ async function handleWalletTopUp(metadata, reference) {
             event: 'wallet-top-up',
             chuviUserId: String(userId),
             email: user.email,
-            amount: metadata.amount,
+            amount,
             balance: updatedWallet?.balance,
             reference: reference || metadata.reference,
         })

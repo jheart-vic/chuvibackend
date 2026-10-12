@@ -507,6 +507,11 @@ async function main() {
         const expectedBalance2 = up11b.amount - paidOrder.amount
         ok(res.success === true && up11b.balanceDue === expectedBalance2 && up11b.paymentHold?.amount === expectedBalance2,
             `a second edit refreshes the hold to the new balance (₦${up11b.paymentHold?.amount}), not the old ₦${expectedBalance}`)
+        // F-37: the replaced hold keeps its clock and tells the customer nothing about "payment received".
+        const NotificationModel11 = require('./models/notification.model')
+        const falseReceipts = await NotificationModel11.countDocuments({ userId: fifth._id, title: 'Payment received' })
+        ok(String(up11b.paymentHold?.raisedAt) === String(up11.paymentHold?.raisedAt) && falseReceipts === 0,
+            'the replaced hold keeps its reminder clock and sends no "payment received"')
         const balancePay = await new WalletService11().payWithWallet({ body: { bookOrderId: String(o11._id) }, user: { id: String(fifth._id) } })
         const settled11 = await BookOrderModel.findById(o11._id).lean()
         const walletAfter = await WalletModel11.findOne({ userId: fifth._id }).lean()
@@ -540,28 +545,65 @@ async function main() {
         })
         const o13 = cardBooking.data?.order
         if (o13?._id) created.orders.push(o13._id)
-        const charge = (ref, naira) =>
+        // A real checkout writes a pending Payment row before Paystack is
+        // called; the webhook only acts on references it started (F-35).
+        const startCheckout = (ref, userId, type, order) =>
+            PaymentModel.create({
+                userId,
+                amount: 0,
+                reference: `STGQB-${STAMP}-${ref}`,
+                status: 'pending',
+                type,
+                ...(order && { order }),
+            })
+        const charge = (ref, naira, { email = sixth.email, metadata } = {}) =>
             handleChargeSuccess({
                 reference: `STGQB-${STAMP}-${ref}`,
                 amount: naira * 100,
                 paid_at: new Date().toISOString(),
                 channel: 'card',
-                customer: { email: sixth.email },
-                metadata: { transactionType: 'order', orderId: String(o13._id), amount: naira },
+                customer: { email },
+                metadata: metadata || { transactionType: 'order', orderId: String(o13._id), amount: naira },
             })
+        await startCheckout('a', sixth._id, 'order', o13._id)
         await charge('a', o13.amount - 1000)
         const short = await BookOrderModel.findById(o13._id).lean()
         ok(short.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS && short.balanceDue === 1000 && short.paymentHold?.amount === 1000,
             `paying ₦1,000 short leaves it unpaid with ₦${short.balanceDue} due and a hold for it`)
+        await startCheckout('b', sixth._id, 'order', o13._id)
         await charge('b', 1000)
+        await charge('b', 1000) // the same event delivered twice
         const full = await BookOrderModel.findById(o13._id).lean()
         ok(full.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS && !full.balanceDue && full.paymentHold?.clearedAt,
-            'paying the remainder settles it and clears the hold')
+            'paying the remainder settles it and clears the hold (a repeated event changes nothing)')
+        await startCheckout('c', sixth._id, 'order', o13._id)
         await charge('c', 500)
         const WalletModel13 = require('./models/wallet.model')
         const w13 = await WalletModel13.findOne({ userId: sixth._id }).lean()
-        ok((w13?.balance || 0) === 500, `a second payment on a paid order goes back to the wallet (₦${w13?.balance || 0})`)
-        PaymentModel.deleteMany({ reference: { $regex: `^STGQB-${STAMP}-` } }).catch(() => {})
+        ok((w13?.balance || 0) === 0, `a payment on an already-paid order is flagged for an admin, not auto-refunded (wallet ₦${w13?.balance || 0}) (F-36)`)
+
+        // ── 14 forged and mismatched top-ups are never credited (F-35) ──────
+        console.log('\n14 — a wallet top-up credits what was collected, to the payer only')
+        const seventh = await mkUser('ggggggg')
+        await charge('forged', 100, {
+            email: seventh.email,
+            metadata: { transactionType: 'wallet-top-up', userId: String(sixth._id), amount: 1000000 },
+        })
+        await startCheckout('other', seventh._id, 'wallet-top-up')
+        await charge('other', 100, {
+            email: seventh.email,
+            metadata: { transactionType: 'wallet-top-up', userId: String(sixth._id), amount: 1000000 },
+        })
+        const victim = await WalletModel13.findOne({ userId: sixth._id }).lean()
+        ok((victim?.balance || 0) === 0, 'a top-up with no checkout of ours, or naming someone else, credits nothing')
+        await startCheckout('own', seventh._id, 'wallet-top-up')
+        await charge('own', 2000, {
+            email: seventh.email,
+            metadata: { transactionType: 'wallet-top-up', userId: String(seventh._id), amount: 999999 },
+        })
+        const own = await WalletModel13.findOne({ userId: seventh._id }).lean()
+        ok((own?.balance || 0) === 2000, `a genuine top-up credits what Paystack collected, ₦${own?.balance || 0}, not the metadata's ₦999,999`)
+        await PaymentModel.deleteMany({ reference: { $regex: `^STGQB-${STAMP}-` } })
     } catch (e) {
         thrown = e
     } finally {
