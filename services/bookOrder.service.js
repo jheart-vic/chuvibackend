@@ -63,8 +63,6 @@ const {
 } = require('../util/quickBooking')
 // Booking items are priced from the catalog, never the request (hotfix).
 const { priceFromCatalog, catalogKey } = require('../util/catalogItems')
-// What a part-paid order has paid so far (F-30).
-const { amountPaidSoFar } = require('../util/paymentGate')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -124,8 +122,7 @@ const CUSTOMER_ORDER_FIELDS = [
     'isDelivery',
 ]
 // Put on `post` by the server itself (the Quick Booking normaliser), so never
-// accepted from the request: a client-sent `quickBooking: true` zeroed a normal
-// booking's bill.
+// accepted from the request.
 const SERVER_SET_ON_POST = ['quickBooking', 'itemsPending', 'counts']
 const customerOrderFields = (post) =>
     Object.fromEntries(
@@ -1519,6 +1516,7 @@ class BookOrderService extends BaseService {
                 isPickUp: 'boolean|required',
                 items: 'array|required',
                 'items.*.type': 'string|required',
+                // Set by priceFromCatalog above; the request's price is ignored.
                 'items.*.price': 'integer|required',
                 'items.*.quantity': 'integer|required',
                 // Per-item care tier (brief 1.6). OPTIONAL — omit it and the
@@ -1951,6 +1949,7 @@ class BookOrderService extends BaseService {
                     0,
                     (subscription.remainingPickupDeliveries || 0) - logistics.freeUsed,
                 )
+                subscription.remainingItems = planItemsLeft - planPieces
                 await subscription.save()
 
                 if (feeDue && method === 'wallet') {
@@ -1963,6 +1962,7 @@ class BookOrderService extends BaseService {
                     if (!charge.success) {
                         // roll back allowance + order — the fee was not collected
                         subscription.remainingPickupDeliveries += logistics.freeUsed
+                        subscription.remainingItems += planPieces
                         await subscription.save()
                         await returnPlanItems()
                         await BookOrderModel.deleteOne({ _id: newOrder._id })
@@ -2792,6 +2792,6 @@ class BookOrderService extends BaseService {
 }
 
 module.exports = BookOrderService
-// Exposed for briefCheck: the booking body allow-list (F-18).
+
 module.exports.customerOrderFields = customerOrderFields
 module.exports.SERVER_SET_ON_POST = SERVER_SET_ON_POST

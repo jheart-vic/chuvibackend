@@ -44,16 +44,34 @@ drive `reportDeliveryIssue` and `getBookOrder` with stubbed models. Nothing curr
 **Why it matters:** The lookup filters on a `user` field that is not in the subscription schema, so with Mongoose 8 (`strictQuery` false) it never matches and every first charge creates a new document. A customer who re-subscribes after a failed renewal can end up with two, and `subscription.create` may attach the new Paystack code to the old one, after which a renewal is reported as unapplied (F-46 now catches that).
 **Suggested fix:** Look up by `userId`, and decide the re-subscribe rules with the subscription rollover work (launch item 9), which rebuilds this area.
 **Resolution:**
+### F-19 [P2] open - The staff counter booking still spreads the request body over the order (pre-existing)
 
-### F-55 [P3] open - `preferSlot` now saves on the lead, post-delivery and reactivation schedules, but those workflows ignore it
-
-**File:** services/crm.service.js:140-144 (ignored at services/crm.service.js:420-426 and 575-581)
-**Found:** 2026-10-12 by /audit independent round 3 (scope: current; lens: quality)
-**Why it matters:** Before this delta `normalizeSchedule` dropped `preferSlot`; it now validates and persists it on every schedule. Only `startRegisteredNotBookedWorkflow` passes it on to `scheduleMessages`. `startLeadWorkflow` and `startReactivationWorkflow` build entries without it, so the window snap always uses `any`, and post-delivery is not windowed at all. A `leadSchedule` step saved with `preferSlot: morning` returns success and changes nothing (stubbed probe: accepted, saved). The shared `CrmScheduleStep` Swagger schema describes `preferSlot` as "Which daily send window the step prefers" for every schedule. Same class as F-54 but milder: admin-only, and the frontend is told to send the value back unchanged rather than edit it.
-**Suggested fix:** Either pass `preferSlot: s.preferSlot` into the lead and reactivation entries (scheduleMessages already honours it), or refuse a non-`any` preferSlot outside `registeredNotBookedSchedule` and say so in the CrmScheduleStep description. Nothing current is lost.
-**Decision (user, 2026-10-12):** make the workflows HONOUR the window. Build it as its own follow-up `/fix` after launch item 6 lands:
-- Lead and reactivation pass each step's `preferSlot` into their scheduled entries (`scheduleMessages` already honours it), so "morning" means the next morning window.
-- Post-delivery messages are order messages, which the client exempted from the send windows ("order and payment messages still go immediately"). So that schedule refuses a non-`any` window with a clear message instead of pretending.
-- Docs: the CrmScheduleStep description says which workflows use `preferSlot`.
+**File:** services/intake-user.service.js:339
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** Pre-existing, with the same pattern this hotfix removed.
+`IntakeUserService.createBookOrder` builds `{ oscNumber, amount: totalPrice,
+paymentStatus: PENDING, intakeStaffId, channel: OFFICE, stage, ..., ...post }`. The
+intake staff member's body can override `amount`, `intakeStaffId`, `stage`, `channel`,
+`userId`, `pricing`, and so on. Settlement later restamps `paymentStatus`, but `amount`
+and attribution stay as the body set them. Only intake staff and admins can reach this
+route (`intakeUserAuth`), so it is not exposed to customers. It still undermines the
+counter audit trail that FE-CHANGELOG-2026-10-08 tightened.
+**Suggested fix:** Reuse the same allow-list approach (`customerOrderFields`, or an
+intake-specific list) in place of `...post`. Nothing current is lost.
 **Resolution:**
 
+### F-28 [P2] open - Parallel plan bookings can each pass the items-left check (lost update)
+
+**File:** services/bookOrder.service.js:1767
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** The subscription is read at line 1610, checked at 1686, and written at
+1767 as an absolute `remainingItems = planItemsLeft - planPieces`, with several awaits in
+between (heavy-item lookups, `newOrder.save()`). Two or more requests sent at the same time
+for a plan with 28 left can each read 28, each book 28 pieces, and each write 0. A
+deliberate customer could get several months' allowance covered in one burst. The
+`/api` rate limiter narrows it but does not stop it. Not reachable by an honest single
+booking.
+**Suggested fix:** Deduct atomically and treat no match as the limit refusal:
+`SubscriptionModel.findOneAndUpdate({ _id, remainingItems: { $gte: planPieces } }, { $inc: { remainingItems: -planPieces } })`
+before saving the order (and `$inc` back on rollback). Nothing current is lost.
+**Resolution:**
