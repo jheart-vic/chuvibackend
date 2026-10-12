@@ -4,6 +4,7 @@ const {
     handleSubscriptionCreate,
     handleChargeSuccess,
     handleInvoiceFailed,
+    handleChargeFailed,
 } = require('./webhook.handler')
 
 const webhookFunction = async (req, res) => {

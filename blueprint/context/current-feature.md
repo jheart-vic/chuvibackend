@@ -178,6 +178,20 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
     admin is alerted, and the customer gets an in-app notice (user-approved wording):
     "We've received your plan renewal payment of ₦X and our team is confirming it. Your
     plan will be updated shortly." It never says the plan renewed.
+- **Round 9 (passed) P3 follow-ups (round 10), done on this branch at the user's request:**
+  - **F-49 [P3, pre-existing — also on `main`]:** `util/webhook.js` called
+    `handleChargeFailed` without importing it, so every `charge.failed` returned 500 and
+    Paystack kept resending. Now imported. It marks only OUR pending card checkout
+    `failed` (never a bank-transfer proof, never a paid row; a failed row still accepts a
+    paid retry, F-44) and tells only the customer on our row, once, never anyone named in
+    the event's metadata. The customer is told on WhatsApp (as before), plus, user-approved
+    2026-10-12, an in-app notice and an email, sent immediately (payment messages are
+    outside the follow-up send windows): "We couldn't complete {your payment for order
+    OSC…| your wallet top-up | your plan payment} of ₦X ({Paystack's reason}). Please try
+    again from the app, or choose another payment method."
+  - **F-48 [P3]:** the loyalty-reward notice ("we've added N extra items") is sent only
+    after the renewal is saved, so a failed save no longer promises pieces that were not
+    added.
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -203,6 +217,11 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
 5. [x] **Round-8 repairs (F-45, F-46).** **Done when:** `subscribe-plan` refuses and
    creates nothing; an unapplicable renewal is recorded once as unapplied with one admin
    alert and one customer notice; a normal renewal still refreshes the plan.
+6. [x] **Round-9 follow-ups (F-48, F-49).** **Done when:** a signed `charge.failed`
+   answers 200, marks our pending card checkout failed and tells its owner once (WhatsApp,
+   in-app, email), and nobody else; a resend, an unknown reference, a bank-transfer proof
+   and a paid row change nothing; a month-3 renewal whose save fails sends no loyalty
+   notice, and one that saves sends it once.
 
 ## Verify
 
@@ -213,6 +232,10 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 10):** briefCheck 462/0 · F-48/F-49 probe 15/0 on testingdb
+  (signed events through `util/webhook.js`; bot push and Brevo captured in-process, nothing
+  sent) · F-45/F-46 probe 15/0 · quickBookingStaging 67/0 (Brevo key blanked) · plan
+  probe 5/5 · Swagger 0 wrong · boot on 7999 ok (unsigned webhook → 401).
 - **Results (2026-10-12, round 9):** briefCheck 462/0 · F-45/F-46 probe 15/0 on testingdb
   (subscribe-plan refused, nothing created; unknown-code, other-customer and claimed-row
   renewals recorded as unapplied with an admin alert and the customer notice; a repeat
@@ -286,6 +309,8 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   with `transactionType: subscription`, which the app already uses.
 - A new in-app notification, "Plan renewal payment received" (`type: payment-update`),
   can arrive when a renewal could not be applied automatically.
+- A new in-app notification, "Payment not completed" (`type: payment-update`, `subBody`
+  "Reference …"), arrives when a card payment fails. The customer is also emailed.
 - The line under the number box is theirs (client's wording): "Between 1 and 200. You pay
   nothing now. After we count your clothes, we send your bill by SMS, with pickup and
   delivery included."

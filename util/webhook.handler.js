@@ -9,6 +9,7 @@ const WalletModel = require('../models/wallet.model')
 const WalletTransactionModel = require('../models/walletTransaction.model')
 const createNotification = require('./createNotification')
 const notifyBot = require('./notifyBot')
+const sendEmail = require('./emailService')
 const { markProductionClearedIfReady } = require('./productionClock')
 
 // Subscriber loyalty rewards (client confirmed 2026-08-29): payment NEVER changes
@@ -19,32 +20,38 @@ const { markProductionClearedIfReady } = require('./productionClock')
 //   month 12 → +100% of the monthly item bundle (double)
 // (The earlier "free month by moving the billing period" idea was dropped — no
 // Paystack interaction; this is purely extra items for that cycle.)
-// Mutates `subscription` (caller saves). loyaltyRewardsApplied guards double-apply.
+// Mutates `subscription` (caller saves) and returns the bonus added (0 if none).
+// loyaltyRewardsApplied guards double-apply. The customer is told only by
+// notifySubscriberLoyalty, AFTER the save succeeds (review F-48).
 const LOYALTY_BONUS_PCT = { 3: 0.25, 6: 0.5, 12: 1.0 }
 
-async function applySubscriberLoyalty(subscription, plan, month) {
-    if (!plan || !Number.isFinite(plan.monthlyLimits)) return
+function applySubscriberLoyalty(subscription, plan, month) {
+    if (!plan || !Number.isFinite(plan.monthlyLimits)) return 0
     const pct = LOYALTY_BONUS_PCT[month]
-    if (!pct) return
+    if (!pct) return 0
     const already = subscription.loyaltyRewardsApplied || []
-    if (already.includes(month)) return
+    if (already.includes(month)) return 0
 
     const bonus = Math.floor(plan.monthlyLimits * pct)
     subscription.remainingItems = (subscription.remainingItems || 0) + bonus
     subscription.loyaltyRewardsApplied = [...already, month]
+    return bonus
+}
 
-    if (subscription.userId && bonus > 0) {
-        try {
-            await createNotification({
-                userId: subscription.userId,
-                title: 'Loyalty reward unlocked 🎉',
-                body: `Thanks for ${month} months with Chuvi Laundry! We've added ${bonus} extra item(s) to this month's plan — same price.`,
-                subBody: `${month}-month subscriber reward`,
-                type: NOTIFICATION_TYPE.ORDER_UPDATED,
-            })
-        } catch (e) {
-            console.warn('subscriber-loyalty notify failed:', e.message)
-        }
+// Never throws: the renewal is already saved, so a failed notice must not be
+// reported as an unapplied renewal.
+async function notifySubscriberLoyalty(subscription, month, bonus) {
+    if (!subscription.userId || !(bonus > 0)) return
+    try {
+        await createNotification({
+            userId: subscription.userId,
+            title: 'Loyalty reward unlocked 🎉',
+            body: `Thanks for ${month} months with Chuvi Laundry! We've added ${bonus} extra item(s) to this month's plan — same price.`,
+            subBody: `${month}-month subscriber reward`,
+            type: NOTIFICATION_TYPE.ORDER_UPDATED,
+        })
+    } catch (e) {
+        console.warn('subscriber-loyalty notify failed:', e.message)
     }
 }
 
@@ -376,8 +383,9 @@ async function handleRenewal(data, user, reference, { claimed = false } = {}) {
         }
         // Subscriber loyalty: this renewal is one more consecutive month.
         subscription.consecutiveMonths = (subscription.consecutiveMonths || 0) + 1
-        await applySubscriberLoyalty(subscription, plan, subscription.consecutiveMonths)
+        const loyaltyBonus = applySubscriberLoyalty(subscription, plan, subscription.consecutiveMonths)
         await subscription.save()
+        await notifySubscriberLoyalty(subscription, subscription.consecutiveMonths, loyaltyBonus)
 
         // 🔔 Tell the customer their renewal went through. The renewal is
         // already applied, so a failed push must not be reported as unapplied.
@@ -461,31 +469,83 @@ async function reportUnappliedRenewal(data, user, reference, reason, { rowWritte
 async function handleChargeFailed(data) {
     try {
         const reference = data.reference
-        const metadata = data.metadata || {}
         const reason = data.gateway_response || 'The payment was not completed'
 
-        // Mark our payment record as failed (idempotent)
+        // Mark OUR pending card checkout as failed. Only `pending` → `failed`,
+        // so a resent event finds nothing and the customer is told once; a
+        // bank-transfer proof awaiting approval is never a card checkout. A
+        // failed row still accepts a paid retry (F-44).
         const payment = await PaymentModel.findOneAndUpdate(
-            { reference, status: { $ne: 'success' } },
+            { reference, status: 'pending', paymentMethod: { $ne: 'bank-transfer' } },
             { status: 'failed' },
             { new: true },
         )
 
-        const userId = metadata.userId || payment?.userId
-        const email = data.customer?.email
+        // Only a checkout WE started is reported, and only to the customer on
+        // our row: the event's metadata is whatever the checkout was opened
+        // with, so it could name someone else (review F-49).
+        if (!payment) return
 
         // 🔔 Tell the customer on WhatsApp (fire-and-forget)
         await notifyBot({
             event: 'payment-failed',
-            ...(userId && { chuviUserId: String(userId) }),
-            ...(email && { email }),
+            chuviUserId: String(payment.userId),
             reason,
             reference,
-            ...(metadata.orderId && { orderId: String(metadata.orderId) }),
+            ...(payment.order && { orderId: String(payment.order) }),
         })
+
+        // …and in the app and by email. A payment message, so it goes now,
+        // outside the follow-up send windows. Each step is non-fatal.
+        await notifyPaymentFailed(payment, data, reason)
     } catch (error) {
         console.error('Error in handleChargeFailed:', error)
         return
+    }
+}
+
+/**
+ * In-app notice + email for a failed card payment on OUR checkout row. The
+ * customer and the order come from our row, never the event. Never throws.
+ */
+async function notifyPaymentFailed(payment, data, reason) {
+    try {
+        const user = await UserModel.findById(payment.userId).select('email fullName').lean()
+        const amount = Number(data.amount) > 0 ? Number(data.amount) / 100 : Number(payment.metadata?.expectedAmount) || 0
+        let what = 'your payment'
+        if (payment.type === 'order' && payment.order) {
+            const order = await BookOrderModel.findById(payment.order).select('oscNumber').lean()
+            what = order?.oscNumber ? `your payment for order ${order.oscNumber}` : 'your order payment'
+        } else if (payment.type === 'wallet-top-up') {
+            what = 'your wallet top-up'
+        } else if (payment.type === 'subscription') {
+            what = 'your plan payment'
+        }
+        const naira = amount > 0 ? ` of ₦${amount.toLocaleString('en-NG')}` : ''
+        const text = `We couldn't complete ${what}${naira} (${reason}). Please try again from the app, or choose another payment method.`
+
+        try {
+            await createNotification({
+                userId: payment.userId,
+                title: 'Payment not completed',
+                body: text,
+                subBody: `Reference ${payment.reference}`,
+                type: NOTIFICATION_TYPE.PAYMENT_UPDATE,
+            })
+        } catch (err) {
+            console.error('payment-failed notice failed:', err?.message)
+        }
+
+        if (user?.email) {
+            const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+            await sendEmail({
+                to: user.email,
+                subject: 'Your Chuvi Laundry payment was not completed',
+                html: `<p>Hi ${esc(user.fullName || 'there')},</p><p>${esc(text)}</p><p>Reference: ${esc(payment.reference)}</p><p>Chuvi Laundry</p>`,
+            })
+        }
+    } catch (err) {
+        console.error('payment-failed customer messages failed:', err?.message)
     }
 }
 

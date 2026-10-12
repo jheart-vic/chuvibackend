@@ -351,7 +351,7 @@ Closed 2026-10-12 by /audit independent (round 8): `handleNormalSubscription` (w
 Fixed 2026-10-12. Only a checkout Paystack refused at initialisation (`metadata.initRefused`) is treated as refused; a row marked `failed` by `charge.failed` still accepts a successful retry. quickBookingStaging 16 (failed then retried on the same checkout → credited).
 Closed 2026-10-12 by /audit independent (round 8): the refusal keys only on `metadata.initRefused === true` (webhook.handler.js:193-195), set only where Paystack refuses initialisation (paystack.service.js:127, wallet.service.js:83; `metadata` is Mixed). A `charge.failed` row stays claimable (`status: { $ne: 'success' }`).
 
-### F-45 [P1] fixed - Any signed-in customer can create an active subscription with a full monthly allowance without paying (pre-existing, outside this delta)
+### F-45 [P1] closed - Any signed-in customer can create an active subscription with a full monthly allowance without paying (pre-existing, outside this delta)
 
 **File:** services/subscription.service.js:235-267 (route routes/subscription.js:314-317; consumer services/bookOrder.service.js:1763-1777)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -359,8 +359,9 @@ Closed 2026-10-12 by /audit independent (round 8): the refusal keys only on `met
 **Suggested fix:** Remove the route, or make it admin-only. If the frontend still calls it before checkout, create the row with `status: 'pending'` and `remainingItems: 0`, and let the verified first charge (`handleNormalSubscription`) activate it. Confirm with the frontend which call it uses.
 **Resolution:**
 Fixed 2026-10-12. Confirmed live on testingdb first (a customer got 40/40 pieces with no Payment and booked 10 pieces marked paid). The user confirmed the app subscribes only through the Paystack checkout and nothing calls this endpoint, so `subscribePlan` is switched off: it always refuses ("Please subscribe to a plan through checkout.") and creates nothing. Admin-only was rejected because the endpoint subscribes the caller, so it could never grant a plan to a customer. Swagger marks it deprecated. Existing subscriptions are untouched (the user confirmed none came from this endpoint). f46Probe on testingdb.
+Closed 2026-10-12 by /audit independent (round 9): `subscribePlan` (subscription.service.js:240-244) takes no input and always returns the failed envelope (controller → 400 via base.controller.js:10-13); it creates nothing. Its only caller is the route (routes/subscription.js:311-313); `routes/users.js:30` only imports the route constant and never mounts it. The paid path is untouched by this commit: `initializePayment` (paystack.service.js) and `handleNormalSubscription` (webhook.handler.js:608-709) do not reference it. Swagger shows `deprecated: true` with only a 400 `ErrorResponse`; envelope check 0 wrong.
 
-### F-46 [P2] fixed - A renewal charge that cannot be applied is dropped with no Payment record and no admin alert
+### F-46 [P2] closed - A renewal charge that cannot be applied is dropped with no Payment record and no admin alert
 
 **File:** util/webhook.handler.js:151-154, 332-340, 313-316
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
@@ -368,6 +369,7 @@ Fixed 2026-10-12. Confirmed live on testingdb first (a customer got 40/40 pieces
 **Suggested fix:** In `handleRenewal`, when the subscription is unknown or not the payer's, record the reference (for example a Payment row with `metadata.unapplied: true`) and `notifyRoles` admins, matching the unmatched-payment branch. Do the same on the claimed path before returning.
 **Resolution:**
 Fixed 2026-10-12. `handleRenewal` sends every failure (unknown code, another customer's subscription, or any error while applying) to `reportUnappliedRenewal`. It records the money once per reference: a new `success` Payment row with `metadata.unapplied`, or, when our row already exists (the claimed path, or after a failed refresh), it flags that row. A duplicate event returns quietly. It then alerts admins ("Plan renewal payment not applied") and gives the customer the user-approved in-app notice, which never says the plan renewed. A failed bot push after a successful renewal is caught, so it is no longer reported as unapplied. f46Probe 15/0 on testingdb; quickBookingStaging 67/0 (incl. scenario 16 renewals).
+Closed 2026-10-12 by /audit independent (round 9): unknown code, another customer's subscription and errors while applying all reach `reportUnappliedRenewal` (webhook.handler.js:329-395). It records once per reference: a new row (11000 → quiet return before any alert) or, when the row exists (`claimed` or written at :356), a `$set` of the unapplied flags. A repeat event stops at `exists(reference)` (:151) or the atomic claim (:265-281). Every step is in its own try/catch, so it never throws. After `subscription.save()` only `notifyBot` runs, which is async and swallows its own errors (util/notifyBot.js), so a successful renewal cannot be reported as unapplied. The customer text says the payment was received and is being confirmed, never that the plan renewed. Offline probe with stubbed models (no DB) passed: unknown code twice → one row, one alert, one notice; another customer → flagged, subscription untouched; normal renewal twice → applied once, not flagged, no alert; save failure → row flagged, one alert; record failure → no throw. A pre-existing notice-ordering edge seen in the probe is logged separately as F-48.
 
 ### F-47 [P3] open - A first plan charge always creates a new subscription document, so a re-subscriber can hold two (pre-existing; deferred to launch item 9)
 
@@ -376,3 +378,21 @@ Fixed 2026-10-12. `handleRenewal` sends every failure (unknown code, another cus
 **Why it matters:** The lookup filters on a `user` field that is not in the subscription schema, so with Mongoose 8 (`strictQuery` false) it never matches and every first charge creates a new document. A customer who re-subscribes after a failed renewal can end up with two, and `subscription.create` may attach the new Paystack code to the old one, after which a renewal is reported as unapplied (F-46 now catches that).
 **Suggested fix:** Look up by `userId`, and decide the re-subscribe rules with the subscription rollover work (launch item 9), which rebuilds this area.
 **Resolution:**
+
+### F-48 [P3] fixed - A renewal that fails to save on a loyalty month still tells the customer "we've added N extra items" (pre-existing ordering)
+
+**File:** util/webhook.handler.js:379-380 (notice sent at :36-46, inside `applySubscriberLoyalty`)
+**Found:** 2026-10-12 by /audit independent (round 9; scope: current; lens: quality)
+**Why it matters:** `applySubscriberLoyalty` sends the "Loyalty reward unlocked 🎉 … We've added N extra item(s)" notification before `subscription.save()`. If the save then throws on month 3, 6 or 12, nothing was added. F-46's repair now also sends "We've received your plan renewal payment … our team is confirming it", so the customer gets two messages that disagree. Before F-46 the loyalty message was just as wrong, but no second message pointed it out. This only happens when the save fails, and admins are alerted in that case.
+**Suggested fix:** Have `applySubscriberLoyalty` return the bonus and leave the notification to `handleRenewal`, which sends it after `subscription.save()` succeeds. Nothing else changes.
+**Resolution:**
+Fixed 2026-10-12 (on this branch, at the user's request). `applySubscriberLoyalty` is now synchronous: it adds the bonus and returns it. `handleRenewal` saves first, then calls the new `notifySubscriberLoyalty`, which never throws, so a failed notice after a good save is not reported as an unapplied renewal. f48f49Probe on testingdb: a month-3 renewal whose save fails sends no loyalty notice (only the F-46 notice) and leaves the plan unchanged; one that saves goes 40 + 10 = 50 pieces and sends the notice once.
+
+### F-49 [P3] fixed - Every `charge.failed` webhook throws a ReferenceError and returns 500 (pre-existing, outside this delta)
+
+**File:** util/webhook.js:50 (imports at :2-7)
+**Found:** 2026-10-12 by /audit independent (round 9; scope: current; lens: quality)
+**Why it matters:** The `charge.failed` case calls `handleChargeFailed`, but the destructured `require('./webhook.handler')` omits it, even though the handler exports it. The call throws, the catch returns 500, and Paystack keeps retrying the event. The row is never marked `failed` and the customer's "payment failed" bot message is never sent. This work item's F-44 reasoning assumes `handleChargeFailed` runs. Money is not affected: the pending row stays claimable, so a paid retry is still credited. `util/webhook.js` is not changed in `502dc0f..90247ef`.
+**Suggested fix:** Add `handleChargeFailed` to the destructured import in util/webhook.js.
+**Resolution:**
+Fixed 2026-10-12 (on this branch, at the user's request). Imported. Because this turns on a handler that had never run in production, it was also narrowed. It moves only a `pending`, non-bank-transfer row to `failed`, so a resend finds nothing and the customer is told once, and a paid row or a transfer proof is never touched. It messages only `payment.userId` from our row (the event's `metadata.userId` could name someone else), and does nothing when there is no row of ours. The order id also comes from our row. User-approved additions: an in-app "Payment not completed" notice and an email to the account address, sent immediately (payment messages are outside the send windows), every step non-fatal. f48f49Probe on testingdb (signed events through `util/webhook.js`): 200 instead of 500; the owner is told once on WhatsApp, in the app and by email; the metadata user gets nothing; a resend, an unknown reference, a transfer proof and a paid row change nothing. quickBookingStaging 16 (failed then retried → credited) still passes.
