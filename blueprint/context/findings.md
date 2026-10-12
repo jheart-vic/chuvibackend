@@ -126,7 +126,7 @@ counter audit trail that FE-CHANGELOG-2026-10-08 tightened.
 intake-specific list) in place of `...post`. Nothing current is lost.
 **Resolution:**
 
-### F-20 [P3] fixed - The allow-list lets a customer set the order's channel, including "office"
+### F-20 [P3] closed - The allow-list lets a customer set the order's channel, including "office"
 
 **File:** services/bookOrder.service.js:113
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
@@ -141,8 +141,9 @@ back to the schema default. Nothing current is lost.
 **Resolution:** Fixed 2026-10-11. `postBookOrder` drops `channel: "office"` (the staff counter's channel); `website` / `whatsapp` are still accepted (the WhatsApp bot books through this endpoint). Probe confirms.
 Reopened 2026-10-11 by /audit independent (round 2): the check is a strict `post.channel === 'office'` (services/bookOrder.service.js:1285). The BookOrder schema's `channel` has `trim: true` before its enum, so `channel: " office"` passes the check and is stored as `office`. Suggested fix: accept only `website`/`whatsapp` (allow-list after trim and lowercase), and drop anything else.
 Fixed again 2026-10-11 (round 3). The channel is compared trimmed and lowercased, as the schema stores it, so " office" is dropped too.
+Closed 2026-10-11 by /audit independent (round 3): verified. The value is trimmed and lowercased before the comparison, so " office" and "OFFICE" are both dropped. Any other value that is not in the enum fails the schema on save.
 
-### F-21 [P0] fixed - A zero or negative item quantity still lets the customer set the bill
+### F-21 [P0] closed - A zero or negative item quantity still lets the customer set the bill
 
 **File:** services/bookOrder.service.js:1362
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
@@ -162,8 +163,9 @@ is not a whole number of at least 1. Store `Number(quantity)` so later reads can
 string. Add a briefCheck assertion. Nothing current is lost.
 **Resolution:**
 Fixed 2026-10-11. `priceFromCatalog` refuses any item whose quantity is not a whole number of at least 1 ("Each item needs a whole-number quantity of at least 1.") and stores the quantity as a number. briefCheck drives 0, -5, "-5", 1.5, "two" and missing.
+Closed 2026-10-11 by /audit independent (round 3): verified. Offline probe: 0, -0, "-5", 1e-7, null, "", [], {} and missing are refused. "1e3", " 2 ", true, [3] and "0x10" become positive whole numbers and price at the catalog rate. No line can price at zero or below. The missing upper bound is a separate availability issue, tracked as F-26.
 
-### F-22 [P2] fixed - The subscription heavy-item block misses slug and padded item names (pre-existing)
+### F-22 [P2] closed - The subscription heavy-item block misses slug and padded item names (pre-existing)
 
 **File:** services/bookOrder.service.js:1622
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
@@ -176,8 +178,9 @@ guarantees every item matched a catalog entry by `catalogKey`, so the fix is che
 Better still, have `priceFromCatalog` return `isHeavy` per item. Nothing current is lost.
 **Resolution:**
 Fixed 2026-10-11. The subscription heavy-item check compares `catalogKey` on both sides, the same key pricing uses, so slugged heavy items are caught.
+Closed 2026-10-11 by /audit independent (round 3): verified. Both sides use `catalogKey` (services/bookOrder.service.js:1629-1638). Set pieces are keyed by piece name only. That can block an item it should not, but it never lets a heavy item through.
 
-### F-23 [P2] fixed - An unknown serviceType prices the basket at multiplier 1 (pre-existing)
+### F-23 [P2] closed - An unknown serviceType prices the basket at multiplier 1 (pre-existing)
 
 **File:** services/bookOrder.service.js:1794
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
@@ -191,8 +194,9 @@ multipliers were not visible to this review. Raise to P1 if any is above 1.
 Nothing current is lost.
 **Resolution:**
 Fixed 2026-10-11. An unknown `serviceType` is refused ("Please choose a service from the list.") before any pricing. Production multipliers are x1 / x0.7 / x0.6 (read-only check), so the old x1 fallback never discounted, but it stored made-up service types.
+Closed 2026-10-11 by /audit independent (round 3): verified. The exact-name check (services/bookOrder.service.js:1474) runs before every billing branch, so the x1 fallbacks at 1809 and 1952 can no longer be reached.
 
-### F-24 [P3] fixed - Catalog matching edge cases: inactive sets, duplicate names, decimal prices, stale docs
+### F-24 [P3] closed - Catalog matching edge cases: inactive sets, duplicate names, decimal prices, stale docs
 
 **File:** util/catalogItems.js:37
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: quality)
@@ -208,3 +212,64 @@ prices in the admin path, or relax the rule to `numeric`. Note in Swagger that `
 ignored. Nothing current is lost.
 **Resolution:**
 Fixed 2026-10-11. Deactivated sets are skipped, catalog prices are rounded to whole naira, the first of two clashing names wins, and Swagger documents `items[].price` as ignored (no longer required) with `quantity` minimum 1.
+Closed 2026-10-11 by /audit independent (round 3): verified. Sets with `active: false` are skipped, prices go through `Math.round`, the first entry for a clashing key wins, and Swagger marks `price` as ignored with `quantity` minimum 1 (envelope check: 0 wrong).
+
+### F-25 [P1] fixed - An itemCount sent with a normal basket unlocks minimum-item offers
+
+**File:** services/offer.service.js:157
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** `isCountOnlyBooking` treats `items` + `itemCount` as a normal booking
+and leaves `itemCount` on `post` (the spec lists it as read but not stored).
+`_priceWithOffers` spreads `post` into `OfferService.validateAndPrice`
+(services/bookOrder.service.js:821). `checkBookingRules` then uses an explicit
+`draft.itemCount` instead of counting the real items. Offline probe: an offer with
+`rules.minItems: 10` is refused for a one-item basket. The same basket with
+`itemCount: 999` (or `"999"`) passes. So a customer with one item gets a minimum-item
+offer's discount or free pickup/delivery in the pay-per-item and wallet branches. The
+price is lowered by a body field, which is the thing this hotfix is meant to stop.
+**Suggested fix:** In `postBookOrder`, delete `post.itemCount` when the booking is not
+count-only. Quick Booking already turns the count into N placeholder lines, so the count
+derived from the items is the same. Or have `_priceWithOffers` pass `itemCount: undefined`.
+Add a briefCheck assertion. Nothing current is lost.
+**Resolution:** Fixed 2026-10-12. A booking with real items deletes `itemCount` after catalog pricing, so offer rules count the real items. briefCheck.
+
+### F-26 [P1] fixed - A huge item quantity can crash the server (no upper bound)
+
+**File:** util/catalogItems.js:58
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: performance)
+**Why it matters:** Pre-existing. `priceFromCatalog` refuses quantities below 1 but has no
+ceiling, and the `integer` rule accepts values up to 9007199254740992 (offline probe:
+1e9 passes both). `explodeItemsToPieces` (util/explodeItems.js:20) then builds one object
+per piece in a synchronous loop, before anything is saved. Offline, 2,000,000 pieces
+took 377 ms and about 170 MB of heap, and that is before Mongoose casting. One request
+with `quantity: 100000000` therefore blocks the event loop and runs out of heap, a fatal
+Node crash that takes the server down for every user. The FREE_ITEMS offer benefit does
+the same with `Array(it.quantity).fill(...)` (services/offer.service.js:894). Capacity and
+subscription limits count lines, so neither stops it. Any registered customer can send
+it, and so can an honest typo. Quick Booking already caps a booking at 200 pieces
+(`MAX_QUICK_BOOKING_PIECES`).
+**Suggested fix:** In `priceFromCatalog`, refuse any line quantity above a sensible cap
+(for example the same 200), and refuse a basket whose total pieces go over it, with a
+plain sentence. Add a briefCheck assertion. Nothing current is lost.
+**Resolution:** Fixed 2026-10-12. `priceFromCatalog` refuses more than 200 pieces in one booking (the Quick Booking ceiling, `MAX_BOOKING_PIECES`) before any piece is built. briefCheck (150+51 refused, 200 accepted, 100,000,000 refused).
+
+### F-27 [P1] fixed - A subscription order never checks the plan's items left, so one plan covers unlimited laundry (pre-existing)
+
+**File:** services/bookOrder.service.js:1674
+**Found:** 2026-10-11 by /audit independent (scope: current; lens: security)
+**Why it matters:** Pre-existing. The subscription branch refuses an order only when its
+number of LINES is above the plan's `monthlyLimits` (`post.items.length >
+subscription.planId.monthlyLimits`). It never checks `subscription.remainingItems`,
+which is reduced at line 1753 and can go below zero. Each line can also carry any
+quantity, and `explodeItemsToPieces` stores that many pieces as covered
+(`paymentStatus: success` when no pickup/delivery fee is due). A Student-plan subscriber
+(₦12,000 for 28 items) can place any number of orders of up to 28 lines, each line at
+any quantity, and pay ₦0 for the laundry. Counting lines rather than pieces was an
+earlier recorded design choice (session.md, per-piece explosion). Not checking
+`remainingItems` was not. The in-app assistant's "try the plan first" step relies on this
+check to fall back to pay-per-item.
+**Suggested fix:** Refuse an order when `post.items.length > subscription.remainingItems`.
+Ask the client whether the plan allowance counts pieces (the sum of quantities, which is
+what Quick Booking already does by building one line per piece), and use that answer for
+both the check and the deduction. Nothing current is lost.
+**Resolution:** Fixed 2026-10-12. A plan order counts PIECES and is checked against `remainingItems` (the items left this month); it deducts pieces and the wallet-failure rollback adds them back. The refusal keeps "limit"/"exceeds" so the assistant still falls back to pay-per-item. testingdb probe: plan with 2 left refuses 3 pieces, books 2, ends at 0, refuses the next. ⚠️ Behaviour change for subscribers (a line of 3 shirts now uses 3 plan items, not 1): confirm with the client.

@@ -56,6 +56,12 @@ Must not break: any booking branch (pay-per-item, wallet, subscription, Quick Bo
   heavy-item check uses the same name key as pricing (F-22); an unknown service type is
   refused (F-23); deactivated sets are skipped, catalog prices are whole naira, the first
   of two clashing names wins, and Swagger marks `items[].price` as ignored (F-24).
+- **Round 3 (changes-requested) repairs:** a real basket drops any stray `itemCount`
+  (F-25: `itemCount: 999` unlocked minimum-item offers); one booking holds at most 200
+  pieces (F-26: an unbounded quantity crashed the server); a plan order counts pieces and
+  is checked against the items left this month, deducting pieces (F-27: a plan could book
+  without end). ⚠️ F-27 changes subscriber behaviour — a line of 3 shirts now uses 3 plan
+  items, not 1 — confirm with the client.
 - **Left open — F-19 [P2]:** the staff counter booking (`intake-user` `createBookOrder`)
   still spreads its body; only intake staff and admins reach it.
 - **What can now be refused:** an old app build listing an item no longer in the
@@ -95,3 +101,7 @@ Must not break: any booking branch (pay-per-item, wallet, subscription, Quick Bo
 - **Results after round 2 repairs (2026-10-11):** briefCheck 418/0, probe 14/14,
   subLogistics 20/0, handoff 54/0, dispatch 80/0, dashboardDecisions 45/0, tierPricing
   33/0, freeLogistics 23/0.
+- **Results after round 3 repairs (2026-10-12):** briefCheck 421/0, probe 14/14, plan
+  probe 4/4 (2 left: 3 pieces refused, 2 booked, 0 left, next refused), subLogistics 20/0,
+  handoff 54/0, dispatch 80/0, dashboardDecisions 45/0, tierPricing 33/0, freeLogistics
+  23/0, dispatchTag 46/0, phase12 14/0.

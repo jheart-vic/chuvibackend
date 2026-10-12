@@ -2218,6 +2218,19 @@ const run = (async () => {
         ok('postBookOrder prices items from the catalog before validation, skipping only Quick Booking placeholders',
             /\} else if \(Array\.isArray\(post\.items\) && post\.items\.length\) \{[\s\S]{0,900}priceFromCatalog\(post\.items, \{ catalog, sets \}\)[\s\S]{0,300}post\.items = fromCatalog\.items/.test(postBook) &&
                 postBook.indexOf('priceFromCatalog(post.items') < postBook.indexOf('const validateRule = {'))
+        // Round 3: piece ceiling (F-26), stray itemCount (F-25), plan allowance (F-27).
+        const ceiling = priceFromCatalog([{ type: 'Lab coats', quantity: 150 }, { type: 'Lab coats', quantity: 51 }], { catalog, sets })
+        const atCeiling = priceFromCatalog([{ type: 'Lab coats', quantity: 200 }], { catalog, sets })
+        const huge = priceFromCatalog([{ type: 'Lab coats', quantity: 100000000 }], { catalog, sets })
+        ok('a booking over 200 pieces is refused before any piece is built (no memory blow-up)',
+            !ceiling.ok && /more than 200 pieces/.test(ceiling.error) && atCeiling.ok && !huge.ok)
+        ok('a real basket drops any stray itemCount, so offers count the real items',
+            /post\.items = fromCatalog\.items\s*\/\/[\s\S]{0,500}delete post\.itemCount/.test(postBook))
+        ok('a plan order is checked in pieces against the items left this month, and deducts pieces',
+            /if \(planPieces > planItemsLeft\)/.test(postBook) &&
+                /subscription\.remainingItems = planItemsLeft - planPieces/.test(postBook) &&
+                /subscription\.remainingItems \+= planPieces/.test(postBook) &&
+                !/post\.items\.length > subscriptionPlanMonthlyLimits/.test(postBook))
         ok('a customer cannot mark their order as the staff counter channel',
             /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
         ok('the server-set Quick Booking fields are dropped from the body before anything reads them',

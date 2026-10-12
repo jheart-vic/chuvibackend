@@ -1343,6 +1343,10 @@ class BookOrderService extends BaseService {
                     })
                 }
                 post.items = fromCatalog.items
+                // A real basket is counted from its items. A stray `itemCount`
+                // beside them made the offer rules count it instead, so
+                // `itemCount: 999` unlocked "minimum 10 items" offers (F-25).
+                delete post.itemCount
             }
 
             const validateRule = {
@@ -1669,11 +1673,21 @@ class BookOrderService extends BaseService {
                     finalMessage += ` We expect this to take ${adminOrderDetails.standardDeliveryPeriod} days. We appreciate your patience and understanding.`
                 }
 
-                const subscriptionPlanMonthlyLimits =
-                    subscription.planId.monthlyLimits
-                if (post.items.length > subscriptionPlanMonthlyLimits) {
+                // The plan allowance counts PIECES (a line of 3 shirts is 3
+                // items) and is checked against what is LEFT this month. It used
+                // to count lines against the monthly limit per order and never
+                // read `remainingItems`, so a plan could book without end.
+                const planPieces = post.items.reduce(
+                    (n, i) => n + (Number(i.quantity) || 0),
+                    0,
+                )
+                const planItemsLeft = Math.max(
+                    0,
+                    Number(subscription.remainingItems ?? subscription.planId.monthlyLimits) || 0,
+                )
+                if (planPieces > planItemsLeft) {
                     return BaseService.sendFailedResponse({
-                        error: 'You selected items has exceeded your currently subscription limit. Consider upgrading or reducing your items',
+                        error: `This order has ${planPieces} items and your plan has ${planItemsLeft} left this month, so it exceeds your plan's limit. Remove some items or pay per item.`,
                     })
                 }
 
@@ -1750,7 +1764,7 @@ class BookOrderService extends BaseService {
                     0,
                     (subscription.remainingPickupDeliveries || 0) - logistics.freeUsed,
                 )
-                subscription.remainingItems -= post.items.length
+                subscription.remainingItems = planItemsLeft - planPieces
                 await subscription.save()
 
                 if (feeDue && method === 'wallet') {
@@ -1763,7 +1777,7 @@ class BookOrderService extends BaseService {
                     if (!charge.success) {
                         // roll back allowance + order — the fee was not collected
                         subscription.remainingPickupDeliveries += logistics.freeUsed
-                        subscription.remainingItems += post.items.length
+                        subscription.remainingItems += planPieces
                         await subscription.save()
                         await BookOrderModel.deleteOne({ _id: newOrder._id })
                         newOrder = null
