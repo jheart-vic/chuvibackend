@@ -15,7 +15,7 @@ const { notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy');
 const { NOTIFICATION_TYPE, WALLET_TX_TYPE } = require("../util/constants");
 const createAuditLog = require("../util/createAuditLog");
 const WalletCreditService = require("./walletCredit.service");
-const { orderPayableGate } = require("../util/paymentGate");
+const { orderPayableGate, amountDue } = require("../util/paymentGate");
 
 class WalletService extends BaseService {
   async walletTopUp(req, res) {
@@ -192,10 +192,13 @@ class WalletService extends BaseService {
         return BaseService.sendFailedResponse({ error: payable.error });
       }
 
+      // The outstanding balance when an earlier payment no longer covers the
+      // bill (F-30), otherwise the order amount.
+      const due = amountDue(bookOrder);
       const charge = await WalletService.chargeWalletForOrder({
         userId,
         orderId: bookOrder._id,
-        amount: bookOrder.amount,
+        amount: due,
         description,
         useCredit,
       });
@@ -204,7 +207,20 @@ class WalletService extends BaseService {
       }
 
       bookOrder.paymentStatus = "success";
+      bookOrder.balanceDue = undefined;
       await bookOrder.save();
+
+      // Same release the Paystack webhook performs: a paid order leaves its
+      // payment hold and its processing clock can start. Non-fatal — the
+      // payment is already saved.
+      try {
+        const PaymentHoldService = require("./paymentHold.service");
+        await PaymentHoldService.clear({ orderId: bookOrder._id, source: "wallet", actorId: userId });
+        const { markProductionClearedIfReady } = require("../util/productionClock");
+        await markProductionClearedIfReady(bookOrder._id);
+      } catch (err) {
+        console.error("wallet payment hold release failed:", err?.message);
+      }
 
       const creditNote =
         charge.creditApplied > 0
@@ -213,7 +229,7 @@ class WalletService extends BaseService {
       await createNotification({
         userId,
         title: "Payment Successful",
-        body: `Your payment of ₦${bookOrder.amount} for Order #${bookOrder._id} was successful${creditNote}. Thank you for using your wallet!`,
+        body: `Your payment of ₦${due} for Order #${bookOrder._id} was successful${creditNote}. Thank you for using your wallet!`,
         type: NOTIFICATION_TYPE.PAYMENT_APPROVED,
       })
 

@@ -11,7 +11,7 @@ const BookOrderModel = require("../models/bookOrder.model");
 const { generateReferenceId, getObjectId } = require("../util/helper");
 const PaymentModel = require("../models/payment.model");
 const createAuditLog = require("../util/createAuditLog");
-const { orderPayableGate } = require("../util/paymentGate");
+const { orderPayableGate, amountDue } = require("../util/paymentGate");
 
 
 class PaystackService extends BaseService {
@@ -88,11 +88,13 @@ class PaystackService extends BaseService {
 
       const reference = generateReferenceId()
       let amount = 0
-      amount = transactionType === 'subscription' ? plan.price * 100 : order.amount * 100
+      // An order pays its outstanding balance when one is set (F-30).
+      amount = transactionType === 'subscription' ? plan.price * 100 : amountDue(order) * 100
 
       if(transactionType == 'order' && orderId){
         const orderPaymentExists = await PaymentModel.findOne({userId, order: orderId})
-        if(orderPaymentExists && orderPaymentExists.status == 'success'){
+        // A second payment is right when the bill went up after the first (F-30).
+        if(orderPaymentExists && orderPaymentExists.status == 'success' && !(Number(order.balanceDue) > 0)){
           return BaseService.sendFailedResponse({error: "You have already made a payment for this order."})
         }
       }

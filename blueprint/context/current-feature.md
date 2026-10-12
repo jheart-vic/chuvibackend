@@ -118,6 +118,16 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
     Paystack order init and the assistant's "use my balance" check it first.
   - **F-20 (again):** the Quick Booking re-pick also lists the offer already attached to
     that order, so it survives the linkage's expiry.
+- **Round 3 passed; non-blocking findings fixed at the user's request (round 4):**
+  - **F-30 [P2, pre-existing]:** a paid order whose bill went up at the item edit stayed
+    "paid" and the difference was never collected. New `balanceDue`: such an order goes
+    back to unpaid owing only the difference; the hold, Paystack, the wallet and the
+    assistant collect `amountDue`; settling clears it; a cancelled part-paid order refunds
+    what was paid. The wallet payment now also releases the payment hold, as Paystack does.
+  - **F-29:** the personal-offer list skips promotion linkages.
+  - **F-31:** staff transfer approval checks `orderPayableGate`.
+  - **F-32 (the hotfix's F-19):** the staff counter booking keeps only the order's own
+    fields from its request.
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -150,6 +160,11 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 4):** briefCheck 450/0 · quickBookingStaging 52/0
+  (scenarios 11–12 cover F-30 and F-31) · plan probe 5/5 · itemEdit 20/0 · bookingContext
+  30/0 · subLogistics 20/0 · counterPayment 51/0 · dispatch 80/0 · handoff 54/0 · phase12
+  14/0 · dashboardDecisions 45/0 · tierPricing 33/0 · freeLogistics 23/0 · dispatchTag
+  46/0 · holds 48/0 · windowBooking 35/0 · Swagger 0 wrong · boot on 7999 ok.
 - **Results (2026-10-12, round 3):** briefCheck 444/0 · quickBookingStaging 45/0
   (scenarios 9–10 cover F-24 and F-20) · plan probe 5/5 · itemEdit 20/0 · bookingContext
   30/0 · subLogistics 20/0 · counterPayment 51/0 · dispatch 80/0 · handoff 54/0 · phase12

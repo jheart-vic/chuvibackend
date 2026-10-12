@@ -473,6 +473,56 @@ async function main() {
             'the Welcome Offer stays attached on the next edit')
         ok(qb10.pricing?.freePickupWaived === pickupFee && qb10.pricing?.freeDeliveryWaived === deliveryFee,
             'and still waives both trips')
+
+        // ── 11 a paid order whose bill rises owes only the difference (F-30) ─
+        console.log('\n11 — a paid order edited upward owes only the difference')
+        const fifth = await mkUser('eeeee')
+        const WalletModel11 = require('./models/wallet.model')
+        await WalletModel11.updateOne({ userId: fifth._id }, { $set: { balance: 10000000 } }, { upsert: true })
+        const paidBooking = await book.createOrder({
+            userId: fifth._id.toString(),
+            payload: payload({
+                fullName: 'STG QB Fifth',
+                phoneNumber: '08034440005',
+                items: [{ type: anItem.name, price: anItem.price, quantity: 1 }],
+            }),
+        })
+        const o11 = paidBooking.data?.order
+        if (o11?._id) created.orders.push(o11._id)
+        const WalletService11 = require('./services/wallet.service')
+        const firstPay = await new WalletService11().payWithWallet({ body: { bookOrderId: String(o11._id) }, user: { id: String(fifth._id) } })
+        const paidOrder = await BookOrderModel.findById(o11._id).lean()
+        ok(firstPay.success === true && paidOrder.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS,
+            `the order is paid in full first (₦${paidOrder.amount})`)
+        res = await intake(o11._id, [{ type: anItem.name, price: anItem.price, quantity: 3 }], 'Two more pieces in the bag')
+        const up11 = await BookOrderModel.findById(o11._id).lean()
+        const expectedBalance = up11.amount - paidOrder.amount
+        ok(res.success === true && up11.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS && up11.balanceDue === expectedBalance,
+            `it goes back to unpaid with only the difference due (₦${up11.balanceDue} of ₦${up11.amount})`)
+        ok(up11.paymentHold?.raisedAt && up11.paymentHold.amount === expectedBalance,
+            `the payment hold asks for the difference only (₦${up11.paymentHold?.amount})`)
+        const balancePay = await new WalletService11().payWithWallet({ body: { bookOrderId: String(o11._id) }, user: { id: String(fifth._id) } })
+        const settled11 = await BookOrderModel.findById(o11._id).lean()
+        const walletAfter = await WalletModel11.findOne({ userId: fifth._id }).lean()
+        ok(balancePay.success === true && settled11.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS && !settled11.balanceDue,
+            'paying the balance from the wallet settles the order')
+        ok(walletAfter.balance === 10000000 - up11.amount,
+            `the wallet paid the bill exactly once in total (₦${10000000 - walletAfter.balance} = ₦${up11.amount})`)
+        ok(settled11.paymentHold?.clearedAt, 'and the payment hold is cleared')
+        await WalletModel11.deleteOne({ userId: fifth._id })
+
+        // ── 12 staff cannot approve a transfer on an uncounted QB (F-31) ─────
+        console.log('\n12 — staff cannot approve a transfer on an uncounted Quick Booking')
+        const PaymentHoldService12 = require('./services/paymentHold.service')
+        const approve = await PaymentHoldService12.approveTransfer({
+            orderId: o9._id,
+            reference: 'STG-REF',
+            note: 'staging',
+            actor: { id: String(fifth._id), userType: ROLE.INTAKE_AND_TAG },
+        })
+        const after12 = await BookOrderModel.findById(o9._id).lean()
+        ok(approve.success === false && after12.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS,
+            `refused, the order stays unpaid (${approve.data?.error})`)
     } catch (e) {
         thrown = e
     } finally {
@@ -483,6 +533,8 @@ async function main() {
             BookingWindowModel.deleteMany({ _id: { $in: created.windows } }),
             WalletCreditModel.deleteMany({ userId: { $in: created.users } }),
             PaymentModel.deleteMany({ order: { $in: created.orders } }),
+            require('./models/walletTransaction.model').deleteMany({ userId: { $in: created.users } }),
+            require('./models/wallet.model').deleteMany({ userId: { $in: created.users } }),
             UserModel.deleteMany({ _id: { $in: created.users } }),
         ])
         const left = await UserModel.countDocuments({ _id: { $in: created.users } })

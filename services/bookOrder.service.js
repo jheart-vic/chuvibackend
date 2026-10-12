@@ -63,6 +63,8 @@ const {
 } = require('../util/quickBooking')
 // Booking items are priced from the catalog, never the request (hotfix).
 const { priceFromCatalog, catalogKey } = require('../util/catalogItems')
+// What a part-paid order has paid so far (F-30).
+const { amountPaidSoFar } = require('../util/paymentGate')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -235,10 +237,8 @@ class BookOrderService extends BaseService {
             estimatedFee: null,
             refundToWallet: null,
         }
-        const cashPaid =
-            order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS
-                ? Math.max(0, Number(order.amount) || 0)
-                : 0
+        // Includes the part paid before a raised bill (F-30).
+        const cashPaid = amountPaidSoFar(order)
         if (decision.tier === 'green') {
             verdict.estimatedFee = 0
             verdict.refundToWallet = cashPaid
@@ -272,8 +272,10 @@ class BookOrderService extends BaseService {
         //    less any staff fee, back to the wallet balance. Never card/bank.
         let cashRefunded = 0
         let feeCharged = 0
-        if (order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS) {
-            const cashPaid = Math.max(0, (order.amount || 0) - creditsReversed)
+        // Paid, or part-paid before a raised bill (F-30).
+        const paidSoFar = amountPaidSoFar(order)
+        if (paidSoFar > 0) {
+            const cashPaid = Math.max(0, paidSoFar - creditsReversed)
             feeCharged = Math.min(Math.max(0, Math.round(feeApplied) || 0), cashPaid)
             cashRefunded = Math.max(0, cashPaid - feeCharged)
             if (cashRefunded > 0) {
@@ -1090,11 +1092,9 @@ class BookOrderService extends BaseService {
             // What the customer has actually handed over. A waiver is NOT money
             // — it is permission to proceed — so it must not be treated as a
             // payment here, or reducing a waived order's bill would refund cash
-            // that was never received.
-            const amountPaid =
-                order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS
-                    ? previousTotal
-                    : 0
+            // that was never received. A part-paid order (an earlier raise left
+            // a balance due) counts what it paid before that raise (F-30).
+            const amountPaid = amountPaidSoFar(order)
 
             const { newTotal, pricing, breakdown, attached } =
                 await this._repriceForItems({
@@ -1111,11 +1111,31 @@ class BookOrderService extends BaseService {
             // the same per-piece records they always do.
             const explodedItems = explodeItemsToPieces(items)
 
+            // F-30: an order that was paid (or part-paid) and now costs more
+            // owes only the difference. It goes back to unpaid with that
+            // balance due, so the tag gate waits and the payment hold, the
+            // Paystack link and the wallet collect just the balance
+            // (util/paymentGate.js amountDue). Fully covered again → paid, no
+            // balance. Never paid → the bill is the whole amount, no balance.
+            const paymentFields = {}
+            const paymentUnset = {}
+            if (amountPaid > 0 && outstanding > 0) {
+                paymentFields.paymentStatus = PAYMENT_ORDER_STATUS.PENDING
+                paymentFields.balanceDue = outstanding
+            } else if (amountPaid > 0) {
+                paymentFields.paymentStatus = PAYMENT_ORDER_STATUS.SUCCESS
+                paymentUnset.balanceDue = ''
+            } else {
+                paymentUnset.balanceDue = ''
+            }
+
             const now = new Date()
             await BookOrderModel.updateOne(
                 { _id: order._id },
                 {
+                    ...(Object.keys(paymentUnset).length && { $unset: paymentUnset }),
                     $set: {
+                        ...paymentFields,
                         items: explodedItems,
                         amount: newTotal,
                         pricing,

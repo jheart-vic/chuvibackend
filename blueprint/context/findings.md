@@ -124,7 +124,7 @@ items. (F-18 already allows worse, but fixing F-18 would leave this hole open.)
 inside `applyCountOnlyBooking` and delete any client value before it runs).
 **Resolution:** Fixed 2026-10-11. `quickBooking` / `itemsPending` / `counts` are deleted from the body before anything reads it, and the zero-charge rule uses the server's `countOnly`. quickBookingStaging scenario 6. Closed 2026-10-12 by /audit independent (round 2): `SERVER_SET_ON_POST` is deleted from the body copy at bookOrder.service.js:1397 and `quickBooking = countOnly` (line 2009).
 
-### F-20 [P2] fixed - An item edit drops an attached offer that expired or was paused after booking
+### F-20 [P2] closed - An item edit drops an attached offer that expired or was paused after booking
 
 **File:** services/offer.service.js:978
 **Found:** 2026-10-11 by /audit independent (scope: current; lens: quality)
@@ -139,6 +139,7 @@ at booking. If it is, skip the expiry and active checks when `onThisOrder` is tr
 **Resolution:** Fixed 2026-10-11 (builder default, to confirm with the client). An offer attached to THIS order is honoured at the re-price: expiry, a pause, the usage cap and later profile rules no longer remove it; its basket rules are still checked against the real count. Personal and promotional alike. briefCheck + quickBookingStaging (an offer paused and expired after booking still waives the pickup on the next edit).
 Reopened 2026-10-12 by /audit independent (round 2): the repair holds for normal orders (and for pauses), but not on a Quick Booking whose linkage has expired. `_repriceForItems` clears `customerOfferId` and re-picks through `pickBestPersonalOffer` → `getBookingOptions`, whose linkage query filters `expiresAt: { $gt: now }` (offer.service.js:514-518). So an offer attached at the first Intake edit is not a candidate on a later edit once its linkage expires. `_settleOfferLinkages` then releases it as EXPIRED and the bill goes up, which is the original defect. quickBookingStaging covers F-20 only on a normal order (scenario 4). Suggested fix: when re-pricing a Quick Booking, include this order's attached personal linkage as a candidate whatever its expiry (or keep it when it still passes `_offerRejection` with `repriceOrderId`). Still a builder default to confirm with the client; non-blocking.
 Fixed again 2026-10-12 (round 3). On a re-price `getBookingOptions` also lists the linkage already attached to that order, whatever its expiry, so the Quick Booking re-pick keeps it. quickBookingStaging scenario 10 (Welcome Offer attached at an earlier edit, linkage expired, next edit keeps it and still waives both trips).
+Closed 2026-10-12 by /audit independent (round 3): the extra `$or` branch (offer.service.js:518-524) sits under the top-level `userId` filter and is added only when `repriceOrderId` is set, which only `_repriceForItems` passes (bookOrder.service.js:951, 970), so it cannot surface another customer's or another order's linkage. Still a builder default to confirm with the client. See F-29 for a narrow side effect on promotional linkages.
 
 ### F-21 [P2] closed - Releasing a promotion linkage turns it into a reusable "personal" reward
 
@@ -181,7 +182,7 @@ covers a customer draft that carries `orderId` (F-17).
 F-17 case to the `_offerRejection` assertions.
 **Resolution:** Fixed 2026-10-11. briefCheck now drives `_offerRejection` (own order, other order, smuggled orderId) and the body allow-list for real; keep/release/attach stays covered by quickBookingStaging (needs a database). Closed 2026-10-12 by /audit independent (round 2): briefCheck 441/0 includes the own-order / other-order / smuggled-orderId `_offerRejection` cases and the allow-list check. Settlement is still driven only by staging, the same accepted gap as F-06/F-08 until a runner exists.
 
-### F-24 [P1] fixed - A customer can mark an unbilled Quick Booking as paid with a ₦0 wallet payment and skip the bill
+### F-24 [P1] closed - A customer can mark an unbilled Quick Booking as paid with a ₦0 wallet payment and skip the bill
 
 **File:** services/bookOrder.service.js:2014 (with services/wallet.service.js:188-200, services/bookOrder.service.js:1094-1097)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -189,3 +190,39 @@ F-17 case to the `_offerRejection` assertions.
 **Suggested fix:** Refuse payment on an order that is still `itemsPending` ("Your bill isn't ready yet; we'll send it after we count"). Do this in `payWithWallet`, in `PaystackService.initializePayment` for orders, and in the assistant's unpaid-order lookup (skip `itemsPending` orders or give the not-billed-yet reply). Optionally, have `applyItemEdit` treat a ₦0 "success" as unpaid when the bill rises. Nothing current is lost.
 **Resolution:**
 Fixed 2026-10-12. New `orderPayableGate` (util/paymentGate.js): an order still waiting for its items is not payable ("There's nothing to pay yet. We send your bill by SMS after we count your clothes."). Checked first by `WalletService.payWithWallet`, `PaystackService.initializePayment` (order) and the assistant's "use my balance". The Intake re-price clears `itemsPending` before it raises the hold, so the SMS bill and its Paystack link still work. quickBookingStaging scenario 9 (wallet and real card init both refused, order stays unpaid).
+Closed 2026-10-12 by /audit independent (round 3): every customer path that can charge or mark an uncounted order paid is gated. `payWithWallet` (wallet.service.js:189-193, also the only wallet path the assistant uses, payment.flow.js:112), `initializePayment` for orders (paystack.service.js:65-69, also used by the hold's link builder and the assistant's card link), and the assistant's lookup (payment.flow.js:274-279). The booking-time wallet charges (bookOrder.service.js:1917, 2223) cannot run for a Quick Booking because `applyCountOnlyBooking` forces pay-per-item. The webhook can only confirm a Paystack reference that `initializePayment` created, so it is gated upstream. `applyItemEdit` sets `itemsPending: false` and the real items in one `updateOne` before `PaymentHoldService.raise` builds the link, so the bill's Paystack link and wallet payment work. Offline probe: `orderPayableGate` refuses `itemsPending: true`/unset with placeholder pieces and null, and allows `itemsPending: false` and real items. Remaining staff-only gap recorded as F-31.
+
+### F-29 [P3] fixed - On a re-price, an order's attached promotion can be offered as its "personal" offer and applied twice
+
+**File:** services/offer.service.js:518
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
+**Why it matters:** `getBookingOptions` builds its personal list from every linkage the query returns, with no `offer.type === PERSONAL` filter, and `_offerRejection({ kind: 'personal' })` does not check the type either. The round-3 `$or` branch returns every ATTACHED linkage on the re-priced order, so a promotional linkage attached to that order is now listed as a personal candidate whatever its expiry (before, only one whose promotion had a future `expiryDate` matched). On a Quick Booking re-price, `pickBestPersonalOffer` can pick it, and `_repriceForItems` then passes it as `customerOfferId` while also passing the same promotion as `promoOfferId`. If the promotion is `stackableWithPersonal`, `validateAndPrice` applies it twice. New Quick Bookings attach no offer at booking and the re-price only re-passes an already-attached promotion, so this is reachable only for Quick Bookings booked before this change that had a promotion attached at booking. Note: the F-numbers F-25 to F-28 are skipped because the hotfix ledger used them and code comments cite them.
+**Suggested fix:** In `getBookingOptions`, skip linkages whose `offerId.type` is not PERSONAL (the same filter `getCustomerOffers` uses at offer.service.js:440), or restrict the new `$or` branch to personal offers.
+**Resolution:**
+Fixed 2026-10-12. The personal-offer list in `getBookingOptions` skips promotion linkages, so the re-pick can never take an attached promotion as the personal offer. briefCheck.
+
+### F-30 [P2] fixed - A paid order whose bill goes up at the item edit stays marked paid (pre-existing, outside this delta)
+
+**File:** services/bookOrder.service.js:1094 (with services/paymentHold.service.js:80)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** Found while tracing F-24. It was not introduced by this work item and is the same at 502dc0f. `applyItemEdit` treats a `success` order as having paid `previousTotal`, computes `outstanding = newTotal - previousTotal`, writes `amount: newTotal`, and calls `PaymentHoldService.raise`. `raise` refuses any order with `paymentStatus: success` ("already paid"), so no hold or link is raised. The order keeps `success` with the higher `amount`, `moneyIsComplete` opens the tags, and the difference is never collected unless staff notice the error in the response and send a top-up request by hand. Reachable for a normal order paid at booking that Intake finds has more items, and for a Quick Booking that paid its trip fees under the old rule before this change.
+**Suggested fix:** Fix in its own change. When a paid order's bill rises, reset `paymentStatus` to pending (or record the paid amount separately) and raise the hold for the outstanding difference only.
+**Resolution:**
+Fixed 2026-10-12. New `balanceDue` on the order. When the item edit raises the bill of a paid (or part-paid) order, it goes back to unpaid with only the difference due; `amountDue` makes the payment hold, the Paystack link, the wallet payment and the assistant collect that balance, and the webhook, the wallet payment and a transfer approval clear it. Paystack allows a second card payment only while a balance is due. The wallet payment now also releases a payment hold and starts the processing clock, as the webhook does. A cancelled part-paid order refunds what was paid (`amountPaidSoFar`, used by the cancel verdict, `_performCancellation` and `cancellationOutcome`). quickBookingStaging scenario 11 (paid ₦421,000, edited to ₦1,261,000, hold and balance ₦840,000, wallet pays it, paid once in total, hold cleared).
+
+### F-31 [P3] fixed - Staff bank-transfer approval can still mark an uncounted Quick Booking paid at ₦0
+
+**File:** services/paymentHold.service.js:463
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** `approveTransfer` (Intake or admin, `/api/intake-user/order/{id}/approve-transfer`) does not check `orderPayableGate`. Approving a transfer on a Quick Booking still waiting for its items marks it `success` with amount 0. When Intake then enters the items, the hold is refused as "already paid" and the order goes through unpaid, which is the F-24 outcome through a staff action. The admin `updateBookOrderPaymentStatus` and the admin Payment approval are deliberate admin overrides. This path needs a human, is audited, and notifies an admin, so the risk is a mistake rather than abuse.
+**Suggested fix:** Refuse `approveTransfer` while `awaitingRealItems(order)` ("Enter the items first; there is no bill yet").
+**Resolution:**
+Fixed 2026-10-12. `approveTransfer` checks `orderPayableGate` first. quickBookingStaging scenario 12.
+
+### F-32 [P2] fixed - The staff counter booking spread the request body over the order (carried over from the hotfix's F-19)
+
+**File:** services/intake-user.service.js:339
+**Found:** 2026-10-11 by /audit independent of the booking hotfix (its F-19); carried into this work item 2026-10-12
+**Why it matters:** `IntakeUserService.createBookOrder` built the order as `{ ..., amount, paymentStatus, intakeStaffId, channel: OFFICE, stage, ...post }`, so the staff request could override amount, attribution, stage, channel, owner and pricing. Intake staff and admins only, but it undermined the counter audit trail.
+**Suggested fix:** An allow-list of the order's own fields in place of `...post`.
+**Resolution:** Fixed 2026-10-12. Only `STAFF_ORDER_FIELDS` (name, phone, addresses, pickup date and time, service, care level, speed, items, note, pickup/delivery) are taken from the request, spread first so the server's values win. counterPaymentStaging 51/0; briefCheck.

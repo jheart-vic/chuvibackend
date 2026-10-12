@@ -318,7 +318,20 @@ class IntakeUserService extends BaseService {
             delete post.useCredit
 
             const oscNumber = generateOscNumber()
+            // Only the order's own fields come from the staff request; amount,
+            // payment, stage, channel, billing type and attribution are the
+            // server's (review F-19: the body was spread last and could set
+            // any of them). Spread FIRST, so the server's values below win.
+            const STAFF_ORDER_FIELDS = [
+                'fullName', 'phoneNumber', 'pickupAddress', 'deliveryAddress',
+                'pickupDate', 'pickupTime', 'serviceType', 'serviceTier',
+                'deliverySpeed', 'items', 'extraNote', 'isPickUp', 'isDelivery',
+            ]
+            const staffFields = Object.fromEntries(
+                STAFF_ORDER_FIELDS.filter((k) => post[k] !== undefined).map((k) => [k, post[k]]),
+            )
             const newOrderItem = {
+                ...staffFields,
                 oscNumber,
                 amount: totalPrice,
                 // PENDING until the tender is actually settled below. It used to
@@ -340,7 +353,6 @@ class IntakeUserService extends BaseService {
                     },
                 ],
                 ...(customerId && { userId: customerId }),
-                ...post,
                 deliveryDate,
             }
             const newOrder = new BookOrderModel(newOrderItem)

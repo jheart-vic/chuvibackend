@@ -666,6 +666,11 @@ const bookOrderSchema = new mongoose.Schema(
         // purpose: one records HOW the order was taken and never changes, the
         // other records whether it is still waiting for its contents.
         itemsPending: { type: Boolean },
+        // What is still owed when an earlier payment no longer covers the bill:
+        // Intake's item edit raised the total on an order that was already
+        // paid (review F-30). While set, every payment path collects THIS, not
+        // `amount` (util/paymentGate.js amountDue), and settling clears it.
+        balanceDue: { type: Number },
 
         orderHold: {
             // Which KIND of hold this is (HoldType.key). Drives the time limit:

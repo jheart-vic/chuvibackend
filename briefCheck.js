@@ -1513,7 +1513,7 @@ const run = (async () => {
     // "Staff can never type an amount" is enforced by there being no parameter.
     ok('raising a hold takes NO amount — the bill comes from the order',
         /static async raise\(\{ orderId, actorId, reason = null \}\)/.test(phSrc) &&
-            /const amount = Number\(order\.amount \|\| 0\)/.test(phSrc))
+            /const amount = amountDue\(order\)/.test(phSrc))
     ok('the hold IS an ordinary order-level hold, so Holds Management shows it',
         /'orderHold\.holdTypeKey': HoldTypeModel\.PAYMENT_HOLD_KEY/.test(phSrc) &&
             /'stage\.status': ORDER_STATUS\.HOLD/.test(phSrc))
@@ -1645,7 +1645,11 @@ const run = (async () => {
         /refundToWallet\(\{/.test(boSrc))
     // A waiver is permission to proceed, not money received.
     ok('a WAIVED order is not counted as paid, so nothing is refunded',
-        /order\.paymentStatus === PAYMENT_ORDER_STATUS\.SUCCESS\s*\n?\s*\? previousTotal\s*\n?\s*: 0/.test(boSrc))
+        (() => {
+            const { amountPaidSoFar } = require(path.join(ROOT, 'util/paymentGate'))
+            return /const amountPaid = amountPaidSoFar\(order\)/.test(boSrc) &&
+                amountPaidSoFar({ paymentStatus: 'pending', paymentWaivedAt: new Date(), amount: 5000 }) === 0
+        })())
     ok('a reason is REQUIRED and the edit is recorded with who made it',
         /A reason is required — the bill is changing/.test(boSrc) &&
             /itemEdits: \{/.test(boSrc))
@@ -2342,6 +2346,34 @@ const run = (async () => {
             /status: CUSTOMER_OFFER_STATUS\.ATTACHED, orderId: repriceOrderId/.test(
                 fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
             ))
+        // F-30: a paid order whose bill rises owes only the difference.
+        const { amountDue: due, amountPaidSoFar: paidSoFar } = require(path.join(ROOT, 'util/paymentGate'))
+        ok('a part-paid order owes its balance, and counts what it paid (F-30)',
+            due({ amount: 6000, balanceDue: 1500 }) === 1500 && due({ amount: 6000 }) === 6000 &&
+                paidSoFar({ amount: 6000, balanceDue: 1500, paymentStatus: 'pending' }) === 4500 &&
+                paidSoFar({ amount: 6000, paymentStatus: 'success' }) === 6000)
+        ok('the item edit puts a paid order back to unpaid with only the difference due, and every payment path collects amountDue',
+            /if \(amountPaid > 0 && outstanding > 0\) \{\s*paymentFields\.paymentStatus = PAYMENT_ORDER_STATUS\.PENDING\s*paymentFields\.balanceDue = outstanding/.test(bookSrc) &&
+                /const amount = amountDue\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')) &&
+                /amountDue\(order\) \* 100/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /const due = amountDue\(bookOrder\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')) &&
+                /order\.balanceDue = undefined/.test(fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')))
+        ok('a cancelled part-paid order refunds what was paid (F-30)',
+            (() => {
+                const { cancellationOutcome } = require(path.join(ROOT, 'util/cancellationFees'))
+                const out = cancellationOutcome({ order: { amount: 6000, balanceDue: 1500, paymentStatus: 'pending', items: [] }, settings: {} })
+                return out.refundToWallet === 4500
+            })())
+        ok('staff cannot approve a transfer on an uncounted Quick Booking (F-31)',
+            /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')))
+        ok('the personal-offer list skips promotion linkages (F-29)',
+            /if \(linkage\.offerId\.type === OFFER_TYPE\.PROMOTIONAL\) continue/.test(fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')))
+        ok('the staff counter booking saves only the order fields from its request (F-19)',
+            (() => {
+                const src = fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8')
+                const body = src.slice(src.indexOf('const newOrderItem = {'), src.indexOf('const newOrder = new BookOrderModel(newOrderItem)'))
+                return /\.\.\.staffFields,/.test(body) && !/\.\.\.post,/.test(body)
+            })())
         // Piece ceiling (F-26), stray itemCount (F-25), plan allowance (F-27).
         const ceiling = priceFromCatalog([{ type: 'Lab coats', quantity: 150 }, { type: 'Lab coats', quantity: 51 }], { catalog, sets })
         const atCeiling = priceFromCatalog([{ type: 'Lab coats', quantity: 200 }], { catalog, sets })

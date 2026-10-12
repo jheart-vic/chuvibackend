@@ -534,6 +534,11 @@ class OfferService {
         const tripRows = []
         for (const linkage of linkages) {
             if (!linkage.offerId) continue // guard vs deleted offers
+            // A promotion's linkage (created when it was attached to an order)
+            // is not a personal reward; listing it here let the Quick Booking
+            // re-pick choose it as the personal offer and, if it stacks, count
+            // its discount twice (review F-29). Promotions are listed below.
+            if (linkage.offerId.type === OFFER_TYPE.PROMOTIONAL) continue
             const offer = linkage.offerId
             const evald = await evaluate('personal', offer, linkage)
             personal.push({

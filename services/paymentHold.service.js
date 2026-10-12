@@ -8,6 +8,7 @@ const sendSms = require('../util/sendSms')
 const createNotification = require('../util/createNotification')
 const { notifyRoles } = require('../util/notifyRoles')
 const { markProductionClearedIfReady } = require('../util/productionClock')
+const { orderPayableGate, amountDue } = require('../util/paymentGate')
 const {
     ORDER_STATUS,
     STATION_STATUS,
@@ -96,8 +97,9 @@ class PaymentHoldService {
             }
 
             // The amount comes from the order. There is deliberately no
-            // parameter for it.
-            const amount = Number(order.amount || 0)
+            // parameter for it. It is the outstanding balance when an earlier
+            // payment no longer covers the bill (F-30), else the order amount.
+            const amount = amountDue(order)
             if (amount <= 0) {
                 return BaseService.sendFailedResponse({
                     error: 'This order has no outstanding amount, so no payment hold is needed.',
@@ -478,11 +480,15 @@ class PaymentHoldService {
                     error: 'This order is already marked paid.',
                 })
             }
+            // An uncounted Quick Booking has no bill yet; approving a transfer
+            // now would mark it paid at ₦0 (review F-31).
+            const payable = orderPayableGate(order)
+            if (!payable.ok) {
+                return BaseService.sendFailedResponse({ error: payable.error })
+            }
 
             const now = new Date()
-            const amount = Number(
-                order.paymentHold?.amount || order.amount || 0,
-            )
+            const amount = Number(order.paymentHold?.amount || amountDue(order))
 
             // The order is marked paid HERE, by a human, which is exactly why
             // the review trail below exists.
@@ -503,6 +509,8 @@ class PaymentHoldService {
                             amount,
                         },
                     },
+                    // The outstanding balance is settled (F-30).
+                    $unset: { balanceDue: '' },
                 },
                 { runValidators: false },
             )

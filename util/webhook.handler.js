@@ -515,6 +515,8 @@ async function handleOrderPayment(metadata, reference) {
         order.reference = reference
         order.paymentDate = new Date()
         order.paymentMethod = 'paystack'
+        // The outstanding balance (if this paid one) is settled (F-30).
+        order.balanceDue = undefined
 
         await order.save()
 
