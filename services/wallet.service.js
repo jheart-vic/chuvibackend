@@ -48,6 +48,11 @@ class WalletService extends BaseService {
       const email = user.email;
 
       let { amount } = post;
+      // `integer|required` accepts 0 and negatives; Paystack then refuses the
+      // checkout and a pending row was left behind (review F-38).
+      if (!Number.isInteger(Number(amount)) || Number(amount) < 100) {
+        return BaseService.sendFailedResponse({ error: "The smallest top-up is ₦100." });
+      }
       // amount = amount * 100;
       const reference = generateReferenceId();
 
@@ -58,6 +63,8 @@ class WalletService extends BaseService {
         status: 'pending',
         type: 'wallet-top-up',
         alertType: 'credit',
+        // What this checkout asked for; the webhook never credits more (F-39).
+        metadata: { expectedAmount: Number(amount) },
     })
       const response = await paystackAxios.post("/transaction/initialize", {
         email,
@@ -71,6 +78,10 @@ class WalletService extends BaseService {
           reference
         },
        callback_url: "https://www.chuvilaundry.com/user/payment/callback",
+      }).catch(async (err) => {
+        // A refused checkout must not leave a reusable pending row (F-38).
+        await PaymentModel.updateOne({ reference }, { $set: { status: "failed" } }).catch(() => {});
+        throw err;
       });
 
       // await createNotification({

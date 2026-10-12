@@ -172,6 +172,49 @@ async function handleChargeSuccess(data) {
             return
         }
 
+        // 2b. The event must match the checkout WE recorded (review F-38). The
+        //     event's metadata is whatever the checkout was opened with, so a
+        //     reference could be re-used with made-up metadata: our row's type,
+        //     owner and order are the truth. A bank-transfer proof row, or a
+        //     checkout Paystack refused, was never a card checkout at all.
+        const mismatch =
+            existing.status === 'failed'
+                ? 'a checkout Paystack refused'
+                : existing.paymentMethod === 'bank-transfer' || /^BT-/.test(String(reference))
+                  ? 'a bank-transfer proof, not a card checkout'
+                  : existing.type !== metadata.transactionType
+                    ? `a ${existing.type} checkout, not ${metadata.transactionType}`
+                    : String(existing.userId) !== String(user._id)
+                      ? 'a checkout opened by another customer'
+                      : metadata.transactionType === 'order' &&
+                          String(existing.order || '') !== String(metadata.orderId || '')
+                        ? 'a checkout for a different order'
+                        : null
+        if (mismatch && existing.status !== 'success') {
+            console.error(`Paystack payment ${reference} does not match our checkout (${mismatch}) — not processed`)
+            try {
+                const { notifyRoles } = require('./notifyRoles')
+                const { ROLE } = require('./constants')
+                await notifyRoles({
+                    roles: [ROLE.ADMIN],
+                    title: 'Paystack payment did not match its checkout',
+                    body: `A payment of ₦${(Number(data.amount) / 100).toLocaleString('en-NG')} (reference ${reference}) from ${userEmail} was ${mismatch}, so nothing was credited. Check it in Paystack.`,
+                    type: NOTIFICATION_TYPE.SYSTEM,
+                })
+            } catch (err) {
+                console.error('mismatched payment alert failed:', err?.message)
+            }
+            return
+        }
+
+        // What Paystack collected, never more than this checkout asked for:
+        // `data.amount` may include a fee the customer bore (review F-39).
+        const collected = Number(data.amount) / 100
+        const expected = Number(existing.metadata?.expectedAmount)
+        const paidNaira =
+            Number.isFinite(expected) && expected > 0 ? Math.min(collected, expected) : collected
+        const expectedPlanId = existing.metadata?.planId || null
+
         // 3️⃣ Claim the reference ATOMICALLY, so two copies of one event (or a
         //    retry racing the first) cannot both be processed (review F-36).
         const payment = await PaymentModel.findOneAndUpdate(
@@ -179,9 +222,9 @@ async function handleChargeSuccess(data) {
             {
                 $set: {
                     paidAt: new Date(data.paid_at),
-                    metadata,
+                    metadata: { ...metadata, expectedAmount: existing.metadata?.expectedAmount },
                     status: 'success',
-                    amount: metadata.amount,
+                    amount: paidNaira,
                     channel: data.channel,
                 },
             },
@@ -198,22 +241,43 @@ async function handleChargeSuccess(data) {
         if (metadata.transactionType === 'order') {
             // What Paystack actually collected (kobo → naira), so the order is
             // settled against the money received, not the link's old figure.
-            await handleOrderPayment(metadata, reference, Number(data.amount) / 100)
+            await handleOrderPayment(metadata, reference, paidNaira)
             return
         }
 
         if (metadata.transactionType === 'wallet-top-up') {
             // Credit what Paystack COLLECTED, to the person who PAID (F-35).
             await handleWalletTopUp(metadata, reference, {
-                paidNaira: Number(data.amount) / 100,
+                paidNaira,
                 payerId: user._id,
             })
             return
         }
 
         if (metadata.transactionType === 'subscription') {
-            // First charge (no subscription object yet) — creates/activates it
+            // First charge (no subscription object yet) — creates/activates it.
+            // Only for the plan this checkout was opened for, and only when the
+            // money covers that plan's price (review F-38).
             if (!data.subscription) {
+                const planId = expectedPlanId || metadata.planId
+                const plan = planId ? await PlanModel.findById(planId).lean() : null
+                const planMismatch = expectedPlanId && metadata.planId && String(expectedPlanId) !== String(metadata.planId)
+                if (!plan || planMismatch || collected + 0.5 < Number(plan.price || 0)) {
+                    console.error(`Subscription payment ${reference} does not cover its plan — not activated`)
+                    try {
+                        const { notifyRoles } = require('./notifyRoles')
+                        const { ROLE } = require('./constants')
+                        await notifyRoles({
+                            roles: [ROLE.ADMIN],
+                            title: 'Subscription payment did not match its plan',
+                            body: `A subscription payment of ₦${collected.toLocaleString('en-NG')} (reference ${reference}) from ${userEmail} did not cover its plan, so nothing was activated. Check it in Paystack.`,
+                            type: NOTIFICATION_TYPE.SYSTEM,
+                        })
+                    } catch (err) {
+                        console.error('subscription mismatch alert failed:', err?.message)
+                    }
+                    return
+                }
                 await handleNormalSubscription(data, user)
                 return
             }

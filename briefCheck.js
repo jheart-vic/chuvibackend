@@ -2366,7 +2366,7 @@ const run = (async () => {
             })())
         const whSrc = fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')
         ok('the card webhook settles against the amount Paystack collected: short leaves a balance and a fresh hold, over refunds the excess (F-33)',
-            /handleOrderPayment\(metadata, reference, Number\(data\.amount\) \/ 100\)/.test(whSrc) &&
+            /handleOrderPayment\(metadata, reference, paidNaira\)/.test(whSrc) &&
                 /if \(paid !== null && paid \+ 0\.5 < due\)/.test(whSrc) &&
                 /if \(paid !== null && paid - 0\.5 > due && order\.userId\)/.test(whSrc))
         ok('a payment with no checkout of ours is never processed, and top-ups credit what was collected, to the payer (F-35)',
@@ -2378,6 +2378,18 @@ const run = (async () => {
             /PaymentModel\.findOneAndUpdate\(\s*\{ reference, status: \{ \$ne: 'success' \} \}/.test(whSrc) &&
                 /Payment on an order already paid/.test(whSrc) &&
                 !/Second payment on order/.test(whSrc))
+        ok('the event must match our recorded checkout (type, owner, order; not a bank-transfer or refused row), and a first subscription charge must cover its plan (F-38)',
+            /existing\.type !== metadata\.transactionType/.test(whSrc) &&
+                /String\(existing\.userId\) !== String\(user\._id\)/.test(whSrc) &&
+                /existing\.paymentMethod === 'bank-transfer'/.test(whSrc) &&
+                /existing\.status === 'failed'/.test(whSrc) &&
+                /collected \+ 0\.5 < Number\(plan\.price \|\| 0\)/.test(whSrc) &&
+                /status: 'failed'/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /The smallest top-up is ₦100\./.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
+        ok('the webhook never credits more than the checkout asked for (F-39)',
+            /Math\.min\(collected, expected\)/.test(whSrc) &&
+                /expectedAmount: amount \/ 100/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /expectedAmount: Number\(amount\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
         ok('a replaced hold is quiet and keeps its reminder clock (F-37)',
             /quiet: true/.test(bookSrc) && /keepClockFrom: replacedHold/.test(bookSrc) &&
                 /if \(!quiet\) \{/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')) &&

@@ -603,6 +603,29 @@ async function main() {
         })
         const own = await WalletModel13.findOne({ userId: seventh._id }).lean()
         ok((own?.balance || 0) === 2000, `a genuine top-up credits what Paystack collected, ₦${own?.balance || 0}, not the metadata's ₦999,999`)
+        // ── 15 the event must match our checkout (F-38, F-39) ────────────────
+        console.log('\n15 — a payment must match the checkout we recorded')
+        const PlanModel15 = require('./models/plan.model')
+        const SubscriptionModel15 = require('./models/subscription.model')
+        const plan15 = await PlanModel15.create({ title: `STG QB Plan ${STAMP}`, description: 'stg', duration: 'monthly', price: 50000, features: ['stg'], monthlyLimits: 30, paystackPlanCode: `STGQB_${STAMP}` })
+        // a bank-transfer proof row, reused for a subscription
+        await PaymentModel.create({ userId: seventh._id, amount: 5000, reference: `STGQB-${STAMP}-bt`, status: 'pending', type: 'wallet-top-up', paymentMethod: 'bank-transfer' })
+        await charge('bt', 100, { email: seventh.email, metadata: { transactionType: 'subscription', planId: String(plan15._id), userId: String(seventh._id) } })
+        // a top-up checkout of the same customer, reused as a subscription
+        await startCheckout('topup2sub', seventh._id, 'wallet-top-up')
+        await charge('topup2sub', 100, { email: seventh.email, metadata: { transactionType: 'subscription', planId: String(plan15._id), userId: String(seventh._id) } })
+        // a real subscription checkout paid ₦100 for a ₦50,000 plan
+        await PaymentModel.create({ userId: seventh._id, amount: 0, reference: `STGQB-${STAMP}-sub`, status: 'pending', type: 'subscription', metadata: { expectedAmount: 50000, planId: String(plan15._id) } })
+        await charge('sub', 100, { email: seventh.email, metadata: { transactionType: 'subscription', planId: String(plan15._id), userId: String(seventh._id) } })
+        const subs15 = await SubscriptionModel15.countDocuments({ $or: [{ userId: seventh._id }, { user: seventh._id }] })
+        ok(subs15 === 0, `no plan is activated by a reused or underpaid checkout (${subs15} subscriptions)`)
+        // a top-up where the customer also paid Paystack's fee: credit what was asked for
+        await PaymentModel.create({ userId: seventh._id, amount: 0, reference: `STGQB-${STAMP}-fee`, status: 'pending', type: 'wallet-top-up', metadata: { expectedAmount: 1000 } })
+        const before15 = (await WalletModel13.findOne({ userId: seventh._id }).lean())?.balance || 0
+        await charge('fee', 1015, { email: seventh.email, metadata: { transactionType: 'wallet-top-up', userId: String(seventh._id), amount: 1000 } })
+        const after15 = (await WalletModel13.findOne({ userId: seventh._id }).lean())?.balance || 0
+        ok(after15 - before15 === 1000, `a ₦1,015 charge for a ₦1,000 top-up credits ₦${after15 - before15}`)
+        await PlanModel15.deleteOne({ _id: plan15._id })
         await PaymentModel.deleteMany({ reference: { $regex: `^STGQB-${STAMP}-` } })
     } catch (e) {
         thrown = e

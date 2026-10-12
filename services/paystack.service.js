@@ -113,10 +113,21 @@ class PaystackService extends BaseService {
         ...(orderId && {order: orderId}),
         type: transactionType,
         ...(transactionType == 'wallet-top-up' && {alertType: 'credit'}),
+        // What THIS checkout asked for, recorded server-side: the webhook
+        // never credits more than this, and a subscription must match its
+        // plan (review F-38/F-39). The event's own metadata is not trusted.
+        metadata: {
+          expectedAmount: amount / 100,
+          ...(plan && { planId: String(plan._id) }),
+        },
     })
 
-
-      const response = await paystackAxios.post(
+      // A checkout Paystack refuses must not leave a reusable pending row (F-38).
+      const initialize = (url, body) => paystackAxios.post(url, body).catch(async (err) => {
+        await PaymentModel.updateOne({ reference }, { $set: { status: 'failed' } }).catch(() => {})
+        throw err
+      })
+      const response = await initialize(
         "/transaction/initialize",
         {
           email,

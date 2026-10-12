@@ -148,6 +148,15 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
     identical to a real second payment).
   - **F-37 [P3]:** replacing a hold is quiet (no "payment received") and keeps the
     original reminder/escalation clock.
+- **Round 6 (changes-requested) repairs (round 7):**
+  - **F-38 [P1, pre-existing — also on `main`]:** the webhook acted on the event's own
+    metadata, so a pending row that was never a real card checkout (a refused top-up, a
+    bank-transfer proof) could be re-used by a public-key checkout to activate any plan for
+    ₦100. Now the event must match OUR checkout (type, owner, order; not refused, not a
+    bank-transfer proof), and a first subscription charge must cover the recorded plan's
+    price. Refused checkouts are marked `failed`; top-ups under ₦100 are refused.
+  - **F-39 [P3]:** checkouts record the amount asked for; the webhook never credits more
+    (a fee the customer bore is not credited).
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -180,6 +189,13 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 7):** briefCheck 458/0 · quickBookingStaging 61/0 (15:
+  re-used bank-transfer / top-up rows and an underpaid plan checkout activate nothing; a
+  fee-inclusive charge credits only the amount asked for) · plan probe 5/5 · itemEdit 20/0
+  · bookingContext 30/0 · subLogistics 20/0 · counterPayment 51/0 · dispatch 80/0 ·
+  handoff 54/0 · phase12 14/0 · dashboardDecisions 45/0 · tierPricing 33/0 ·
+  freeLogistics 23/0 · dispatchTag 46/0 · holds 48/0 · windowBooking 35/0 · Swagger 0
+  wrong · boot on 7999 ok.
 - **Results (2026-10-12, round 6):** briefCheck 456/0 · quickBookingStaging 59/0
   (13: atomic claim + flag-not-refund; 14: forged / mismatched / genuine top-ups; 11:
   replaced hold keeps its clock, no false receipt) · plan probe 5/5 · itemEdit 20/0 ·
