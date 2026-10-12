@@ -862,8 +862,10 @@ router.get(ROUTE_CRM_BROADCAST_LIST, [adminAuth], (req, res) => {
  *       customer has no Welcome Offer or it has already ended.
  *       Schedules: every step keeps `anchor` (`workflow-start` | `offer-end`) and
  *       `preferSlot` (`any` | `morning` | `evening`); send them back unchanged.
- *       Enabled steps clash only when they share the same anchor and minute (and,
- *       for `offer-end`, the same slot).
+ *       `workflow-start` steps clash when two enabled steps share a minute.
+ *       `offer-end` steps must have `delayMinutes: 0` — they go in their window
+ *       (`morning` = the morning the offer ends; `evening`/`any` = the evening
+ *       before) — and clash when two land in the same window.
  *       `thresholds` keys: dormantDays, highVolumeAvgAmount,
  *       highFrequencyPerMonth, expressUserRatio, prospectBroadcastDays,
  *       churnBroadcastDays.
@@ -901,7 +903,7 @@ router.get(ROUTE_CRM_BROADCAST_LIST, [adminAuth], (req, res) => {
  *                   properties:
  *                     messageType: { type: string, enum: [reg-not-booked-1, reg-not-booked-2, reg-not-booked-3, reg-not-booked-mark-prospect], example: reg-not-booked-1 }
  *                     enabled: { type: boolean, example: true }
- *                     delayMinutes: { type: number, description: Minutes after registration (workflow-start) or after the offer's end (offer-end), example: 1440 }
+ *                     delayMinutes: { type: number, description: "Minutes after registration (workflow-start). Must be 0 for offer-end steps, which go in their send window.", example: 1440 }
  *                     cancelIfOrdered: { type: boolean, example: true }
  *                     anchor: { type: string, enum: [workflow-start, offer-end], example: workflow-start }
  *                     preferSlot: { type: string, enum: [any, morning, evening], example: any }

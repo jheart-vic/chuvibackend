@@ -559,11 +559,19 @@ class UserService extends BaseService {
             }
 
             // ✅ Fix 1 — avoid full document validation (address landmark issue)
-            const updatedUser = await UserModel.findByIdAndUpdate(
-                userId,
+            // Only while the phone is still empty, in one step: two quick taps
+            // used to both pass the check above, overwrite the number and send
+            // the welcome SMS twice (review F-50).
+            const updatedUser = await UserModel.findOneAndUpdate(
+                { _id: userId, phoneNumber: { $in: [null, ''] } },
                 { $set: { phoneNumber } },
                 { new: true, runValidators: false },
             )
+            if (!updatedUser) {
+                return BaseService.sendFailedResponse({
+                    error: 'Profile already completed',
+                })
+            }
 
             // A Google/Apple customer's welcome SMS waited for this number
             // (launch item 6). Fire-and-forget: never fails the phone step.

@@ -216,6 +216,32 @@ async function main() {
         await crm.handleProfileCompleted(await UserModel.findById(bola._id).lean())
         ok(sms.sent.filter((s) => s.to === phone).length === 1, 'a repeat sends nothing (once per customer)')
 
+        // F-50: a double-tap on the phone step, even with two different numbers.
+        const tapper = await makeUser('Tade DoubleTap', false)
+        await crm.handleUserRegistered(tapper)
+        const tapA = `0802${String(stamp).slice(-6)}1`
+        const tapB = `0802${String(stamp).slice(-6)}2`
+        const taps = await Promise.all([
+            new UserService().completeProfile({ user: { id: String(tapper._id) }, body: { phoneNumber: tapA } }),
+            new UserService().completeProfile({ user: { id: String(tapper._id) }, body: { phoneNumber: tapB } }),
+        ])
+        await until(() => sms.sent.some((s) => s.to === tapA || s.to === tapB))
+        await new Promise((r) => setTimeout(r, 1500))
+        const kept = (await UserModel.findById(tapper._id).lean()).phoneNumber
+        const tapSms = sms.sent.filter((s) => s.to === tapA || s.to === tapB)
+        ok(taps.filter((t) => t.success).length === 1 && taps.some((t) => /already completed/.test(t.data?.error || '')),
+            'F-50: a double-tap saves one phone; the other tap is told the profile is complete')
+        ok(tapSms.length === 1 && tapSms[0].to === kept, `F-50: one welcome SMS, to the number that was kept (${tapSms.length})`)
+
+        // F-51: an offer ending before 08:00 names the day before.
+        const early = moment.tz('Africa/Lagos').add(3, 'days').hour(1).minute(0).second(0)
+        const ifeoma = await makeUser('Ifeoma Early', true)
+        const ifeomaProfile = (await crm.findOrCreateProfile({ userId: ifeoma._id, fullName: ifeoma.fullName, phoneNumber: ifeoma.phoneNumber })).profile ||
+            (await CrmProfileModel.findOne({ userId: ifeoma._id }))
+        await crm.sendRegistrationWelcome({ user: ifeoma, profile: ifeomaProfile, offerEndsAt: early.toDate() })
+        const lastDay = early.clone().subtract(1, 'day').format('dddd D MMMM')
+        ok(smsTo(ifeoma)[0]?.message.includes(`by ${lastDay}`), `F-51: an offer ending 01:00 ${early.format('dddd')} says "by ${lastDay}"`)
+
         // ── 4 ── no live Welcome Offer ──────────────────────────────────────
         console.log('\n[4] No live Welcome Offer → the no-offer text')
         await OfferModel.updateOne({ _id: offer._id }, { status: OFFER_STATUS.PAUSED })

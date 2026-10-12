@@ -96,10 +96,9 @@ const REGISTERED_NOT_BOOKED_TYPES = [
 //
 // `anchor` and `preferSlot` are kept (launch item 6): dropping them turned the
 // registered-not-booked messages 2 and 3, positioned from the Welcome Offer's
-// end, into plain delays from sign-up. Two enabled steps clash only when they
-// are counted from the same point, in the same minute, and (for offer-end
-// steps) in the same send window — messages 2 and 3 both sit at minute 0 from
-// the offer's end, one in the evening and one in the morning.
+// end, into plain delays from sign-up. Workflow-start steps clash when they
+// share a minute; offer-end steps (delay always 0) clash when they land in the
+// same window — messages 2 and 3 sit one in the evening, one in the morning.
 // The registration welcome is sent at sign-up, never as a schedule step.
 const WELCOME_TYPES = [
     CRM_MESSAGE_TYPE.REGISTRATION_WELCOME,
@@ -135,15 +134,26 @@ const normalizeSchedule = (schedule, label, allowedTypes = SCHEDULE_TYPES) => {
         if (!slots.includes(preferSlot)) {
             return { error: `Invalid preferSlot for ${step.messageType}: ${preferSlot}` }
         }
+        // An offer-end step is placed only by its window (startRegisteredNotBooked-
+        // Workflow: morning → the morning it ends, anything else → the evening
+        // before); a delay would be silently ignored, so it is refused (F-52).
+        if (anchor === CRM_SCHEDULE_ANCHOR.OFFER_END && delayMinutes !== 0) {
+            return {
+                error: `delayMinutes must be 0 for ${step.messageType}: a step counted from the offer's end goes in its send window (the evening before the offer ends, or the morning it ends), not after a delay.`,
+            }
+        }
         const enabled = step.enabled !== false
         if (enabled) {
             const key =
                 anchor === CRM_SCHEDULE_ANCHOR.OFFER_END
-                    ? `${anchor}|${delayMinutes}|${preferSlot}`
+                    ? `${anchor}|${preferSlot === CRM_SEND_SLOT.MORNING ? 'morning' : 'evening'}`
                     : `${anchor}|${delayMinutes}`
             if (seen.has(key)) {
                 return {
-                    error: `Two ${label} messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
+                    error:
+                        anchor === CRM_SCHEDULE_ANCHOR.OFFER_END
+                            ? `Two ${label} messages are set for the same window around the offer's end. Put one in the morning window and the other in the evening window.`
+                            : `Two ${label} messages are scheduled for the same minute (${delayMinutes}). Stagger them so they don't all send at once.`,
                 }
             }
             seen.add(key)
@@ -158,6 +168,16 @@ const normalizeSchedule = (schedule, label, allowedTypes = SCHEDULE_TYPES) => {
         })
     }
     return { normalized }
+}
+
+// The welcome's {{offerEndDay}}: the LAST DAY the Welcome Offer can be used,
+// by the same rule as messages 2 and 3 — an offer ending before the morning
+// window closes (08:00) counts as ending the day before, so "by Thursday" is
+// never promised for an offer that ends at 01:00 Thursday (F-51).
+const welcomeOfferEndDay = (offerEndsAt, windows) => {
+    const lastDay = moment(offerEndsAt).tz(LAGOS)
+    if (offerEndSchedule(offerEndsAt, windows).shifted) lastDay.subtract(1, 'day')
+    return lastDay.format('dddd D MMMM')
 }
 
 class CrmService {
@@ -617,16 +637,6 @@ class CrmService {
             )
         }
 
-        // ── LAUNCH ITEM 6 (client 2026-10-11) ──────────────────────────────
-        // The welcome: in-app now, SMS now when the account has a phone
-        // (Google/Apple add theirs later — handleProfileCompleted). Placed
-        // after the grant so it can name the day the Welcome Offer ends.
-        try {
-            await this.sendRegistrationWelcome({ user, profile, offerEndsAt, inApp: true })
-        } catch (err) {
-            console.warn('registration welcome failed (non-fatal):', err?.message)
-        }
-
         // ── CLIENT ITEM #1 ──────────────────────────────────────────────────
         // Registering used to cancel the lead sequence and leave them with
         // NOTHING. This is the replacement, and it is what the reps follow up
@@ -640,6 +650,17 @@ class CrmService {
                     err?.message,
                 )
             }
+        }
+
+        // ── LAUNCH ITEM 6 (client 2026-10-11) ──────────────────────────────
+        // The welcome: in-app now, SMS now when the account has a phone
+        // (Google/Apple add theirs later — handleProfileCompleted). After the
+        // grant so it can name the day the Welcome Offer ends, and after the
+        // sequence is queued so a slow SMS provider never delays it (F-53).
+        try {
+            await this.sendRegistrationWelcome({ user, profile, offerEndsAt, inApp: true })
+        } catch (err) {
+            console.warn('registration welcome failed (non-fatal):', err?.message)
         }
     }
 
@@ -666,7 +687,7 @@ class CrmService {
             settings.templates.get(messageType) ||
             CrmSettingModel.DEFAULT_TEMPLATES[messageType]
         const content = renderTemplate(template, { fullName: user.fullName }, {
-            offerEndDay: hasOffer ? moment(offerEndsAt).tz(LAGOS).format('dddd D MMMM') : '',
+            offerEndDay: hasOffer ? welcomeOfferEndDay(offerEndsAt, settings.sendWindows) : '',
         })
         if (!content) return
 
@@ -2029,3 +2050,4 @@ module.exports = new CrmService()
 // pricing maths disagree with itself in brief 1.6.
 module.exports.countStage = countStage
 module.exports.normalizeSchedule = normalizeSchedule
+module.exports.welcomeOfferEndDay = welcomeOfferEndDay

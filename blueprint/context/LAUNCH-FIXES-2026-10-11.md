@@ -13,7 +13,7 @@ These are corrections, so each work item goes through `/fix` (archived under
 |---|---|---|---|---|
 | 1 | Booking screen data + window-only free rule | 10, 11, 12, 14, 15 + FE labels | 2 | **DONE 2026-10-11** — archive `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`, review PASSED (2nd round; F-09..F-15 found and closed). Branch `fix/booking-screen-data-and-window-only-free-rule`, lands as a PR after the 3 earlier stacked fix PRs. Also fixed a LIVE bug: `OFFER_TRIGGER` not imported in offer.service.js since 620cca4. F-16 [P3] (window-only line wording) left open. |
 | 2 | Quick Booking: nothing paid at booking | 3 | 1 | **DONE 2026-10-12** — archive `blueprint/history/fixes/quick-booking-nothing-paid-at-booking.md`, review PASSED (round 10). Branch `fix/quick-booking-nothing-paid-at-booking`, lands as a PR after the S1 PR; conflicts with the booking hotfix (dced480) in `bookOrder.service.js` — keep this branch's version. Grew well past client item 3: it also closes holes still live on `main` until it merges (F-38 re-used Paystack reference activates a plan, F-45 free `subscribe-plan`, F-49 every `charge.failed` returns 500, hotfix F-28 plan-items race). FE notes: FE-CHANGELOG-2026-10-11 §3. Open: F-47 [P3] (→ item 9). Client to confirm: plans count pieces; F-20 (offer honoured at re-price after expiry); 200-piece cap. |
-| 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date **+ 3b daily floor limit** (+ set items on plans, 200-piece message) | 1, 2, 9 + item-2 answers | 2 → **3.5–4** | Ready to spec (Q1 and 3b answered 12 Oct; one small question open: an order larger than a day's whole limit) |
+| 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date **+ 3b daily floor limit** (+ set items on plans, 200-piece message) | 1, 2, 9 + item-2 answers | 2 → **3.5–4** | Ready to spec (Q1, 3b and big-order spreading all answered 12 Oct) |
 | 4 | Anytime agreed parts (Intake alert, top of list, all-windows-full → Urgent at window price + offer kept + next open day, "Urgent opens at") | 13 | 1.5–2 | Ready to spec (Q2 answered) |
 | 5 | Google sign-up: terms, referral code, phone normalisation | 5 | 1 | Not started |
 | 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | Ready to spec (Q3 answered) |
@@ -137,9 +137,54 @@ Verbatim:
   30 and 50 inside it, and Regular takes whatever is left (not a fixed 70).
 - **Cancelled orders free their pieces;** every booking channel counts (app, assistant, S1
   counter, plans).
-- **An order bigger than a day's whole limit** (151–200 pieces, or more than 75 on a
-  Sunday) can never "fit". Proposed: it takes the first day with nothing booked yet for its
-  speed pool. **Ask the client:** spread it over several days, or take the first empty day?
+- **Express / Ready Today need room in BOTH** their own share and the day's floor total (if
+  Regular has used the floor, a fast speed with share left is still full).
+
+## Orders bigger than one day's room — ANSWERED 2026-10-12 (binding)
+
+Verbatim:
+
+> *Orders bigger than one day's limit*
+> Please spread it over the days. Don't wait for an empty day.
+>
+> *How it works*
+> 1. The order takes whatever room is left on the first day that has room.
+> 2. The rest goes on the next working day, and so on until every piece fits. Sunday counts
+>    as 75. Monday is skipped.
+> 3. The ready date is the last of those days.
+> 4. The customer sees one ready date only. The split is just for our count.
+>
+> *Examples*
+> Tuesday has 40 pieces of room left. A 180 piece order puts 40 on Tuesday and 140 on
+> Wednesday. Ready date shows Wednesday.
+>
+> A 100 piece order on Sunday puts 75 on Sunday, skips Monday, and puts 25 on Tuesday. Ready
+> date shows Tuesday.
+>
+> *Express and Ready Today*
+> These can't be spread over days. If the order is bigger than the room left in that speed's
+> share (Express 50, Ready Today 30), grey it out and show:
+> "Too many pieces for Express. Choose Standard, or call us on +234 707 325 4943."
+>
+> *Why*
+> The floor washes a big bag in batches across the day and the next anyway. Waiting for an
+> empty day could push a big customer a week out, block that whole day for everyone else, and
+> still go over the limit.
+
+What this means for item 3:
+- **Regular never waits for an empty day.** It fills the room left on its first possible
+  ready day, then each next working day (Sunday 75, Monday skipped) until every piece is
+  placed. The ready date is the last day used. The order stores its per-day split for the
+  count, and the customer sees only the one date.
+- **This applies to every Regular order, not only big ones.** An order that doesn't fit in
+  a day's remaining room spills to the next day instead of moving wholesale. So "Ready
+  Thursday instead of Wednesday" appears only when Wednesday has no room at all.
+- **Ready Today / Express are never split.** If the order is bigger than the room left in
+  that speed's share, the speed is greyed out with "Too many pieces for Express. Choose
+  Standard, or call us on +234 707 325 4943." Ready Today uses the same text, naming Ready
+  Today. When the share is simply used up, it shows "Full today".
+- **Booked orders keep their split and date.** Intake's count corrects the stored split
+  for later bookings only.
 
 ### The client's answers, verbatim
 

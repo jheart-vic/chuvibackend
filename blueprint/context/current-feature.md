@@ -111,6 +111,16 @@ phone step (launch item 5).
    - a sign-up with no active Welcome Offer gets the no-offer text;
    - an edited template is what gets sent;
    - a failing SMS still lets sign-up and the phone step succeed.
+3. [x] **Review round 1 repairs (passed with F-50..F-53).**
+   - **F-50:** the phone step sets the phone only while it is still empty, in one step. A
+     double-tap saves one number and sends one SMS.
+   - **F-51:** `{{offerEndDay}}` names the last usable day. An offer ending before 08:00
+     names the day before, the same rule as messages 2 and 3.
+   - **F-52:** steps counted from the offer's end must have `delayMinutes: 0` and clash on
+     the window they actually use.
+   - **F-53:** the sequence is queued before the welcome is sent.
+
+   **Done when:** briefCheck and welcomeStaging cover each one.
 
 ## Verify
 
@@ -126,7 +136,10 @@ phone step (launch item 5).
 - Swagger envelope check (0 wrong). Boot on `PORT=7999`.
 - **Independent review: required.** It sends SMS to real customers, which counts as an
   external side effect under `when-sensitive`.
-- **Results (2026-10-12):** briefCheck 471/0 (9 new) · `welcomeStaging.js` 25/0 on testingdb
+- **Results (2026-10-12, after the round-1 repairs):** briefCheck 476/0 · `welcomeStaging.js`
+  28/0 (adds the double-tap and the 01:00 offer end) · `regNotBookedStaging.js` 33/0 ·
+  Swagger 0 wrong · boot on 7999 ok.
+- **Results (2026-10-12, round 1):** briefCheck 471/0 (9 new) · `welcomeStaging.js` 25/0 on testingdb
   (SMS stubbed) · `regNotBookedStaging.js` 33/0 (now stubs SMS, since registering texts) ·
   Swagger 0 wrong · boot on 7999 ok (unauthenticated PUT /crm/settings → 401).
 - **Known:** `seedTestCustomers.js` drives the real sign-up path, so it now also sends the
@@ -136,7 +149,10 @@ phone step (launch item 5).
 
 - CRM → Settings: the "Registered, not booked" schedule now **really saves**. It didn't
   before, even though the save returned success. Send `anchor` and `preferSlot` back
-  unchanged with each step.
+  unchanged with each step. Messages 2 and 3 (`anchor: offer-end`) are placed only by
+  their window (morning / evening). Their `delayMinutes` must stay 0, so don't offer a
+  delay box for them.
+- The Google/Apple phone step answers "Profile already completed" to a second tap.
 - Two new editable templates in the same screen: **`registration-welcome`** and
   **`registration-welcome-no-offer`**, with the new placeholder `{{offerEndDay}}`.
 - A new in-app notification "Welcome to Chuvi Laundry" arrives right after sign-up.

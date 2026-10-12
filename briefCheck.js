@@ -2553,6 +2553,23 @@ const run = (async () => {
             /Hello Ada,/.test(text) && /by Friday 16 October/.test(text) && !/{{/.test(text))
         ok('the no-offer welcome has no end-day placeholder',
             !/offerEndDay/.test(CrmSet.DEFAULT_TEMPLATES[CMT.REGISTRATION_WELCOME_NO_OFFER]))
+        const { welcomeOfferEndDay } = require(path.join(ROOT, 'services/crm.service'))
+        const win = { morningStartHour: 6, morningEndHour: 8, eveningStartHour: 18, eveningEndHour: 20 }
+        ok('F-51: an offer ending 01:00 Thursday names Wednesday as the last day',
+            welcomeOfferEndDay(new Date('2026-10-15T00:00:00Z'), win) === 'Wednesday 14 October')
+        ok('F-51: an offer ending 15:00 Thursday names Thursday',
+            welcomeOfferEndDay(new Date('2026-10-15T14:00:00Z'), win) === 'Thursday 15 October')
+        ok('F-52: an offer-end step with a delay is refused',
+            !!normalizeSchedule([{ messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 60, anchor: 'offer-end', preferSlot: 'evening' }], 'x').error)
+        ok('F-52: offer-end "any" and "evening" land in the same window and clash',
+            !!normalizeSchedule([
+                { messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'any' },
+                { messageType: CMT.REG_NOT_BOOKED_3, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' },
+            ], 'x').error)
+        ok('F-50: the phone step sets the phone only while it is still empty',
+            /findOneAndUpdate\(\s*\{\s*_id: userId, phoneNumber: \{ \$in: \[null, ''\] \} \}/.test(
+                fs.readFileSync(path.join(ROOT, 'services/user.service.js'), 'utf8'),
+            ))
     }
 
     console.log(`\n${pass} passed, ${fail} failed\n`)
