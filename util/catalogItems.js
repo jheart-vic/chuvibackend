@@ -19,6 +19,9 @@
 // sort, hold, notes…) belongs to the staff stations.
 const CUSTOMER_ITEM_FIELDS = ['type', 'quantity', 'serviceTier', 'fromSet']
 
+// The most pieces one booking may hold — the Quick Booking ceiling.
+const { MAX_QUICK_BOOKING_PIECES: MAX_BOOKING_PIECES } = require('./quickBooking')
+
 const catalogKey = (s) =>
     String(s ?? '')
         .trim()
@@ -53,6 +56,7 @@ function priceFromCatalog(items, { catalog = [], sets = [] } = {}) {
 
     // A quantity of 0 or less priced the line at zero or below while still
     // storing a piece (review F-21): a whole number of at least 1, always.
+    let pieces = 0
     for (const raw of items || []) {
         const q = Number(raw?.quantity)
         if (!Number.isInteger(q) || q < 1) {
@@ -61,6 +65,17 @@ function priceFromCatalog(items, { catalog = [], sets = [] } = {}) {
                 unknown: [],
                 error: 'Each item needs a whole-number quantity of at least 1.',
             }
+        }
+        pieces += q
+    }
+    // Every piece becomes its own stored record, so an unbounded quantity
+    // (100,000,000) exhausted memory and took the server down (review F-26).
+    // The same ceiling as a Quick Booking.
+    if (pieces > MAX_BOOKING_PIECES) {
+        return {
+            ok: false,
+            unknown: [],
+            error: `That is more than ${MAX_BOOKING_PIECES} pieces. Please check the numbers, or contact us to arrange a large order.`,
         }
     }
 
@@ -92,4 +107,4 @@ function priceFromCatalog(items, { catalog = [], sets = [] } = {}) {
     return { ok: true, items: priced }
 }
 
-module.exports = { CUSTOMER_ITEM_FIELDS, catalogKey, priceFromCatalog }
+module.exports = { CUSTOMER_ITEM_FIELDS, MAX_BOOKING_PIECES, catalogKey, priceFromCatalog }

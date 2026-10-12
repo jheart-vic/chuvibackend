@@ -103,6 +103,14 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   used made-up items now use catalog items (testingdb now holds production's catalog).
   The hotfix lands on `main` first; this branch will conflict on the same lines and is
   resolved by keeping this version.
+- **Also ported from the hotfix (its rounds 3–4):** at most 200 pieces per booking, a
+  real basket drops any stray `itemCount`, and a plan order counts PIECES against the
+  items left this month (⚠️ subscriber behaviour change — a line of 3 shirts now uses 3
+  plan items, not 1 — confirm with the client).
+- **Plan items claimed atomically (hotfix F-28 [P2], fixed here):** the plan's items are
+  taken with a conditional `$inc` just before the order is created, and given back if the
+  order save or the wallet fee fails, so parallel bookings cannot spend the same items.
+  testingdb probe: three parallel 2-piece bookings against 2 items left → 1 booked, 0 left.
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -135,6 +143,11 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 2 final):** briefCheck 441/0 · plan probe 5/5 (incl. the
+  parallel race) · quickBookingStaging 40/0 · subLogistics 20/0 · itemEdit 20/0 ·
+  bookingContext 30/0 · handoff 54/0 · dispatch 80/0 · phase12 14/0 · dashboardDecisions
+  45/0 · tierPricing 33/0 · freeLogistics 23/0 · dispatchTag 46/0 · counterPayment 51/0 ·
+  Swagger 0 wrong · boot on 7999 ok.
 - **Results (2026-10-11, round 2):** briefCheck 437/0 · quickBookingStaging 40/0 ·
   itemEdit 20/0 · bookingContext 30/0 · subLogistics 20/0 · handoff 54/0 · dispatch 80/0 ·
   phase12 14/0 · dashboardDecisions 45/0 · tierPricing 33/0 · freeLogistics 23/0 ·

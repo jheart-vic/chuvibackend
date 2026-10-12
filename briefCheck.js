@@ -2327,6 +2327,21 @@ const run = (async () => {
             /\(adminOrderSetting\.serviceTypes \|\| \[\]\)\.some\(\s*\(s\) => s\.name === post\.serviceType,?\s*\)/.test(postBook))
         ok('a customer cannot mark their order as the staff counter channel',
             /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
+        // Piece ceiling (F-26), stray itemCount (F-25), plan allowance (F-27).
+        const ceiling = priceFromCatalog([{ type: 'Lab coats', quantity: 150 }, { type: 'Lab coats', quantity: 51 }], { catalog, sets })
+        const atCeiling = priceFromCatalog([{ type: 'Lab coats', quantity: 200 }], { catalog, sets })
+        const huge = priceFromCatalog([{ type: 'Lab coats', quantity: 100000000 }], { catalog, sets })
+        ok('a booking over 200 pieces is refused before any piece is built (no memory blow-up)',
+            !ceiling.ok && /more than 200 pieces/.test(ceiling.error) && atCeiling.ok && !huge.ok)
+        ok('a real basket drops any stray itemCount, so offers count the real items',
+            /post\.items = fromCatalog\.items\s*\/\/[\s\S]{0,500}delete post\.itemCount/.test(postBook))
+        ok('a plan order is checked in pieces against the items left this month, and deducts pieces',
+            /if \(planPieces > planItemsLeft\)/.test(postBook) &&
+                !/post\.items\.length > subscriptionPlanMonthlyLimits/.test(postBook))
+        ok('the plan items are claimed atomically before the order exists, and given back on failure (F-28)',
+            /remainingItems: \{ \$gte: planPieces \} \},\s*\{ \$inc: \{ remainingItems: -planPieces \} \}[\s\S]{0,1500}newOrder = new BookOrderModel\(newOrderItem\)/.test(postBook) &&
+                /\$inc: \{ remainingItems: planPieces \}/.test(postBook) &&
+                !/subscription\.remainingItems [-+]?=[^=]/.test(postBook))
     }
 
     // ─── F-05 + order read: who may call these two routes ───────────────────
