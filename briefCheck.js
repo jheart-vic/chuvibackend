@@ -2382,10 +2382,28 @@ const run = (async () => {
             /existing\.type !== metadata\.transactionType/.test(whSrc) &&
                 /String\(existing\.userId\) !== String\(user\._id\)/.test(whSrc) &&
                 /existing\.paymentMethod === 'bank-transfer'/.test(whSrc) &&
-                /existing\.status === 'failed'/.test(whSrc) &&
-                /collected \+ 0\.5 < Number\(plan\.price \|\| 0\)/.test(whSrc) &&
+                /existing\.metadata\?\.initRefused === true/.test(whSrc) &&
+                /collected \+ 0\.5 < price/.test(whSrc) &&
                 /status: 'failed'/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
                 /The smallest top-up is ₦100\./.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
+        ok('a renewal is identified by its Paystack subscription code and our subscription for the payer, claimed once (F-40)',
+            /if \(data\.subscription\?\.subscription_code && !\(await PaymentModel\.exists\(\{ reference \}\)\)\) \{\s*await handleRenewal\(data, user, reference\)/.test(whSrc) &&
+                /String\(subscription\.userId\) !== String\(user\._id\)/.test(whSrc) &&
+                /err\?\.code === 11000/.test(whSrc) &&
+                (() => {
+                    // the live handler, not the commented-out copy above it
+                    const live = whSrc.slice(whSrc.indexOf('\nasync function handleChargeSuccess'))
+                    return live.indexOf('handleRenewal(data, user, reference)') < live.indexOf('if (!metadata.transactionType)')
+                })())
+        ok('pending checkout rows are kept 7 days, past the payment-hold link window (F-41)',
+            /cutoff\.setDate\(cutoff\.getDate\(\) - 7\)/.test(fs.readFileSync(path.join(ROOT, 'crons/reconcilePaystack.js'), 'utf8')))
+        ok('a first subscription charge is checked before the claim, against the amount the checkout asked, and activates the verified plan (F-42, F-43)',
+            whSrc.indexOf('let verifiedPlan = null') < whSrc.indexOf('const payment = await PaymentModel.findOneAndUpdate(') &&
+                /handleNormalSubscription\(data, user, verifiedPlan\)/.test(whSrc) &&
+                /const plan = verifiedPlan/.test(whSrc) && !/paystackPlan \|\| null/.test(whSrc))
+        ok('only a checkout refused at initialisation is treated as refused; a charge.failed retry is honoured (F-44)',
+            /'metadata\.initRefused': true/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /"metadata\.initRefused": true/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
         ok('the webhook never credits more than the checkout asked for (F-39)',
             /Math\.min\(collected, expected\)/.test(whSrc) &&
                 /expectedAmount: amount \/ 100/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&

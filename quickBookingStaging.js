@@ -625,6 +625,53 @@ async function main() {
         await charge('fee', 1015, { email: seventh.email, metadata: { transactionType: 'wallet-top-up', userId: String(seventh._id), amount: 1000 } })
         const after15 = (await WalletModel13.findOne({ userId: seventh._id }).lean())?.balance || 0
         ok(after15 - before15 === 1000, `a ₦1,015 charge for a ₦1,000 top-up credits ₦${after15 - before15}`)
+        // ── 16 renewals, price changes, retries (F-40, F-42, F-44) ──────────
+        console.log('\n16 — renewals refresh the plan; a price edit or a retry does not lose a payment')
+        const renewal = (ref, code, email) =>
+            handleChargeSuccess({
+                reference: `STGQB-${STAMP}-${ref}`,
+                amount: 5000000,
+                paid_at: new Date().toISOString(),
+                channel: 'card',
+                customer: { email },
+                subscription: { subscription_code: code, next_payment_date: new Date(Date.now() + 30 * DAY).toISOString() },
+                metadata: {},
+            })
+        const sub16 = await SubscriptionModel15.create({
+            email: seventh.email, userId: seventh._id, planId: plan15._id, status: 'active',
+            startDate: new Date(), remainingItems: 0, subscriptionCode: `SUB_STGQB_${STAMP}`, consecutiveMonths: 1,
+        })
+        await renewal('ren1', sub16.subscriptionCode, seventh.email)
+        const r1 = await SubscriptionModel15.findById(sub16._id).lean()
+        ok(r1.remainingItems === 30 && r1.consecutiveMonths === 2,
+            `a Paystack renewal (no checkout row of ours) refreshes the allowance (${r1.remainingItems} items, month ${r1.consecutiveMonths})`)
+        await renewal('ren1', sub16.subscriptionCode, seventh.email)
+        const r2 = await SubscriptionModel15.findById(sub16._id).lean()
+        ok(r2.consecutiveMonths === 2, 'the same renewal event twice renews once')
+        await renewal('ren2', sub16.subscriptionCode, sixth.email)
+        const r3 = await SubscriptionModel15.findById(sub16._id).lean()
+        ok(r3.consecutiveMonths === 2, "a renewal paid by someone else does not touch this customer's plan")
+        await SubscriptionModel15.deleteOne({ _id: sub16._id })
+
+        // F-42: the admin raises the price after the checkout opened.
+        await PaymentModel.create({ userId: seventh._id, amount: 0, reference: `STGQB-${STAMP}-sub2`, status: 'pending', type: 'subscription', metadata: { expectedAmount: 50000, planId: String(plan15._id) } })
+        await PlanModel15.updateOne({ _id: plan15._id }, { $set: { price: 60000 } })
+        await charge('sub2', 50000, { email: seventh.email, metadata: { transactionType: 'subscription', planId: String(plan15._id), userId: String(seventh._id) } })
+        const activated = await SubscriptionModel15.findOne({ userId: seventh._id, planId: plan15._id }).lean()
+        ok(!!activated && activated.status === 'active', 'a plan paid at the price its checkout asked for activates after a later price edit')
+        const underRow = await PaymentModel.findOne({ reference: `STGQB-${STAMP}-sub` }).lean()
+        ok(underRow?.status === 'pending', 'an underpaid plan payment leaves its checkout pending for an admin, not recorded against nothing')
+        await SubscriptionModel15.deleteMany({ userId: seventh._id })
+
+        // F-44: charge.failed, then the customer retries the same checkout.
+        const { handleChargeFailed } = require('./util/webhook.handler')
+        await PaymentModel.create({ userId: seventh._id, amount: 0, reference: `STGQB-${STAMP}-retry`, status: 'pending', type: 'wallet-top-up', metadata: { expectedAmount: 700 } })
+        await handleChargeFailed({ reference: `STGQB-${STAMP}-retry`, customer: { email: seventh.email }, metadata: {} })
+        const beforeRetry = (await WalletModel13.findOne({ userId: seventh._id }).lean())?.balance || 0
+        await charge('retry', 700, { email: seventh.email, metadata: { transactionType: 'wallet-top-up', userId: String(seventh._id), amount: 700 } })
+        const afterRetry = (await WalletModel13.findOne({ userId: seventh._id }).lean())?.balance || 0
+        ok(afterRetry - beforeRetry === 700, `a payment that failed and was retried on the same checkout is credited (₦${afterRetry - beforeRetry})`)
+
         await PlanModel15.deleteOne({ _id: plan15._id })
         await PaymentModel.deleteMany({ reference: { $regex: `^STGQB-${STAMP}-` } })
     } catch (e) {

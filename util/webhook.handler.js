@@ -143,6 +143,16 @@ async function handleChargeSuccess(data) {
             return
         }
 
+        // ♻️ RENEWAL (review F-40). Paystack creates each recurring charge
+        // itself, so there is no checkout row of ours and usually no custom
+        // metadata. It is identified by Paystack's own subscription code
+        // (part of the signed event) matched to OUR subscription for this
+        // payer — never by anything the payer could have typed.
+        if (data.subscription?.subscription_code && !(await PaymentModel.exists({ reference }))) {
+            await handleRenewal(data, user, reference)
+            return
+        }
+
         if (!metadata.transactionType) {
             console.warn('No transaction type in metadata, cannot process payment')
             return
@@ -177,8 +187,11 @@ async function handleChargeSuccess(data) {
         //     reference could be re-used with made-up metadata: our row's type,
         //     owner and order are the truth. A bank-transfer proof row, or a
         //     checkout Paystack refused, was never a card checkout at all.
+        // (A row merely marked `failed` by a charge.failed event is still a real
+        // checkout — a retry on it is honoured; only one Paystack REFUSED at
+        // initialisation is not, review F-44.)
         const mismatch =
-            existing.status === 'failed'
+            existing.metadata?.initRefused === true
                 ? 'a checkout Paystack refused'
                 : existing.paymentMethod === 'bank-transfer' || /^BT-/.test(String(reference))
                   ? 'a bank-transfer proof, not a card checkout'
@@ -214,6 +227,38 @@ async function handleChargeSuccess(data) {
         const paidNaira =
             Number.isFinite(expected) && expected > 0 ? Math.min(collected, expected) : collected
         const expectedPlanId = existing.metadata?.planId || null
+
+        // A first subscription charge activates only the plan this checkout
+        // was opened for, and only when the money covers what the checkout
+        // ASKED for (the plan price at that moment, not a later edit). Checked
+        // BEFORE the claim, so a refusal leaves the row pending for an admin
+        // to settle rather than recording money against nothing (F-38, F-42).
+        let verifiedPlan = null
+        if (metadata.transactionType === 'subscription' && !data.subscription) {
+            const planId = expectedPlanId || metadata.planId
+            const plan = planId ? await PlanModel.findById(planId).lean() : null
+            const planMismatch =
+                expectedPlanId && metadata.planId && String(expectedPlanId) !== String(metadata.planId)
+            const price =
+                Number.isFinite(expected) && expected > 0 ? expected : Number(plan?.price || 0)
+            if (!plan || planMismatch || collected + 0.5 < price) {
+                console.error(`Subscription payment ${reference} does not cover its plan — not activated`)
+                try {
+                    const { notifyRoles } = require('./notifyRoles')
+                    const { ROLE } = require('./constants')
+                    await notifyRoles({
+                        roles: [ROLE.ADMIN],
+                        title: 'Subscription payment did not match its plan',
+                        body: `A subscription payment of ₦${collected.toLocaleString('en-NG')} (reference ${reference}) from ${userEmail} did not cover its plan, so nothing was activated. Check it in Paystack.`,
+                        type: NOTIFICATION_TYPE.SYSTEM,
+                    })
+                } catch (err) {
+                    console.error('subscription mismatch alert failed:', err?.message)
+                }
+                return
+            }
+            verifiedPlan = plan
+        }
 
         // 3️⃣ Claim the reference ATOMICALLY, so two copies of one event (or a
         //    retry racing the first) cannot both be processed (review F-36).
@@ -259,76 +304,89 @@ async function handleChargeSuccess(data) {
             // Only for the plan this checkout was opened for, and only when the
             // money covers that plan's price (review F-38).
             if (!data.subscription) {
-                const planId = expectedPlanId || metadata.planId
-                const plan = planId ? await PlanModel.findById(planId).lean() : null
-                const planMismatch = expectedPlanId && metadata.planId && String(expectedPlanId) !== String(metadata.planId)
-                if (!plan || planMismatch || collected + 0.5 < Number(plan.price || 0)) {
-                    console.error(`Subscription payment ${reference} does not cover its plan — not activated`)
-                    try {
-                        const { notifyRoles } = require('./notifyRoles')
-                        const { ROLE } = require('./constants')
-                        await notifyRoles({
-                            roles: [ROLE.ADMIN],
-                            title: 'Subscription payment did not match its plan',
-                            body: `A subscription payment of ₦${collected.toLocaleString('en-NG')} (reference ${reference}) from ${userEmail} did not cover its plan, so nothing was activated. Check it in Paystack.`,
-                            type: NOTIFICATION_TYPE.SYSTEM,
-                        })
-                    } catch (err) {
-                        console.error('subscription mismatch alert failed:', err?.message)
-                    }
-                    return
-                }
-                await handleNormalSubscription(data, user)
+                // Verified above, before the claim (F-38/F-42); the plan
+                // activated is the verified one, not the event's (F-43).
+                await handleNormalSubscription(data, user, verifiedPlan)
                 return
             }
 
-            // ♻️ RECURRING RENEWAL — previously found the subscription and did
-            // nothing; renewals never updated status, limits, or the customer.
-            const subscriptionCode = data.subscription.subscription_code
-
-            const subscription = await SubscriptionModel.findOne({
-                subscriptionCode,
-            })
-            if (!subscription) {
-                console.warn('Renewal for unknown subscription:', subscriptionCode)
-                return
-            }
-
-            const plan = await PlanModel.findById(subscription.planId)
-
-            subscription.status = 'active'
-            subscription.lastPaymentAt = new Date(data.paid_at)
-            if (data.subscription.next_payment_date) {
-                subscription.nextPaymentDate = new Date(
-                    data.subscription.next_payment_date,
-                )
-            }
-            if (plan?.monthlyLimits != null) {
-                // fresh month, fresh item allowance
-                subscription.remainingItems = plan.monthlyLimits
-            }
-            // Subscriber loyalty: this renewal is one more consecutive month.
-            subscription.consecutiveMonths =
-                (subscription.consecutiveMonths || 0) + 1
-            await applySubscriberLoyalty(
-                subscription,
-                plan,
-                subscription.consecutiveMonths,
-            )
-            await subscription.save()
-
-            // 🔔 Tell the customer their renewal went through
-            await notifyBot({
-                event: 'subscription-active',
-                chuviUserId: String(user._id),
-                email: userEmail,
-                planName: plan?.name,
-                amount: metadata.amount || plan?.price,
-            })
+            // ♻️ RECURRING RENEWAL that came through one of our checkout rows
+            // (already claimed above).
+            await handleRenewal(data, user, reference, { claimed: true })
             return
         }
     } catch (error) {
         console.error('Error in handleChargeSuccess:', error)
+    }
+}
+
+/**
+ * A subscription renewal charge (review F-40). Identified by Paystack's
+ * subscription code from the signed event, matched to OUR subscription for
+ * this payer. The reference is claimed atomically (a Payment row with a unique
+ * reference), so a repeated event renews once.
+ */
+async function handleRenewal(data, user, reference, { claimed = false } = {}) {
+    try {
+        const subscriptionCode = data.subscription?.subscription_code
+        const subscription = await SubscriptionModel.findOne({ subscriptionCode })
+        if (!subscription) {
+            console.warn('Renewal for unknown subscription:', subscriptionCode)
+            return
+        }
+        if (String(subscription.userId) !== String(user._id)) {
+            console.error(`Renewal ${reference}: subscription ${subscriptionCode} is not the payer's — not applied`)
+            return
+        }
+
+        if (!claimed) {
+            try {
+                await PaymentModel.create({
+                    userId: user._id,
+                    reference,
+                    amount: Number(data.amount) / 100,
+                    status: 'success',
+                    type: 'subscription',
+                    subscription: subscription._id,
+                    paidAt: new Date(data.paid_at),
+                    channel: data.channel,
+                    metadata: { renewal: true, subscriptionCode },
+                })
+            } catch (err) {
+                if (err?.code === 11000) {
+                    console.log('Renewal already applied:', reference)
+                    return
+                }
+                throw err
+            }
+        }
+
+        const plan = await PlanModel.findById(subscription.planId)
+
+        subscription.status = 'active'
+        subscription.lastPaymentAt = new Date(data.paid_at)
+        if (data.subscription.next_payment_date) {
+            subscription.nextPaymentDate = new Date(data.subscription.next_payment_date)
+        }
+        if (plan?.monthlyLimits != null) {
+            // fresh month, fresh item allowance
+            subscription.remainingItems = plan.monthlyLimits
+        }
+        // Subscriber loyalty: this renewal is one more consecutive month.
+        subscription.consecutiveMonths = (subscription.consecutiveMonths || 0) + 1
+        await applySubscriberLoyalty(subscription, plan, subscription.consecutiveMonths)
+        await subscription.save()
+
+        // 🔔 Tell the customer their renewal went through
+        await notifyBot({
+            event: 'subscription-active',
+            chuviUserId: String(user._id),
+            email: user.email,
+            planName: plan?.name,
+            amount: plan?.price,
+        })
+    } catch (error) {
+        console.error('Error in handleRenewal:', error)
     }
 }
 
@@ -476,12 +534,14 @@ async function handleInvoiceFailed(data) {
     }
 }
 
-async function handleNormalSubscription(data) {
+// `verifiedPlan`: the plan handleChargeSuccess checked against our checkout and
+// the money collected. It — not the event's metadata — decides the plan and its
+// limits (review F-43).
+async function handleNormalSubscription(data, _user = null, verifiedPlan = null) {
     try {
         const email = data.customer.email
-        const planCode = data.plan.plan_code
-        const authorizationCode = data.authorization.authorization_code
-        const metadata = data.metadata || {}
+        const planCode = data.plan?.plan_code
+        const authorizationCode = data.authorization?.authorization_code
 
         const user = await UserModel.findOne({ email })
 
@@ -505,17 +565,13 @@ async function handleNormalSubscription(data) {
             'handleNormalSubscription',
         )
 
-        const planId = metadata.planId
-        const paystackId = metadata.paystackPlan
-
-        if (!planId || !paystackId) {
-            console.warn(
-                'No planId in metadata for normal subscription, cannot set limits',
-            )
+        const plan = verifiedPlan
+        if (!plan) {
+            console.warn('No verified plan for this subscription payment, cannot activate')
             return
         }
-
-        const plan = await PlanModel.findOne({ paystackPlanCode: paystackId })
+        const planId = plan._id
+        const paystackId = plan.paystackPlanCode || null
 
         if (!subscription) {
             console.log(
@@ -554,12 +610,14 @@ async function handleNormalSubscription(data) {
         } else {
             subscription.status = 'active'
             subscription.email = email
-            ;((subscription.paystackSubscriptionId = paystackPlan || null),
-                (subscription.startDate = new Date(data.paid_at)),
-                (subscription.planId = planId),
-                (subscription.monthlyLimits = plan.monthlyLimits),
-                (subscription.userId = user._id),
-                (subscription.lastPaymentAt = new Date(data.paid_at)))
+            subscription.paystackSubscriptionId = paystackId
+            subscription.startDate = new Date(data.paid_at)
+            subscription.planId = planId
+            subscription.monthlyLimits = plan.monthlyLimits
+            // a (re)subscription starts with the plan's full allowance
+            subscription.remainingItems = plan.monthlyLimits
+            subscription.userId = user._id
+            subscription.lastPaymentAt = new Date(data.paid_at)
             // (re)subscribing restarts the consecutive-month loyalty streak
             subscription.consecutiveMonths = 1
             subscription.loyaltyRewardsApplied = []

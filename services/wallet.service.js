@@ -80,7 +80,7 @@ class WalletService extends BaseService {
        callback_url: "https://www.chuvilaundry.com/user/payment/callback",
       }).catch(async (err) => {
         // A refused checkout must not leave a reusable pending row (F-38).
-        await PaymentModel.updateOne({ reference }, { $set: { status: "failed" } }).catch(() => {});
+        await PaymentModel.updateOne({ reference }, { $set: { status: "failed", "metadata.initRefused": true } }).catch(() => {});
         throw err;
       });
 

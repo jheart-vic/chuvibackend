@@ -281,7 +281,7 @@ Closed 2026-10-12 by /audit independent (round 6): the `findOneAndUpdate({ refer
 Fixed 2026-10-12. `clear({ quiet: true })` for a REPLACED hold (item edit, short card payment): no "payment received" message, history and log say "Payment hold replaced — the bill changed". `raise({ keepClockFrom })` keeps the replaced hold's `raisedAt` and `remindersSent`, so the 6h/24h reminders and the 48h admin escalation do not restart. quickBookingStaging 11.
 Closed 2026-10-12 by /audit independent (round 6): both replace sites (bookOrder.service.js:1186-1211, webhook.handler.js:573-586) take `raisedAt`/`remindersSent` from the open hold before the quiet clear, and `raise` writes them back (paymentHold.service.js:129-135). The quiet clear skips the "Payment received" notice; its `markProductionClearedIfReady` call cannot start the clock because the order is still unpaid. A replaced hold cannot remind with a wrong figure: `raise` sends the new amount and link at once, and later reminders read the new `paymentHold.amount`. Reminders already sent are not repeated, which is the intent. The separate hold-SLA escalation (`escalateOverdueHolds`, keyed on `stage.updatedAt`) restarts on each raise, as it does for every re-held order.
 
-### F-38 [P1] fixed - The webhook acts on the event's metadata, so a pending Payment row the server never opened as a checkout can be reused to activate a plan for a token payment (pre-existing, outside this delta)
+### F-38 [P1] closed - The webhook acts on the event's metadata, so a pending Payment row the server never opened as a checkout can be reused to activate a plan for a token payment (pre-existing, outside this delta)
 
 **File:** util/webhook.handler.js:157-217 (with util/webhook.handler.js:444-487, services/wallet.service.js:54-74 and 748-760, services/wallet.service.js:307-318)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -289,8 +289,9 @@ Closed 2026-10-12 by /audit independent (round 6): both replace sites (bookOrder
 **Suggested fix:** In `handleChargeSuccess`, process the event only when `existing.status === 'pending'`, `existing.type === metadata.transactionType`, `String(existing.userId) === String(user._id)` and `existing.paymentMethod !== 'bank-transfer'`. Otherwise alert an admin, as the unmatched-reference branch does. In `handleNormalSubscription`, refuse unless `data.amount / 100 >= plan.price`. Optionally, have `walletTopUp` refuse an amount below the Paystack minimum before it writes the row. Nothing current is lost.
 **Resolution:**
 Fixed 2026-10-12. `handleChargeSuccess` only acts when the event matches the checkout WE recorded: our row is not `failed`, is not a bank-transfer proof (`paymentMethod: bank-transfer` / `BT-` reference), has the event's type, belongs to the payer, and (orders) is for the same order; otherwise nothing is credited and admins are alerted. A first subscription charge activates only the plan this checkout recorded and only when the money collected covers its price. Checkouts Paystack refuses are marked `failed` (initializePayment, wallet top-up), and a top-up under ₦100 is refused before Paystack is called. quickBookingStaging 15 (a bank-transfer row and a top-up row re-used as a subscription, and a ₦100 payment on a ₦50,000 plan checkout, activate nothing).
+Closed 2026-10-12 by /audit independent (round 7): the scenario is gone. Failed-init rows are marked `failed` (paystack.service.js:126-129, wallet.service.js:81-85), BT rows, type, owner and order mismatches stop before the claim (webhook.handler.js:180-208), and a first subscription charge needs a resolved plan and `collected >= plan.price` (webhook.handler.js:261-280). New references are refused by Paystack as duplicates once initialized, and legacy pending rows are deleted daily by reconcilePaystack. Residual trust in `metadata.paystackPlan` is tracked as F-43; side effects as F-40, F-41, F-42 and F-44.
 
-### F-39 [P3] fixed - Credits read `data.amount`, which may include the Paystack fee when the customer bears it
+### F-39 [P3] closed - Credits read `data.amount`, which may include the Paystack fee when the customer bears it
 
 **File:** util/webhook.handler.js:201, 207-210
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -298,3 +299,49 @@ Fixed 2026-10-12. `handleChargeSuccess` only acts when the event matches the che
 **Suggested fix:** Confirm the account's fee bearer. If customers bear fees, use `data.requested_amount` when it is present, or subtract `data.fees`.
 **Resolution:**
 Fixed 2026-10-12 (defensively; the account fee setting was not checked). Each checkout records `metadata.expectedAmount`; the webhook credits `min(collected, expected)`, so a fee the customer bore is never credited. quickBookingStaging 15 (a ₦1,015 charge for a ₦1,000 top-up credits ₦1,000).
+Closed 2026-10-12 by /audit independent (round 7): both checkout paths record `metadata.expectedAmount` in naira (paystack.service.js:119-122, wallet.service.js:66-67), the webhook credits `min(collected, expected)` and falls back to `collected` for rows without it (webhook.handler.js:212-215), the claim preserves `expectedAmount` (line 225), and nothing else reads Payment.metadata.
+
+### F-40 [P1] fixed - Subscription renewals can no longer be processed, so paid months never refresh the item allowance
+
+**File:** util/webhook.handler.js:146-173 and 285-328 (with server.js:36-39)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
+**Why it matters:** Paystack starts each monthly renewal itself. That charge's reference was never written by `initializePayment`, so no Payment row exists for it. Since 9367785, a `charge.success` with no row stops at step 2 ("did not match any checkout we started") before the renewal branch. If the renewal event has no `metadata.transactionType`, it already stops at line 146. Either way, at HEAD the renewal branch (status active, `remainingItems = plan.monthlyLimits`, `consecutiveMonths + 1`, loyalty bonus, customer notice) is unreachable. server.js:36-39 says this webhook is the ONLY monthly reset. A subscriber who pays month 2 keeps last month's leftover items and is billed per item once they run out, and each renewal sends admins an "Unmatched Paystack payment" alert. At 502dc0f the missing-row fallback let a renewal that carries metadata through. No offline check or staging scenario drives a renewal event (briefCheck 2454-2461 only matches source text).
+**Suggested fix:** Before the "no matching checkout" refusal, route events with `data.subscription?.subscription_code` to the renewal branch, keyed on a `SubscriptionModel` whose `subscriptionCode` matches and whose `userId` is the payer found by email. Do not use `metadata.transactionType` for this. Then claim the reference atomically by upserting a Payment row on `reference`. Add a staging scenario that sends a renewal event with no pre-created row.
+**Resolution:**
+Fixed 2026-10-12. A charge carrying Paystack's `subscription.subscription_code` with no Payment row of ours is a renewal: routed (before the metadata and checkout-row checks) to `handleRenewal`, which matches OUR subscription by code, requires it to belong to the payer, claims the reference by creating a unique Payment row (a repeated event hits E11000 and renews once), then refreshes the allowance, next payment date and loyalty month. quickBookingStaging 16 (renewal → 30 items, month 2; the same event twice renews once; a renewal by another payer is refused).
+
+### F-41 [P2] fixed - A checkout link paid more than a day after it was opened is refused, because the cleanup cron deletes its pending row
+
+**File:** crons/reconcilePaystack.js:27-37 (with util/webhook.handler.js:157-173, services/paymentHold.service.js:54-58 and 440-443)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
+**Why it matters:** At 03:00 each day, reconcilePaystack deletes every `pending` Payment row with `amount: 0` that was created more than one day earlier. The variable is named `threeDaysAgo`, but the code subtracts one day. Every checkout row is written with `amount: 0`. The payment-hold link is created when the hold is raised, and the 24h reminder sends the same link again. The hold stays open until an admin acts after 48h. Example: a hold raised Monday 10:00, the 24h reminder on Tuesday, the row deleted at 03:00 Wednesday, the customer pays on Wednesday. Since 9367785, a payment with no row is not processed. The customer is charged, the order stays on hold, and only an admin alert remains. Bot card links and the logistics-fee link behave the same way. At 502dc0f the fallback processed such a payment.
+**Suggested fix:** Stop deleting pending checkout rows. Either mark them `abandoned` and accept a later `charge.success` for them, or extend the cutoff past the longest life of a link the server reuses (hold reminders up to 48h). Check the 3-day intent against the code.
+**Resolution:**
+Fixed 2026-10-12. The reconcile cron keeps pending checkout rows 7 days (it deleted them after 1 day while the variable said 3), past the payment-hold link window.
+
+### F-42 [P2] fixed - A first subscription charge is checked against the plan's current database price, not the amount the checkout asked for
+
+**File:** util/webhook.handler.js:262-265 (with services/paystack.service.js:97 and 136)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
+**Why it matters:** Activation requires `collected + 0.5 >= plan.price`, where `plan.price` is read at webhook time. When `plan` is passed to initialize, Paystack charges the Paystack plan's own amount. The DB `price` and `paystackPlanCode` are edited separately (subscription.service.js createPlan/updatePlan never touch Paystack). Two cases fail. (1) An admin raises the DB price after a customer opened the checkout. (2) The DB price differs from the Paystack plan amount. In both, a genuine payment is claimed `success` at line 220 before this check, nothing is activated, and a retry cannot recover it. The customer is charged and only an admin alert remains.
+**Suggested fix:** Compare against `existing.metadata.expectedAmount` when present (what this checkout asked for), and fall back to `plan.price` only for legacy rows. Optionally also accept `data.plan.amount` when its `plan_code` equals the recorded plan's `paystackPlanCode`. Run the check before the atomic claim, or leave the row pending, so an admin can see the money was not applied.
+**Resolution:**
+Fixed 2026-10-12. The first-subscription-charge check runs BEFORE the atomic claim, against the amount the checkout asked for (`expectedAmount`, i.e. the price when it opened; the plan's current price only for legacy rows). A refusal leaves the row pending for an admin instead of recording money against nothing. quickBookingStaging 16 (price raised after checkout → the plan still activates; an underpaid charge leaves its row pending).
+
+### F-43 [P3] fixed - handleNormalSubscription still takes the plan and its limits from event metadata instead of the plan the webhook verified
+
+**File:** util/webhook.handler.js:281, 508-518, 557
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** The caller resolves and price-checks `plan` from our row's `metadata.planId`. `handleNormalSubscription` ignores it. It sets `planId` from `metadata.planId` and reads `monthlyLimits` from `PlanModel.findOne({ paystackPlanCode: metadata.paystackPlan })`. The `planMismatch` check covers `planId` but not `paystackPlan`. Event metadata is ours today, because Paystack refuses a duplicate reference and refused inits are marked `failed`. So this is exploitable only through a pending subscription row Paystack never saw: a swallowed failed-mark write (paystack.service.js:127 `.catch(() => {})`) or a pre-deploy row inside the one-day cleanup window. Line 557 also references an undefined `paystackPlan`. That branch is dead today, because the filter's `user` field does not exist on the schema.
+**Suggested fix:** Pass the verified `plan` into `handleNormalSubscription`. Use `plan._id`, `plan.paystackPlanCode` and `plan.monthlyLimits`, and drop the metadata lookups. Fix or remove the dead `else` branch.
+**Resolution:**
+Fixed 2026-10-12. `handleNormalSubscription(data, user, verifiedPlan)` takes the plan, its id, Paystack code and limits from the verified plan, never the event metadata; the undefined `paystackPlan` reference is gone and a resubscription also resets `remainingItems`.
+
+### F-44 [P3] fixed - A paid retry after a `charge.failed` on the same checkout is refused (unverified)
+
+**File:** util/webhook.handler.js:181-182 (with 342-346)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
+**Why it matters:** `handleChargeFailed` marks the row `failed`. The new mismatch check then treats any later `charge.success` on that reference as "a checkout Paystack refused" and refuses it. If Paystack sends `charge.failed` for a declined attempt and lets the customer retry with another card on the same checkout, the paid retry is not processed. Before this round, the claim (`status: { $ne: 'success' }`) still processed it. Whether Paystack sends this event and allows a retry on the same reference cannot be checked offline.
+**Suggested fix:** Give a refused init a distinct status (for example `init-failed`) and refuse only that status. A webhook-reported `failed` row should stay claimable.
+**Resolution:**
+Fixed 2026-10-12. Only a checkout Paystack refused at initialisation (`metadata.initRefused`) is treated as refused; a row marked `failed` by `charge.failed` still accepts a successful retry. quickBookingStaging 16 (failed then retried on the same checkout → credited).

@@ -124,7 +124,7 @@ class PaystackService extends BaseService {
 
       // A checkout Paystack refuses must not leave a reusable pending row (F-38).
       const initialize = (url, body) => paystackAxios.post(url, body).catch(async (err) => {
-        await PaymentModel.updateOne({ reference }, { $set: { status: 'failed' } }).catch(() => {})
+        await PaymentModel.updateOne({ reference }, { $set: { status: 'failed', 'metadata.initRefused': true } }).catch(() => {})
         throw err
       })
       const response = await initialize(
