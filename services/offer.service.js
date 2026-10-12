@@ -510,11 +510,18 @@ class OfferService {
             }
         }
 
-        // Personal rewards: the customer's live linkages.
+        // Personal rewards: the customer's live linkages — plus, on a re-price,
+        // the one already attached to THAT order even if its linkage has expired
+        // since, so the Quick Booking re-pick keeps an offer it attached at an
+        // earlier edit (F-20; _offerRejection honours it).
         const linkages = await CustomerOfferModel.find({
             userId,
-            status: { $in: LIVE_LINKAGE_STATUSES },
-            expiresAt: { $gt: now },
+            $or: [
+                { status: { $in: LIVE_LINKAGE_STATUSES }, expiresAt: { $gt: now } },
+                ...(repriceOrderId
+                    ? [{ status: CUSTOMER_OFFER_STATUS.ATTACHED, orderId: repriceOrderId }]
+                    : []),
+            ],
         })
             .sort({ expiresAt: 1 })
             .populate('offerId')

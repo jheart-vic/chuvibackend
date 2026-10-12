@@ -11,6 +11,7 @@ const BookOrderModel = require("../models/bookOrder.model");
 const { generateReferenceId, getObjectId } = require("../util/helper");
 const PaymentModel = require("../models/payment.model");
 const createAuditLog = require("../util/createAuditLog");
+const { orderPayableGate } = require("../util/paymentGate");
 
 
 class PaystackService extends BaseService {
@@ -60,6 +61,11 @@ class PaystackService extends BaseService {
 
         if(!order){
           return BaseService.sendFailedResponse({error: 'Order not found'})
+        }
+        // A Quick Booking has no bill until Intake counts (review F-24).
+        const payable = orderPayableGate(order)
+        if(!payable.ok){
+          return BaseService.sendFailedResponse({error: payable.error})
         }
       }
 

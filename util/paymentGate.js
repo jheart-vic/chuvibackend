@@ -109,9 +109,32 @@ function dispatchPaymentGate(order) {
     return { ok: true }
 }
 
+/**
+ * May the customer pay this order now?
+ *
+ * A Quick Booking is created with nothing due (client, 11 Oct 2026): its bill
+ * does not exist until Intake enters the items. Paying it before then paid ₦0,
+ * stamped it `success`, and the real bill was then refused as "already paid"
+ * and the order went through unpaid (review F-24). So no payment path accepts
+ * an order still waiting for its items; the customer pays the SMS bill.
+ */
+function orderPayableGate(order) {
+    if (!order) return { ok: false, error: 'Order not found' }
+    const { awaitingRealItems } = require('./quickBooking')
+    if (awaitingRealItems(order)) {
+        return {
+            ok: false,
+            error: "There's nothing to pay yet. We send your bill by SMS after we count your clothes.",
+            billPending: true,
+        }
+    }
+    return { ok: true }
+}
+
 module.exports = {
     itemTagGate,
     dispatchPaymentGate,
+    orderPayableGate,
     // Re-exported so a caller never reaches for a second definition.
     moneyIsComplete,
 }

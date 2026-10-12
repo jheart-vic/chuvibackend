@@ -111,6 +111,13 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   taken with a conditional `$inc` just before the order is created, and given back if the
   order save or the wallet fee fails, so parallel bookings cannot spend the same items.
   testingdb probe: three parallel 2-piece bookings against 2 items left → 1 booked, 0 left.
+- **Round 2 review (changes-requested) repairs:**
+  - **F-24 [P1]:** a customer could pay an uncounted Quick Booking at ₦0 (wallet), which
+    marked it paid, so Intake's real bill was refused as "already paid". New
+    `orderPayableGate`: an order still waiting for its items is not payable — wallet,
+    Paystack order init and the assistant's "use my balance" check it first.
+  - **F-20 (again):** the Quick Booking re-pick also lists the offer already attached to
+    that order, so it survives the linkage's expiry.
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -143,6 +150,11 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 3):** briefCheck 444/0 · quickBookingStaging 45/0
+  (scenarios 9–10 cover F-24 and F-20) · plan probe 5/5 · itemEdit 20/0 · bookingContext
+  30/0 · subLogistics 20/0 · counterPayment 51/0 · dispatch 80/0 · handoff 54/0 · phase12
+  14/0 · dashboardDecisions 45/0 · tierPricing 33/0 · freeLogistics 23/0 · dispatchTag 46/0
+  · Swagger 0 wrong · boot on 7999 ok.
 - **Results (2026-10-12, round 2 final):** briefCheck 441/0 · plan probe 5/5 (incl. the
   parallel race) · quickBookingStaging 40/0 · subLogistics 20/0 · itemEdit 20/0 ·
   bookingContext 30/0 · handoff 54/0 · dispatch 80/0 · phase12 14/0 · dashboardDecisions

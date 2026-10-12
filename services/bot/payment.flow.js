@@ -13,6 +13,7 @@ const WalletCreditService = require('../walletCredit.service')
 const WalletModel = require('../../models/wallet.model')
 const BookOrderModel = require('../../models/bookOrder.model')
 const createAuditLog = require('../../util/createAuditLog')
+const { orderPayableGate } = require('../../util/paymentGate')
 const {
     BOT_INTENT,
     BILLING_TYPE,
@@ -269,6 +270,12 @@ module.exports = {
             return {
                 replies: ["You don't have any unpaid orders right now — nothing to pay. Anything else?"],
             }
+        }
+        // A Quick Booking waiting to be counted has no bill yet (review F-24):
+        // say so, rather than "fully covered".
+        const payable = orderPayableGate(order)
+        if (!payable.ok) {
+            return { replies: [`Order ${order.oscNumber}: ${payable.error}`] }
         }
         if (!order.amount || order.amount <= 0) {
             return {

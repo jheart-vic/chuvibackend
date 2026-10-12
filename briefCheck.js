@@ -2327,6 +2327,21 @@ const run = (async () => {
             /\(adminOrderSetting\.serviceTypes \|\| \[\]\)\.some\(\s*\(s\) => s\.name === post\.serviceType,?\s*\)/.test(postBook))
         ok('a customer cannot mark their order as the staff counter channel',
             /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
+        // F-24: an uncounted Quick Booking cannot be paid (it would be paid ₦0).
+        const { orderPayableGate } = require(path.join(ROOT, 'util/paymentGate'))
+        const pendingQb = { itemsPending: true, items: [{ type: 'unspecified-item', price: 0 }] }
+        const countedQb = { itemsPending: false, items: [{ type: 'Shirts', price: 600 }] }
+        ok('an uncounted Quick Booking is not payable; a counted one is',
+            !orderPayableGate(pendingQb).ok && /nothing to pay yet/i.test(orderPayableGate(pendingQb).error) &&
+                orderPayableGate(countedQb).ok)
+        ok('the wallet, card and assistant payment paths all check it first',
+            /orderPayableGate\(bookOrder\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')) &&
+                /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/bot/payment.flow.js'), 'utf8')))
+        ok('the Quick Booking re-pick also lists the offer already attached to that order (F-20)',
+            /status: CUSTOMER_OFFER_STATUS\.ATTACHED, orderId: repriceOrderId/.test(
+                fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+            ))
         // Piece ceiling (F-26), stray itemCount (F-25), plan allowance (F-27).
         const ceiling = priceFromCatalog([{ type: 'Lab coats', quantity: 150 }, { type: 'Lab coats', quantity: 51 }], { catalog, sets })
         const atCeiling = priceFromCatalog([{ type: 'Lab coats', quantity: 200 }], { catalog, sets })

@@ -15,6 +15,7 @@ const { notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy');
 const { NOTIFICATION_TYPE, WALLET_TX_TYPE } = require("../util/constants");
 const createAuditLog = require("../util/createAuditLog");
 const WalletCreditService = require("./walletCredit.service");
+const { orderPayableGate } = require("../util/paymentGate");
 
 class WalletService extends BaseService {
   async walletTopUp(req, res) {
@@ -183,6 +184,12 @@ class WalletService extends BaseService {
         return BaseService.sendFailedResponse({
           error: "Order has already been paid for",
         });
+      }
+
+      // A Quick Booking has no bill until Intake counts (review F-24).
+      const payable = orderPayableGate(bookOrder);
+      if (!payable.ok) {
+        return BaseService.sendFailedResponse({ error: payable.error });
       }
 
       const charge = await WalletService.chargeWalletForOrder({

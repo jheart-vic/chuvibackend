@@ -39,6 +39,9 @@ require.cache[smsPath] = {
     },
 }
 const PaystackService = require('./services/paystack.service')
+// Kept so scenario 9 can prove the payment gate refuses BEFORE Paystack is
+// called (the refusal returns before any network request).
+const realInitializePayment = PaystackService.prototype.initializePayment
 PaystackService.prototype.initializePayment = async () => ({
     success: true,
     data: { message: { authorization_url: 'https://stub.paystack/pay' } },
@@ -434,6 +437,42 @@ async function main() {
         const promoAfter = await OfferModel.findById(promo._id).lean()
         ok(leftover === 0, 'its linkage is removed, not reset to an assigned personal reward')
         ok((promoAfter.usedCount || 0) === 0, 'and its usage slot is given back')
+
+        // ── 9 an unbilled Quick Booking cannot be paid (F-24) ───────────────
+        console.log('\n9 — an uncounted Quick Booking cannot be paid at ₦0')
+        const fourth = await mkUser('dddd')
+        const qb9 = await book.createOrder({
+            userId: fourth._id.toString(),
+            payload: payload({ fullName: 'STG QB Fourth', phoneNumber: '08034440004', itemCount: 3 }),
+        })
+        const o9 = qb9.data?.order
+        if (o9?._id) created.orders.push(o9._id)
+        const WalletService = require('./services/wallet.service')
+        const walletPay = await new WalletService().payWithWallet({
+            body: { bookOrderId: String(o9._id), description: 'STG' },
+            user: { id: String(fourth._id) },
+        })
+        const cardPay = await realInitializePayment.call(new PaystackService(), {
+            body: { transactionType: 'order', orderId: String(o9._id) },
+            user: { id: String(fourth._id) },
+        })
+        const after9 = await BookOrderModel.findById(o9._id).lean()
+        ok(walletPay.success === false && /nothing to pay yet/i.test(walletPay.data?.error || ''),
+            `a ₦0 wallet payment is refused (${walletPay.data?.error})`)
+        ok(cardPay.success === false && /nothing to pay yet/i.test(cardPay.data?.error || ''),
+            `a card payment link is refused before Paystack is called (${cardPay.data?.error})`)
+        ok(after9.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS, 'and the order is still unpaid')
+
+        // ── 10 the QB re-pick keeps an attached offer after its expiry (F-20) ─
+        console.log('\n10 — a Quick Booking keeps its Welcome Offer after the linkage expires')
+        await CustomerOfferModel.updateOne({ _id: welcomeLink._id }, { $set: { expiresAt: new Date(Date.now() - DAY) } })
+        res = await intake(qb._id, [{ type: anItem.name, price: anItem.price, quantity: 5 }], 'One more piece found')
+        const w10 = await CustomerOfferModel.findById(welcomeLink._id).lean()
+        const qb10 = await BookOrderModel.findById(qb._id).lean()
+        ok(res.success === true && w10.status === CUSTOMER_OFFER_STATUS.ATTACHED && String(w10.orderId) === String(qb._id),
+            'the Welcome Offer stays attached on the next edit')
+        ok(qb10.pricing?.freePickupWaived === pickupFee && qb10.pricing?.freeDeliveryWaived === deliveryFee,
+            'and still waives both trips')
     } catch (e) {
         thrown = e
     } finally {
