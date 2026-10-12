@@ -301,7 +301,7 @@ Closed 2026-10-12 by /audit independent (round 7): the scenario is gone. Failed-
 Fixed 2026-10-12 (defensively; the account fee setting was not checked). Each checkout records `metadata.expectedAmount`; the webhook credits `min(collected, expected)`, so a fee the customer bore is never credited. quickBookingStaging 15 (a ₦1,015 charge for a ₦1,000 top-up credits ₦1,000).
 Closed 2026-10-12 by /audit independent (round 7): both checkout paths record `metadata.expectedAmount` in naira (paystack.service.js:119-122, wallet.service.js:66-67), the webhook credits `min(collected, expected)` and falls back to `collected` for rows without it (webhook.handler.js:212-215), the claim preserves `expectedAmount` (line 225), and nothing else reads Payment.metadata.
 
-### F-40 [P1] fixed - Subscription renewals can no longer be processed, so paid months never refresh the item allowance
+### F-40 [P1] closed - Subscription renewals can no longer be processed, so paid months never refresh the item allowance
 
 **File:** util/webhook.handler.js:146-173 and 285-328 (with server.js:36-39)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
@@ -309,8 +309,9 @@ Closed 2026-10-12 by /audit independent (round 7): both checkout paths record `m
 **Suggested fix:** Before the "no matching checkout" refusal, route events with `data.subscription?.subscription_code` to the renewal branch, keyed on a `SubscriptionModel` whose `subscriptionCode` matches and whose `userId` is the payer found by email. Do not use `metadata.transactionType` for this. Then claim the reference atomically by upserting a Payment row on `reference`. Add a staging scenario that sends a renewal event with no pre-created row.
 **Resolution:**
 Fixed 2026-10-12. A charge carrying Paystack's `subscription.subscription_code` with no Payment row of ours is a renewal: routed (before the metadata and checkout-row checks) to `handleRenewal`, which matches OUR subscription by code, requires it to belong to the payer, claims the reference by creating a unique Payment row (a repeated event hits E11000 and renews once), then refreshes the allowance, next payment date and loyalty month. quickBookingStaging 16 (renewal → 30 items, month 2; the same event twice renews once; a renewal by another payer is refused).
+Closed 2026-10-12 by /audit independent (round 8): a charge with `data.subscription.subscription_code` and no row reaches `handleRenewal` before the metadata and checkout checks (webhook.handler.js:151-154). It requires our subscription by code and the payer's ownership (332-340), claims the reference with a unique Payment row so a repeat hits E11000 (342-362, payment.model.js:11), and refreshes the allowance. `data.subscription` is set by Paystack, not by a public-key checkout, and a subscription code is only stored from a signed `subscription.create` for our plan code, so it cannot be borrowed. Not verifiable offline: that Paystack's renewal `charge.success` carries `data.subscription` (see Remaining risk). Silent drops on this path are F-46.
 
-### F-41 [P2] fixed - A checkout link paid more than a day after it was opened is refused, because the cleanup cron deletes its pending row
+### F-41 [P2] closed - A checkout link paid more than a day after it was opened is refused, because the cleanup cron deletes its pending row
 
 **File:** crons/reconcilePaystack.js:27-37 (with util/webhook.handler.js:157-173, services/paymentHold.service.js:54-58 and 440-443)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
@@ -318,8 +319,9 @@ Fixed 2026-10-12. A charge carrying Paystack's `subscription.subscription_code` 
 **Suggested fix:** Stop deleting pending checkout rows. Either mark them `abandoned` and accept a later `charge.success` for them, or extend the cutoff past the longest life of a link the server reuses (hold reminders up to 48h). Check the 3-day intent against the code.
 **Resolution:**
 Fixed 2026-10-12. The reconcile cron keeps pending checkout rows 7 days (it deleted them after 1 day while the variable said 3), past the payment-hold link window.
+Closed 2026-10-12 by /audit independent (round 8): reconcilePaystack.js:32-40 now deletes only `pending`, `amount: 0` rows older than 7 days, beyond the 24h/48h hold reminder window.
 
-### F-42 [P2] fixed - A first subscription charge is checked against the plan's current database price, not the amount the checkout asked for
+### F-42 [P2] closed - A first subscription charge is checked against the plan's current database price, not the amount the checkout asked for
 
 **File:** util/webhook.handler.js:262-265 (with services/paystack.service.js:97 and 136)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
@@ -327,8 +329,9 @@ Fixed 2026-10-12. The reconcile cron keeps pending checkout rows 7 days (it dele
 **Suggested fix:** Compare against `existing.metadata.expectedAmount` when present (what this checkout asked for), and fall back to `plan.price` only for legacy rows. Optionally also accept `data.plan.amount` when its `plan_code` equals the recorded plan's `paystackPlanCode`. Run the check before the atomic claim, or leave the row pending, so an admin can see the money was not applied.
 **Resolution:**
 Fixed 2026-10-12. The first-subscription-charge check runs BEFORE the atomic claim, against the amount the checkout asked for (`expectedAmount`, i.e. the price when it opened; the plan's current price only for legacy rows). A refusal leaves the row pending for an admin instead of recording money against nothing. quickBookingStaging 16 (price raised after checkout → the plan still activates; an underpaid charge leaves its row pending).
+Closed 2026-10-12 by /audit independent (round 8): the check (webhook.handler.js:236-261) resolves the plan from our row's `metadata.planId`, compares `collected` with our row's `expectedAmount` (plan price only for legacy rows), and returns before the atomic claim at 265, so a refusal leaves the row pending with an admin alert.
 
-### F-43 [P3] fixed - handleNormalSubscription still takes the plan and its limits from event metadata instead of the plan the webhook verified
+### F-43 [P3] closed - handleNormalSubscription still takes the plan and its limits from event metadata instead of the plan the webhook verified
 
 **File:** util/webhook.handler.js:281, 508-518, 557
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
@@ -336,8 +339,9 @@ Fixed 2026-10-12. The first-subscription-charge check runs BEFORE the atomic cla
 **Suggested fix:** Pass the verified `plan` into `handleNormalSubscription`. Use `plan._id`, `plan.paystackPlanCode` and `plan.monthlyLimits`, and drop the metadata lookups. Fix or remove the dead `else` branch.
 **Resolution:**
 Fixed 2026-10-12. `handleNormalSubscription(data, user, verifiedPlan)` takes the plan, its id, Paystack code and limits from the verified plan, never the event metadata; the undefined `paystackPlan` reference is gone and a resubscription also resets `remainingItems`.
+Closed 2026-10-12 by /audit independent (round 8): `handleNormalSubscription` (webhook.handler.js:540-641) no longer reads event metadata; plan id, Paystack code and limits come from `verifiedPlan`, and it refuses without one. Its lookup filter still uses the non-schema `user` field, so with Mongoose 8 (strictQuery false) it always creates a new document; noted under Remaining risk, not a regression.
 
-### F-44 [P3] fixed - A paid retry after a `charge.failed` on the same checkout is refused (unverified)
+### F-44 [P3] closed - A paid retry after a `charge.failed` on the same checkout is refused (unverified)
 
 **File:** util/webhook.handler.js:181-182 (with 342-346)
 **Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
@@ -345,3 +349,30 @@ Fixed 2026-10-12. `handleNormalSubscription(data, user, verifiedPlan)` takes the
 **Suggested fix:** Give a refused init a distinct status (for example `init-failed`) and refuse only that status. A webhook-reported `failed` row should stay claimable.
 **Resolution:**
 Fixed 2026-10-12. Only a checkout Paystack refused at initialisation (`metadata.initRefused`) is treated as refused; a row marked `failed` by `charge.failed` still accepts a successful retry. quickBookingStaging 16 (failed then retried on the same checkout → credited).
+Closed 2026-10-12 by /audit independent (round 8): the refusal keys only on `metadata.initRefused === true` (webhook.handler.js:193-195), set only where Paystack refuses initialisation (paystack.service.js:127, wallet.service.js:83; `metadata` is Mixed). A `charge.failed` row stays claimable (`status: { $ne: 'success' }`).
+
+### F-45 [P1] fixed - Any signed-in customer can create an active subscription with a full monthly allowance without paying (pre-existing, outside this delta)
+
+**File:** services/subscription.service.js:235-267 (route routes/subscription.js:314-317; consumer services/bookOrder.service.js:1763-1777)
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: security)
+**Why it matters:** `POST /api/subscription/subscribe-plan` needs only `auth`. `subscribePlan` saves a new `SubscriptionModel` with `planId` from the body and `remainingItems: plan.monthlyLimits`. It never checks payment, and the schema's `status` defaults to `active`. `postBookOrder` with `billingType: pay-from-subscription` then accepts it: it only checks `status === 'active'` and `remainingItems`. The bot's booking flow also tries the subscription first. So a customer can book a month of items on the most expensive plan without paying anything. The same code exists at 502dc0f, so this delta did not introduce it. But the webhook hardening in this work item (F-35, F-38, F-40, F-42) is meant to stop plan value being obtained without payment, and this endpoint does exactly that. `initializePayment` refuses to open a checkout while an active subscription exists, so the real paid flow cannot depend on this endpoint creating an active row first.
+**Suggested fix:** Remove the route, or make it admin-only. If the frontend still calls it before checkout, create the row with `status: 'pending'` and `remainingItems: 0`, and let the verified first charge (`handleNormalSubscription`) activate it. Confirm with the frontend which call it uses.
+**Resolution:**
+Fixed 2026-10-12. Confirmed live on testingdb first (a customer got 40/40 pieces with no Payment and booked 10 pieces marked paid). The user confirmed the app subscribes only through the Paystack checkout and nothing calls this endpoint, so `subscribePlan` is switched off: it always refuses ("Please subscribe to a plan through checkout.") and creates nothing. Admin-only was rejected because the endpoint subscribes the caller, so it could never grant a plan to a customer. Swagger marks it deprecated. Existing subscriptions are untouched (the user confirmed none came from this endpoint). f46Probe on testingdb.
+
+### F-46 [P2] fixed - A renewal charge that cannot be applied is dropped with no Payment record and no admin alert
+
+**File:** util/webhook.handler.js:151-154, 332-340, 313-316
+**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
+**Why it matters:** Before this round, a charge with no checkout row raised the "Unmatched Paystack payment" admin alert. Now any charge carrying `data.subscription.subscription_code` skips that branch. If `handleRenewal` finds no subscription with that code, or the subscription belongs to someone else, it only writes `console.warn`/`console.error` and returns. No Payment row is written and no admin is told. This happens when `subscription.create` did not attach the code to our document (its filter needs `userId`, the authorization code and the plan code to match), or when the code was attached to an older document. The customer is charged by Paystack every month, nothing is refreshed, and nothing in the system shows the money arrived. The `claimed: true` path (a renewal that matches one of our checkout rows) is worse: it marks our row `success` first and then may apply nothing, with no alert. A refresh that throws after the Payment row was created also cannot be retried, because a repeat now passes `exists(reference)` and stops at the claim.
+**Suggested fix:** In `handleRenewal`, when the subscription is unknown or not the payer's, record the reference (for example a Payment row with `metadata.unapplied: true`) and `notifyRoles` admins, matching the unmatched-payment branch. Do the same on the claimed path before returning.
+**Resolution:**
+Fixed 2026-10-12. `handleRenewal` sends every failure (unknown code, another customer's subscription, or any error while applying) to `reportUnappliedRenewal`. It records the money once per reference: a new `success` Payment row with `metadata.unapplied`, or, when our row already exists (the claimed path, or after a failed refresh), it flags that row. A duplicate event returns quietly. It then alerts admins ("Plan renewal payment not applied") and gives the customer the user-approved in-app notice, which never says the plan renewed. A failed bot push after a successful renewal is caught, so it is no longer reported as unapplied. f46Probe 15/0 on testingdb; quickBookingStaging 67/0 (incl. scenario 16 renewals).
+
+### F-47 [P3] open - A first plan charge always creates a new subscription document, so a re-subscriber can hold two (pre-existing; deferred to launch item 9)
+
+**File:** util/webhook.handler.js (`handleNormalSubscription` lookup filter)
+**Found:** 2026-10-12 by /audit independent (round 8, Remaining risk)
+**Why it matters:** The lookup filters on a `user` field that is not in the subscription schema, so with Mongoose 8 (`strictQuery` false) it never matches and every first charge creates a new document. A customer who re-subscribes after a failed renewal can end up with two, and `subscription.create` may attach the new Paystack code to the old one, after which a renewal is reported as unapplied (F-46 now catches that).
+**Suggested fix:** Look up by `userId`, and decide the re-subscribe rules with the subscription rollover work (launch item 9), which rebuilds this area.
+**Resolution:**

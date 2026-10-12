@@ -288,28 +288,25 @@ router.delete(ROUTE_DELETE_PLAN + "/:id", [adminAuth], async (req, res) => {
  * @swagger
  * /subscription/subscribe-plan:
  *   post:
- *     summary: Subscribe a user to a plan
+ *     summary: Switched off — always refused
+ *     deprecated: true
+ *     description: >
+ *       No longer creates a subscription (it used to start an active plan with no
+ *       payment). A plan starts only through the Paystack checkout:
+ *       `POST /user/initialize-payment` with `transactionType: subscription` and
+ *       `planId`; the subscription is created when the payment is confirmed.
  *     tags:
  *       - Subscription
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - planId
- *             properties:
- *               planId:
- *                 type: string
- *                 example: 64f21b9a5c9d0c001e7a1234
  *     responses:
- *       200:
- *         description: Subscription initialized successfully
- *       404:
- *         description: Plan not found
- *       500:
- *         description: Server error
+ *       400:
+ *         description: Always — subscribe through checkout instead
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *             example:
+ *               success: false
+ *               data:
+ *                 error: Please subscribe to a plan through checkout.
  */
 router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
   const subscriptionController = new SubscriptionController();

@@ -168,6 +168,16 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
     amount its checkout asked for, so a later price edit does not lose a paid plan.
   - **F-43:** the plan activated is the verified one, not the event's.
   - **F-44:** a `charge.failed` row still accepts a successful retry.
+- **Round 8 (changes-requested) repairs (round 9):**
+  - **F-45 [P1, pre-existing — also on `main`]:** `POST /subscription/subscribe-plan`
+    saved an active plan with its full allowance and no payment. It is switched off
+    (always refused, "subscribe through checkout"); plans start only through the Paystack
+    checkout. The user confirmed the app never calls it (2026-10-12).
+  - **F-46 [P2]:** a renewal the webhook cannot apply (unknown code, another customer's
+    subscription, or the refresh failing) is recorded once as an unapplied Payment, an
+    admin is alerted, and the customer gets an in-app notice (user-approved wording):
+    "We've received your plan renewal payment of ₦X and our team is confirming it. Your
+    plan will be updated shortly." It never says the plan renewed.
 - **F-16:** the window-only fees line appears only for a leg a window could free.
 - **F-07** (wrong comment) fixed; **F-08** headers moved. F-06/F-08's source-text checks
   wait for a test runner.
@@ -190,6 +200,9 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
    returns the `quick-booking` line for an `itemCount` draft.
 4. [x] **Swagger:** `paymentRequired` on the booking response and the `quick-booking`
    `feesLine` type. **Done when:** the envelope check reports 0 wrong envelopes.
+5. [x] **Round-8 repairs (F-45, F-46).** **Done when:** `subscribe-plan` refuses and
+   creates nothing; an unapplicable renewal is recorded once as unapplied with one admin
+   alert and one customer notice; a normal renewal still refreshes the plan.
 
 ## Verify
 
@@ -200,6 +213,12 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
   raised for the right total), a First Experience auto-apply, an Anytime pickup served
   in a window, and a normal order edit keeping its offer.
 - Boot on `PORT=7999`.
+- **Results (2026-10-12, round 9):** briefCheck 462/0 · F-45/F-46 probe 15/0 on testingdb
+  (subscribe-plan refused, nothing created; unknown-code, other-customer and claimed-row
+  renewals recorded as unapplied with an admin alert and the customer notice; a repeat
+  event adds nothing; a normal renewal refreshes to the full allowance) ·
+  quickBookingStaging 67/0 · plan probe 5/5 · Swagger 0 wrong · boot on 7999 ok
+  (unauthenticated subscribe-plan → 401).
 - **Results (2026-10-12, round 8):** briefCheck 462/0 · quickBookingStaging 67/0 (16:
   renewal refreshes once, a renewal by another payer refused, a price edit after checkout
   still activates, an underpaid plan charge stays pending, a failed-then-retried payment
@@ -262,6 +281,11 @@ a normal order (only the offer handling changes); the payment hold and SMS at In
 - A Quick Booking returns `paymentRequired: false`: show no payment step. The bill comes
   by SMS after Intake counts.
 - booking-options with `itemCount` returns `feesLine.type: 'quick-booking'` with its message.
+- `POST /subscription/subscribe-plan` is switched off (always 400, "Please subscribe to a
+  plan through checkout."). Plans start only through `POST /user/initialize-payment`
+  with `transactionType: subscription`, which the app already uses.
+- A new in-app notification, "Plan renewal payment received" (`type: payment-update`),
+  can arrive when a renewal could not be applied automatically.
 - The line under the number box is theirs (client's wording): "Between 1 and 200. You pay
   nothing now. After we count your clothes, we send your bill by SMS, with pickup and
   delivery included."

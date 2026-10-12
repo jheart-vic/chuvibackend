@@ -232,39 +232,15 @@ class SubscriptionService extends BaseService {
         }
     }
     //subscription
-    async subscribePlan(req) {
-        const userId = req.user.id
-        const planId = req.body.planId
-        if (!planId) {
-            return BaseService.sendFailedResponse({
-                error: 'Please provide a plan id',
-            })
-        }
-        const plan = await PlanModel.findById(planId)
-        const user = await UserModel.findById(userId)
-
-        if (!plan) {
-            return BaseService.sendFailedResponse({ error: 'Plan not found' })
-        }
-
-        if (!user) {
-            return BaseService.sendFailedResponse({ error: 'User not found' })
-        }
-
-        const subscription = new SubscriptionModel({
-            userId: userId,
-            planId: planId,
-            email: user.email,
-            remainingItems: plan.monthlyLimits,
-            remainingPickupDeliveries: plan.freePickupDeliveryPerWeek || 0,
-            logisticsWeekStart: new Date(),
-
-            startDate: new Date(),
-            // expiresAt: addMonths(new Date(), 1),
+    // Switched off (review F-45): it saved an ACTIVE subscription with the
+    // plan's full allowance and no payment, so any signed-in customer could
+    // book a month of laundry for nothing. A plan starts only through the
+    // Paystack checkout (POST /user/initialize-payment, transactionType
+    // `subscription`); the webhook creates the subscription once paid.
+    async subscribePlan() {
+        return BaseService.sendFailedResponse({
+            error: 'Please subscribe to a plan through checkout.',
         })
-
-        await subscription.save()
-        return BaseService.sendSuccessResponse(subscription)
     }
     async cancelSubscription(req) {
         try {

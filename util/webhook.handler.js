@@ -327,15 +327,16 @@ async function handleChargeSuccess(data) {
  * reference), so a repeated event renews once.
  */
 async function handleRenewal(data, user, reference, { claimed = false } = {}) {
+    const subscriptionCode = data.subscription?.subscription_code
+    let rowWritten = claimed
     try {
-        const subscriptionCode = data.subscription?.subscription_code
         const subscription = await SubscriptionModel.findOne({ subscriptionCode })
         if (!subscription) {
-            console.warn('Renewal for unknown subscription:', subscriptionCode)
+            await reportUnappliedRenewal(data, user, reference, 'no subscription of ours has this Paystack code', { rowWritten })
             return
         }
         if (String(subscription.userId) !== String(user._id)) {
-            console.error(`Renewal ${reference}: subscription ${subscriptionCode} is not the payer's — not applied`)
+            await reportUnappliedRenewal(data, user, reference, 'the subscription with this Paystack code belongs to another customer', { rowWritten })
             return
         }
 
@@ -352,6 +353,7 @@ async function handleRenewal(data, user, reference, { claimed = false } = {}) {
                     channel: data.channel,
                     metadata: { renewal: true, subscriptionCode },
                 })
+                rowWritten = true
             } catch (err) {
                 if (err?.code === 11000) {
                     console.log('Renewal already applied:', reference)
@@ -377,16 +379,82 @@ async function handleRenewal(data, user, reference, { claimed = false } = {}) {
         await applySubscriberLoyalty(subscription, plan, subscription.consecutiveMonths)
         await subscription.save()
 
-        // 🔔 Tell the customer their renewal went through
+        // 🔔 Tell the customer their renewal went through. The renewal is
+        // already applied, so a failed push must not be reported as unapplied.
         await notifyBot({
             event: 'subscription-active',
             chuviUserId: String(user._id),
             email: user.email,
             planName: plan?.name,
             amount: plan?.price,
-        })
+        }).catch((err) => console.error('renewal notify failed:', err?.message))
     } catch (error) {
         console.error('Error in handleRenewal:', error)
+        await reportUnappliedRenewal(data, user, reference, 'updating the plan failed', { rowWritten })
+    }
+}
+
+/**
+ * Paystack took a renewal payment we could not apply (review F-46). The money
+ * is recorded (once per reference) as unapplied, an admin is alerted to fix the
+ * plan by hand, and the customer is told the payment arrived and is being
+ * confirmed — never that the plan renewed. Never throws.
+ */
+async function reportUnappliedRenewal(data, user, reference, reason, { rowWritten = false } = {}) {
+    const subscriptionCode = data.subscription?.subscription_code
+    const paid = Number(data.amount) / 100
+    console.error(`Renewal ${reference} not applied (${reason})`)
+    try {
+        if (rowWritten) {
+            await PaymentModel.updateOne(
+                { reference },
+                { $set: { 'metadata.renewal': true, 'metadata.unapplied': true, 'metadata.unappliedReason': reason } },
+            )
+        } else {
+            try {
+                await PaymentModel.create({
+                    userId: user._id,
+                    reference,
+                    amount: paid,
+                    status: 'success',
+                    type: 'subscription',
+                    paidAt: new Date(data.paid_at),
+                    channel: data.channel,
+                    metadata: { renewal: true, unapplied: true, unappliedReason: reason, subscriptionCode },
+                })
+            } catch (err) {
+                // Already recorded: this event was reported before.
+                if (err?.code === 11000) return
+                throw err
+            }
+        }
+    } catch (err) {
+        console.error('unapplied renewal record failed:', err?.message)
+    }
+
+    try {
+        const { notifyRoles } = require('./notifyRoles')
+        const { ROLE } = require('./constants')
+        await notifyRoles({
+            roles: [ROLE.ADMIN],
+            title: 'Plan renewal payment not applied',
+            body: `Paystack took a plan renewal payment of ₦${paid.toLocaleString('en-NG')} (reference ${reference}, subscription ${subscriptionCode}) from ${user.email}, but ${reason}, so the plan was not renewed. Update the customer's plan by hand.`,
+            type: NOTIFICATION_TYPE.SYSTEM,
+        })
+    } catch (err) {
+        console.error('unapplied renewal alert failed:', err?.message)
+    }
+
+    try {
+        await createNotification({
+            userId: user._id,
+            title: 'Plan renewal payment received',
+            body: `We've received your plan renewal payment of ₦${paid.toLocaleString('en-NG')} and our team is confirming it. Your plan will be updated shortly.`,
+            subBody: 'Plan renewal',
+            type: NOTIFICATION_TYPE.PAYMENT_UPDATE,
+        })
+    } catch (err) {
+        console.error('unapplied renewal customer notice failed:', err?.message)
     }
 }
 
