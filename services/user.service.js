@@ -26,6 +26,7 @@ const {
     SERVICE_PLATFORM,
 } = require('../util/constants')
 const NotificationModel = require('../models/notification.model')
+const { crmOnProfileCompleted } = require('../util/crmHooks')
 const WalletModel = require('../models/wallet.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const SubscriptionModel = require('../models/subscription.model')
@@ -563,6 +564,10 @@ class UserService extends BaseService {
                 { $set: { phoneNumber } },
                 { new: true, runValidators: false },
             )
+
+            // A Google/Apple customer's welcome SMS waited for this number
+            // (launch item 6). Fire-and-forget: never fails the phone step.
+            if (updatedUser.userType === ROLE.USER) crmOnProfileCompleted(updatedUser)
 
             // ✅ Fix 2 — generate and return tokens so frontend can proceed
             const accessToken = await updatedUser.generateAccessToken(

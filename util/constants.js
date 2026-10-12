@@ -501,6 +501,11 @@ const CRM_MESSAGE_TYPE = {
     REG_NOT_BOOKED_2: 'reg-not-booked-2',
     REG_NOT_BOOKED_3: 'reg-not-booked-3',
     REG_NOT_BOOKED_MARK_PROSPECT: 'reg-not-booked-mark-prospect',
+    // Registration welcome (launch item 6, client 2026-10-11): SMS + in-app
+    // right after sign-up, not a scheduled step. The no-offer text is used
+    // when there is no Welcome Offer or it has already ended.
+    REGISTRATION_WELCOME: 'registration-welcome',
+    REGISTRATION_WELCOME_NO_OFFER: 'registration-welcome-no-offer',
     // order lifecycle: order-ready (pre-delivery trigger) → delivery-confirmation → feedback-request
     ORDER_READY: 'order-ready',
     DELIVERY_CONFIRMATION: 'delivery-confirmation',

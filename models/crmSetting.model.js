@@ -7,7 +7,8 @@ const {
 
 // Single-document settings for the CRM: message templates (admin-editable)
 // and the thresholds behind the automatic tags. Seeded with defaults in
-// config/setup.js. Templates support {{name}} and {{firstName}} placeholders.
+// config/setup.js. Templates support {{name}} and {{firstName}} placeholders
+// (the registration welcome also {{offerEndDay}}).
 const DEFAULT_TEMPLATES = {
     // Lead nurture (client 2026-08-28: 3-message sequence — Welcome Offer →
     // Offer 2 → Offer 3, mirroring Reactivation, then the prospect broadcast).
@@ -30,6 +31,14 @@ const DEFAULT_TEMPLATES = {
         'Hello {{firstName}}, your free pickup and delivery ends tomorrow.\nIs there a duvet, bedsheets or white clothes you have been planning to give out? Book any order from ₦4,000 and we will come for it and bring it back clean, at no transport cost.\nBook here: www.chuvilaundry.com\nOr reply here and we will help you book.',
     [CRM_MESSAGE_TYPE.REG_NOT_BOOKED_3]:
         'Hello {{firstName}}, today is the last day of your free pickup and delivery.\nBook any order from ₦4,000 today and we pick up and deliver for free, plus ₦1,000 in your CHUVI wallet for your next wash.\nBook here: www.chuvilaundry.com\nAfter today, pickup and delivery are free only on orders from ₦8,000.',
+    // Registration welcome (launch item 6). Sent by SMS + in-app right after
+    // sign-up (Google/Apple: when the phone is added). {{offerEndDay}} is the
+    // Lagos day the Welcome Offer ends, e.g. "Friday 16 October". Builder
+    // wording from the client's own amounts; the client edits it in CRM settings.
+    [CRM_MESSAGE_TYPE.REGISTRATION_WELCOME]:
+        'Hello {{firstName}}, welcome to CHUVI! Your Welcome Offer is ready: book any order from ₦4,000 by {{offerEndDay}} and we pick up and deliver for free. After your first wash, we also add ₦1,000 to your CHUVI wallet.\nBook here: www.chuvilaundry.com',
+    [CRM_MESSAGE_TYPE.REGISTRATION_WELCOME_NO_OFFER]:
+        'Hello {{firstName}}, welcome to CHUVI! We pick up, clean and deliver your laundry.\nBook here: www.chuvilaundry.com',
     [CRM_MESSAGE_TYPE.ORDER_READY]:
         'Hi {{firstName}}, good news — your Chuvi Laundry order is clean, pressed and ready. 🧺 We\'ll be on our way to you shortly!',
     [CRM_MESSAGE_TYPE.DELIVERY_CONFIRMATION]:

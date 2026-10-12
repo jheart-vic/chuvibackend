@@ -855,7 +855,15 @@ router.get(ROUTE_CRM_BROADCAST_LIST, [adminAuth], (req, res) => {
  *     description: |
  *       Partial update — send only the keys you want to change.
  *       `templates` keys must be valid CRM message types; templates support
- *       {{name}} and {{firstName}} placeholders.
+ *       {{name}} and {{firstName}} placeholders. The registration welcome
+ *       (`registration-welcome`, sent by SMS + in-app right after sign-up) also
+ *       supports {{offerEndDay}} — the Lagos day the Welcome Offer ends, e.g.
+ *       "Friday 16 October". `registration-welcome-no-offer` is used when the
+ *       customer has no Welcome Offer or it has already ended.
+ *       Schedules: every step keeps `anchor` (`workflow-start` | `offer-end`) and
+ *       `preferSlot` (`any` | `morning` | `evening`); send them back unchanged.
+ *       Enabled steps clash only when they share the same anchor and minute (and,
+ *       for `offer-end`, the same slot).
  *       `thresholds` keys: dormantDays, highVolumeAvgAmount,
  *       highFrequencyPerMonth, expressUserRatio, prospectBroadcastDays,
  *       churnBroadcastDays.
@@ -885,6 +893,18 @@ router.get(ROUTE_CRM_BROADCAST_LIST, [adminAuth], (req, res) => {
  *                     enabled: { type: boolean, example: true }
  *                     delayMinutes: { type: number, description: Minutes after lead creation, example: 1440 }
  *                     cancelIfOrdered: { type: boolean, example: true }
+ *               registeredNotBookedSchedule:
+ *                 type: array
+ *                 description: "Registered-but-not-booked steps (reg-not-booked-1/2/3 and reg-not-booked-mark-prospect only). `offer-end` steps are placed from the Welcome Offer's end in their send window."
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     messageType: { type: string, enum: [reg-not-booked-1, reg-not-booked-2, reg-not-booked-3, reg-not-booked-mark-prospect], example: reg-not-booked-1 }
+ *                     enabled: { type: boolean, example: true }
+ *                     delayMinutes: { type: number, description: Minutes after registration (workflow-start) or after the offer's end (offer-end), example: 1440 }
+ *                     cancelIfOrdered: { type: boolean, example: true }
+ *                     anchor: { type: string, enum: [workflow-start, offer-end], example: workflow-start }
+ *                     preferSlot: { type: string, enum: [any, morning, evening], example: any }
  *           example:
  *             templates:
  *               lead-welcome: "Hi {{firstName}}! Welcome to Chuvi Laundry — fresh clothes, zero stress."
@@ -894,6 +914,11 @@ router.get(ROUTE_CRM_BROADCAST_LIST, [adminAuth], (req, res) => {
  *               - { messageType: lead-welcome, enabled: true, delayMinutes: 0, cancelIfOrdered: true }
  *               - { messageType: lead-qualify, enabled: true, delayMinutes: 2, cancelIfOrdered: true }
  *               - { messageType: lead-reminder-1, enabled: true, delayMinutes: 1440, cancelIfOrdered: true }
+ *             registeredNotBookedSchedule:
+ *               - { messageType: reg-not-booked-1, enabled: true, delayMinutes: 2160, cancelIfOrdered: true, anchor: workflow-start, preferSlot: any }
+ *               - { messageType: reg-not-booked-2, enabled: true, delayMinutes: 0, cancelIfOrdered: true, anchor: offer-end, preferSlot: evening }
+ *               - { messageType: reg-not-booked-3, enabled: true, delayMinutes: 0, cancelIfOrdered: true, anchor: offer-end, preferSlot: morning }
+ *               - { messageType: reg-not-booked-mark-prospect, enabled: true, delayMinutes: 10080, cancelIfOrdered: true, anchor: workflow-start, preferSlot: any }
  *     responses:
  *       200:
  *         description: Updated settings
