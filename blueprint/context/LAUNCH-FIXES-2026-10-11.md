@@ -16,10 +16,18 @@ These are corrections, so each work item goes through `/fix` (archived under
 | 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date **+ 3b daily floor limit** (+ set items on plans, 200-piece message) | 1, 2, 9 + item-2 answers | 2 → **3.5–4** | Ready to spec (Q1, 3b and big-order spreading all answered 12 Oct) |
 | 4 | Anytime agreed parts (Intake alert, top of list, all-windows-full → Urgent at window price + offer kept + next open day, "Urgent opens at") | 13 | 1.5–2 | Ready to spec (Q2 answered) |
 | 5 | Google sign-up: terms, referral code, phone normalisation | 5 | 1 | Not started |
-| 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | Ready to spec (Q3 answered) |
+| 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | **DONE 2026-10-12**. Archive `blueprint/history/fixes/registration-welcome-sms-and-schedule-save.md`; review PASSED (3 rounds; F-50..F-54 closed). Branch `fix/registration-welcome-sms-and-schedule-save`, stacked on item 2 (now merged). FE notes in FE-CHANGELOG-2026-10-11 §4. **Ask the client:** the welcome goes out immediately, outside the send windows (builder default), and F-55 (windows on the other follow-ups). |
 | 7 | Written explanations for 1 and 7a–7p | 1, 7 | 1 | Not started |
 | 8 | Clear test data, keep settings | 8 | 0.5 | Run LAST, at the client's time (likely Thursday night) |
 | 9 | Subscription rollover | build plan 21 | 3.5–4.5 | After 1–8. Rules in memory `chuvi-subscription-rollover` |
+
+**Follow-ups found along the way (not client items, small, each its own `/fix`):**
+- **F-55: CRM windows.** Lead and reactivation messages honour each step's morning/evening
+  window (user decision 2026-10-12). Post-delivery stays immediate and refuses a window.
+- **Sort station.** "Mark as pretreated" reports success even when the handoff to Wash &
+  Dry fails, so staff see "done" while the pieces stay put. Show the failure. Also two old
+  orders (OSC-20260721-414321, OSC-20260608-206700) have an item with no station. Fixing
+  them is a production data write and needs the user's yes.
 
 Total for 1–8 ≈ 9–10 days. Item 6 needs no frontend work (FE already built the settings
 group, schedule card and the per-customer Scheduled Follow-ups tab).

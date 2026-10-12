@@ -45,52 +45,15 @@ drive `reportDeliveryIssue` and `getBookOrder` with stubbed models. Nothing curr
 **Suggested fix:** Look up by `userId`, and decide the re-subscribe rules with the subscription rollover work (launch item 9), which rebuilds this area.
 **Resolution:**
 
-### F-50 [P2] closed - Two quick phone-step calls send the welcome SMS twice
+### F-55 [P3] open - `preferSlot` now saves on the lead, post-delivery and reactivation schedules, but those workflows ignore it
 
-**File:** services/crm.service.js:689 (with services/user.service.js:555-570)
-**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality, security)
-**Why it matters:** The once-only rule is check-then-send: `CrmMessageLogModel.exists(...)` runs, then `sendSms`, and the log row is written only after the SMS returns. `completeProfile` is also check-then-set: it reads `user.phoneNumber`, then runs an unconditional `findByIdAndUpdate`. A double-tap (or a client retry) on the Google/Apple phone step gets past both checks, fires `crmOnProfileCompleted` twice, and both calls see no logged SMS. An offline stubbed probe calling `sendRegistrationWelcome` twice at once sent 2 SMS and wrote 2 logs. If the two requests carry different numbers, each number gets a welcome and the second number overwrites the first. The spec says "a logged success is never resent". When the CRM profile is missing, nothing is logged at all (also confirmed by the probe), but `completeProfile` already refuses a second call once the phone is set, so only the race path reaches that case.
-**Suggested fix:** Make the phone step atomic: `findOneAndUpdate({ _id: userId, phoneNumber: { $in: [null, ''] } }, ...)`, and fire the hook only when a document came back (otherwise return "Profile already completed"). That closes both the duplicate SMS and the number overwrite. Nothing current is lost.
+**File:** services/crm.service.js:140-144 (ignored at services/crm.service.js:420-426 and 575-581)
+**Found:** 2026-10-12 by /audit independent round 3 (scope: current; lens: quality)
+**Why it matters:** Before this delta `normalizeSchedule` dropped `preferSlot`; it now validates and persists it on every schedule. Only `startRegisteredNotBookedWorkflow` passes it on to `scheduleMessages`. `startLeadWorkflow` and `startReactivationWorkflow` build entries without it, so the window snap always uses `any`, and post-delivery is not windowed at all. A `leadSchedule` step saved with `preferSlot: morning` returns success and changes nothing (stubbed probe: accepted, saved). The shared `CrmScheduleStep` Swagger schema describes `preferSlot` as "Which daily send window the step prefers" for every schedule. Same class as F-54 but milder: admin-only, and the frontend is told to send the value back unchanged rather than edit it.
+**Suggested fix:** Either pass `preferSlot: s.preferSlot` into the lead and reactivation entries (scheduleMessages already honours it), or refuse a non-`any` preferSlot outside `registeredNotBookedSchedule` and say so in the CrmScheduleStep description. Nothing current is lost.
+**Decision (user, 2026-10-12):** make the workflows HONOUR the window. Build it as its own follow-up `/fix` after launch item 6 lands:
+- Lead and reactivation pass each step's `preferSlot` into their scheduled entries (`scheduleMessages` already honours it), so "morning" means the next morning window.
+- Post-delivery messages are order messages, which the client exempted from the send windows ("order and payment messages still go immediately"). So that schedule refuses a non-`any` window with a clear message instead of pretending.
+- Docs: the CrmScheduleStep description says which workflows use `preferSlot`.
 **Resolution:**
-Fixed 2026-10-12. `completeProfile` sets the phone with `findOneAndUpdate({ _id, phoneNumber: { $in: [null, ''] } })` and fires the welcome hook only when that update matched; otherwise it answers "Profile already completed". welcomeStaging: two parallel phone steps with different numbers → one saved, one refused, one SMS to the kept number.
-Closed 2026-10-12 by /audit independent round 2: services/user.service.js:565-578 is a conditional findOneAndUpdate on an empty phone and the hook fires only when it matched; a racing second call gets "Profile already completed" and fires nothing. The check-then-send in sendRegistrationWelcome is no longer reachable twice for one user.
-
-### F-51 [P2] closed - The welcome can name the day after the offer really ends
-
-**File:** services/crm.service.js:669
-**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
-**Why it matters:** `{{offerEndDay}}` is the Lagos calendar day of the raw `expiresAt`. The offer expires `customerWindowDays × 24h` after sign-up, so anyone who signs up between 00:00 and the morning window's end (08:00) gets an expiry early in the morning. `offerEndSchedule` (util/crmSendWindow.js:131) treats that as "the offer ends the day before" and sends "today is the last day" the previous evening. The welcome still says "by Thursday 15 October" for an offer that ends at 01:00 Thursday (probe output). A customer who books on Thursday morning finds the free pickup gone, and the welcome contradicts messages 2 and 3, which arrive one day earlier.
-**Suggested fix:** Use the same rule as `offerEndSchedule`. When the expiry's hour is before `sendWindows.morningEndHour`, print the previous day. Or print the last full day before the expiry instant. Nothing current is lost.
-**Resolution:**
-Fixed 2026-10-12. New `welcomeOfferEndDay` uses `offerEndSchedule(...).shifted` (the messages 2/3 rule): an offer ending before the morning window closes names the day before. briefCheck (01:00 Thursday → Wednesday; 15:00 Thursday → Thursday) and welcomeStaging ("by Wednesday 14 October").
-Closed 2026-10-12 by /audit independent round 2: welcomeOfferEndDay (services/crm.service.js:177-181) shares offerEndSchedule's rule; offline probe (Lagos TZ) 00:00 and 07:59 Thursday -> Wednesday, 08:00 and 23:30 -> Thursday, custom morningEndHour 10 honoured.
-
-### F-52 [P2] closed - Offer-end steps ignore delayMinutes, but the stagger rule and Swagger say it counts
-
-**File:** services/crm.service.js:140 (also routes/crm.js:904, swagger/schemas.js:457)
-**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
-**Why it matters:** `startRegisteredNotBookedWorkflow` (crm.service.js:460-474) places an `offer-end` step only by its slot: `morning` goes to `offerPair.third`, anything else to `offerPair.second`. It never reads `delayMinutes`. The new clash key uses `offer-end|delayMinutes|preferSlot`, so two steps that will fire at the same instant still pass validation: `any` + `evening` at minute 0, or two `evening` steps at minutes 0 and 60 (both confirmed with a probe). Swagger tells the frontend that `delayMinutes` is "Minutes … after the offer's end (offer-end)". An admin who moves message 2 to 120 gets a successful save and no change in behaviour, which is the "save reports success but does nothing" problem this fix set out to remove.
-**Suggested fix:** For `offer-end` steps, key the clash on the window the step will actually use (`morning`, or `evening` for evening and any), ignoring `delayMinutes`. Say in Swagger (and in the CrmScheduleStep description) that `delayMinutes` is ignored for `offer-end` steps. Or refuse a non-zero `delayMinutes` on them. Nothing current is lost.
-**Resolution:**
-Fixed 2026-10-12. An offer-end step with a non-zero delayMinutes is refused, and offer-end steps clash on the window they actually use (morning, or evening for evening/any), with their own error text. Swagger (PUT /crm/settings, CrmScheduleStep) says delayMinutes must be 0 for offer-end steps. briefCheck covers both.
-Closed 2026-10-12 by /audit independent round 2: services/crm.service.js:140-158 refuses non-zero delayMinutes on offer-end steps and keys the clash on morning vs evening/any, matching startRegisteredNotBookedWorkflow:482-485; probe any/morning ok, any/any and morning/morning clash, disabled duplicate ok. Swagger routes/crm.js and swagger/schemas.js updated; envelope check 0 wrong.
-
-### F-53 [P3] closed - The registered-not-booked sequence now waits for the welcome SMS's network call
-
-**File:** services/crm.service.js:625
-**Found:** 2026-10-12 by /audit independent (scope: current; lens: performance)
-**Why it matters:** `handleUserRegistered` awaits `sendRegistrationWelcome`, which awaits `sendSms` (an axios POST to Termii with no timeout set), before it calls `startRegisteredNotBookedWorkflow`. Errors are caught. But a provider that accepts the connection and never answers holds the hook until the OS socket timeout, and the customer's follow-up sequence is not queued for that whole time. If the process restarts in that window, the sequence is never queued at all. Sign-up itself is unaffected, because the hook is fire-and-forget.
-**Suggested fix:** Start the registered-not-booked sequence before the welcome, or don't await the SMS part (fire it with its own catch). Nothing current is lost.
-**Resolution:**
-Fixed 2026-10-12. `handleUserRegistered` queues the registered-not-booked sequence first and sends the welcome after it, so a slow SMS provider never delays the queueing.
-Closed 2026-10-12 by /audit independent round 2: handleUserRegistered (services/crm.service.js:644-664) awaits startRegisteredNotBookedWorkflow before sendRegistrationWelcome; stubbed probe order [sequence, welcome].
-
-### F-54 [P3] fixed - The lead, post-delivery and reactivation schedules accept an `offer-end` anchor that only the registered-not-booked workflow understands
-
-**File:** services/crm.service.js:129-158 (callers at services/crm.service.js:413-419, 535-546, 568-574)
-**Found:** 2026-10-12 by /audit independent (scope: current; lens: quality)
-**Why it matters:** `normalizeSchedule` now accepts `anchor: offer-end` in every schedule, but only `startRegisteredNotBookedWorkflow` reads `anchor`. The other three workflows treat the step as a plain delay, so an `offer-end` step there always fires at minute 0 (its delay must be 0). Its clash key is `offer-end|evening`, so it also dodges the same-minute rule: a `leadSchedule` with `lead-welcome` at 0 (workflow-start) and another step at 0 with `anchor: offer-end` saves (offline probe: "accepted"), and both messages fire at once. It is reachable only through the admin-only `PUT /api/crm/settings` with a hand-built body. The frontend never sends `offer-end` for these schedules.
-**Suggested fix:** Pass the allowed anchors with the allowed types (`[WORKFLOW_START]` for the three older schedules, both anchors for `registeredNotBookedSchedule`) and refuse anything else. Nothing current is lost.
-**Resolution:**
-Fixed 2026-10-12. `normalizeSchedule` refuses an `offer-end` step unless the schedule's allowed types are all registered-not-booked messages, which is only true for `registeredNotBookedSchedule`. The error reads "<schedule> steps can't be counted from the offer's end: only the "Registered, not booked" messages can." briefCheck covers both sides (478/0), and the offer-end checks now pass the real type list. welcomeStaging 28/0; regNotBookedStaging 33/0.
 

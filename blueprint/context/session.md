@@ -1,5 +1,23 @@
 # Current Session Log
 
+## ███ 2026-10-12 (later) — Launch fix 6 (registration welcome + schedule save) COMPLETED. Next: item 3. ███
+- Archive `blueprint/history/fixes/registration-welcome-sms-and-schedule-save.md` (round-3 receipt, F-50..F-54).
+  The work commit is the user's; they push and open the PR. Item 2 is already merged to origin/main (PR #252, as a
+  merge commit), so this branch's PR has no conflict to expect.
+- Built: the `registration-welcome` / `-no-offer` CRM templates with `{{offerEndDay}}` (last usable day, same
+  before-08:00 rule as messages 2/3). SMS + in-app at sign-up, or at the Google/Apple phone step (atomic, once).
+  `registeredNotBookedSchedule` now saves, keeping anchor/preferSlot. Offer-end steps: delay 0, clash per window,
+  allowed only in that schedule.
+- Gates: briefCheck 478/0 · welcomeStaging 28/0 · regNotBookedStaging 33/0 (now stubs SMS) · Swagger 0 · boot ok.
+- Open: **F-55** (the other follow-ups ignore preferSlot). User wants windows honoured; a client message was drafted
+  asking (1) per-message morning/evening for leads and reactivation, (2) whether post-delivery stays immediate.
+- **Client answered item 3 completely** (daily floor limit 150 / RT 30 / Express 50, Sunday half, Monday 0; spread
+  big orders across days; fast speeds never split → "Too many pieces for Express…"). See LAUNCH-FIXES "Item 3 scope".
+- **Sort station report (prod, read-only check):** sorting works. 4 orders are fully sorted with a PENDING handoff
+  to Wash & Dry (wash must accept). 2 old orders (OSC-20260721-414321, OSC-20260608-206700) have an item with no
+  currentStation, so sort refuses them; fixing them is a prod write and needs the user's yes. "Mark as pretreated"
+  reports success even when the handoff fails → follow-up fix.
+
 ## ███ 2026-10-12 — Launch fix 2 (Quick Booking, nothing paid at booking) COMPLETED. Next: item 3. ███
 - Archive `blueprint/history/fixes/quick-booking-nothing-paid-at-booking.md` (30 closed findings + round-10 receipt).
   Review took 10 rounds; the final rounds were all payment hardening. Work commit is the user's to make; the user

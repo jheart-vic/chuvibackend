@@ -2,6 +2,7 @@
 
 Three launch fixes. Section 1 explains why S1 booking fails today and what the screen must send.
 Section 3 is Quick Booking (nothing paid at booking) plus the payment changes that came with it.
+Section 4 is the registration welcome and the CRM "Registered, not booked" schedule save.
 
 ---
 
@@ -113,3 +114,34 @@ The first message used to read `paymentMethod is required`.
 |---|---|
 | Payment not completed | A card payment failed. The body names what failed and the amount, and asks the customer to try again or pick another method. `subBody` is "Reference …". The customer is also emailed. |
 | Plan renewal payment received | Paystack took a plan renewal we couldn't apply automatically. Our team is fixing it by hand; the body says the plan will be updated shortly. |
+
+---
+
+## 4. Registration welcome and the "Registered, not booked" schedule (CRM settings)
+
+**The schedule now really saves.** In CRM → Settings → "Registered, not booked",
+`PUT /api/crm/settings` with `registeredNotBookedSchedule` used to answer success and keep
+nothing. It now saves. With each step:
+- Send `anchor` and `preferSlot` back **unchanged**.
+- Messages 2 and 3 have `anchor: "offer-end"`. They're placed only by their window:
+  `morning` = the morning the Welcome Offer ends; `evening` = the evening before. Their
+  `delayMinutes` must stay `0`, so **don't show a delay box for them**; show the morning /
+  evening choice only.
+- Message 1 and the day-7 step count `delayMinutes` from sign-up, as before.
+- A wrong save answers `400` with a sentence to show as it comes, for example "Two
+  registeredNotBookedSchedule messages are scheduled for the same minute (60)…".
+
+**Two new editable templates**, in the same screen as the others:
+
+| Key | Used when | Placeholders |
+|---|---|---|
+| `registration-welcome` | The customer has a live Welcome Offer | `{{firstName}}`, `{{name}}`, **`{{offerEndDay}}`** (the last day the offer can be used, e.g. "Wednesday 14 October") |
+| `registration-welcome-no-offer` | No Welcome Offer, or it has already ended | `{{firstName}}`, `{{name}}` |
+
+**What the customer gets after signing up** (the email is unchanged):
+- An in-app notification, "Welcome to Chuvi Laundry", straight away.
+- The same text by SMS, straight away. Google/Apple sign-ups get it the moment they add
+  their phone number. It's sent once per customer.
+
+**Google/Apple phone step:** a second tap now answers `400` "Profile already completed".
+The first number is kept.
