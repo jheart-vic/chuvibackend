@@ -130,6 +130,13 @@ const normalizeSchedule = (schedule, label, allowedTypes = SCHEDULE_TYPES) => {
         if (!anchors.includes(anchor)) {
             return { error: `Invalid anchor for ${step.messageType}: ${anchor}` }
         }
+        // Only the registered-not-booked workflow knows the offer's end; every
+        // other workflow would read such a step as delay 0 (review F-54).
+        if (anchor === CRM_SCHEDULE_ANCHOR.OFFER_END && !allowedTypes.every((t) => REGISTERED_NOT_BOOKED_TYPES.includes(t))) {
+            return {
+                error: `${label} steps can't be counted from the offer's end: only the "Registered, not booked" messages can.`,
+            }
+        }
         const preferSlot = step.preferSlot ?? CRM_SEND_SLOT.ANY
         if (!slots.includes(preferSlot)) {
             return { error: `Invalid preferSlot for ${step.messageType}: ${preferSlot}` }

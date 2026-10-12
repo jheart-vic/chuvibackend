@@ -121,6 +121,9 @@ phone step (launch item 5).
    - **F-53:** the sequence is queued before the welcome is sent.
 
    **Done when:** briefCheck and welcomeStaging cover each one.
+4. [x] **Review round 2 repair (passed with F-54 [P3]).** Only the "Registered, not
+   booked" schedule may count a step from the offer's end; the other three refuse it.
+   **Done when:** briefCheck covers both sides.
 
 ## Verify
 
@@ -136,6 +139,8 @@ phone step (launch item 5).
 - Swagger envelope check (0 wrong). Boot on `PORT=7999`.
 - **Independent review: required.** It sends SMS to real customers, which counts as an
   external side effect under `when-sensitive`.
+- **Results (2026-10-12, after the round-2 repair):** briefCheck 478/0 · welcomeStaging 28/0 ·
+  regNotBookedStaging 33/0.
 - **Results (2026-10-12, after the round-1 repairs):** briefCheck 476/0 · `welcomeStaging.js`
   28/0 (adds the double-tap and the 01:00 offer end) · `regNotBookedStaging.js` 33/0 ·
   Swagger 0 wrong · boot on 7999 ok.
