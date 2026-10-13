@@ -7,7 +7,7 @@
 > finding is `open` or `fixed`, then archives resolved findings with the work
 > and resets this file.
 
-### F-06 [P3] open - The failed-delivery checks in briefCheck only match source text
+### F-06 [P3] accepted - The failed-delivery checks in briefCheck only match source text
 
 **File:** briefCheck.js:2055
 **Found:** 2026-10-10 by /audit independent (scope: current; lens: tests)
@@ -22,8 +22,9 @@ assertions, by contrast, drive the real `_cancellationVerdict`.
 `markOrderDeliveryAsFailed` and the `delivery_problem` branch with a stubbed model.
 Nothing current is lost.
 **Resolution:**
+Accepted 2026-10-13 by the user ("yes" to accepting F-06/F-08). Reason: nothing in the product is wrong; the checks can only become behavioural tests once a test runner exists (`/tests`), and the behaviour is covered by dispatchStaging.js scenarios 11-13 on a testing DB meanwhile.
 
-### F-08 [P3] open - The new access checks in briefCheck only match source text, and the section headers above them are misplaced
+### F-08 [P3] accepted - The new access checks in briefCheck only match source text, and the section headers above them are misplaced
 
 **File:** briefCheck.js:2047
 **Found:** 2026-10-10 by /audit independent (scope: current; lens: tests)
@@ -36,6 +37,7 @@ at lines 2047-2051 now sit above the Access block instead of their own sections.
 **Suggested fix:** Move the two headers to their sections. When `/tests` adds a runner,
 drive `reportDeliveryIssue` and `getBookOrder` with stubbed models. Nothing current is lost.
 **Resolution:** Partly fixed 2026-10-11: the "FE 9 Oct" and "Dead subscription crons removed" headers now sit above their own sections. The source-text-only access checks stay as they are until a test runner exists (same as F-06).
+Accepted 2026-10-13 by the user ("yes" to accepting F-06/F-08). Reason: the headers are fixed; the access checks can only become behavioural tests once a test runner exists (`/tests`), and dispatchStaging.js scenario 15 covers the behaviour on a testing DB meanwhile.
 
 ### F-47 [P3] fixed - A first plan charge always creates a new subscription document, so a re-subscriber can hold two (pre-existing; deferred to launch item 9)
 
