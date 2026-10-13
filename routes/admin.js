@@ -3445,7 +3445,7 @@ router.get(ROUTE_GET_AUDIT_LOGS, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/display-names:
+ * /admin/display-names:
  *   get:
  *     summary: Labels for delivery speeds, service types and care tiers
  *     description: >
@@ -3548,7 +3548,7 @@ router.put(ROUTE_ADMIN_DISPLAY_NAMES, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/order/{id}/payment-hold/waive:
+ * /admin/order/{id}/payment-hold/waive:
  *   post:
  *     summary: Waive a payment hold so the order processes unpaid (N1, admin only)
  *     description: >
@@ -3616,7 +3616,7 @@ router.post(ROUTE_ORDER_PAYMENT_HOLD_WAIVE, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/bank-check-list:
+ * /admin/bank-check-list:
  *   get:
  *     summary: Bank transfers approved by a human, for daily reconciliation (N1)
  *     description: >
@@ -3674,7 +3674,7 @@ router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/booking-windows:
+ * /admin/booking-windows:
  *   get:
  *     summary: List pickup/delivery time windows and the working-days setting
  *     description: >
@@ -3765,7 +3765,7 @@ router.post(ROUTE_ADMIN_BOOKING_WINDOWS, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/booking-windows/{id}:
+ * /admin/booking-windows/{id}:
  *   put:
  *     summary: Update a time window
  *     description: >
@@ -3864,7 +3864,7 @@ router.delete(ROUTE_ADMIN_BOOKING_WINDOW_BY_ID, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/working-days:
+ * /admin/working-days:
  *   put:
  *     summary: Set the working days (client D6)
  *     description: >
@@ -3921,7 +3921,7 @@ router.put(ROUTE_ADMIN_WORKING_DAYS, [adminAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/admin/window-deflections:
+ * /admin/window-deflections:
  *   get:
  *     summary: Windows that filled, and customers moved (client D5)
  *     description: >

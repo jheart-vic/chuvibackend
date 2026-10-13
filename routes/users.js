@@ -68,7 +68,7 @@ const router = require("express").Router();
 
 /**
  * @swagger
- * /api/user/get-dashboard:
+ * /users/get-dashboard:
  *   get:
  *     summary: Get customer dashboard data
  *     description: Returns wallet balance, order counts, notifications, ongoing order, and subscription details for the authenticated user.
