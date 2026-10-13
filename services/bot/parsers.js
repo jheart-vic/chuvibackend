@@ -390,12 +390,19 @@ module.exports = {
         // "the 2nd gate" are places (F-74).
         const NOT_A_DAY = '(?!\\s*(?::|\\/|\\.\\d|[ap]\\.?m|floor|flr|storey|gate|street|st\\b|avenue|ave\\b|road|rd\\b|close|crescent|lane|estate|house|building|block|phase|left|right|turn|junction|bus|shirts?|pieces?|pcs|items?|bags?|clothes|kg))'
         const WEEKDAY = '(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)'
+        // What may follow a bare day: a time word, a clock time or a year
+        // ("saturday 24 10am", "saturday 24 noon", "saturday 24 between 9 and
+        // 11", "saturday 24 2026" — F-82). On the day question punctuation counts
+        // too; on any other turn a comma doesn't, because "saturday 24, Allen
+        // Avenue" is a house number (F-83).
+        const TIME_AFTER = '(?:by|at|around|about|in|from|or|and|morning|afternoon|evening|noon|midday|between|latest|anytime|please|pls)\\b|\\d{1,2}(?::\\d{2})?\\s*[ap]\\.?m|\\d{1,2}:\\d{2}|\\d{4}\\b'
+        const BARE_AFTER = slash
+            ? `(?=\\s*(?:$|[,.!?;]|${TIME_AFTER}))`
+            : `(?=\\s*(?:$|[.!?]\\s*$|,?\\s*(?:${TIME_AFTER})))` // a comma only before a time: "saturday 24, 9am"
         const ordinal = new RegExp(`\\b${WEEKDAY}\\b`).test(p)
             // The bare number must sit RIGHT after the weekday, so a house
             // number later in the sentence ("saturday, at 24 Allen Avenue") isn't a day.
-            // and be followed only by a time word, punctuation or the end
-            // ("saturday 24 by 10am" yes; "saturday, 24 Allen Avenue" no).
-            ? new RegExp(`(?:\\b(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)\\b${NOT_A_DAY}|\\b${WEEKDAY}[,\\s]+(?:the\\s+)?(1[3-9]|2\\d|3[01])\\b(?=\\s*(?:$|[,.!?;]|(?:by|at|around|about|in|from|or|and|morning|afternoon|evening|please|pls)\\b)))`)
+            ? new RegExp(`(?:\\b(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)\\b${NOT_A_DAY}|\\b${WEEKDAY}[,\\s]+(?:the\\s+)?(1[3-9]|2\\d|3[01])\\b${BARE_AFTER})`)
             : new RegExp(`\\bthe\\s+(\\d{1,2})(?:st|nd|rd|th)\\b${NOT_A_DAY}`)
         if ((m = p.match(ordinal))) {
             const d = Number(m[1] || m[2])
@@ -404,7 +411,9 @@ module.exports = {
                 const next = new Date(today.getFullYear(), today.getMonth() + 1, 1)
                 dt = make(next.getFullYear(), next.getMonth(), d)
             }
-            return dt ? { date: dt, text: m[0] } : null
+            // For a bare day only the NUMBER is the written date — the weekday
+            // is already in the phrase ("saturday 24", not "saturday saturday 24", F-84).
+            return dt ? { date: dt, text: m[2] || m[0] } : null
         }
         if ((m = p.match(/\bin\s+(\d{1,2})\s+days?\b/))) {
             const n = Number(m[1])

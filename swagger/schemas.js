@@ -455,7 +455,7 @@
  *         delayMinutes: { type: number, description: Minutes after the workflow's anchor event this step fires, example: 1440 }
  *         cancelIfOrdered: { type: boolean, description: Drop this step if the customer books before it fires, example: true }
  *         anchor: { type: string, enum: [workflow-start, offer-end], description: "What the step is timed from. workflow-start = delayMinutes after the workflow begins. offer-end = the customer's Welcome Offer end (registered-not-booked messages 2 and 3): delayMinutes must be 0, and preferSlot places it (morning = the morning it ends; evening/any = the evening before).", example: workflow-start }
- *         preferSlot: { type: string, enum: [any, morning, evening], description: Which daily send window the step prefers, example: any }
+ *         preferSlot: { type: string, enum: [any, morning, evening], description: "Which daily send window the step goes out in (morning 6–8 AM, evening 6–8 PM; any = the next one). Used by the lead, registered-not-booked and reactivation schedules. The post-delivery schedule refuses anything but any: those are order messages and go out straight away.", example: any }
  *
  *     CrmError:
  *       type: object

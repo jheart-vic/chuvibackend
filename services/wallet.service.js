@@ -220,6 +220,8 @@ class WalletService extends BaseService {
       bookOrder.paymentStatus = "success";
       bookOrder.balanceDue = undefined;
       await bookOrder.save();
+      // Launch item 4: a paid Urgent pickup now alerts Intake (once).
+      await require("../util/urgentPickup").markUrgentPickupIfReady(bookOrder);
 
       // Same release the Paystack webhook performs: a paid order leaves its
       // payment hold and its processing clock can start. Non-fatal — the

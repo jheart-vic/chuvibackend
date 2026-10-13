@@ -180,12 +180,21 @@ async function main() {
         ok(drow && drow.urgentAtWindowPrice === false && drow.windowsFull === false && !drow.message,
             'delivery availability never offers Urgent at the window price')
 
-        console.log('\n[5] Urgent flag and Intake alert')
+        console.log('\n[5] Urgent flag and Intake alert — only once paid')
+        const s0 = await BookOrderModel.findById(o1._id).lean()
+        await sleep(1000)
+        const early = await NotificationModel.findOne({ userId: intake._id, title: 'Urgent pickup booked' }).lean()
+        ok(s0.paymentStatus !== C.PAYMENT_ORDER_STATUS.SUCCESS && s0.urgentPickup !== true && !early,
+            'an unpaid card order (checkout not finished) is NOT marked urgent and alerts no one')
+        // The customer pays: the same call the Paystack webhook / wallet / bank approval makes.
+        await BookOrderModel.updateOne({ _id: o1._id }, { $set: { paymentStatus: C.PAYMENT_ORDER_STATUS.SUCCESS } })
+        const { markUrgentPickupIfReady } = require('./util/urgentPickup')
+        const first = await markUrgentPickupIfReady(await BookOrderModel.findById(o1._id))
+        const again = await markUrgentPickupIfReady(await BookOrderModel.findById(o1._id))
         const s1 = await BookOrderModel.findById(o1._id).lean()
-        ok(s1.urgentPickup === true, 'the order is stamped urgentPickup')
-        await sleep(1500)
-        const note = await NotificationModel.findOne({ userId: intake._id, title: 'Urgent pickup booked' }).lean()
-        ok(!!note && note.body.includes(o1.oscNumber), `Intake is notified ("${note?.body?.slice(0, 60)}…")`)
+        ok(first === true && again === false && s1.urgentPickup === true, 'once paid it is stamped urgentPickup, exactly once')
+        const notes = await NotificationModel.find({ userId: intake._id, title: 'Urgent pickup booked' }).lean()
+        ok(notes.length === 1 && notes[0].body.includes(o1.oscNumber), `Intake is notified once ("${notes[0]?.body?.slice(0, 60)}…")`)
 
         console.log('\n[6] Top of the pickup list')
         const svc = new IntakeUserService()

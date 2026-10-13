@@ -101,7 +101,7 @@ const {
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
-const { notifyRoles } = require('../util/notifyRoles')
+const { markUrgentPickupIfReady } = require('../util/urgentPickup')
 
 // Launch item 4 (client Q2): an Urgent pickup booked because every window that
 // day was full is a WINDOW pickup for offers — "keep your offer" — so a free
@@ -2360,28 +2360,18 @@ class BookOrderService extends BaseService {
                 // drift apart on it — and after the `if (!newOrder)` guard
             // above, so it can never run against a failed creation.
             if (scheduling) {
-                // Launch item 4 (D2a): an Urgent pickup goes to the TOP of
-                // Intake's pickup list and alerts Intake at once.
-                const urgentPickup = scheduling.pickup?.timing === BOOKING_TIMING.ANYTIME
                 await BookOrderModel.updateOne(
                     { _id: newOrder._id },
-                    { $set: { scheduling, ...(urgentPickup && { urgentPickup: true }) } },
+                    { $set: { scheduling } },
                 )
                 // Also on the in-memory document, or the response would omit
                 // the times the customer just chose.
                 newOrder.scheduling = scheduling
-                if (urgentPickup) {
-                    newOrder.urgentPickup = true
-                    const addr = newOrder.pickupAddress?.address || post.pickupAddress?.address || ''
-                    // Fire-and-forget: an alert must never fail the booking.
-                    notifyRoles({
-                        roles: [ROLE.INTAKE_AND_TAG, ROLE.ADMIN],
-                        title: 'Urgent pickup booked',
-                        body: `${oscNumber}${addr ? ` — ${addr}` : ''}. Assign a rider now: it is at the top of the pickup list.`,
-                        subBody: `Order ID: ${oscNumber}`,
-                        type: NOTIFICATION_TYPE.ORDER_CREATED,
-                    }).catch((err) => console.error('urgent pickup alert failed:', err?.message))
-                }
+                // Launch item 4 (D2a): an Urgent pickup alerts Intake and goes
+                // to the top of the pickup list — now if it is already paid (or
+                // a Quick Booking), otherwise when its payment lands, so an
+                // abandoned card checkout never does.
+                await markUrgentPickupIfReady(newOrder)
             }
 
             crmOnOrderCreated(newOrder)

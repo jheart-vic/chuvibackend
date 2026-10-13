@@ -1687,11 +1687,13 @@ class AdminService extends BaseService {
             }
 
             if (payment.type === 'order' && payment.order) {
-                await BookOrderModel.findByIdAndUpdate(payment.order, {
+                const paidOrder = await BookOrderModel.findByIdAndUpdate(payment.order, {
                     paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
                     // Approved as paid: nothing is owed any more (F-34).
                     $unset: { balanceDue: '' },
-                })
+                }, { new: true })
+                // Launch item 4: a paid Urgent pickup now alerts Intake (once).
+                await require('../util/urgentPickup').markUrgentPickupIfReady(paidOrder)
                 // N1 Phase 3: a bank transfer approved here must also release
                 // the payment hold, or the order stays frozen with its money
                 // already confirmed. Non-fatal, and after the payment is

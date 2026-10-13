@@ -1279,8 +1279,18 @@ const run = (async () => {
         ok('item 4: offers treat a full-windows Urgent pickup as a window pickup (offer kept), on booking and re-price',
             /const offerPickupTiming = \(leg\) => \(leg\?\.windowsFull \? BOOKING_TIMING\.WINDOW : leg\?\.timing\)/.test(boSrc4) &&
                 (boSrc4.match(/pickupTiming: offerPickupTiming\(/g) || []).length === 2)
-        ok('item 4: an Urgent pickup is stamped urgentPickup and alerts Intake',
-            /urgentPickup: true/.test(boSrc4) && /title: 'Urgent pickup booked'/.test(boSrc4))
+        // Marked (top of the list + Intake alert) only once paid, or a Quick Booking,
+        // so an abandoned card checkout never alerts Intake or jumps the list.
+        const upSrc4 = fs.readFileSync(path.join(ROOT, 'util/urgentPickup.js'), 'utf8')
+        ok('item 4: an Urgent pickup is marked and alerts Intake only once paid (or a Quick Booking), at booking and at every payment',
+            /await markUrgentPickupIfReady\(newOrder\)/.test(boSrc4) &&
+                /const ready = order\.paymentStatus === PAYMENT_ORDER_STATUS\.SUCCESS \|\| order\.quickBooking === true/.test(upSrc4) &&
+                /title: 'Urgent pickup booked'/.test(upSrc4) &&
+                /markUrgentPickupIfReady\(order\)/.test(fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')) &&
+                /markUrgentPickupIfReady\(bookOrder\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')) &&
+                /markUrgentPickupIfReady\(paidOrder\)/.test(fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')))
+        ok('item 4: the same-day disclosure reads TODAY\'s pickup windows on any leg',
+            /const todayPickupFull =\s*W\.allWindowsFull\(\{ windows, day: from/.test(fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')))
         const intakeSrc4 = fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8')
         const offerSrc4 = fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')
         const bwSrc4 = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
@@ -1352,7 +1362,7 @@ const run = (async () => {
         /adminOrderSetting\.pickupFee = resolved\.leg\.fee/.test(boSrc) &&
             /adminOrderSetting\.deliveryFee = scheduling\.delivery\.fee/.test(boSrc))
     ok('`scheduling` is stamped once in the common tail, after the !newOrder guard',
-        boSrc.indexOf('if (!newOrder) {') < boSrc.indexOf('{ $set: { scheduling, ...(urgentPickup && { urgentPickup: true }) } }'))
+        boSrc.indexOf('if (!newOrder) {') < boSrc.indexOf('{ $set: { scheduling } }'))
     const bwSvcSrc = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
     // Matches the field being USED in a query (`isCancelled:`), not the comment
     // that explains why it must not be — otherwise the explanation fails the test.
@@ -2613,6 +2623,39 @@ const run = (async () => {
         ok('F-54: the registered-not-booked schedule still accepts it',
             !normalizeSchedule([{ messageType: CMT.REG_NOT_BOOKED_2, delayMinutes: 0, anchor: 'offer-end', preferSlot: 'evening' }], 'registeredNotBookedSchedule',
                 [CMT.REG_NOT_BOOKED_1, CMT.REG_NOT_BOOKED_2, CMT.REG_NOT_BOOKED_3, CMT.REG_NOT_BOOKED_MARK_PROSPECT]).error)
+        // F-55 (user decision 2026-10-12): lead and reactivation honour each step's window;
+        // post-delivery (order messages) refuses one.
+        const crmSrc55 = fs.readFileSync(path.join(ROOT, 'services/crm.service.js'), 'utf8')
+        ok('F-55: lead and reactivation steps pass their send window to the scheduler',
+            (crmSrc55.match(/preferSlot: s\.preferSlot \|\| CRM_SEND_SLOT\.ANY/g) || []).length === 2)
+        ok('F-55: a post-delivery step with a window is refused; "any" is accepted',
+            !!normalizeSchedule([{ messageType: CMT.DELIVERY_CONFIRMATION, delayMinutes: 60, preferSlot: 'morning' }], 'postDeliverySchedule').error &&
+                !normalizeSchedule([{ messageType: CMT.DELIVERY_CONFIRMATION, delayMinutes: 60, preferSlot: 'any' }], 'postDeliverySchedule').error)
+        // F-75: a present-but-non-text referral code is refused on the phone step.
+        ok('F-75: a non-string referral code on the phone step is refused, not ignored',
+            /referralCode != null && referralCode !== '' && typeof referralCode !== 'string'/.test(fs.readFileSync(path.join(ROOT, 'services/user.service.js'), 'utf8')))
+        // F-89: the windows-full quote rule runs at booking time only, never on an Intake re-price.
+        ok('F-89: the booking-options full-windows rule is skipped on an Intake re-price',
+            /if \(!repriceOrderId && draft\.pickupTiming === BOOKING_TIMING\.ANYTIME/.test(fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')))
+        // F-47: the first-charge subscription lookup uses the schema's `userId`.
+        ok('F-47: the subscription lookup and index use userId (the schema field), not `user`',
+            /const filter = \{\s*userId: user\._id,/.test(fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')) &&
+                /subscriptionSchema\.index\(\{ userId: 1, status: 1 \}\)/.test(fs.readFileSync(path.join(ROOT, 'models/subscription.model.js'), 'utf8')))
+        // F-82/F-83/F-84: bare day beside a weekday.
+        {
+            const BP = require(path.join(ROOT, 'services/bot/parsers'))
+            const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            const d = new Date(); d.setDate(d.getDate() + 8)
+            while (d.getDate() < 13) d.setDate(d.getDate() + 1)
+            const wd = names[d.getDay()], dd = d.getDate()
+            const r = (t, s) => BP._resolvePickupDate(BP._parseDateTimeFromText(t, { written: s }).datePhrase)?.toDateString()
+            ok('F-82: "<weekday> 24 10am" / "noon" / "between 9 and 11" read the date',
+                [`${wd} ${dd} 10am`, `${wd} ${dd} noon`, `${wd} ${dd} between 9 and 11`].every((t) => r(t, true) === d.toDateString()))
+            ok('F-83: off the day question, "<weekday> 24, Allen Avenue" is a house number, but "<weekday> 24, 9am" is a date',
+                r(`${wd} ${dd}, allen avenue ikeja`, false) !== d.toDateString() && r(`${wd} ${dd}, 9am`, false) === d.toDateString())
+            ok('F-84: the stored phrase names the weekday once',
+                BP._parseDateTimeFromText(`${wd} ${dd}`, { written: true }).datePhrase === `${wd} ${dd}`)
+        }
         ok('F-50: the phone step sets the phone only while it is still empty',
             /findOneAndUpdate\(\s*\{\s*_id: userId, phoneNumber: \{ \$in: \[null, ''\] \} \}/.test(
                 fs.readFileSync(path.join(ROOT, 'services/user.service.js'), 'utf8'),

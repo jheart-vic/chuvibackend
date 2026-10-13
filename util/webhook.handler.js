@@ -681,8 +681,11 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
             return
         }
 
+        // F-47: the schema field is `userId`. Filtering on `user` (not in the
+        // schema) never matched, so every first charge created a new document
+        // and a re-subscriber could hold two. Re-subscribe rules: launch item 9.
         const filter = {
-            user: user._id,
+            userId: user._id,
             paystackSubscriptionId: planCode,
             paystackAuthorizationToken: authorizationCode,
         }
@@ -848,6 +851,9 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
         order.balanceDue = undefined
 
         await order.save()
+        // Launch item 4: a paid Urgent pickup now alerts Intake and goes to the
+        // top of the pickup list (once; never for an abandoned checkout).
+        await require('./urgentPickup').markUrgentPickupIfReady(order)
 
         // Overpaid (a link opened before the bill went DOWN): the excess goes
         // back to the wallet (review F-33).

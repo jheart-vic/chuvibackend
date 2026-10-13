@@ -44,7 +44,8 @@ const subscriptionSchema = new mongoose.Schema({
   paystackEmailToken: String,
 },{timestamps: true});
 
-subscriptionSchema.index({ user: 1, status: 1 });
+// F-47: `userId` is the field ("user" does not exist on this schema).
+subscriptionSchema.index({ userId: 1, status: 1 });
 
 subscriptionSchema.index({
   authorizationCode: 1,

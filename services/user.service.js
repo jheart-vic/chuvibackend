@@ -572,6 +572,13 @@ class UserService extends BaseService {
             // saved, so a mistyped code is fixed or cleared, never silently
             // dropped (user decision 2026-10-13).
             const ReferralService = require('./referral.service')
+            // F-75: a code that is present but not text (an array or object from
+            // a broken client) is refused, never silently treated as "no code".
+            if (referralCode != null && referralCode !== '' && typeof referralCode !== 'string') {
+                return BaseService.sendFailedResponse({
+                    error: "That referral code doesn't exist. Check it, or leave it empty and add it later in Refer & Earn.",
+                })
+            }
             const code = typeof referralCode === 'string' ? referralCode.trim().toUpperCase() : ''
             if (code) {
                 const referrer = await UserModel.findOne({ referralCode: code }).select('_id').lean()

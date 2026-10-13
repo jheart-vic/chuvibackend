@@ -141,6 +141,15 @@ const normalizeSchedule = (schedule, label, allowedTypes = SCHEDULE_TYPES) => {
         if (!slots.includes(preferSlot)) {
             return { error: `Invalid preferSlot for ${step.messageType}: ${preferSlot}` }
         }
+        // F-55 (user decision 2026-10-12): post-delivery messages are ORDER
+        // messages, which the client exempted from the send windows ("order and
+        // payment messages still go immediately") — refuse rather than save a
+        // window that would be ignored.
+        if (label === 'postDeliverySchedule' && preferSlot !== CRM_SEND_SLOT.ANY) {
+            return {
+                error: `Post-delivery messages go out straight away, not in a send window, so ${step.messageType} can't be set to "${preferSlot}". Use "any".`,
+            }
+        }
         // An offer-end step is placed only by its window (startRegisteredNotBooked-
         // Workflow: morning → the morning it ends, anything else → the evening
         // before); a delay would be silently ignored, so it is refused (F-52).
@@ -423,6 +432,9 @@ class CrmService {
                 messageType: s.messageType,
                 dueAt: new Date(now + (s.delayMinutes || 0) * 60 * 1000),
                 cancelIfOrdered: s.cancelIfOrdered !== false,
+                // F-55 (user decision 2026-10-12): the step's chosen window is
+                // honoured — "morning" means the next morning send window.
+                preferSlot: s.preferSlot || CRM_SEND_SLOT.ANY,
             }))
         await this.scheduleMessages(profile._id, CRM_WORKFLOW.LEAD, entries)
         await this.refreshNextFollowUp(profile._id)
@@ -578,6 +590,8 @@ class CrmService {
                 messageType: s.messageType,
                 dueAt: new Date(now + (s.delayMinutes || 0) * 60 * 1000),
                 cancelIfOrdered: s.cancelIfOrdered !== false,
+                // F-55: the step's chosen send window is honoured.
+                preferSlot: s.preferSlot || CRM_SEND_SLOT.ANY,
             }))
         await this.scheduleMessages(
             profile._id,

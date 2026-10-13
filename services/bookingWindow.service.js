@@ -397,8 +397,13 @@ class BookingWindowService {
                     morningWindow: this._findMorningWindow(windows),
                 })
                 // Launch item 4 (review F-85): a same-day pickup is today; when
-                // today's windows are all full it is charged the window price.
-                if (anytimeByDate[0]?.urgentAtWindowPrice) {
+                // today's PICKUP windows are all full it is charged the window
+                // price. Tested on the pickup rule directly, not on this leg's
+                // rows, so a `leg=delivery` request says the same thing.
+                const todayPickupFull =
+                    W.allWindowsFull({ windows, day: from, now, workingDays: settings.workingDays, bookedCounts }) &&
+                    W.anytimeOnDate({ date: from, now, settings }).open
+                if (todayPickupFull) {
                     payload.sameDay.disclosure =
                         'Every pickup window that day is full, so your same-day pickup is an Urgent trip at the window price, with your offer kept. Delivery returns in the evening window at the window rate.'
                 }

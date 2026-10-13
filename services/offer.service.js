@@ -489,7 +489,10 @@ class OfferService {
         // window is full is priced as the booking prices it — the WINDOW fee,
         // and a window pickup for offers ("keep your offer") — so the quote can't
         // show the pickup charged or say "choose a time window" on a full day.
-        if (draft.pickupTiming === BOOKING_TIMING.ANYTIME && draft.isPickUp !== false) {
+        // Booking time only (F-89): an Intake re-price (`repriceOrderId`) already
+        // carries the order's own stamped pickup via `offerPickupTiming`, and
+        // must not re-test today's windows for an order booked days ago.
+        if (!repriceOrderId && draft.pickupTiming === BOOKING_TIMING.ANYTIME && draft.isPickUp !== false) {
             const BookingWindowService = require('./bookingWindow.service')
             const full = await BookingWindowService.pickupWindowsFullOn(draft.pickupDate)
             if (full.full) {
