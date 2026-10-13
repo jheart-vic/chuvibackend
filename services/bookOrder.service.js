@@ -101,6 +101,12 @@ const {
     referralOnOrderDelivered,
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
+const { notifyRoles } = require('../util/notifyRoles')
+
+// Launch item 4 (client Q2): an Urgent pickup booked because every window that
+// day was full is a WINDOW pickup for offers — "keep your offer" — so a free
+// pickup still waives it. Any other Urgent pickup keeps its fee (item 1).
+const offerPickupTiming = (leg) => (leg?.windowsFull ? BOOKING_TIMING.WINDOW : leg?.timing)
 
 // The order fields a customer may set from the booking request. The order used
 // to be built as `{ amount: totalPrice, ..., ...post }`, so ANY schema field in
@@ -833,7 +839,7 @@ class BookOrderService extends BaseService {
             pickupAmount: pickupFee,
             // The RESOLVED timings, not the request's: a same-day pickup is
             // forced to Anytime and must not get a window-only free trip.
-            pickupTiming: scheduling?.pickup?.timing,
+            pickupTiming: offerPickupTiming(scheduling?.pickup),
             deliveryTiming: scheduling?.delivery?.timing,
         }, { repriceOrderId })
 
@@ -949,7 +955,7 @@ class BookOrderService extends BaseService {
                     amount: priced.total,
                     pickupAmount: pickupFee,
                     deliveryAmount: deliveryFee,
-                    pickupTiming: order.scheduling?.pickup?.timing,
+                    pickupTiming: offerPickupTiming(order.scheduling?.pickup),
                     deliveryTiming: order.scheduling?.delivery?.timing,
                 },
                 { repriceOrderId: order._id },
@@ -1747,6 +1753,13 @@ class BookOrderService extends BaseService {
                         morningWindow:
                             BookingWindowService._findMorningWindow(schedWindows),
                     }).disclosure
+                    // Launch item 4 (review F-85): on a day with every window
+                    // full the pickup is charged the window price, so the stored
+                    // disclosure must not say "the Anytime rate".
+                    if (scheduling.pickup?.windowsFull) {
+                        scheduling.disclosure =
+                            'Every pickup window that day is full, so your same-day pickup is an Urgent trip at the window price, with your offer kept. Delivery returns in the evening window at the window rate.'
+                    }
                     if (post.disclosureAccepted) {
                         scheduling.disclosureAcceptedAt = new Date()
                     }
@@ -2347,13 +2360,28 @@ class BookOrderService extends BaseService {
                 // drift apart on it — and after the `if (!newOrder)` guard
             // above, so it can never run against a failed creation.
             if (scheduling) {
+                // Launch item 4 (D2a): an Urgent pickup goes to the TOP of
+                // Intake's pickup list and alerts Intake at once.
+                const urgentPickup = scheduling.pickup?.timing === BOOKING_TIMING.ANYTIME
                 await BookOrderModel.updateOne(
                     { _id: newOrder._id },
-                    { $set: { scheduling } },
+                    { $set: { scheduling, ...(urgentPickup && { urgentPickup: true }) } },
                 )
                 // Also on the in-memory document, or the response would omit
                 // the times the customer just chose.
                 newOrder.scheduling = scheduling
+                if (urgentPickup) {
+                    newOrder.urgentPickup = true
+                    const addr = newOrder.pickupAddress?.address || post.pickupAddress?.address || ''
+                    // Fire-and-forget: an alert must never fail the booking.
+                    notifyRoles({
+                        roles: [ROLE.INTAKE_AND_TAG, ROLE.ADMIN],
+                        title: 'Urgent pickup booked',
+                        body: `${oscNumber}${addr ? ` — ${addr}` : ''}. Assign a rider now: it is at the top of the pickup list.`,
+                        subBody: `Order ID: ${oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_CREATED,
+                    }).catch((err) => console.error('urgent pickup alert failed:', err?.message))
+                }
             }
 
             crmOnOrderCreated(newOrder)

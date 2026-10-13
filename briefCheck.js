@@ -1229,7 +1229,7 @@ const run = (async () => {
         rFull.ok && rFull.leg.forcedMove === true && rFull.leg.windowId === 'w2')
     ok('  …at the WINDOW price, and recording what they were moved from',
         rFull.leg.fee === 500 && /Evening on 2026-10-09/.test(rFull.leg.forcedMoveFrom || ''))
-    ok('  …and with nothing free anywhere it refuses and points at Anytime',
+    ok('  …and with nothing free anywhere it refuses and points at Urgent (Anytime)',
         (() => {
             const counts = {}
             // Zero-padded: `dateKey` pads, so '2026-10-9' would never match
@@ -1241,8 +1241,59 @@ const run = (async () => {
                 leg: 'pickup', timing: 'window', windowId: 'w1', date: fri(0),
                 windows: [EVENING], settings: RSET, bookedCounts: counts, now: fri(10),
             })
-            return !r.ok && /Anytime/.test(r.error)
+            return !r.ok && /Please choose Urgent/.test(r.error)
         })())
+
+    // Launch item 4 (client Q2): every window full → Urgent at the WINDOW price,
+    // offer kept, no refund owed; a window still open → the Anytime price.
+    {
+        const fullFri = { '2026-10-09::w1': 10 }
+        const urgentFull = BWS.resolveLeg({
+            leg: 'pickup', timing: 'anytime', date: fri(0),
+            windows: [EVENING], settings: RSET, bookedCounts: fullFri, now: fri(10),
+        })
+        ok('item 4: Urgent on a day with every window full is charged the WINDOW price, no refund owed',
+            urgentFull.ok && urgentFull.leg.windowsFull === true && urgentFull.leg.fee === 500 &&
+                urgentFull.leg.windowWasBookableAtBooking === false)
+        const urgentOpen = BWS.resolveLeg({
+            leg: 'pickup', timing: 'anytime', date: fri(0),
+            windows: [EVENING], settings: RSET, bookedCounts: {}, now: fri(10),
+        })
+        ok('item 4: with a window still open, Urgent keeps the Anytime price',
+            urgentOpen.ok && !urgentOpen.leg.windowsFull && urgentOpen.leg.fee !== 500)
+        const urgentLate = BWS.resolveLeg({
+            leg: 'pickup', timing: 'anytime', date: fri(0),
+            windows: [EVENING], settings: RSET, bookedCounts: fullFri, now: fri(17, 30),
+        })
+        ok('item 4: outside Urgent hours a full day gets no window-price Urgent',
+            urgentLate.ok && !urgentLate.leg.windowsFull)
+        const W4 = require(path.join(ROOT, 'util/bookingWindow'))
+        ok('item 4: "Urgent opens at" reads today / tomorrow / a weekday',
+            W4.opensAtText(new Date(2026, 9, 9, 8), fri(6)) === '8:00 AM today' &&
+                W4.opensAtText(new Date(2026, 9, 10, 8), fri(18)) === '8:00 AM tomorrow' &&
+                W4.opensAtText(new Date(2026, 9, 13, 8), fri(18)) === '8:00 AM Tuesday')
+        const closedMon = W4.anytimeOnDate({ date: new Date(2026, 9, 12), now: fri(18), settings: RSET })
+        ok('item 4: a closed date says when Urgent next opens',
+            closedMon.open === false && closedMon.opensAtText === '8:00 AM Tuesday')
+        const boSrc4 = fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')
+        ok('item 4: offers treat a full-windows Urgent pickup as a window pickup (offer kept), on booking and re-price',
+            /const offerPickupTiming = \(leg\) => \(leg\?\.windowsFull \? BOOKING_TIMING\.WINDOW : leg\?\.timing\)/.test(boSrc4) &&
+                (boSrc4.match(/pickupTiming: offerPickupTiming\(/g) || []).length === 2)
+        ok('item 4: an Urgent pickup is stamped urgentPickup and alerts Intake',
+            /urgentPickup: true/.test(boSrc4) && /title: 'Urgent pickup booked'/.test(boSrc4))
+        const intakeSrc4 = fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8')
+        const offerSrc4 = fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')
+        const bwSrc4 = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
+        ok('item 4 (F-85): the booking-options quote prices a full-windows Urgent pickup as a window pickup',
+            /await BookingWindowService\.pickupWindowsFullOn\(draft\.pickupDate\)/.test(offerSrc4) &&
+                /pickupTiming: BOOKING_TIMING\.WINDOW, pickupAmount: full\.windowFee/.test(offerSrc4))
+        ok('item 4 (F-86): only the pickup leg can offer Urgent at the window price',
+            /leg === DISPATCH_LEG\.PICKUP &&\s*W\.allWindowsFull/.test(bwSrc4))
+        ok('item 4 (F-87): a full-windows Urgent pickup records the true no-refund reason',
+            /legData\.windowsFull\s*\? 'Every window was full, so Urgent was already charged the window price\.'/.test(bwSrc4))
+        ok('item 4: Intake\'s pickup list puts Urgent first',
+            /sort: leg === 'pickup' \? \{ urgentPickup: -1, createdAt: 1 \}/.test(intakeSrc4))
+    }
 
     // THE UNRECOVERABLE FLAG, stamped at booking. These two cases ARE the
     // client's refund examples, one step earlier than the pure-module test:
@@ -1301,7 +1352,7 @@ const run = (async () => {
         /adminOrderSetting\.pickupFee = resolved\.leg\.fee/.test(boSrc) &&
             /adminOrderSetting\.deliveryFee = scheduling\.delivery\.fee/.test(boSrc))
     ok('`scheduling` is stamped once in the common tail, after the !newOrder guard',
-        boSrc.indexOf('if (!newOrder) {') < boSrc.indexOf('{ $set: { scheduling } }'))
+        boSrc.indexOf('if (!newOrder) {') < boSrc.indexOf('{ $set: { scheduling, ...(urgentPickup && { urgentPickup: true }) } }'))
     const bwSvcSrc = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
     // Matches the field being USED in a query (`isCancelled:`), not the comment
     // that explains why it must not be — otherwise the explanation fails the test.

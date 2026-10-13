@@ -250,6 +250,10 @@ const bookOrderSchema = new mongoose.Schema(
                 pieces: { type: Number, min: 0 },
             },
         ],
+        // Launch item 4 (D2a): the pickup is Urgent (stored `anytime`), so it
+        // goes to the TOP of Intake's pickup list. Its own field so the list can
+        // sort on it ({ urgentPickup: -1, createdAt: 1 }).
+        urgentPickup: { type: Boolean },
         isVerified: { type: Boolean, default: false },
         pickupTime: {
             type: String,
@@ -304,6 +308,10 @@ const bookOrderSchema = new mongoose.Schema(
                     // They pay the WINDOW price and KEEP their offer.
                     forcedMove: { type: Boolean },
                     forcedMoveFrom: { type: String },
+                    // Launch item 4 (client Q2): every window that day was full,
+                    // so Urgent was booked at the WINDOW price and offers treat
+                    // it as a window pickup ("keep your offer"). No refund is owed.
+                    windowsFull: { type: Boolean },
 
                     // When the leg was actually dispatched — the other half of
                     // the refund test.

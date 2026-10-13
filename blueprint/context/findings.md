@@ -44,6 +44,7 @@ drive `reportDeliveryIssue` and `getBookOrder` with stubbed models. Nothing curr
 **Why it matters:** The lookup filters on a `user` field that is not in the subscription schema, so with Mongoose 8 (`strictQuery` false) it never matches and every first charge creates a new document. A customer who re-subscribes after a failed renewal can end up with two, and `subscription.create` may attach the new Paystack code to the old one, after which a renewal is reported as unapplied (F-46 now catches that).
 **Suggested fix:** Look up by `userId`, and decide the re-subscribe rules with the subscription rollover work (launch item 9), which rebuilds this area.
 **Resolution:**
+
 ### F-19 [P2] open - The staff counter booking still spreads the request body over the order (pre-existing)
 
 **File:** services/intake-user.service.js:339
@@ -111,6 +112,14 @@ update. Nothing current is lost.
 **Found:** 2026-10-13 by /audit independent round 11 (scope: current; lens: quality)
 **Why it matters:** Stubbed bookingFlow, Tue 13 Oct, "saturday 14" (the 14th is a Wednesday): the safe re-ask reads `I couldn't pin down the day from "saturday saturday 14"`. The stored `bDatePhrase` is also "saturday saturday 24" for a good answer, but that is no longer shown in the summary. Cosmetic, new in this round.
 **Suggested fix:** Capture only the number in the bare alternative's returned `text` (for example `text: m[2] ?? m[0]`), or skip the weekday prefix when `w.text` already starts with it. Nothing current is lost.
+**Resolution:**
+
+### F-89 [P3] open - The Quick Booking re-pick applies the windows-full quote rule to an ordinary Urgent order using TODAY's windows, so it can rank a free-pickup offer the charge then ignores
+
+**File:** services/offer.service.js:492-499, reached from services/bookOrder.service.js:951-962 (`pickBestPersonalOffer` → `getBookingOptions` with `repriceOrderId`)
+**Found:** 2026-10-13 by /audit independent round 2 (scope: current; lens: quality)
+**Why it matters:** The new block in `getBookingOptions` runs on every call, including the Intake re-price of a Quick Booking. For an order whose pickup is a plain Urgent pickup (booked while a window was open, so `windowsFull` is not stamped and `offerPickupTiming` passes `anytime`), the draft carries no `pickupDate`, so `pickupWindowsFullOn(undefined)` tests the windows of the day and time Intake counts. If every still-bookable window is full at that moment, the draft is switched to WINDOW with `pickupAmount` = window fee, so `_bestByBillValue` values a free-pickup personal offer at the window fee. `_priceWithOffers` then prices the real order with its stored `anytime` timing (bookOrder.service.js:842), where free pickup is `anytimeKeptPickup` and waives nothing. A free-pickup offer can therefore beat a discount offer that would have taken money off, and the customer is billed more. Needs all of: a Quick Booking, a plain Urgent pickup, a count made while that day's remaining windows are full, and two applicable personal offers (and not a first order, where First Experience wins). Narrow, so P3. Code path traced; not run.
+**Suggested fix:** Skip the block when `repriceOrderId` is set (the order's stamped leg already decides via `offerPickupTiming`), or pass the order's own `scheduling.pickup.date` and only apply it at booking time. Nothing current is lost.
 **Resolution:**
 
 ### F-55 [P3] open - `preferSlot` now saves on the lead, post-delivery and reactivation schedules, but those workflows ignore it

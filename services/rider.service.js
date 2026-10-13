@@ -391,7 +391,9 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
+                // Launch item 4 (D2a): Urgent pickups first, then oldest.
+                sort: { urgentPickup: -1, createdAt: 1 },
+                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails urgentPickup createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
             const rows = data.map((order) => {
@@ -399,6 +401,7 @@ class RiderService extends BaseService {
                 addDeliveryPromise(order)
                 return {
                     ...order,
+                    urgent: order.urgentPickup === true,
                     itemCount: (order.items || []).length,
                     // Lifted out of the address object so a list row can show the
                     // "how do I find the door" line without digging.

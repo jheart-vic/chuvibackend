@@ -760,6 +760,44 @@ const speedOptions = ({ pickupAt, pieces, settings, usage = {}, labels = {} }) =
 }
 
 /**
+ * The next Anytime (Urgent) opening at or after the start of `date` that is
+ * still ahead of `now` — the opening hour on the first working day (launch
+ * item 4: "Urgent opens at 8:00 AM tomorrow").
+ */
+const nextAnytimeOpening = ({ date, now, settings }) => {
+    const from = parseHhMm(settings?.anytimeOpenFrom) ?? parseHhMm(DEFAULT_ANYTIME_OPEN_FROM)
+    const start = startOfDay(date) < startOfDay(now) ? startOfDay(now) : startOfDay(date)
+    for (let i = 0; i < 15; i += 1) {
+        const day = addDays(start, i)
+        if (!isWorkingDay(day, settings?.workingDays)) continue
+        const at = atMinutes(day, from)
+        if (at > now) return at
+    }
+    return null
+}
+
+/** "8:00 AM today" / "8:00 AM tomorrow" / "8:00 AM Tuesday" / "8:00 AM Tuesday 27 October". */
+const opensAtText = (at, now) => {
+    if (!at) return null
+    const h = at.getHours()
+    const time = `${h % 12 || 12}:${String(at.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+    if (isSameDay(at, now)) return `${time} today`
+    if (isSameDay(at, addDays(now, 1))) return `${time} tomorrow`
+    if (startOfDay(at) < addDays(startOfDay(now), 7)) return `${time} ${WEEKDAYS[at.getDay()]}`
+    return `${time} ${dayText(at)}`
+}
+
+/**
+ * Every window still bookable on `day` is full (launch item 4, client Q2).
+ * A day with NO bookable window (closed, or every cut-off passed) is not
+ * "full" — there is nothing to be full.
+ */
+const allWindowsFull = ({ windows, day, now, workingDays, bookedCounts = {} }) => {
+    const open = (windows || []).filter((w) => isWindowBookable({ window: w, date: day, now, workingDays }))
+    return open.length > 0 && open.every((w) => isWindowFull(w, bookedCounts[`${dateKey(day)}::${String(w._id)}`] || 0))
+}
+
+/**
  * Anytime on ONE date (client item 2, 11 Oct: "On a closed day, Anytime should
  * say 'Closed that day', the same as the window"). The old single `anytime`
  * answer was for "now" only, so every date repeated "first thing Sunday".
@@ -770,15 +808,18 @@ const anytimeOnDate = ({ date, now, settings }) => {
     const fromText = settings?.anytimeOpenFrom || DEFAULT_ANYTIME_OPEN_FROM
     const from = parseHhMm(settings?.anytimeOpenFrom) ?? parseHhMm(DEFAULT_ANYTIME_OPEN_FROM)
     const to = parseHhMm(settings?.anytimeOpenTo) ?? parseHhMm(DEFAULT_ANYTIME_OPEN_TO)
-    if (!isWorkingDay(day, settings?.workingDays)) {
-        return { date: key, open: false, servesFrom: null, note: 'Closed that day' }
+    // Launch item 4: a closed date says when Urgent next opens.
+    const closed = (note) => {
+        const opensAt = nextAnytimeOpening({ date: day, now, settings })
+        return { date: key, open: false, servesFrom: null, note, opensAt, opensAtText: opensAtText(opensAt, now) }
     }
+    if (!isWorkingDay(day, settings?.workingDays)) return closed('Closed that day')
     if (day < startOfDay(now)) {
-        return { date: key, open: false, servesFrom: null, note: 'That day has passed' }
+        return { date: key, open: false, servesFrom: null, note: 'That day has passed', opensAt: null, opensAtText: null }
     }
     if (isSameDay(day, now)) {
         const at = minutesOfDay(now)
-        if (at > to) return { date: key, open: false, servesFrom: null, note: 'Anytime has closed for today' }
+        if (at > to) return closed('Anytime has closed for today')
         if (at < from) return { date: key, open: true, servesFrom: atMinutes(day, from), note: `We will come from ${fromText}.` }
         return { date: key, open: true, servesFrom: new Date(now), note: 'We will dispatch as soon as we can.' }
     }
@@ -1041,6 +1082,9 @@ module.exports = {
     isWindowFull,
     isAnytimeOpen,
     anytimeServiceStart,
+    nextAnytimeOpening,
+    opensAtText,
+    allWindowsFull,
     qualifiesForAnytimeRefund,
     legFee,
     anytimeRefundAmount,

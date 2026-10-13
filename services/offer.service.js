@@ -485,6 +485,19 @@ class OfferService {
             draft = { ...draft, pickupTiming: resolved }
         }
 
+        // Launch item 4 (client Q2), review F-85: Urgent on a day when every
+        // window is full is priced as the booking prices it — the WINDOW fee,
+        // and a window pickup for offers ("keep your offer") — so the quote can't
+        // show the pickup charged or say "choose a time window" on a full day.
+        if (draft.pickupTiming === BOOKING_TIMING.ANYTIME && draft.isPickUp !== false) {
+            const BookingWindowService = require('./bookingWindow.service')
+            const full = await BookingWindowService.pickupWindowsFullOn(draft.pickupDate)
+            if (full.full) {
+                draft = { ...draft, pickupTiming: BOOKING_TIMING.WINDOW, pickupAmount: full.windowFee }
+                pickupForcedAnytime = false
+            }
+        }
+
         // The authoritative priced quote for the current selection (if any).
         const selected = await this.validateAndPrice(userId, draft, { repriceOrderId })
 

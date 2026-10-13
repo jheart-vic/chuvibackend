@@ -1005,6 +1005,8 @@
  *             opensTo: { type: string, example: "17:00" }
  *             servesFrom: { type: string, format: date-time }
  *             note: { type: string, example: We will dispatch as soon as we can. }
+ *             opensAt: { type: string, format: date-time, nullable: true, description: "Launch item 4: when Urgent next opens; null while open" }
+ *             opensAtText: { type: string, nullable: true, example: "8:00 AM tomorrow", description: 'Ready to show: "Urgent opens at 8:00 AM tomorrow"' }
  *         anytimeByDate:
  *           type: array
  *           description: >
@@ -1018,7 +1020,20 @@
  *               open: { type: boolean, example: false }
  *               servesFrom: { type: string, format: date-time, nullable: true }
  *               note: { type: string, example: Closed that day }
- *               fee: { type: integer, example: 1000 }
+ *               fee: { type: integer, example: 1000, description: "The Urgent price that date — the WINDOW price when urgentAtWindowPrice is true" }
+ *               opensAt: { type: string, format: date-time, nullable: true, description: "Launch item 4: on a closed date, when Urgent next opens" }
+ *               opensAtText: { type: string, nullable: true, example: "8:00 AM Tuesday" }
+ *               windowsFull: { type: boolean, example: true, description: "Launch item 4: every window still bookable that date is full" }
+ *               urgentAtWindowPrice: { type: boolean, example: true, description: "Every window is full and Urgent runs that date: Urgent is charged the window price and the offer is kept (the booking applies the same rule)" }
+ *               message: { type: string, nullable: true, example: "Today's windows are full. Book Urgent at the window price, ₦500, and keep your offer. Or pick another day." }
+ *               nextOpenWindow:
+ *                 type: object
+ *                 nullable: true
+ *                 description: When windowsFull, the next window with room ("or pick another day")
+ *                 properties:
+ *                   date: { type: string, example: "2026-10-15" }
+ *                   windowId: { type: string, example: "6650f1c2a9b8e2d4f0a1b2c3" }
+ *                   windowName: { type: string, example: Evening }
  *         sameDay:
  *           type: object
  *           nullable: true

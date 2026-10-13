@@ -288,7 +288,9 @@ class BookingWindowService {
             ])
 
             const from = W.startOfDay(now)
-            const to = W.addDays(from, Math.max(1, horizonDays) + 1)
+            // +8 days past the horizon so the "next open window" for a full
+            // last day is read against real counts (launch item 4).
+            const to = W.addDays(from, Math.max(1, horizonDays) + 9)
             const bookedCounts = await this.getBookedCounts({ from, to })
 
             const { slots, deflections } = W.buildOfferedSlots({
@@ -334,15 +336,46 @@ class BookingWindowService {
                     ? 'We will dispatch as soon as we can.'
                     : 'Outside our Anytime hours — we will come first thing on the next working day.',
             }
+            // Launch item 4: "Urgent opens at 8:00 AM tomorrow".
+            anytime.opensAt = anytimeOpen ? null : anytime.servesFrom
+            anytime.opensAtText = W.opensAtText(anytime.opensAt, now)
 
             // Launch item 3 (client item 2): Anytime PER DATE, so a closed day
             // reads "Closed that day" like its windows instead of repeating
             // the "now" answer on every date. `anytime` stays for older builds.
+            //
+            // Launch item 4 (client Q2): when every window that date is full,
+            // Urgent is offered at the WINDOW price with the offer kept, plus the
+            // next open window. Only while Urgent runs that date; otherwise just
+            // the next open window. The booking applies the same rule (resolveLeg).
             const anytimeFee = W.legFee({ timing: BOOKING_TIMING.ANYTIME, leg, settings })
-            const anytimeByDate = Array.from({ length: horizonDays + 1 }, (_, i) => ({
-                ...W.anytimeOnDate({ date: W.addDays(from, i), now, settings }),
-                fee: anytimeFee,
-            }))
+            const windowFee = W.legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings })
+            const anytimeByDate = Array.from({ length: horizonDays + 1 }, (_, i) => {
+                const day = W.addDays(from, i)
+                const row = { opensAt: null, opensAtText: null, ...W.anytimeOnDate({ date: day, now, settings }), fee: anytimeFee }
+                // Pickup only (review F-86): the delivery leg has no date or
+                // window at booking, so it always pays the Urgent delivery price.
+                row.windowsFull =
+                    leg === DISPATCH_LEG.PICKUP &&
+                    W.allWindowsFull({ windows, day, now, workingDays: settings.workingDays, bookedCounts })
+                row.urgentAtWindowPrice = row.windowsFull && row.open
+                row.nextOpenWindow = null
+                row.message = null
+                if (row.windowsFull) {
+                    const next = this._nextAvailableWindow({ windows, from: day, now, settings, bookedCounts })
+                    row.nextOpenWindow = next
+                        ? { date: W.dateKey(next.date), windowId: next.window._id, windowName: next.window.name }
+                        : null
+                }
+                if (row.urgentAtWindowPrice) {
+                    row.fee = windowFee
+                    const dayName = W.isSameDay(day, now)
+                        ? 'Today'
+                        : W.isSameDay(day, W.addDays(now, 1)) ? 'Tomorrow' : W.dayText(day).split(' ')[0]
+                    row.message = `${dayName}'s windows are full. Book Urgent at the window price, ₦${Number(windowFee).toLocaleString('en-NG')}, and keep your offer. Or pick another day.`
+                }
+                return row
+            })
 
             const payload = {
                 leg,
@@ -363,6 +396,12 @@ class BookingWindowService {
                     // price with no code change on the day it is added.
                     morningWindow: this._findMorningWindow(windows),
                 })
+                // Launch item 4 (review F-85): a same-day pickup is today; when
+                // today's windows are all full it is charged the window price.
+                if (anytimeByDate[0]?.urgentAtWindowPrice) {
+                    payload.sameDay.disclosure =
+                        'Every pickup window that day is full, so your same-day pickup is an Urgent trip at the window price, with your offer kept. Delivery returns in the evening window at the window rate.'
+                }
             }
 
             return BaseService.sendSuccessResponse({ message: payload })
@@ -415,6 +454,21 @@ class BookingWindowService {
         )
     }
 
+    /**
+     * Launch item 4 (client Q2): is every window full on this pickup date while
+     * Urgent runs that day? The same test `resolveLeg` and availability apply,
+     * for callers that only have a date (the booking-options quote, review F-85).
+     */
+    static async pickupWindowsFullOn(date, now = new Date()) {
+        const [settings, windows] = await Promise.all([this.getSchedulingSettings(), this.getActiveWindows()])
+        const day = W.startOfDay(date ? new Date(date) : now)
+        const bookedCounts = await this.getBookedCounts({ from: day, to: W.addDays(day, 1) })
+        const full =
+            W.allWindowsFull({ windows, day, now, workingDays: settings.workingDays, bookedCounts }) &&
+            W.anytimeOnDate({ date: day, now, settings }).open
+        return { full, windowFee: W.legFee({ timing: BOOKING_TIMING.WINDOW, leg: DISPATCH_LEG.PICKUP, settings }) }
+    }
+
     // ────────────────────── resolving a leg at booking time ──────────────────────
 
     /**
@@ -455,6 +509,25 @@ class BookingWindowService {
                     workingDays: settings.workingDays,
                 }),
             )
+            // Launch item 4 (client Q2): every window that day is full and
+            // Urgent runs that day → the WINDOW price, offer kept, and no
+            // refund is owed (the window price is already what they pay).
+            const windowsFull =
+                W.allWindowsFull({ windows, day, now, workingDays: settings.workingDays, bookedCounts }) &&
+                W.anytimeOnDate({ date: day, now, settings }).open
+            if (windowsFull) {
+                return {
+                    ok: true,
+                    leg: {
+                        timing: BOOKING_TIMING.ANYTIME,
+                        date: day,
+                        fee: W.legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings }),
+                        windowsFull: true,
+                        windowWasBookableAtBooking: false,
+                        refundAgainstWindowId: null,
+                    },
+                }
+            }
             return {
                 ok: true,
                 leg: {
@@ -522,7 +595,9 @@ class BookingWindowService {
             if (!alternative) {
                 return {
                     ok: false,
-                    error: `${window.name} is full and we have no other window free. Please choose Anytime.`,
+                    // Launch item 4: when Urgent runs that day, booking it then
+                    // charges the window price with the offer kept (resolveLeg).
+                    error: `${window.name} is full and we have no other window free. Please choose Urgent.`,
                     requiresChoice: true,
                 }
             }
@@ -1037,9 +1112,11 @@ class BookingWindowService {
                         $set: {
                             [`scheduling.${leg}.refund.qualified`]: false,
                             [`scheduling.${leg}.refund.reason`]:
-                                legData.windowWasBookableAtBooking !== true
-                                    ? 'Booked after the window had closed, so there was no cheaper option that day.'
-                                    : 'The job was not done inside a window.',
+                                legData.windowsFull
+                                    ? 'Every window was full, so Urgent was already charged the window price.'
+                                    : legData.windowWasBookableAtBooking !== true
+                                        ? 'Booked after the window had closed, so there was no cheaper option that day.'
+                                        : 'The job was not done inside a window.',
                         },
                     },
                 )

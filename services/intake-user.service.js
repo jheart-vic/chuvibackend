@@ -1418,8 +1418,9 @@ class IntakeUserService extends BaseService {
         const { data, pagination } = await paginate(BookOrderModel, query, {
             page,
             limit,
-            sort: { createdAt: 1 },
-            select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items channel stage stationStatus paymentStatus billingType isPickUp isDelivery pickupAddress deliveryAddress dispatchDetails dispatchTag qcDetails createdAt updatedAt',
+            // Launch item 4 (D2a): Urgent pickups at the TOP, then oldest first.
+            sort: leg === 'pickup' ? { urgentPickup: -1, createdAt: 1 } : { createdAt: 1 },
+            select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items channel stage stationStatus paymentStatus billingType isPickUp isDelivery pickupAddress deliveryAddress dispatchDetails dispatchTag qcDetails urgentPickup createdAt updatedAt',
             populate: {
                 path: `dispatchDetails.${leg}.rider`,
                 select: 'fullName phoneNumber',
@@ -1449,6 +1450,8 @@ class IntakeUserService extends BaseService {
                 itemCount: (o.items || []).length,
                 needsRider: !o.dispatchDetails?.[leg]?.rider,
                 rider: o.dispatchDetails?.[leg]?.rider || null,
+                // Launch item 4: show the Urgent badge (these rows sort first).
+                urgent: leg === 'pickup' && o.urgentPickup === true,
                 // The leg's own status, and whether this run FAILED — a failed
                 // pickup is otherwise indistinguishable from a healthy assigned
                 // one on this screen (3.2). `legNote` carries the rider's reason.
