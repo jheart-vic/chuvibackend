@@ -63,6 +63,11 @@ const {
 } = require('../util/quickBooking')
 // Booking items are priced from the catalog, never the request (hotfix).
 const { priceFromCatalog, catalogKey } = require('../util/catalogItems')
+// What a part-paid order has paid so far (F-30). Restored: the merge of
+// launch item 2 with the booking hotfix (35c17a8) dropped this line, so the
+// order view, order history, cancellation and the item edit all threw
+// "amountPaidSoFar is not defined" on main.
+const { amountPaidSoFar } = require('../util/paymentGate')
 // Client item #7: re-pricing after an item edit reuses the payment hold rather
 // than growing a second dunning flow, and the ONE wallet-refund implementation.
 const PaymentHoldService = require('./paymentHold.service')
@@ -1949,7 +1954,6 @@ class BookOrderService extends BaseService {
                     0,
                     (subscription.remainingPickupDeliveries || 0) - logistics.freeUsed,
                 )
-                subscription.remainingItems = planItemsLeft - planPieces
                 await subscription.save()
 
                 if (feeDue && method === 'wallet') {
@@ -1962,7 +1966,6 @@ class BookOrderService extends BaseService {
                     if (!charge.success) {
                         // roll back allowance + order — the fee was not collected
                         subscription.remainingPickupDeliveries += logistics.freeUsed
-                        subscription.remainingItems += planPieces
                         await subscription.save()
                         await returnPlanItems()
                         await BookOrderModel.deleteOne({ _id: newOrder._id })

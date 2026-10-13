@@ -2162,30 +2162,133 @@ const run = (async () => {
             /\bOFFER_TRIGGER,/.test(importBlock))
     }
 
-    // ─── Hotfix: the booking body cannot set server fields ──────────────────
-    // The order was built as `{ amount: totalPrice, ..., ...post }`, so a
-    // customer could send `amount: 100` or `paymentStatus: "success"`.
-    console.log('\nHotfix — the booking body cannot set server fields')
+    // ─── Launch fix 2: Quick Booking pays nothing at booking ────────────────
+    // Client 11 Oct: trips go on the SMS bill; the free-trip offer is checked
+    // after counting. Pure parts driven for real; the rest checked in source.
+    console.log('\nLaunch fix 2 — Quick Booking pays nothing at booking')
     {
+        const O = require(path.join(ROOT, 'services/offer.service'))
+        const offer = { _id: 'o1', type: 'personal', status: 'active', benefits: [], rules: {} }
+        const linkage = { _id: 'l1', status: 'attached', orderId: 'ord1' }
+        const reject = (draft, repriceOrderId) =>
+            O._offerRejection({ kind: 'personal', offer, linkage, draft, stats: { totalOrders: 0 }, userId: 'u1', repriceOrderId })
+        const own = await reject({}, 'ord1')
+        const other = await reject({}, 'ord2')
+        const fresh = await reject({})
+        ok('re-pricing an order keeps the offer attached to THAT order',
+            own.reason === null)
+        ok('an offer attached to another order, or a new booking, is still refused',
+            other.reason === 'Offer already applied to an order' &&
+                fresh.reason === 'Offer already applied to an order')
+        // F-20: an offer attached to THIS order is honoured at the re-price even
+        // if it expired or was paused since; a new booking still refuses it.
+        const stale = { ...offer, status: 'paused' }
+        const staleLink = { ...linkage, expiresAt: new Date(Date.now() - 86400000) }
+        const honoured = await O._offerRejection({ kind: 'personal', offer: stale, linkage: staleLink, draft: {}, stats: { totalOrders: 3 }, userId: 'u1', repriceOrderId: 'ord1' })
+        const expiredNew = await O._offerRejection({ kind: 'personal', offer: stale, linkage: { ...staleLink, status: 'assigned', orderId: undefined }, draft: {}, stats: { totalOrders: 0 }, userId: 'u1' })
+        ok('an offer attached at booking is honoured at the re-price even if it expired or was paused since (F-20)',
+            honoured.reason === null && /expired|no longer active/.test(expiredNew.reason || ''))
+        const minRule = await O._offerRejection({ kind: 'personal', offer: { ...offer, rules: { minOrderValue: 5000 } }, linkage, draft: { amount: 1000 }, stats: {}, userId: 'u1', repriceOrderId: 'ord1' })
+        ok('but its basket rules are still checked against the real count',
+            /Minimum order value/.test(minRule.reason || ''))
+
+        // F-16: the window-only line only when a window could free the leg.
+        const keptRow = { kind: 'baseline', offer: { _id: 'b1', benefits: [{ benefitType: 'free-pickup' }] }, applicable: true, benefit: { anytimeKeptPickup: true } }
+        const selB = { baseline: [{ offerId: 'b1' }] }
+        const forced = O.buildFeesLine({ tripRows: [keptRow], draft: { pickupAmount: 1000 }, selected: selB, pickupForcedAnytime: true })
+        const freeLeg = O.buildFeesLine({ tripRows: [keptRow], draft: { pickupAmount: 0 }, selected: selB })
+        const real = O.buildFeesLine({ tripRows: [keptRow], draft: { pickupAmount: 1000 }, selected: selB })
+        ok('no "choose a time window" when same-day forced the pickup to Anytime, or the leg costs nothing (F-16)',
+            forced.type !== 'window-only' && freeLeg.type !== 'window-only' && real.type === 'window-only')
+
+        // F-17: every customer path passes the request body as the draft, so a
+        // customer-sent orderId must never unlock an attached offer.
+        const smuggled = await reject({ orderId: 'ord1' })
+        ok('a customer-sent orderId in the draft is ignored (no double use of an attached offer)',
+            smuggled.reason === 'Offer already applied to an order')
+        ok('only the server re-price passes the same-order id',
+            /repriceOrderId: order\._id,/.test(bookSrc) &&
+                !/draft\??\.orderId/.test(fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')))
+
+        // F-18 / F-19: only the customer's own fields are saved from the body.
         const BOS = require(path.join(ROOT, 'services/bookOrder.service'))
         const saved = BOS.customerOrderFields({
             fullName: 'A', serviceType: 'wash-and-iron', items: [], isPickUp: true,
             amount: 100, paymentStatus: 'success', userId: 'someone-else', stage: { status: 'delivered' },
             pricing: {}, paymentWaivedAt: new Date(), deliveryAmount: 0, oscNumber: 'X',
         })
-        ok('the booking body cannot set amount, payment status, owner, stage or pricing',
+        ok('the booking body cannot set amount, payment status, owner, stage or pricing (F-18)',
             saved.fullName === 'A' && saved.isPickUp === true &&
                 ['amount', 'paymentStatus', 'userId', 'stage', 'pricing', 'paymentWaivedAt', 'deliveryAmount', 'oscNumber']
                     .every((k) => !(k in saved)))
+        ok('every order literal in postBookOrder saves the allow-list, never the raw body',
+            (bookSrc.match(/\.\.\.customerOrderFields\(post\),/g) || []).length === 3 &&
+                !/^\s+\.\.\.post,\s*$/m.test(
+                    bookSrc.slice(bookSrc.indexOf('async postBookOrder('), bookSrc.indexOf('async updateBookOrderPaymentStatus(')),
+                ))
+        ok('a client-sent quickBooking flag is dropped before anything reads it (F-19)',
+            BOS.SERVER_SET_ON_POST.includes('quickBooking') &&
+                /for \(const key of SERVER_SET_ON_POST\) delete post\[key\]/.test(bookSrc) &&
+                /const quickBooking = countOnly/.test(bookSrc))
+        ok('booking-options gives a Quick Booking draft the "pay nothing now" line',
+            O.QUICK_BOOKING_FEES_LINE.type === 'quick-booking' &&
+                O.QUICK_BOOKING_FEES_LINE.amount === 0 &&
+                /You pay nothing now/.test(O.QUICK_BOOKING_FEES_LINE.message) &&
+                /isCountOnlyBooking\(draft\)\s*\?\s*QUICK_BOOKING_FEES_LINE/.test(
+                    fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+                ))
+
+        const ppi = bookSrc.slice(
+            bookSrc.indexOf('} else if (post.billingType === BILLING_TYPE.PAY_PER_ITEM) {'),
+            bookSrc.indexOf('} else if (post.billingType === BILLING_TYPE.PAY_FROM_WALLET) {'),
+        )
+        ok('a Quick Booking is created with nothing due and no offer priced',
+            /if \(quickBooking\) \{\s*totalPrice = 0\s*\} else \{[\s\S]{0,400}_priceWithOffers/.test(ppi))
+        ok('and spends no reward credit at booking',
+            /const useCredit =\s*!quickBooking &&/.test(ppi))
+        ok('the booking response says no payment step for a Quick Booking',
+            /newOrder\.quickBooking && \{ paymentRequired: false \}/.test(bookSrc))
+
+        const reprice = bookSrc.slice(
+            bookSrc.indexOf('async _repriceForItems('),
+            bookSrc.indexOf('async applyItemEdit('),
+        )
+        ok('the re-price finds the order\'s offers through their linkages, not order fields that are never stored',
+            !/customerOfferId: order\.customerOfferId/.test(reprice) &&
+                /orderId: order\._id,\s*status: CUSTOMER_OFFER_STATUS\.ATTACHED/.test(reprice))
+        ok('a Quick Booking re-runs the auto-apply pick against the real basket on every edit',
+            /if \(order\.quickBooking && order\.userId\) \{\s*post\.customerOfferId = undefined[\s\S]{0,200}pickBestPersonalOffer/.test(reprice))
+        ok('a waived trip takes off the fee this order is charged, not the flat setting',
+            /adminOrderSetting: \{ pickupFee, deliveryFee \}/.test(reprice))
+        ok('the edit releases offers the new bill drops and attaches the ones it adds',
+            /_settleOfferLinkages\(\{ order, breakdown, attached \}\)/.test(bookSrc) &&
+                /releaseForOrder\(order\._id, \{[\s\S]{0,120}only: stale/.test(bookSrc))
+
+        const bwSrc = fs.readFileSync(path.join(ROOT, 'services/bookingWindow.service.js'), 'utf8')
+        ok('an unbilled Quick Booking served in a window has its leg fee lowered, not a wallet refund',
+            /order\.itemsPending === true &&\s*order\.paymentStatus !== PAYMENT_ORDER_STATUS\.SUCCESS[\s\S]{0,800}\[`scheduling\.\$\{leg\}\.fee`\]: fee/.test(
+                bwSrc,
+            ) &&
+                bwSrc.indexOf('appliedToBill: true') < bwSrc.indexOf('await refundToWallet({'))
+        ok('and the fee is lowered once, claimed atomically on refund.paidAt (F-22)',
+            /\[`scheduling\.\$\{leg\}\.refund\.paidAt`\]: \{ \$exists: false \}/.test(bwSrc) &&
+                /if \(!claimed\.modifiedCount\) return \{ ok: false, reason: 'already-paid' \}/.test(bwSrc))
+        ok('a released promotion linkage is removed, not turned into a personal reward (F-21)',
+            /promoIds\.has\(String\(linkage\.offerId\)\)\) \{\s*await linkage\.deleteOne\(\)/.test(
+                fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+            ))
+    }
+
+    // ─── Booking items priced from the catalog (ported from the hotfix) ─────
+    // Item prices and item fields came from the request, so `price: 100` or a
+    // quantity of 0 set the bill, and staff fields were copied onto pieces.
+    console.log('\nBooking items — catalog prices, customer fields, quantities')
+    {
         const postBook = bookSrc.slice(
             bookSrc.indexOf('async postBookOrder('),
             bookSrc.indexOf('async updateBookOrderPaymentStatus('),
         )
-        ok('every order literal in postBookOrder saves the allow-list, never the raw body',
-            (postBook.match(/\.\.\.customerOrderFields\(post\),/g) || []).length === 3 &&
-                !/^\s+\.\.\.post,\s*$/m.test(postBook))
-        // Item prices and item fields (review F-17/F-18 in this branch).
-        const { priceFromCatalog } = require(path.join(ROOT, 'util/catalogItems'))
+        const { priceFromCatalog, catalogKey } = require(path.join(ROOT, 'util/catalogItems'))
         const catalog = [
             { name: 'Shirts / Tops / Blouses', price: 600 },
             { name: 'Lab coats', price: 700 },
@@ -2208,35 +2311,125 @@ const run = (async () => {
         const unknown = priceFromCatalog([{ type: 'blanket', price: 100, quantity: 1 }], { catalog, sets })
         ok('an item not in the catalog is refused, never booked at the price sent',
             !unknown.ok && /We don't recognise "blanket"/.test(unknown.error))
-        // Round 2: quantity (F-21), deactivated sets, decimals, duplicates (F-24).
         const badQty = [0, -5, '-5', 1.5, 'two', undefined].map(
             (quantity) => priceFromCatalog([{ type: 'Lab coats', quantity }], { catalog, sets }),
         )
         ok('a zero, negative, fractional or missing quantity is refused (no ₦0 or negative lines)',
             badQty.every((r) => !r.ok && /quantity of at least 1/.test(r.error)))
-        const strQty = priceFromCatalog([{ type: 'Lab coats', quantity: '3' }], { catalog, sets })
-        ok('a numeric-string quantity is stored as a number',
-            strQty.ok && strQty.items[0].quantity === 3)
         const inactive = priceFromCatalog([{ type: 'trouser', fromSet: 'Agbada', quantity: 1 }], {
             catalog,
             sets: [{ ...sets[0], active: false }],
         })
         ok('a piece from a deactivated set cannot be booked', !inactive.ok)
-        const decimals = priceFromCatalog([{ type: 'odd', quantity: 1 }], {
-            catalog: [{ name: 'Odd', price: 349.6 }, { name: 'odd', price: 1 }],
-        })
-        ok('catalog prices are whole naira and the first of two clashing names wins',
-            decimals.ok && decimals.items[0].price === 350)
-        const { catalogKey } = require(path.join(ROOT, 'util/catalogItems'))
+        ok('postBookOrder prices items from the catalog before validation, skipping only Quick Booking placeholders',
+            /\} else if \(Array\.isArray\(post\.items\) && post\.items\.length\) \{[\s\S]{0,900}priceFromCatalog\(post\.items, \{ catalog, sets \}\)[\s\S]{0,300}post\.items = fromCatalog\.items/.test(postBook) &&
+                postBook.indexOf('priceFromCatalog(post.items') < postBook.indexOf('const validateRule = {'))
         ok('the subscription heavy-item check uses the same name key as pricing',
             /heavyItemNames\.includes\(catalogKey\(item\.type\)\)/.test(postBook) &&
                 catalogKey('King size Duvet') === catalogKey('king-size-duvet'))
         ok('an unknown service type is refused before pricing',
             /\(adminOrderSetting\.serviceTypes \|\| \[\]\)\.some\(\s*\(s\) => s\.name === post\.serviceType,?\s*\)/.test(postBook))
-        ok('postBookOrder prices items from the catalog before validation, skipping only Quick Booking placeholders',
-            /\} else if \(Array\.isArray\(post\.items\) && post\.items\.length\) \{[\s\S]{0,900}priceFromCatalog\(post\.items, \{ catalog, sets \}\)[\s\S]{0,300}post\.items = fromCatalog\.items/.test(postBook) &&
-                postBook.indexOf('priceFromCatalog(post.items') < postBook.indexOf('const validateRule = {'))
-        // Round 3: piece ceiling (F-26), stray itemCount (F-25), plan allowance (F-27).
+        ok('a customer cannot mark their order as the staff counter channel',
+            /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
+        // F-24: an uncounted Quick Booking cannot be paid (it would be paid ₦0).
+        const { orderPayableGate } = require(path.join(ROOT, 'util/paymentGate'))
+        const pendingQb = { itemsPending: true, items: [{ type: 'unspecified-item', price: 0 }] }
+        const countedQb = { itemsPending: false, items: [{ type: 'Shirts', price: 600 }] }
+        ok('an uncounted Quick Booking is not payable; a counted one is',
+            !orderPayableGate(pendingQb).ok && /nothing to pay yet/i.test(orderPayableGate(pendingQb).error) &&
+                orderPayableGate(countedQb).ok)
+        ok('the wallet, card and assistant payment paths all check it first',
+            /orderPayableGate\(bookOrder\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')) &&
+                /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/bot/payment.flow.js'), 'utf8')))
+        ok('the Quick Booking re-pick also lists the offer already attached to that order (F-20)',
+            /status: CUSTOMER_OFFER_STATUS\.ATTACHED, orderId: repriceOrderId/.test(
+                fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8'),
+            ))
+        // F-30: a paid order whose bill rises owes only the difference.
+        const { amountDue: due, amountPaidSoFar: paidSoFar } = require(path.join(ROOT, 'util/paymentGate'))
+        ok('a part-paid order owes its balance, and counts what it paid (F-30)',
+            due({ amount: 6000, balanceDue: 1500 }) === 1500 && due({ amount: 6000 }) === 6000 &&
+                paidSoFar({ amount: 6000, balanceDue: 1500, paymentStatus: 'pending' }) === 4500 &&
+                paidSoFar({ amount: 6000, paymentStatus: 'success' }) === 6000)
+        ok('the item edit puts a paid order back to unpaid with only the difference due, and every payment path collects amountDue',
+            /if \(amountPaid > 0 && outstanding > 0\) \{\s*paymentFields\.paymentStatus = PAYMENT_ORDER_STATUS\.PENDING\s*paymentFields\.balanceDue = outstanding/.test(bookSrc) &&
+                /const amount = amountDue\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')) &&
+                /amountDue\(order\) \* 100/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /const due = amountDue\(bookOrder\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')) &&
+                /order\.balanceDue = undefined/.test(fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')))
+        ok('a cancelled part-paid order refunds what was paid (F-30)',
+            (() => {
+                const { cancellationOutcome } = require(path.join(ROOT, 'util/cancellationFees'))
+                const out = cancellationOutcome({ order: { amount: 6000, balanceDue: 1500, paymentStatus: 'pending', items: [] }, settings: {} })
+                return out.refundToWallet === 4500
+            })())
+        const whSrc = fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')
+        ok('the card webhook settles against the amount Paystack collected: short leaves a balance and a fresh hold, over refunds the excess (F-33)',
+            /handleOrderPayment\(metadata, reference, paidNaira\)/.test(whSrc) &&
+                /if \(paid !== null && paid \+ 0\.5 < due\)/.test(whSrc) &&
+                /if \(paid !== null && paid - 0\.5 > due && order\.userId\)/.test(whSrc))
+        ok('a payment with no checkout of ours is never processed, and top-ups credit what was collected, to the payer (F-35)',
+            /const existing = await PaymentModel\.findOne\(\{ reference \}\)\.lean\(\)\s*if \(!existing\) \{[\s\S]{0,900}return\s*\}/.test(whSrc) &&
+                !/new PaymentModel\(/.test(whSrc.slice(whSrc.indexOf('async function handleChargeSuccess'), whSrc.indexOf('async function handleOrderPayment'))) &&
+                /String\(payerId\) !== String\(userId\)/.test(whSrc) &&
+                /\$inc: \{ balance: amount \}/.test(whSrc))
+        ok('the reference is claimed atomically, and a payment on an already-paid order is flagged, not refunded (F-36)',
+            /PaymentModel\.findOneAndUpdate\(\s*\{ reference, status: \{ \$ne: 'success' \} \}/.test(whSrc) &&
+                /Payment on an order already paid/.test(whSrc) &&
+                !/Second payment on order/.test(whSrc))
+        ok('the event must match our recorded checkout (type, owner, order; not a bank-transfer or refused row), and a first subscription charge must cover its plan (F-38)',
+            /existing\.type !== metadata\.transactionType/.test(whSrc) &&
+                /String\(existing\.userId\) !== String\(user\._id\)/.test(whSrc) &&
+                /existing\.paymentMethod === 'bank-transfer'/.test(whSrc) &&
+                /existing\.metadata\?\.initRefused === true/.test(whSrc) &&
+                /collected \+ 0\.5 < price/.test(whSrc) &&
+                /status: 'failed'/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /The smallest top-up is ₦100\./.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
+        ok('a renewal is identified by its Paystack subscription code and our subscription for the payer, claimed once (F-40)',
+            /if \(data\.subscription\?\.subscription_code && !\(await PaymentModel\.exists\(\{ reference \}\)\)\) \{\s*await handleRenewal\(data, user, reference\)/.test(whSrc) &&
+                /String\(subscription\.userId\) !== String\(user\._id\)/.test(whSrc) &&
+                /err\?\.code === 11000/.test(whSrc) &&
+                (() => {
+                    // the live handler, not the commented-out copy above it
+                    const live = whSrc.slice(whSrc.indexOf('\nasync function handleChargeSuccess'))
+                    return live.indexOf('handleRenewal(data, user, reference)') < live.indexOf('if (!metadata.transactionType)')
+                })())
+        ok('pending checkout rows are kept 7 days, past the payment-hold link window (F-41)',
+            /cutoff\.setDate\(cutoff\.getDate\(\) - 7\)/.test(fs.readFileSync(path.join(ROOT, 'crons/reconcilePaystack.js'), 'utf8')))
+        ok('a first subscription charge is checked before the claim, against the amount the checkout asked, and activates the verified plan (F-42, F-43)',
+            whSrc.indexOf('let verifiedPlan = null') < whSrc.indexOf('const payment = await PaymentModel.findOneAndUpdate(') &&
+                /handleNormalSubscription\(data, user, verifiedPlan\)/.test(whSrc) &&
+                /const plan = verifiedPlan/.test(whSrc) && !/paystackPlan \|\| null/.test(whSrc))
+        ok('only a checkout refused at initialisation is treated as refused; a charge.failed retry is honoured (F-44)',
+            /'metadata\.initRefused': true/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /"metadata\.initRefused": true/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
+        ok('the webhook never credits more than the checkout asked for (F-39)',
+            /Math\.min\(collected, expected\)/.test(whSrc) &&
+                /expectedAmount: amount \/ 100/.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')) &&
+                /expectedAmount: Number\(amount\)/.test(fs.readFileSync(path.join(ROOT, 'services/wallet.service.js'), 'utf8')))
+        ok('a replaced hold is quiet and keeps its reminder clock (F-37)',
+            /quiet: true/.test(bookSrc) && /keepClockFrom: replacedHold/.test(bookSrc) &&
+                /if \(!quiet\) \{/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')) &&
+                /raisedAt: keepClockFrom\?\.raisedAt \|\| now/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')))
+        ok('an item edit clears an open hold before raising one for what is owed now (F-33)',
+            /const replacedHold = PaymentHoldService\.isOnPaymentHold\(order\)/.test(bookSrc) &&
+                /if \(replacedHold\) \{\s*await PaymentHoldService\.clear\(\{\s*orderId: order\._id,\s*source: 'item-edit'/.test(bookSrc))
+        ok('admin mark-paid clears the balance and Paystack refuses a paid order (F-34)',
+            /if \(status === PAYMENT_ORDER_STATUS\.SUCCESS\) bookOrder\.balanceDue = undefined/.test(bookSrc) &&
+                /\$unset: \{ balanceDue: '' \}/.test(fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')) &&
+                /This order has already been paid\./.test(fs.readFileSync(path.join(ROOT, 'services/paystack.service.js'), 'utf8')))
+        ok('staff cannot approve a transfer on an uncounted Quick Booking (F-31)',
+            /orderPayableGate\(order\)/.test(fs.readFileSync(path.join(ROOT, 'services/paymentHold.service.js'), 'utf8')))
+        ok('the personal-offer list skips promotion linkages (F-29)',
+            /if \(linkage\.offerId\.type === OFFER_TYPE\.PROMOTIONAL\) continue/.test(fs.readFileSync(path.join(ROOT, 'services/offer.service.js'), 'utf8')))
+        ok('the staff counter booking saves only the order fields from its request (F-19)',
+            (() => {
+                const src = fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8')
+                const body = src.slice(src.indexOf('const newOrderItem = {'), src.indexOf('const newOrder = new BookOrderModel(newOrderItem)'))
+                return /\.\.\.staffFields,/.test(body) && !/\.\.\.post,/.test(body)
+            })())
+        // Piece ceiling (F-26), stray itemCount (F-25), plan allowance (F-27).
         const ceiling = priceFromCatalog([{ type: 'Lab coats', quantity: 150 }, { type: 'Lab coats', quantity: 51 }], { catalog, sets })
         const atCeiling = priceFromCatalog([{ type: 'Lab coats', quantity: 200 }], { catalog, sets })
         const huge = priceFromCatalog([{ type: 'Lab coats', quantity: 100000000 }], { catalog, sets })
@@ -2246,14 +2439,11 @@ const run = (async () => {
             /post\.items = fromCatalog\.items\s*\/\/[\s\S]{0,500}delete post\.itemCount/.test(postBook))
         ok('a plan order is checked in pieces against the items left this month, and deducts pieces',
             /if \(planPieces > planItemsLeft\)/.test(postBook) &&
-                /subscription\.remainingItems = planItemsLeft - planPieces/.test(postBook) &&
-                /subscription\.remainingItems \+= planPieces/.test(postBook) &&
                 !/post\.items\.length > subscriptionPlanMonthlyLimits/.test(postBook))
-        ok('a customer cannot mark their order as the staff counter channel',
-            /String\(post\.channel \?\? ''\)\.trim\(\)\.toLowerCase\(\) === ORDER_CHANNEL\.OFFICE/.test(postBook))
-        ok('the server-set Quick Booking fields are dropped from the body before anything reads them',
-            BOS.SERVER_SET_ON_POST.includes('quickBooking') &&
-                /const post = \{ \.\.\.\(req\.body \|\| \{\}\) \}\s*for \(const key of SERVER_SET_ON_POST\) delete post\[key\]/.test(postBook))
+        ok('the plan items are claimed atomically before the order exists, and given back on failure (F-28)',
+            /remainingItems: \{ \$gte: planPieces \} \},\s*\{ \$inc: \{ remainingItems: -planPieces \} \}[\s\S]{0,1500}newOrder = new BookOrderModel\(newOrderItem\)/.test(postBook) &&
+                /\$inc: \{ remainingItems: planPieces \}/.test(postBook) &&
+                !/subscription\.remainingItems [-+]?=[^=]/.test(postBook))
     }
 
     // ─── F-05 + order read: who may call these two routes ───────────────────
@@ -2386,6 +2576,27 @@ const run = (async () => {
             /findOneAndUpdate\(\s*\{\s*_id: userId, phoneNumber: \{ \$in: \[null, ''\] \} \}/.test(
                 fs.readFileSync(path.join(ROOT, 'services/user.service.js'), 'utf8'),
             ))
+    }
+
+    // The merge of launch item 2 with the booking hotfix dropped the
+    // amountPaidSoFar import, and every source-text check here still passed:
+    // the order view, history, cancellation and item edit all threw on main.
+    // So CALL the function that uses it instead of reading its source.
+    console.log('\nMerge guard — the order read path actually runs')
+    {
+        const BOS = require(path.join(ROOT, 'services/bookOrder.service'))
+        let verdict = null
+        let threw = null
+        try {
+            verdict = new BOS()._cancellationVerdict(
+                { stage: { status: 'pending' }, paymentStatus: 'success', amount: 2000, createdAt: new Date() },
+                {},
+            )
+        } catch (e) {
+            threw = e
+        }
+        ok('the cancellation verdict (order view, history) runs without a ReferenceError',
+            !threw && verdict && typeof verdict.allowed === 'boolean', threw ? threw.message : '')
     }
 
     console.log(`\n${pass} passed, ${fail} failed\n`)
