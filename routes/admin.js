@@ -1,4 +1,5 @@
 const AdminController = require("../controllers/admin.controller");
+const SearchController = require("../controllers/search.controller");
 const adminAuth = require("../middlewares/adminAuth");
 const auth = require("../middlewares/auth");
 const {
@@ -2836,9 +2837,12 @@ router.delete(ROUTE_ADMIN_HOLD_TYPE_BY_ID, [adminAuth], (req, res) => {
  *       500:
  *         description: Server error
  */
+// These called AdminController.searchOrders / getOrderDetail, which never
+// existed, so admin order search answered 500. The search lives in
+// SearchController (same service as /api/search/search-orders).
 router.get(ROUTE_SEARCH_ORDERS, [adminAuth], (req, res) => {
-    const adminController = new AdminController()
-    return adminController.searchOrders(req, res)
+    const searchController = new SearchController()
+    return searchController.searchOrders(req, res)
 })
 
 /**
@@ -2886,8 +2890,8 @@ router.get(ROUTE_SEARCH_ORDERS, [adminAuth], (req, res) => {
  *         description: Server error
  */
 router.get(ROUTE_SEARCH_ORDER_DETAIL, [adminAuth], (req, res) => {
-    const adminController = new AdminController()
-    return adminController.getOrderDetail(req, res)
+    const searchController = new SearchController()
+    return searchController.getSearchedOrderDetail(req, res)
 })
 
 /**
