@@ -75,3 +75,17 @@ booking.
 `SubscriptionModel.findOneAndUpdate({ _id, remainingItems: { $gte: planPieces } }, { $inc: { remainingItems: -planPieces } })`
 before saving the order (and `$inc` back on rollback). Nothing current is lost.
 **Resolution:**
+
+### F-75 [P3] open - A non-string referral code on the phone step is silently ignored instead of refused
+
+**File:** services/user.service.js:575
+**Found:** 2026-10-13 by /audit independent (scope: current; lens: quality)
+**Why it matters:** `completeProfile` treats any non-string `referralCode` (an array such as
+`["CHUVIADA7K2"]`, or an object) as "no code": the phone is saved, the welcome SMS goes, and no
+referral is linked, with a 200. The user decision for this step is that a code is never silently
+dropped. The real app sends a string, so this only bites a malformed client (offline probe with
+stubbed models confirmed it). Harmless for security: the value never reaches a query.
+**Suggested fix:** Refuse a present-but-non-string `referralCode` with the same 400 message
+(`referralCode != null && referralCode !== '' && typeof referralCode !== 'string'`), before the
+update. Nothing current is lost.
+**Resolution:**

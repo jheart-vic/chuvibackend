@@ -89,6 +89,10 @@ class AuthService extends BaseService {
                 phoneNumber: normalizePhone(post.phoneNumber),
                 userType: post.userType || ROLE.USER,
                 servicePlatform: 'local',
+                // Launch item 5: recorded when the form sends it, never required.
+                ...(post.termsAccepted === true || post.termsAccepted === 'true'
+                    ? { termsAccepted: true, termsAcceptedAt: new Date() }
+                    : {}),
             })
 
             await newUser.save()

@@ -16,6 +16,11 @@ const userSchema = new mongoose.Schema(
         fullName: { type: String, trim: true },
         password: { type: String, select: false },
         phoneNumber: { type: String },
+        // Whether, and when, the customer ticked "I agree to the Terms and
+        // Conditions" (launch item 5). Recorded when the app sends
+        // termsAccepted: true; never required.
+        termsAccepted: { type: Boolean, default: false },
+        termsAcceptedAt: { type: Date },
         userType: {
             type: String,
             enum: Object.values(ROLE),

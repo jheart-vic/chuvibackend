@@ -91,6 +91,14 @@ const router = require("express").Router();
  *                 type: string
  *                 enum: [admin, intake-users, user]
  *                 example: user
+ *               termsAccepted:
+ *                 type: boolean
+ *                 example: true
+ *                 description: Send true when the customer ticked "I agree to the Terms and Conditions". Recorded as termsAcceptedAt; not required.
+ *               referralCode:
+ *                 type: string
+ *                 example: "CHUVIADA7K2"
+ *                 description: Optional referral code (from the rep's ?ref= link).
 
  *     responses:
  *       200:

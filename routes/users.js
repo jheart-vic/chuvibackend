@@ -1004,25 +1004,39 @@ router.get(ROUTE_GET_USERS_BY_TYPE, [auth], (req, res) => {
  *               phoneNumber:
  *                 type: string
  *                 example: "+2348012345678"
+ *                 description: Any common format; stored normalised ("08012345678"). Must be a leading 0 plus 10 digits after normalising.
+ *               termsAccepted:
+ *                 type: boolean
+ *                 example: true
+ *                 description: Send true when the customer ticked "I agree to the Terms and Conditions". Recorded as termsAcceptedAt; not required (the app enforces the tick box).
+ *               referralCode:
+ *                 type: string
+ *                 example: "CHUVIADA7K2"
+ *                 description: Optional. Pre-fill from the ?ref= in the sign-up link. An unknown code, or the customer's own, is refused with 400 and nothing is saved. If the customer is already linked to a referrer, that link stands.
  *     responses:
  *       200:
- *         description: Profile completed successfully
+ *         description: Profile completed successfully. Tokens are returned so the app can continue.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
+ *                 success: { type: boolean, example: true }
  *                 data:
  *                   type: object
  *                   properties:
- *                     message:
- *                       type: string
- *                       example: Profile completed successfully
+ *                     message: { type: string, example: Profile completed successfully }
+ *                     data: { $ref: '#/components/schemas/User' }
+ *                     accessToken: { type: string, example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+ *                     refreshToken: { type: string, example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
  *       400:
- *         description: Phone number missing or profile already completed
+ *         description: >
+ *           Phone number missing ("Phone number is required"), invalid ("Enter a valid phone number, e.g. 0803 123 4567."),
+ *           unknown referral code ("That referral code doesn't exist. Check it, or leave it empty and add it later in Refer & Earn."),
+ *           or profile already completed ("Profile already completed").
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       401:
  *         description: Unauthorized
  *       500:

@@ -495,6 +495,27 @@
  *           properties:
  *             error: { type: string, example: "Something went wrong" }
  *
+ *     User:
+ *       type: object
+ *       description: A user account as the API returns it (password, OTPs and tokens are never included).
+ *       properties:
+ *         _id: { type: string, example: "6650f1c2a9b8e2d4f0a1b2c3" }
+ *         email: { type: string, example: "ada@example.com" }
+ *         fullName: { type: string, example: "Ada Obi" }
+ *         phoneNumber: { type: string, example: "08031234567", description: "Stored normalised: a leading 0 and 10 digits" }
+ *         termsAccepted: { type: boolean, example: true, description: "True once the customer ticked \"I agree to the Terms and Conditions\"" }
+ *         termsAcceptedAt: { type: string, format: date-time, nullable: true, example: "2026-10-13T15:20:00.000Z", description: "When the Terms and Conditions were accepted; null if never recorded" }
+ *         userType: { type: string, example: "user" }
+ *         servicePlatform: { type: string, enum: [local, google, apple], example: "google" }
+ *         isVerified: { type: boolean, example: true }
+ *         referralCode: { type: string, example: "CHUVIADA7K2" }
+ *         image:
+ *           type: object
+ *           properties:
+ *             imageUrl: { type: string, example: "https://lh3.googleusercontent.com/a/photo" }
+ *             publicId: { type: string, example: "" }
+ *         createdAt: { type: string, format: date-time, example: "2026-10-13T15:19:00.000Z" }
+ *
  *     CancellationVerdict:
  *       type: object
  *       description: >

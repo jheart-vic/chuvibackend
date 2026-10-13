@@ -12,6 +12,7 @@ const {
     formatNotificationTime,
     getWeightImprovementTipsByWeight,
     getObjectId,
+    normalizePhone,
 } = require('../util/helper')
 const { deleteImage } = require('../util/imageUpload')
 // Default avatar the user model falls back to; deleting a photo resets to this.
@@ -537,11 +538,20 @@ class UserService extends BaseService {
     async completeProfile(req) {
         try {
             const userId = req.user.id
-            const { phoneNumber } = req.body
+            const { phoneNumber, termsAccepted, referralCode } = req.body
 
             if (!phoneNumber) {
                 return BaseService.sendFailedResponse({
                     error: 'Phone number is required',
+                })
+            }
+            // Launch item 5: the same stored format as the email form (brief
+            // 4.6), so this customer matches their orders and CRM profile.
+            // Shared numbers stay allowed, as on the email form.
+            const phone = normalizePhone(phoneNumber)
+            if (!/^0\d{10}$/.test(phone)) {
+                return BaseService.sendFailedResponse({
+                    error: 'Enter a valid phone number, e.g. 0803 123 4567.',
                 })
             }
 
@@ -558,19 +568,52 @@ class UserService extends BaseService {
                 })
             }
 
+            // Referral code (optional, launch item 5): checked BEFORE anything is
+            // saved, so a mistyped code is fixed or cleared, never silently
+            // dropped (user decision 2026-10-13).
+            const ReferralService = require('./referral.service')
+            const code = typeof referralCode === 'string' ? referralCode.trim().toUpperCase() : ''
+            if (code) {
+                const referrer = await UserModel.findOne({ referralCode: code }).select('_id').lean()
+                if (!referrer || String(referrer._id) === String(userId)) {
+                    return BaseService.sendFailedResponse({
+                        error: "That referral code doesn't exist. Check it, or leave it empty and add it later in Refer & Earn.",
+                    })
+                }
+            }
+
+            // Terms are the app's tick box; the backend records them when sent
+            // and never refuses without them (user decision 2026-10-13).
+            const set = { phoneNumber: phone }
+            if (termsAccepted === true || termsAccepted === 'true') {
+                set.termsAccepted = true
+                set.termsAcceptedAt = new Date()
+            }
+
             // ✅ Fix 1 — avoid full document validation (address landmark issue)
             // Only while the phone is still empty, in one step: two quick taps
             // used to both pass the check above, overwrite the number and send
             // the welcome SMS twice (review F-50).
             const updatedUser = await UserModel.findOneAndUpdate(
                 { _id: userId, phoneNumber: { $in: [null, ''] } },
-                { $set: { phoneNumber } },
+                { $set: set },
                 { new: true, runValidators: false },
             )
             if (!updatedUser) {
                 return BaseService.sendFailedResponse({
                     error: 'Profile already completed',
                 })
+            }
+
+            // Link the referrer. Someone already linked (e.g. from the rep's link
+            // at Google sign-in) keeps that link; captureReferral returns null.
+            // Never fails the phone step.
+            if (code && updatedUser.userType === ROLE.USER) {
+                try {
+                    await ReferralService.captureReferral({ referredUserId: updatedUser._id, code })
+                } catch (err) {
+                    console.error('completeProfile referral capture failed:', err.message)
+                }
             }
 
             // A Google/Apple customer's welcome SMS waited for this number
