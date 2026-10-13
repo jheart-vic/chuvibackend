@@ -448,32 +448,10 @@ const buildOfferedSlots = ({
 
 // ──────────────────── the delivery promise (D1 + D6 + same-day) ────────────────────
 
-/**
- * How many days after pickup a speed delivers. Mirrors `calculateDueDate` in
- * util/helper.js — same-day 0, express +1, standard +2 — but counted in WORKING
- * days (D6) and WITHOUT the 19:00 pin.
- *
- * ⚠️ THE 19:00 PIN IS THE COLLISION THE LOGIC DOC FLAGGED. `calculateDueDate`
- * promises "by 7pm"; D1 says the WINDOW REPLACES that promise, and the client's
- * only window ends at 18:30. Both cannot be told to the customer. Under D1 the
- * window wins, so a windowed order's promise is the window on the due DAY, and
- * the 19:00 time is not shown. `calculateDueDate` is left alone — it still
- * governs capacity cutoffs and every non-windowed order.
- */
-const SPEED_WORKING_DAYS = {
-    [DELIVERY_SPEED.SAME_DAY]: 0,
-    [DELIVERY_SPEED.EXPRESS]: 1,
-    [DELIVERY_SPEED.STANDARD]: 2,
-}
-
-const deliveryDayForSpeed = ({ from, deliverySpeed, workingDays }) => {
-    const count = SPEED_WORKING_DAYS[deliverySpeed]
-    return addWorkingDays(
-        from,
-        count === undefined ? SPEED_WORKING_DAYS[DELIVERY_SPEED.STANDARD] : count,
-        workingDays,
-    )
-}
+// (The ready day itself is `earliestReadyDay` / `allocateFloor` below — launch
+// item 3. The old whole-working-day helpers were removed, review F-59. Under D1
+// a windowed order's promise is the window on the ready DAY; the 19:00
+// deadline time is never shown to the customer.)
 
 /**
  * SAME-DAY ORDERS, client ruling 2026-10-08: the PICKUP is Anytime and pays the
@@ -518,7 +496,7 @@ const sameDayLegPlan = ({ settings, morningWindow = null }) => {
 /**
  * THE CUSTOMER-FACING DELIVERY PROMISE — deliberately separate from the
  * order's `deliveryDate`, which is an internal deadline with an end-of-day
- * sentinel time (see `calculateDueDate`). D1: the window REPLACES the old
+ * sentinel time (see `readyDeadline`). D1: the window REPLACES the old
  * "by 7pm" wording.
  *
  * Returns the parts AND the rendered sentence, so the app has one string to
@@ -566,7 +544,475 @@ const deliveryPromise = ({
     }
 }
 
+// ─────────────── READY DATES AND THE DAILY FLOOR LIMIT (launch item 3) ───────────────
+//
+// Client rulings 11–12 Oct 2026 (LAUNCH-FIXES-2026-10-11.md), all binding:
+//   * Count from the day AFTER pickup. Tue–Sat count 1, Sunday ½, Monday 0
+//     (a day that is not a working day counts 0; the half days are a setting).
+//     Ready by 19:00 on the day the count is reached: Express needs 1, Regular 2.
+//     Sun pickup + 1 → Tue; Sat + 1 → Tue; Sat + 2 → Wed.
+//   * Ready Today counts the pickup day itself, only for a pickup before 12:00,
+//     never on a half day.
+//   * One floor limit in PIECES per day (150), with Ready Today (30) and Express
+//     (50) shares INSIDE it; Regular uses the rest. Each limit × the day's weight
+//     (Sunday 75), Monday 0. Pieces count on the day they are READY.
+//   * Regular is never refused and never waits for an empty day: it fills the
+//     room left on its first possible day, then each next working day, and is
+//     ready on the last day used. Fast speeds are never split: they need room in
+//     their share AND in the floor total, else "full" / "too many pieces".
+//   * Two bookings at the same moment may push a day a few pieces over: accepted.
+
+const DEFAULT_HALF_DAYS = ['sun']
+const DEFAULT_FLOOR_LIMITS = { dailyPieces: 150, sameDayPieces: 30, expressPieces: 50 }
+const READY_HOUR = 19
+/** Ready Today needs the pickup before 12:00. */
+const READY_TODAY_PICKUP_BEFORE = 12 * 60
+/** Weight a speed needs from the day after pickup (Ready Today uses the pickup day). */
+const SPEED_READY_WEIGHT = { [DELIVERY_SPEED.EXPRESS]: 1, [DELIVERY_SPEED.STANDARD]: 2 }
+const SPEED_ORDER = [DELIVERY_SPEED.SAME_DAY, DELIVERY_SPEED.EXPRESS, DELIVERY_SPEED.STANDARD]
+const FLOOR_PHONE = '+234 707 325 4943'
+
+/** Half-day keys. An explicit empty list means no half days; anything else falls back. */
+const normalizeHalfDays = (halfDays) => {
+    if (!Array.isArray(halfDays)) return [...DEFAULT_HALF_DAYS]
+    return [...new Set(
+        halfDays.map((k) => String(k).trim().toLowerCase().slice(0, 3)).filter((k) => DAY_KEYS.includes(k)),
+    )]
+}
+
+const normalizeFloorLimits = (limits) => {
+    const out = { ...DEFAULT_FLOOR_LIMITS }
+    for (const key of Object.keys(out)) {
+        const n = Number(limits?.[key])
+        if (Number.isInteger(n) && n >= 0) out[key] = n
+    }
+    return out
+}
+
+/** 0 on a closed day, ½ on a half day, else 1. */
+const dayWeight = (date, settings) => {
+    if (!isWorkingDay(date, settings?.workingDays)) return 0
+    return normalizeHalfDays(settings?.halfDays).includes(dayKey(date)) ? 0.5 : 1
+}
+
+/** Is Ready Today possible for a pickup at this instant? */
+const readyTodayAllowed = (pickupAt, settings) =>
+    Boolean(pickupAt) &&
+    dayWeight(pickupAt, settings) === 1 &&
+    minutesOfDay(pickupAt) < READY_TODAY_PICKUP_BEFORE
+
+/**
+ * The first day an order of this speed can be ready, before any floor limit:
+ * a Date at 00:00 Lagos, or null (Ready Today not allowed; no day within reach).
+ */
+const earliestReadyDay = ({ speed, pickupAt, settings }) => {
+    if (!pickupAt) return null
+    if (speed === DELIVERY_SPEED.SAME_DAY) {
+        return readyTodayAllowed(pickupAt, settings) ? startOfDay(pickupAt) : null
+    }
+    const need = SPEED_READY_WEIGHT[speed] ?? SPEED_READY_WEIGHT[DELIVERY_SPEED.STANDARD]
+    let sum = 0
+    let cursor = startOfDay(pickupAt)
+    for (let i = 0; i < 60; i += 1) {
+        cursor = addDays(cursor, 1)
+        sum += dayWeight(cursor, settings)
+        if (sum >= need) return cursor
+    }
+    return null
+}
+
+/**
+ * The ready day at 19:00 — the order's internal DEADLINE (`deliveryDate`).
+ *
+ * ⚠️ The 19:00 is an END-OF-DAY SENTINEL, not a promise. ~10 readers compare it
+ * as an instant: `deliveryDate < now` is "overdue" on the admin dashboard,
+ * `{$gte: now, $lte: todayEnd}` is "due today", and util/holdSla.js has a
+ * past-delivery-date breach branch. The customer-facing promise is the separate
+ * `deliveryPromise` (util/orderView.js). (Moved here from calculateDueDate,
+ * which this engine replaced — review F-59.)
+ */
+const readyDeadline = (day) => {
+    if (!day) return null
+    const out = new Date(day)
+    out.setHours(READY_HOUR, 0, 0, 0)
+    return out
+}
+
+/** A day's limit for 'floor' or a fast speed: the setting × the day's weight, rounded down. */
+const dailyLimit = (date, pool, settings) => {
+    const limits = normalizeFloorLimits(settings?.floorLimits)
+    const base =
+        pool === DELIVERY_SPEED.SAME_DAY
+            ? limits.sameDayPieces
+            : pool === DELIVERY_SPEED.EXPRESS
+              ? limits.expressPieces
+              : limits.dailyPieces
+    return Math.floor(base * dayWeight(date, settings))
+}
+
+/** `usage` is `{ 'YYYY-MM-DD': { total, [speed]: pieces } }`. */
+const usedOn = (usage, date, pool) => Number(usage?.[dateKey(date)]?.[pool] || 0)
+
+/**
+ * Place an order's pieces on the floor. Returns
+ *   { ok: true, allocation: [{ date, pieces }], readyDay, movedFrom }
+ *   { ok: false, reason: 'full' | 'too-many-pieces' | 'not-available' }
+ * `movedFrom` is the first possible day when Regular had no room on it at all
+ * (the screen says "Ready Thursday instead of Wednesday").
+ */
+const allocateFloor = ({ speed, pieces, firstDay, usage = {}, settings }) => {
+    if (!firstDay) return { ok: false, reason: 'not-available' }
+    const want = Math.max(0, Math.floor(Number(pieces) || 0))
+
+    if (speed === DELIVERY_SPEED.SAME_DAY || speed === DELIVERY_SPEED.EXPRESS) {
+        const floorRoom = dailyLimit(firstDay, 'floor', settings) - usedOn(usage, firstDay, 'total')
+        const shareRoom = dailyLimit(firstDay, speed, settings) - usedOn(usage, firstDay, speed)
+        const room = Math.min(floorRoom, shareRoom)
+        if (room <= 0) return { ok: false, reason: 'full' }
+        if (want > room) return { ok: false, reason: 'too-many-pieces' }
+        return { ok: true, allocation: want ? [{ date: dateKey(firstDay), pieces: want }] : [], readyDay: firstDay, movedFrom: null }
+    }
+
+    // Regular: fill the room left day by day; never refused.
+    const allocation = []
+    let remaining = want
+    let day = firstDay
+    let last = firstDay
+    for (let i = 0; i < 120 && remaining > 0; i += 1, day = addDays(day, 1)) {
+        if (dayWeight(day, settings) === 0) continue
+        const room = dailyLimit(day, 'floor', settings) - usedOn(usage, day, 'total')
+        if (room <= 0) continue
+        const take = Math.min(room, remaining)
+        allocation.push({ date: dateKey(day), pieces: take })
+        remaining -= take
+        last = day
+    }
+    if (remaining > 0) {
+        // Beyond any realistic horizon: keep the promise finite.
+        if (allocation.length) allocation[allocation.length - 1].pieces += remaining
+        else allocation.push({ date: dateKey(firstDay), pieces: remaining })
+    }
+    const readyDay = allocation.length ? last : firstDay
+    const movedFrom =
+        allocation.length && allocation[0].date !== dateKey(firstDay) && !isSameDay(readyDay, firstDay)
+            ? firstDay
+            : null
+    return { ok: true, allocation, readyDay, movedFrom }
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const dayText = (d) => `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
+
+/** "A or B", "A, B or C". */
+const orList = (names) =>
+    names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`
+
+/**
+ * Every speed for one pickup and piece count, as the screen and the booking
+ * both read it. `labels` maps a speed value to its on-screen name (client,
+ * 12 Oct: "use the same name the customer sees on the speed button,
+ * everywhere"). `usage` is the floor usage over the days involved.
+ */
+const speedOptions = ({ pickupAt, pieces, settings, usage = {}, labels = {} }) => {
+    const label = (s) => labels[s] || s
+    const raw = SPEED_ORDER.map((speed) => {
+        const firstDay = earliestReadyDay({ speed, pickupAt, settings })
+        if (!firstDay) {
+            return { speed, firstDay: null, result: { ok: false, reason: speed === DELIVERY_SPEED.SAME_DAY ? 'pickup-rule' : 'not-available' } }
+        }
+        return { speed, firstDay, result: allocateFloor({ speed, pieces, firstDay, usage, settings }) }
+    })
+    const fits = raw.filter((r) => r.result.ok).map((r) => r.speed)
+    const halfDayNames = normalizeHalfDays(settings?.halfDays).map((k) => `${WEEKDAYS[DAY_KEYS.indexOf(k)]}s`)
+
+    return raw.map(({ speed, firstDay, result }) => {
+        const others = fits.filter((s) => s !== speed).map(label)
+        let message = null
+        if (!result.ok) {
+            if (result.reason === 'pickup-rule') {
+                message = `${label(speed)} needs a pickup before 12:00${halfDayNames.length ? `, and isn't available on ${orList(halfDayNames)}` : ''}. Choose ${orList(others)}.`
+            } else if (result.reason === 'full') {
+                message =
+                    speed === DELIVERY_SPEED.EXPRESS
+                        ? `${label(speed)} is full for ${WEEKDAYS[firstDay.getDay()]}. Choose ${label(DELIVERY_SPEED.STANDARD)}, or pick another pickup day.`
+                        : 'Full today'
+            } else if (result.reason === 'too-many-pieces') {
+                message = `Too many pieces for ${label(speed)}. Choose ${orList(others)}, or call us on ${FLOOR_PHONE}.`
+            } else {
+                message = `${label(speed)} is not available for this pickup. Choose ${orList(others)}.`
+            }
+        }
+        const readyDate = result.ok ? readyDeadline(result.readyDay) : null
+        return {
+            speed,
+            label: label(speed),
+            available: Boolean(result.ok),
+            readyDate,
+            readyText: readyDate ? `Ready ${dayText(readyDate)}, by 7:00 PM` : null,
+            movedFrom: result.ok && result.movedFrom ? result.movedFrom : null,
+            movedFromText: result.ok && result.movedFrom ? `Ready ${WEEKDAYS[result.readyDay.getDay()]} instead of ${WEEKDAYS[result.movedFrom.getDay()]}` : null,
+            unavailableReason: result.ok ? null : result.reason,
+            message,
+            allocation: result.ok ? result.allocation : [],
+        }
+    })
+}
+
+/**
+ * Anytime on ONE date (client item 2, 11 Oct: "On a closed day, Anytime should
+ * say 'Closed that day', the same as the window"). The old single `anytime`
+ * answer was for "now" only, so every date repeated "first thing Sunday".
+ */
+const anytimeOnDate = ({ date, now, settings }) => {
+    const day = startOfDay(date)
+    const key = dateKey(day)
+    const fromText = settings?.anytimeOpenFrom || DEFAULT_ANYTIME_OPEN_FROM
+    const from = parseHhMm(settings?.anytimeOpenFrom) ?? parseHhMm(DEFAULT_ANYTIME_OPEN_FROM)
+    const to = parseHhMm(settings?.anytimeOpenTo) ?? parseHhMm(DEFAULT_ANYTIME_OPEN_TO)
+    if (!isWorkingDay(day, settings?.workingDays)) {
+        return { date: key, open: false, servesFrom: null, note: 'Closed that day' }
+    }
+    if (day < startOfDay(now)) {
+        return { date: key, open: false, servesFrom: null, note: 'That day has passed' }
+    }
+    if (isSameDay(day, now)) {
+        const at = minutesOfDay(now)
+        if (at > to) return { date: key, open: false, servesFrom: null, note: 'Anytime has closed for today' }
+        if (at < from) return { date: key, open: true, servesFrom: atMinutes(day, from), note: `We will come from ${fromText}.` }
+        return { date: key, open: true, servesFrom: new Date(now), note: 'We will dispatch as soon as we can.' }
+    }
+    return { date: key, open: true, servesFrom: atMinutes(day, from), note: `We will come from ${fromText} that day.` }
+}
+
+/**
+ * The start of a pickup slot in minutes after midnight, from the FIRST time in
+ * the text. An explicit am/pm is used as written. A bare hour is read as a
+ * pickup hour — pickups run 08:00–19:00 — so 8–11 are morning, 12 is noon and
+ * 1–7 are afternoon/evening: "around 2", "2:30", "after 3", "between 2 and
+ * 4pm", "2-4pm" → 14:00/15:00; "12-2pm" → 12:00; "11-1pm", "around 10" →
+ * morning. 24-hour times ("15:00") are taken as written. The assistant's words
+ * (morning, noon, afternoon, evening, night) are understood. Returns null for
+ * empty text and `UNREADABLE_SLOT` for anything else — never an early time, so
+ * an unreadable time can't make Ready Today look possible (reviews F-56, F-62).
+ */
+const UNREADABLE_SLOT = 'unreadable'
+const SLOT_WORDS = [
+    // ("before/by noon" is handled once, guarded against evening words, in
+    // slotStartMinutes — an unguarded entry here made "afternoon, by noon"
+    // read as morning, review F-67.)
+    [/\bnight\b/i, 19 * 60],
+    [/\bevening\b/i, 16 * 60],
+    [/\bafternoon\b/i, 12 * 60],
+    [/\b(noon|midday)\b/i, 12 * 60],
+    [/\bmorning\b/i, 8 * 60],
+]
+// Words that put a pickup well past noon, whatever bare number sits beside them
+// ("8 in the evening", "9 tonight", "evening, around 8" — review F-63).
+const EVENING_WORDS = /\b(afternoon|evening|tonight|night)\b/i
+// "noon"/"midday" alone only mark the END of a morning ("10-12 noon",
+// "between 10 and noon", "9, before noon") — they never make a bare 8–11 an
+// evening hour (review F-66).
+const NOON_WORDS = /\b(noon|midday)\b/i
+// A number that is a date or a count, not a clock time ("14 Oct", "20/10",
+// "2 bags", "3rd") — reviews F-64/F-66. Month names need a whole word, so
+// "9 maybe" and "9 marks" are not dates.
+const NOT_A_TIME_AFTER = /^\s*(?:\/|st\b|nd\b|rd\b|th\b|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|bags?\b|pieces?\b|pcs\b|items?\b|kg\b|clothes\b|shirts?\b)/i
+// Dates and counts are removed before the time is read: "2026-10-14 15:00",
+// "2026-10-14T15:00:00", "14-10-2026 9am", "20/10 at 9am", "14 Oct 9am",
+// "Oct 10 around 2", "2 bags at 9am" (reviews F-64, F-65, F-68).
+const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
+const WRITTEN_DATES = new RegExp(
+    [
+        '\\b\\d{4}-\\d{1,2}-\\d{1,2}T?',
+        '\\b\\d{1,2}-\\d{1,2}-\\d{2,4}\\b',
+        '\\b\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?\\b',
+        `\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH}\\b`,
+        `\\b${MONTH}\\s+\\d{1,2}(?:st|nd|rd|th)?\\b`,
+        '\\b\\d+\\s*(?:bags?|pieces?|pcs|items?|kg|clothes|shirts?)\\b',
+    ].join('|'),
+    'gi',
+)
+
+/**
+ * Ready Today is offered only for a PLAINLY written time (launch item 3,
+ * review round 5). Free text can say anything ("not before noon", "8.30pm",
+ * "9 o clock pm"), and five review rounds showed a reader can't catch every
+ * phrasing — so after dates and counts are removed, the text may hold only
+ * clock times and these words. Anything else reads as UNREADABLE (12:00) —
+ * which only ever withholds Ready Today; Express and Regular count whole days
+ * and never use the time. The app sends slot labels ("10am-12pm") and the
+ * assistant sends short phrases, which all pass.
+ */
+const PLAIN_WORDS = new Set([
+    'around', 'about', 'approx', 'approximately', 'at', 'by', 'from', 'between', 'and', 'to', 'till',
+    'until', 'before', 'morning', 'noon', 'midday', 'afternoon', 'evening', 'night', 'tonight',
+    'tomorrow', 'today', 'the', 'in', 'this', 'or', 'maybe', 'please', 'pls', 'ish', 'sharp', 'early',
+    'sometime', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+    'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun', // the DAY is pickupDate's job (F-71)
+])
+const isPlainTimeText = (text) => {
+    // A dot between digits is a time we don't read ("8.30pm"): not plain (F-68).
+    if (/\d\.\d/.test(text)) return false
+    const rest = text
+        .toLowerCase()
+        .replace(/\b\d{1,2}(?::\d{2}){0,2}\s*(?:a\.?m\.?|p\.?m\.?)(?![a-z])/g, ' ')
+        .replace(/\b\d{1,2}(?::\d{2}){0,2}\b/g, ' ')
+        .replace(/[-–,;!?()]/g, ' ')
+    return rest.split(/\s+/).filter(Boolean).every((w) => PLAIN_WORDS.has(w))
+}
+const slotStartMinutes = (slot) => {
+    let text = String(slot || '').trim()
+    if (!text) return null
+    text = text
+        .replace(WRITTEN_DATES, ' ')
+        // "930am", "1030 pm" → "9:30am", "10:30 pm" (review F-66). Only with
+        // am/pm, so a phone number or a count never becomes a time.
+        .replace(/\b(\d{1,2})(\d{2})\s*(a\.?m\.?|p\.?m\.?)/gi, '$1:$2$3')
+    if (!isPlainTimeText(text)) return UNREADABLE_SLOT
+    const evening = EVENING_WORDS.test(text)
+    const noon = NOON_WORDS.test(text)
+
+    // Every candidate clock time; dates and counts are skipped.
+    // Seconds are read past, so "9:00:00 pm" keeps its pm (F-70).
+    const re = /(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(a\.?m\.?|p\.?m\.?)?(?![\d])/gi
+    const found = []
+    let m
+    while ((m = re.exec(text))) {
+        if (m.index > 0 && /[\d/:]/.test(text[m.index - 1])) continue
+        if (NOT_A_TIME_AFTER.test(text.slice(m.index + m[0].length))) continue
+        const hour = Number(m[1])
+        const min = Number(m[2] || 0)
+        if (hour > 23 || min > 59) continue
+        found.push({
+            hour,
+            min,
+            ap: (m[3] || '').toLowerCase().replace(/\./g, ''),
+            colon: m[2] !== undefined,
+            // "11-1pm", "2 to 4pm", "between 2 and 4pm": a range is read from its START.
+            rangeStart: /^\s*(?:-|–|to\b|and\b|or\b)\s*(?:\d|noon|midday)/i.test(text.slice(m.index + m[0].length)),
+        })
+    }
+    // A range is read from its start — but it only outranks its OWN end, never a
+    // later, separate time written with am/pm OR a colon ("9-10 at 3pm" → 3pm,
+    // "9-10 at 15:00" → 15:00; F-65). Then a time that says am/pm; then one
+    // with a colon; then the first.
+    const laterTime = found.slice(2).find((t) => t.ap || t.colon)
+    const pick =
+        (found[0]?.rangeStart && !laterTime && found[0]) ||
+        found.find((t) => t.ap) ||
+        found.find((t) => t.colon) ||
+        found[0]
+
+    if (pick) {
+        let hour = pick.hour
+        // "12am" is ambiguous (many mean noon), and "00:30" is its 24-hour
+        // spelling: never read either as an early time (F-63, F-65).
+        if ((pick.ap === 'am' && hour === 12) || (hour === 0 && pick.ap !== 'pm')) return UNREADABLE_SLOT
+        // A bare range start shares its end's "pm" when it comes earlier on the
+        // clock: "8-10pm", "between 8 and 10pm", "9 or 10pm" are evening (F-69).
+        // "11-1pm" (11 > 1) and "10-12pm" (ends at noon) stay morning.
+        const end = pick.rangeStart && !pick.ap ? found[found.indexOf(pick) + 1] : null
+        if (end && end.ap === 'pm' && end.hour < 12 && hour <= end.hour) hour += 12
+        else if (pick.ap === 'pm' && hour < 12) hour += 12
+        else if (!pick.ap && hour >= 1 && hour <= 7) hour += 12 // a bare hour is a pickup hour (08:00–19:00)
+        else if (!pick.ap && evening && hour >= 8 && hour <= 11) hour += 12 // "9 tonight"
+        const minutes = hour * 60 + pick.min
+        // An explicit "am" morning time stands; otherwise an evening word means
+        // late. "noon" alone does not ("10-12 noon" is a morning).
+        if (evening && !(pick.ap === 'am') && minutes < 12 * 60) return 12 * 60
+        return minutes
+    }
+    if (noon && !evening && /\b(before|by|until|till)\s+(noon|midday)\b/i.test(text)) return 10 * 60
+    for (const [word, minutes] of SLOT_WORDS) if (word.test(text)) return minutes
+    return UNREADABLE_SLOT
+}
+
+/**
+ * When the pickup happens, which is what the ready date counts from (client
+ * item 9: "work out the ready date from the pickup day and time the customer
+ * picks"). A window → its start on its date; Anytime → its service start on
+ * that date; a legacy pickupDate/pickupTime → that; otherwise now.
+ */
+const pickupInstant = ({ leg = null, pickupDate = null, pickupTime = null, now = new Date(), settings }) => {
+    if (leg?.timing === BOOKING_TIMING.WINDOW && leg.date) {
+        const start = parseHhMm(leg.windowStart)
+        return start === null ? startOfDay(new Date(leg.date)) : atMinutes(new Date(leg.date), start)
+    }
+    if (leg?.timing === BOOKING_TIMING.ANYTIME) {
+        const day = startOfDay(new Date(leg.date || now))
+        const a = anytimeOnDate({ date: day, now, settings })
+        if (a.servesFrom) return a.servesFrom
+        // A closed or finished day: the first Anytime opening ON OR AFTER that
+        // day, never "now" — counting from now put the ready date before a
+        // pickup on a later closed day (review F-57).
+        const serviceFrom = day > startOfDay(now) ? day : now
+        return (
+            anytimeServiceStart({
+                now: serviceFrom,
+                workingDays: settings?.workingDays,
+                anytimeOpenFrom: settings?.anytimeOpenFrom,
+                anytimeOpenTo: settings?.anytimeOpenTo,
+            }) || new Date(now)
+        )
+    }
+    if (pickupDate) {
+        const day = new Date(pickupDate)
+        if (!Number.isNaN(day.getTime())) {
+            const slot = slotStartMinutes(pickupTime)
+            // No time given → the opening hour. A time we cannot read counts
+            // as noon, so it can never make Ready Today look possible (F-56).
+            const mins =
+                slot === null
+                    ? (parseHhMm(settings?.anytimeOpenFrom) ?? parseHhMm(DEFAULT_ANYTIME_OPEN_FROM))
+                    : slot === UNREADABLE_SLOT
+                      ? READY_TODAY_PICKUP_BEFORE
+                      : slot
+            const at = atMinutes(day, mins)
+            return at < now ? new Date(now) : at
+        }
+    }
+    return new Date(now)
+}
+
+/**
+ * Adjust a booked order's split for a changed piece total (Intake count, item
+ * edit). The ready date never moves (client, 12 Oct: "keep their date"): extra
+ * pieces go on the LAST day, removed pieces come off the last days first.
+ */
+const adjustAllocation = (allocation, newPieces) => {
+    // Copied field by field: a hydrated order's entries are Mongoose
+    // sub-documents, and spreading one copies its internals, not its fields.
+    const out = (allocation || []).map((a) => ({ date: a.date, pieces: Number(a.pieces) || 0 }))
+    if (!out.length) return out
+    const target = Math.max(0, Math.floor(Number(newPieces) || 0))
+    let diff = target - out.reduce((n, a) => n + a.pieces, 0)
+    if (diff > 0) out[out.length - 1].pieces += diff
+    for (let i = out.length - 1; diff < 0 && i >= 0; i -= 1) {
+        const off = Math.min(out[i].pieces, -diff)
+        out[i].pieces -= off
+        diff += off
+    }
+    return out.filter((a, i) => a.pieces > 0 || i === out.length - 1)
+}
+
 module.exports = {
+    DEFAULT_HALF_DAYS,
+    DEFAULT_FLOOR_LIMITS,
+    SPEED_ORDER,
+    normalizeHalfDays,
+    normalizeFloorLimits,
+    dayWeight,
+    readyTodayAllowed,
+    earliestReadyDay,
+    readyDeadline,
+    dailyLimit,
+    allocateFloor,
+    speedOptions,
+    adjustAllocation,
+    anytimeOnDate,
+    pickupInstant,
+    dayText,
     DAY_KEYS,
     DEFAULT_WORKING_DAYS,
     DEFAULT_ANYTIME_OPEN_FROM,
@@ -574,7 +1020,6 @@ module.exports = {
     BOOKING_TIMING,
     DISPATCH_LEG,
     SLOT_UNAVAILABLE,
-    SPEED_WORKING_DAYS,
     parseHhMm,
     formatHhMm,
     minutesOfDay,
@@ -600,7 +1045,6 @@ module.exports = {
     legFee,
     anytimeRefundAmount,
     buildOfferedSlots,
-    deliveryDayForSpeed,
     sameDayLegPlan,
     deliveryPromise,
 }

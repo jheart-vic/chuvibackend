@@ -393,19 +393,21 @@ router.get(ROUTE_ADMIN_ORDER_MANAGEMENT, adminAuth, (req, res)=>{
  *                       items:
  *                         type: string
  *                       example: ["10am-12pm", "4pm-6pm"]
- *                     standardCapacity:
- *                       type: number
- *                       example: 400
- *                     sameDayCapacity:
- *                       type: number
- *                       example: 400
- *                     expressCapacity:
- *                       type: number
- *                       example: 400
- *                     standardDeliveryPeriod:
- *                       type: number
- *                       example: 2
- *                       description: Period in days for the standard delivery to be ready because of too much orders
+ *                     floorLimits:
+ *                       type: object
+ *                       description: >
+ *                         Launch item 3. The daily floor limit in pieces; the Ready Today
+ *                         (`same-day`) and Express shares are inside it and Regular uses the
+ *                         rest. Each × the day's weight (half days ½, closed days 0). Replaces
+ *                         the old *Capacity / standardDeliveryPeriod values, which booking never read.
+ *                       properties:
+ *                         dailyPieces: { type: integer, example: 150 }
+ *                         sameDayPieces: { type: integer, example: 30 }
+ *                         expressPieces: { type: integer, example: 50 }
+ *                     halfDays:
+ *                       type: array
+ *                       items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+ *                       example: [sun]
  *                     createdAt:
  *                       type: string
  *                       format: date-time
@@ -689,6 +691,21 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *                 items:
  *                   type: string
  *                 example: ["10am-12pm", "4pm-6pm"]
+ *               floorLimits:
+ *                 type: object
+ *                 description: >
+ *                   Launch item 3. The daily floor limit in pieces (whole numbers, 0 or more).
+ *                   Partial updates merge with the saved values. Neither share may exceed
+ *                   dailyPieces; a bad value is refused with 400 and nothing is saved.
+ *                 properties:
+ *                   dailyPieces: { type: integer, example: 150 }
+ *                   sameDayPieces: { type: integer, example: 30 }
+ *                   expressPieces: { type: integer, example: 50 }
+ *               halfDays:
+ *                 type: array
+ *                 description: Days that count ½ towards a ready date and get half of each floor limit. [] for none.
+ *                 items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+ *                 example: [sun]
  *               walletAdjustmentLimits:
  *                 type: object
  *                 description: >

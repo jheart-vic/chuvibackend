@@ -383,6 +383,11 @@ const ensureSchedulingSettings = async () => {
       // N1 cancellation charges — same migration, same reason.
       cancellationPickupFee: 1000,
       cancellationReturnFee: 1000,
+      // Launch item 3 (client 12 Oct 2026): the half days and the daily floor
+      // limit. Booking already reads defaults when these are absent; written
+      // here so the admin settings screen shows them before the first save.
+      halfDays: ["sun"],
+      floorLimits: { dailyPieces: 150, sameDayPieces: 30, expressPieces: 50 },
     };
     const applied = [];
     for (const [field, value] of Object.entries(DEFAULTS)) {

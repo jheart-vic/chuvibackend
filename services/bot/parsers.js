@@ -7,8 +7,12 @@
 // this._wordToNumber, _bookingEstimate → this._speedCharge) exactly as before —
 // no behaviour change. Nothing here touches conversation state, models, or the
 // network; it's pure text/number/price logic.
-const { roundToNearestHundred, calculateDueDate } = require('../../util/helper')
+const { roundToNearestHundred } = require('../../util/helper')
 const { DELIVERY_SPEED } = require('../../util/constants')
+
+// "next week" that isn't ruled out ("this saturday, not next week", "saturday
+// or next week") — review F-78.
+const NEXT_WEEK = /(?<!\b(?:not|or)\s+)\bnext\s+week\b/
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
 
@@ -169,7 +173,10 @@ module.exports = {
     // Part A: pull a day phrase and/or time-of-day from free text, WITHOUT
     // swallowing the whole message. Returns { datePhrase, timePhrase } (either
     // may be null). _resolvePickupDate turns datePhrase into a real Date.
-    _parseDateTimeFromText(text) {
+    // `written` also reads a written date ("20 October", "20/10") — only when the
+    // customer is answering the day question, so an address ("12/4 Allen
+    // Avenue") is never taken as a day.
+    _parseDateTimeFromText(text, { written = false } = {}) {
         const t = String(text || '').toLowerCase()
         let datePhrase = null
         if (/\bday after tomorrow\b/.test(t)) datePhrase = 'day after tomorrow'
@@ -180,7 +187,19 @@ module.exports = {
             for (const d of days) {
                 if (new RegExp(`\\b${d}\\b`).test(t)) { datePhrase = d; break }
             }
+            // Keep "next week" with the weekday, so it isn't the coming one —
+            // unless it's ruled out ("this saturday, not next week") (F-78).
+            if (datePhrase && NEXT_WEEK.test(t)) datePhrase = `${datePhrase} next week`
         }
+        // A written date is kept BESIDE a named day ("saturday 20 Oct"), never in
+        // place of it, so _resolvePickupDate can check they agree (F-73).
+        // Beside a named weekday a date is read on any turn ("book saturday
+        // 24th"), so the agreement check runs; on its own only on the day
+        // question, so an address is never a day (F-78).
+        // Away from the day question only a day-of-month or a month name counts
+        // beside the weekday, never a slash pair ("No 17/4 Allen Avenue", F-81).
+        const w = written || datePhrase ? this._writtenPickupDate(t, new Date(), { slash: written }) : null
+        if (w) datePhrase = datePhrase ? `${datePhrase} ${w.text}` : w.text
         let timePhrase = null
         const clock = t.match(/\b(\d{1,2})(:\d{2})?\s*(am|pm)\b/)
         if (clock) timePhrase = clock[0].replace(/\s+/g, '')
@@ -249,31 +268,58 @@ module.exports = {
         return null
     },
 
-    // Speeds available at the current clock time (uses the backend cutoff rule via
-    // calculateDueDate, so the bot never offers something that would be blocked),
-    // each with its charge + a human ETA. Standard is always available.
-    _availableSpeeds(setting) {
-        const out = []
-        if (calculateDueDate(DELIVERY_SPEED.SAME_DAY)) {
-            out.push({ speed: DELIVERY_SPEED.SAME_DAY, label: 'Same-day', charge: setting?.sameDayCharge || 0, eta: 'ready today' })
+    // Every speed for this pickup day/time and piece count, from the SAME rows
+    // the booking enforces (launch item 3: ready dates from the pickup, the
+    // daily floor limit, the on-screen speed names), so the assistant never
+    // offers what the booking would refuse. Unavailable rows carry the
+    // client's sentence. Standard (Regular) is never refused.
+    async _availableSpeeds(setting, { bItems = [], bDate = null, pickupDay = null, bTime = null } = {}) {
+        const BookingWindowService = require('../bookingWindow.service')
+        const pieces = (bItems || []).reduce((n, i) => n + (Number(i.quantity) || 0), 0)
+        // Resolved exactly as _placeBooking resolves it ("tomorrow" → a date),
+        // so the offered rows and the booking count from the same pickup.
+        const { speeds } = await BookingWindowService.speedOptionsFor({
+            pickup: { pickupDate: pickupDay || this._resolvePickupDate(bDate), pickupTime: bTime },
+            pieces,
+        })
+        const charge = {
+            [DELIVERY_SPEED.SAME_DAY]: setting?.sameDayCharge || 0,
+            [DELIVERY_SPEED.EXPRESS]: setting?.expressCharge || 0,
+            [DELIVERY_SPEED.STANDARD]: 0,
         }
-        if (calculateDueDate(DELIVERY_SPEED.EXPRESS)) {
-            out.push({ speed: DELIVERY_SPEED.EXPRESS, label: 'Express', charge: setting?.expressCharge || 0, eta: 'ready tomorrow' })
-        }
-        out.push({ speed: DELIVERY_SPEED.STANDARD, label: 'Standard', charge: 0, eta: 'ready in about 2 days' })
-        return out
+        return speeds.map((s) => ({
+            speed: s.speed,
+            label: s.label,
+            available: s.available,
+            charge: charge[s.speed] || 0,
+            eta: s.available ? s.readyText.replace(/^Ready/, 'ready') : null,
+            message: s.message,
+        }))
     },
 
-    _speedOfferText(avail) {
+    _speedOfferText(avail, { skipNoteFor = null } = {}) {
+        // Only the speeds that still fit are offered (client, 12 Oct); a
+        // greyed-out speed gets its reason underneath — except the one the
+        // reply already leads with (F-60).
+        const notes = avail
+            .filter((s) => !s.available && s.message && s.speed !== skipNoteFor)
+            .map((s) => `(${s.message})`)
+        avail = avail.filter((s) => s.available !== false)
         const lines = avail.map((s) => {
             const price = s.charge > 0 ? ` (+${naira(s.charge)})` : ' (free)'
             return `• ${s.label}${price} — ${s.eta}`
         })
-        return `How soon do you need it?\n${lines.join('\n')}\nReply with one — or "standard" if you're not in a hurry.`
+        return `How soon do you need it?\n${[...lines, ...notes].join('\n')}\nReply with one — or "standard" if you're not in a hurry.`
     },
 
     // One-line speed description for the confirm summary.
-    _describeSpeed(speed, setting) {
+    _describeSpeed(speed, setting, chosen = null) {
+        // The real ready date for this pickup when the speed step worked it
+        // out (launch item 3); the old fixed wording otherwise.
+        if (chosen?.label && chosen?.eta) {
+            const c = this._speedCharge(speed, setting)
+            return `${chosen.label}${c > 0 ? ` (+${naira(c)})` : ''} — ${chosen.eta}`
+        }
         const map = {
             [DELIVERY_SPEED.SAME_DAY]: { label: 'Same-day', eta: 'ready today' },
             [DELIVERY_SPEED.EXPRESS]: { label: 'Express', eta: 'ready tomorrow' },
@@ -284,9 +330,95 @@ module.exports = {
         return `${d.label}${charge > 0 ? ` (+${naira(charge)})` : ''} — ${d.eta}`
     },
 
-    // Resolve a simple day phrase to a real Date (today / tomorrow / weekday);
-    // returns null for anything we can't safely parse (the order still stores
-    // the phrase-free fields and staff coordinate exact timing).
+    // A written pickup day: "20 October", "20th of Oct", "Oct 20", "20/10"
+    // (day first), "the 20th", "in 3 days". Returns { date (local midnight),
+    // text } for the next such day on or after today, or null. A day that
+    // doesn't exist (31/02) or an explicit past date is null, never a guess
+    // (review F-72: an unread day used to fall back to NOW).
+    _writtenPickupDate(phrase, now = new Date(), { slash = true } = {}) {
+        const p = String(phrase || '').toLowerCase()
+        const today = new Date(now)
+        today.setHours(0, 0, 0, 0)
+        const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+        const MON = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
+        const make = (y, m, d) => {
+            const dt = new Date(y, m, d)
+            return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d ? dt : null
+        }
+        // Next occurrence on or after today when no year was written. A date
+        // that passed recently ("12 Oct" on the 13th) is a slip, not next
+        // year: null, so the customer is asked again. Only a date well behind
+        // ("5 Jan" in December) rolls to next year.
+        const nextOf = (m, d) => {
+            const y = today.getFullYear()
+            const dt = make(y, m, d)
+            if (dt && dt >= today) return dt
+            if (dt && today - dt < 60 * 86400000) return null
+            return make(y + 1, m, d)
+        }
+        let m
+        // "may" is also a verb: "9 may" is 9 May only when nothing but a time,
+        // a year or punctuation follows ("by 3 may be 4pm", "around 9 may
+        // work" are not dates — F-73, F-79).
+        const MAY_IS_MONTH = /^\s*(?:$|[,.!?]|\d|(?:at|by|around|in|morning|afternoon|evening|from)\b)/
+        if ((m = p.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MON}\\b`))) &&
+            (m[2] !== 'may' || MAY_IS_MONTH.test(p.slice(m.index + m[0].length)))) {
+            const dt = nextOf(MONTHS.indexOf(m[2].slice(0, 3)), Number(m[1]))
+            return dt ? { date: dt, text: m[0] } : null
+        }
+        // "may 10 am" is a time, not 10 May (F-79).
+        if ((m = p.match(new RegExp(`\\b${MON}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!\\s*(?::\\d{2})?\\s*[ap]\\.?m)`)))) {
+            const dt = nextOf(MONTHS.indexOf(m[1].slice(0, 3)), Number(m[2]))
+            return dt ? { date: dt, text: m[0] } : null
+        }
+        // "10/11 am" and "9/10am" are a time range, not a date (F-73).
+        if (slash && (m = p.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b(?!\s*[ap]\.?m)/))) {
+            const d = Number(m[1])
+            const mo = Number(m[2]) - 1
+            let dt
+            if (m[3]) {
+                const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])
+                dt = make(y, mo, d)
+                if (dt && dt < today) dt = null
+            } else dt = nextOf(mo, d)
+            return dt ? { date: dt, text: m[0] } : null
+        }
+        // "the 20th" needs "the" — or a weekday beside it ("Saturday 24th",
+        // "saturday 24"), so the weekday/date agreement check runs (F-78). Beside
+        // a weekday a bare 13–31 is a day of the month; 1–12 stays an hour, and
+        // nothing followed by am/pm, ":" or a count is a day. "the 3rd floor" /
+        // "the 2nd gate" are places (F-74).
+        const NOT_A_DAY = '(?!\\s*(?::|\\/|\\.\\d|[ap]\\.?m|floor|flr|storey|gate|street|st\\b|avenue|ave\\b|road|rd\\b|close|crescent|lane|estate|house|building|block|phase|left|right|turn|junction|bus|shirts?|pieces?|pcs|items?|bags?|clothes|kg))'
+        const WEEKDAY = '(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)'
+        const ordinal = new RegExp(`\\b${WEEKDAY}\\b`).test(p)
+            // The bare number must sit RIGHT after the weekday, so a house
+            // number later in the sentence ("saturday, at 24 Allen Avenue") isn't a day.
+            // and be followed only by a time word, punctuation or the end
+            // ("saturday 24 by 10am" yes; "saturday, 24 Allen Avenue" no).
+            ? new RegExp(`(?:\\b(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)\\b${NOT_A_DAY}|\\b${WEEKDAY}[,\\s]+(?:the\\s+)?(1[3-9]|2\\d|3[01])\\b(?=\\s*(?:$|[,.!?;]|(?:by|at|around|about|in|from|or|and|morning|afternoon|evening|please|pls)\\b)))`)
+            : new RegExp(`\\bthe\\s+(\\d{1,2})(?:st|nd|rd|th)\\b${NOT_A_DAY}`)
+        if ((m = p.match(ordinal))) {
+            const d = Number(m[1] || m[2])
+            let dt = make(today.getFullYear(), today.getMonth(), d)
+            if (!dt || dt < today) {
+                const next = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+                dt = make(next.getFullYear(), next.getMonth(), d)
+            }
+            return dt ? { date: dt, text: m[0] } : null
+        }
+        if ((m = p.match(/\bin\s+(\d{1,2})\s+days?\b/))) {
+            const n = Number(m[1])
+            if (n > 60) return null
+            const dt = new Date(today)
+            dt.setDate(dt.getDate() + n)
+            return { date: dt, text: m[0] }
+        }
+        return null
+    },
+
+    // Resolve a day phrase to a real Date (today / tomorrow / a written date /
+    // weekday); returns null for anything we can't safely parse — the booking
+    // flow then asks for the day again rather than counting from now (F-72).
     _resolvePickupDate(phrase) {
         const p = String(phrase || '').toLowerCase()
         if (!p) return null
@@ -295,26 +427,39 @@ module.exports = {
             return d
         }
         const now = new Date()
-        if (/\btoday\b/.test(p)) return atNoon(new Date(now))
-        if (/\bday after tomorrow\b|\bovermorrow\b/.test(p)) {
+        const written = this._writtenPickupDate(p, now)
+        const inDays = (n) => {
             const d = new Date(now)
-            d.setDate(d.getDate() + 2)
+            d.setDate(d.getDate() + n)
             return atNoon(d)
         }
-        if (/\btomorrow\b/.test(p)) {
-            const d = new Date(now)
-            d.setDate(d.getDate() + 1)
-            return atNoon(d)
+        // A named day: an exact date (today/tomorrow) or a weekday.
+        let named = null
+        let weekday = -1
+        if (/\btoday\b/.test(p)) named = inDays(0)
+        else if (/\bday after tomorrow\b|\bovermorrow\b/.test(p)) named = inDays(2)
+        else if (/\btomorrow\b/.test(p)) named = inDays(1)
+        else {
+            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            weekday = days.findIndex((d) => new RegExp(`\\b${d}\\b`).test(p))
+            if (weekday >= 0 && NEXT_WEEK.test(p)) {
+                // "Saturday next week" = that day in the week starting next
+                // Monday, never the coming one (F-78).
+                const toNextMonday = ((8 - now.getDay()) % 7) || 7
+                named = inDays(toNextMonday + ((weekday + 6) % 7))
+            } else if (weekday >= 0) named = inDays(((weekday - now.getDay() + 7) % 7) || 7)
         }
-        const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-        for (let i = 0; i < 7; i++) {
-            if (new RegExp(`\\b${days[i]}\\b`).test(p)) {
-                const d = new Date(now)
-                const diff = ((i - d.getDay() + 7) % 7) || 7
-                d.setDate(d.getDate() + diff)
-                return atNoon(d)
-            }
+        // Both written → they must agree, or we ask again rather than pick one
+        // ("saturday 10/11" is not 10 November — F-73). "Saturday 31 October"
+        // agrees when 31 October is a Saturday.
+        if (written && named) {
+            const agrees = weekday >= 0
+                ? written.date.getDay() === weekday
+                : written.date.toDateString() === new Date(named).toDateString()
+            return agrees ? atNoon(written.date) : null
         }
+        if (written) return atNoon(written.date)
+        if (named) return named
         return null
     },
 

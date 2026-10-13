@@ -1005,6 +1005,20 @@
  *             opensTo: { type: string, example: "17:00" }
  *             servesFrom: { type: string, format: date-time }
  *             note: { type: string, example: We will dispatch as soon as we can. }
+ *         anytimeByDate:
+ *           type: array
+ *           description: >
+ *             Launch item 3 (client item 2): Anytime for EACH date in the horizon, today first.
+ *             A day that is not a working day reads "Closed that day", like its windows. Use this
+ *             instead of `anytime` (kept for older app builds) when showing a chosen date.
+ *           items:
+ *             type: object
+ *             properties:
+ *               date: { type: string, example: "2026-10-12" }
+ *               open: { type: boolean, example: false }
+ *               servesFrom: { type: string, format: date-time, nullable: true }
+ *               note: { type: string, example: Closed that day }
+ *               fee: { type: integer, example: 1000 }
  *         sameDay:
  *           type: object
  *           nullable: true
@@ -1389,6 +1403,49 @@
  *               type: string
  *               nullable: true
  *               example: "Add ₦3,200 more for free pickup and delivery."
+ *         pickupAt:
+ *           type: string
+ *           format: date-time
+ *           description: The pickup instant the ready dates count from (window start, Anytime start, or now).
+ *         speeds:
+ *           type: array
+ *           nullable: true
+ *           description: >
+ *             Launch item 3 (client items 1, 9, 3b). One row per speed for THIS draft's pickup
+ *             (`pickupTiming`, `pickupWindowId`, `pickupDate`) and pieces (`items` quantities, or
+ *             `itemCount`). Show `readyText` under the pickup time. A row with `available: false`
+ *             is greyed out with its `message`, shown as it comes. Speed names are the on-screen
+ *             display names. Null only if the dates could not be worked out (offers still load).
+ *           items: { $ref: '#/components/schemas/SpeedOption' }
+ *
+ *     SpeedOption:
+ *       type: object
+ *       description: >
+ *         Ready date counted from the day AFTER pickup (Tue–Sat 1, Sunday ½, Monday 0; Express 1,
+ *         Regular 2), ready by 7:00 PM; Ready Today counts the pickup day and needs a pickup before
+ *         12:00, never on a half day. Pieces count against the daily floor limit on the ready day;
+ *         Regular spreads over days and is never refused; Ready Today / Express are never split.
+ *       properties:
+ *         speed: { type: string, enum: [same-day, express, standard], example: standard }
+ *         label: { type: string, example: Regular }
+ *         available: { type: boolean, example: true }
+ *         readyDate: { type: string, format: date-time, nullable: true, example: "2026-10-15T18:00:00.000Z" }
+ *         readyText: { type: string, nullable: true, example: "Ready Thursday 15 October, by 7:00 PM" }
+ *         movedFrom:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Set when the first possible day had no room at all.
+ *         movedFromText: { type: string, nullable: true, example: "Ready Friday instead of Thursday" }
+ *         unavailableReason:
+ *           type: string
+ *           nullable: true
+ *           enum: [full, too-many-pieces, pickup-rule, not-available, null]
+ *           example: null
+ *         message:
+ *           type: string
+ *           nullable: true
+ *           example: "Too many pieces for Ready Today. Choose Express or Regular, or call us on +234 707 325 4943."
  *
  *     BookingContext:
  *       type: object

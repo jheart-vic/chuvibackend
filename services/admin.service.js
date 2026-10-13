@@ -73,6 +73,7 @@ const {
 const { getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
 const BaseService = require('./base.service')
+const { normalizeFloorLimits, normalizeHalfDays } = require('../util/bookingWindow')
 
 class AdminService extends BaseService {
     async getDashboardStats(req, res) {
@@ -1355,11 +1356,11 @@ class AdminService extends BaseService {
                         '10am-12pm',
                         '4pm-6pm',
                     ],
-                    standardCapacity: adminSetting?.standardCapacity ?? 100,
-                    sameDayCapacity: adminSetting?.sameDayCapacity ?? 50,
-                    expressCapacity: adminSetting?.expressCapacity ?? 30,
-                    standardDeliveryPeriod:
-                        adminSetting?.standardDeliveryPeriod ?? 2,
+                    // Launch item 3: the daily floor limit (pieces) and the
+                    // half days. The old *Capacity / standardDeliveryPeriod
+                    // values are no longer read by booking.
+                    floorLimits: normalizeFloorLimits(adminSetting?.floorLimits),
+                    halfDays: normalizeHalfDays(adminSetting?.halfDays),
                     sameDayCharge: adminSetting?.sameDayCharge ?? 300,
                     expressCharge: adminSetting?.expressCharge ?? 100,
                     premiumServiceTierCharge:
@@ -1491,6 +1492,53 @@ class AdminService extends BaseService {
                         })
                     }
                 }
+            }
+
+            // Launch item 3: the floor limits and half days drive every ready
+            // date, so a typo must be refused, not saved (this endpoint $sets
+            // with validators off).
+            if (updateData?.floorLimits !== undefined) {
+                const fl = updateData.floorLimits || {}
+                const merged = { ...normalizeFloorLimits(adminSetting.floorLimits), ...fl }
+                for (const key of ['dailyPieces', 'sameDayPieces', 'expressPieces']) {
+                    // A real number, or a string of digits. Number('') and
+                    // Number(null) are 0 and Number(true) is 1, so a cleared
+                    // form field used to save a limit of 0 (review F-58).
+                    const v = merged[key]
+                    const isNumberLike =
+                        (typeof v === 'number' && Number.isFinite(v)) ||
+                        (typeof v === 'string' && /^\d+$/.test(v.trim()))
+                    if (!isNumberLike || !Number.isInteger(Number(v)) || Number(v) < 0) {
+                        return BaseService.sendFailedResponse({
+                            error: `floorLimits.${key} must be a whole number of pieces, 0 or more.`,
+                            field: `floorLimits.${key}`,
+                        })
+                    }
+                    merged[key] = Number(merged[key])
+                }
+                if (merged.sameDayPieces > merged.dailyPieces || merged.expressPieces > merged.dailyPieces) {
+                    return BaseService.sendFailedResponse({
+                        error: 'The Ready Today and Express limits are part of the daily floor limit, so neither can be larger than it.',
+                        field: 'floorLimits',
+                    })
+                }
+                updateData.floorLimits = merged
+            }
+            if (updateData?.halfDays !== undefined) {
+                if (!Array.isArray(updateData.halfDays)) {
+                    return BaseService.sendFailedResponse({
+                        error: 'halfDays must be a list of days, e.g. ["sun"].',
+                        field: 'halfDays',
+                    })
+                }
+                const days = normalizeHalfDays(updateData.halfDays)
+                if (days.length !== new Set(updateData.halfDays.map((d) => String(d).trim().toLowerCase().slice(0, 3))).size) {
+                    return BaseService.sendFailedResponse({
+                        error: 'halfDays has an unknown day. Use sun, mon, tue, wed, thu, fri or sat.',
+                        field: 'halfDays',
+                    })
+                }
+                updateData.halfDays = days
             }
 
             const updated = await AdminSettingModel.findOneAndUpdate(

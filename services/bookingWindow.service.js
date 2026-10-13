@@ -6,6 +6,7 @@ const BookOrderModel = require('../models/bookOrder.model')
 const createAuditLog = require('../util/createAuditLog')
 const {
     DELIVERY_SPEED,
+    ORDER_STATUS,
     BOOKING_TIMING,
     DISPATCH_LEG,
     AUDIT_LOG_CATEGORIES,
@@ -39,6 +40,9 @@ class BookingWindowService {
         const s = (await AdminSettingModel.findOne({}).lean()) || {}
         return {
             workingDays: W.normalizeWorkingDays(s.workingDays),
+            // Launch item 3: the ready-date day weights and the floor limit.
+            halfDays: W.normalizeHalfDays(s.halfDays),
+            floorLimits: W.normalizeFloorLimits(s.floorLimits),
             anytimeOpenFrom: s.anytimeOpenFrom || W.DEFAULT_ANYTIME_OPEN_FROM,
             anytimeOpenTo: s.anytimeOpenTo || W.DEFAULT_ANYTIME_OPEN_TO,
             // The WINDOW price is the existing pickup/delivery fee — there is no
@@ -52,6 +56,114 @@ class BookingWindowService {
 
     static async getActiveWindows() {
         return BookingWindowModel.find({ isActive: true }).sort({ startTime: 1 }).lean()
+    }
+
+    // ───────────────────── the daily floor limit (launch item 3) ─────────────────────
+
+    /**
+     * Floor usage per READY day, `{ 'YYYY-MM-DD': { total, [speed]: pieces } }`,
+     * from every order that is not cancelled — so a cancellation frees its
+     * pieces with no extra step.
+     */
+    static async getFloorUsage({ from, to }) {
+        const fromKey = W.dateKey(from)
+        const toKey = W.dateKey(to)
+        const match = {
+            'stage.status': { $ne: ORDER_STATUS.CANCELLED },
+            'floorAllocation.date': { $gte: fromKey, $lte: toKey },
+        }
+        const rows = await BookOrderModel.aggregate([
+            { $match: match },
+            { $unwind: '$floorAllocation' },
+            { $match: { 'floorAllocation.date': { $gte: fromKey, $lte: toKey } } },
+            {
+                $group: {
+                    _id: { date: '$floorAllocation.date', speed: '$deliverySpeed' },
+                    pieces: { $sum: '$floorAllocation.pieces' },
+                },
+            },
+        ])
+        const usage = {}
+        for (const r of rows) {
+            const day = (usage[r._id.date] ||= { total: 0 })
+            const speed = r._id.speed || DELIVERY_SPEED.STANDARD
+            day[speed] = (day[speed] || 0) + r.pieces
+            day.total += r.pieces
+        }
+        return usage
+    }
+
+    /**
+     * The speed rows for a booking-screen draft (booking-options). Uses the
+     * pickup the customer chose — a window on a date, Anytime on a date, or
+     * now — and the pieces in the basket or the Quick Booking count. Ready
+     * Today's pickup is forced to Anytime when there is no morning window
+     * (client ruling 2026-10-08, `resolvePickupTiming`), so its row is worked
+     * out from that pickup, exactly as `postBookOrder` will.
+     */
+    static async speedOptionsForDraft(draft = {}, { now = new Date() } = {}) {
+        const items = Array.isArray(draft.items) ? draft.items : []
+        const pieces = items.length
+            ? items.reduce((n, i) => n + (Number(i.quantity) || 0), 0)
+            : Math.max(0, Math.floor(Number(draft.itemCount) || 0))
+        const windows = await this.getActiveWindows()
+        const date = draft.pickupDate ? new Date(draft.pickupDate) : null
+        const legFor = (speed) => {
+            const timing = this.resolvePickupTiming({ deliverySpeed: speed, pickupTiming: draft.pickupTiming, windows })
+            if (timing === BOOKING_TIMING.WINDOW) {
+                const w = windows.find((x) => String(x._id) === String(draft.pickupWindowId))
+                return w ? { timing, date: date || now, windowStart: w.startTime } : null
+            }
+            if (timing === BOOKING_TIMING.ANYTIME) return { timing, date }
+            return null
+        }
+        const pickupOf = (speed) => ({ leg: legFor(speed), pickupDate: draft.pickupDate, pickupTime: draft.pickupTime })
+        const main = await this.speedOptionsFor({ pickup: pickupOf(DELIVERY_SPEED.STANDARD), pieces, now })
+        const sameDayLeg = legFor(DELIVERY_SPEED.SAME_DAY)
+        if (JSON.stringify(sameDayLeg) !== JSON.stringify(legFor(DELIVERY_SPEED.STANDARD))) {
+            const alt = await this.speedOptionsFor({ pickup: pickupOf(DELIVERY_SPEED.SAME_DAY), pieces, now })
+            const i = main.speeds.findIndex((s) => s.speed === DELIVERY_SPEED.SAME_DAY)
+            main.speeds[i] = alt.speeds.find((s) => s.speed === DELIVERY_SPEED.SAME_DAY)
+        }
+        return {
+            pickupAt: main.pickupAt,
+            pieces,
+            speeds: main.speeds.map(({ allocation, ...row }) => row),
+        }
+    }
+
+    /** Each speed's on-screen name (client, 12 Oct: the same name everywhere). */
+    static speedLabels(adminSetting) {
+        const { resolveLabel } = require('../util/displayName')
+        return Object.fromEntries(
+            Object.values(DELIVERY_SPEED).map((v) => [
+                v,
+                resolveLabel('deliverySpeeds', v, adminSetting?.displayNames).label,
+            ]),
+        )
+    }
+
+    /**
+     * Every speed for one pickup and piece count — the rows the booking screen
+     * shows and the booking itself enforces (one rule for both).
+     * `pickup` is { leg?, pickupDate?, pickupTime? }.
+     */
+    static async speedOptionsFor({ pickup = {}, pieces, now = new Date() }) {
+        const adminSetting = (await AdminSettingModel.findOne({}).lean()) || {}
+        const settings = await this.getSchedulingSettings()
+        const pickupAt = W.pickupInstant({ ...pickup, now, settings })
+        const from = W.startOfDay(pickupAt)
+        const usage = await this.getFloorUsage({ from, to: W.addDays(from, 130) })
+        return {
+            pickupAt,
+            speeds: W.speedOptions({
+                pickupAt,
+                pieces,
+                settings,
+                usage,
+                labels: this.speedLabels(adminSetting),
+            }),
+        }
     }
 
     // ───────────────────────── per-window-per-day counts ─────────────────────────
@@ -223,11 +335,21 @@ class BookingWindowService {
                     : 'Outside our Anytime hours — we will come first thing on the next working day.',
             }
 
+            // Launch item 3 (client item 2): Anytime PER DATE, so a closed day
+            // reads "Closed that day" like its windows instead of repeating
+            // the "now" answer on every date. `anytime` stays for older builds.
+            const anytimeFee = W.legFee({ timing: BOOKING_TIMING.ANYTIME, leg, settings })
+            const anytimeByDate = Array.from({ length: horizonDays + 1 }, (_, i) => ({
+                ...W.anytimeOnDate({ date: W.addDays(from, i), now, settings }),
+                fee: anytimeFee,
+            }))
+
             const payload = {
                 leg,
                 workingDays: settings.workingDays,
                 slots,
                 anytime,
+                anytimeByDate,
                 windowFee: W.legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings }),
             }
 

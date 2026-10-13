@@ -13,7 +13,7 @@
 // to the customer is the one staff should meet first — which is not necessarily
 // the one that has been waiting longest.
 //
-// `deliveryDate` is set on every booking path (`calculateDueDate` at creation),
+// `deliveryDate` is set on every booking path (the launch-item-3 ready-date engine at creation),
 // so no order in a production queue is missing one. Note for anything new: a
 // missing date would sort FIRST in Mongo, so an order that somehow has no
 // deadline would jump the queue rather than fall to the back.

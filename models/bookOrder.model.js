@@ -238,6 +238,18 @@ const bookOrderSchema = new mongoose.Schema(
         deliveryAddress: { type: mongoose.Schema.Types.Mixed },
         pickupDate: { type: Date },
         deliveryDate: { type: Date },
+        // Launch item 3 (client 12 Oct 2026): which READY day each of this
+        // order's pieces counts against on the daily floor limit. Regular can
+        // spread over days ("40 Tuesday, 140 Wednesday"); the customer only
+        // ever sees `deliveryDate`, the last day. A cancelled order is left
+        // out of the count, which frees its pieces.
+        floorAllocation: [
+            {
+                _id: false,
+                date: { type: String }, // 'YYYY-MM-DD', Lagos
+                pieces: { type: Number, min: 0 },
+            },
+        ],
         isVerified: { type: Boolean, default: false },
         pickupTime: {
             type: String,
@@ -879,6 +891,8 @@ bookOrderSchema.methods.summaryStatus = function () {
 
 bookOrderSchema.statics.STATION_SEQUENCE = STATION_SEQUENCE
 bookOrderSchema.statics.STATION_TO_ORDER_STATUS = STATION_TO_ORDER_STATUS
+
+bookOrderSchema.index({ 'floorAllocation.date': 1 })
 
 const BookOrderModel = mongoose.model('BookOrder', bookOrderSchema)
 module.exports = BookOrderModel

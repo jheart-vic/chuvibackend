@@ -31,6 +31,7 @@ const {
     ORDER_CHANNEL,
     BILLING_TYPE,
     PAYMENT_ORDER_STATUS,
+    DELIVERY_SPEED,
 } = require('../util/constants')
 
 const HOUR = 60 * 60 * 1000
@@ -332,6 +333,31 @@ class RecoveryService {
         // per-piece: recovery items are tagged/tracked individually too
         orderItems = explodeItemsToPieces(orderItems)
 
+        // Launch item 3: a redo is washed on the same floor, so it takes floor
+        // space and gets a ready date like any order, counted from now (Intake
+        // receives it). It must never be blocked: the original speed if it
+        // still has room, else Regular, which is never refused. Non-fatal — a
+        // failure here must not stop the recovery.
+        let readyFields = {}
+        try {
+            const BookingWindowService = require('./bookingWindow.service')
+            const { speeds } = await BookingWindowService.speedOptionsFor({
+                pieces: orderItems.length,
+            })
+            const row =
+                speeds.find((s) => s.speed === original.deliverySpeed && s.available) ||
+                speeds.find((s) => s.speed === DELIVERY_SPEED.STANDARD)
+            if (row?.available) {
+                readyFields = {
+                    deliverySpeed: row.speed,
+                    deliveryDate: row.readyDate,
+                    floorAllocation: row.allocation,
+                }
+            }
+        } catch (err) {
+            console.warn('recovery order ready date failed (non-fatal):', err?.message)
+        }
+
         const recoveryOrder = await BookOrderModel.create({
             userId: complaint.userId,
             fullName: original.fullName,
@@ -357,6 +383,7 @@ class RecoveryService {
             recoveryForComplaintId: complaint._id,
             recoveryForOrderId: complaint.orderId,
             recoveryActionType: action,
+            ...readyFields,
         })
 
         // record on the case + move it into recovery. Creating a recovery order

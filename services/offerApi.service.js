@@ -518,6 +518,18 @@ class OfferApiService extends BaseService {
                 req.user.id,
                 req.body || {},
             )
+            // Launch item 3: every speed's ready date (or why it is greyed out)
+            // for the pickup and pieces in this draft — the client's item 9,
+            // "show it under the pickup time". Non-fatal: the offers still load.
+            try {
+                const BookingWindowService = require('./bookingWindow.service')
+                const { speeds, pickupAt } = await BookingWindowService.speedOptionsForDraft(req.body || {})
+                result.speeds = speeds
+                result.pickupAt = pickupAt
+            } catch (err) {
+                console.error('booking-options speeds failed:', err?.message)
+                result.speeds = null
+            }
             return BaseService.sendSuccessResponse({ message: result })
         } catch (error) {
             console.error(error)

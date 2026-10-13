@@ -16,7 +16,6 @@ const {
     generateOscNumber,
     generateReferenceId,
     roundToNearestHundred,
-    calculateDueDate,
     getObjectId,
     normalizePhone,
 } = require('../util/helper')
@@ -53,6 +52,7 @@ const {
     legFee,
     sameDayLegPlan,
     startOfDay: startOfLagosDay,
+    adjustAllocation,
 } = require('../util/bookingWindow')
 // N1: cancellation is refused once tagging begins, and the fees after pickup
 // are flat charges that ignore a free-pickup offer (the trip was still made).
@@ -1148,6 +1148,17 @@ class BookOrderService extends BaseService {
                         // permanent fact, and the Quick Booking card at Intake
                         // needs it to stop listing an order it has finished.
                         itemsPending: false,
+                        // Launch item 3 (client 12 Oct): the ready date is KEPT
+                        // ("keep their date even if the count changes"); only the
+                        // floor split follows the new count, so later bookings see
+                        // it. Extra pieces go on the last day, removed ones come
+                        // off the last days first. Older orders have no split.
+                        ...(order.floorAllocation?.length && {
+                            floorAllocation: adjustAllocation(
+                                order.floorAllocation,
+                                countPieces(explodedItems),
+                            ),
+                        }),
                     },
                     $push: {
                         itemEdits: {
@@ -1642,28 +1653,12 @@ class BookOrderService extends BaseService {
                 })
             }
 
-            // ⏰ Booking time cutoff check — same-day before 10am, express before 2pm.
-            // calculateDueDate returns null when the cutoff has passed.
-            // D6(b): the promised date skips days the business is closed —
-            // without the working days a Saturday standard order is due Monday,
-            // and with Monday unticked it reads OVERDUE on a day nobody worked
-            // and trips the past-delivery-date hold breach.
-            const deliveryDate = calculateDueDate(
-                post.deliverySpeed,
-                adminOrderSetting.workingDays,
-            )
-            if (deliveryDate === null) {
-                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
-                    })
-                }
-                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Express orders must be placed before 2pm. Please select standard delivery.',
-                    })
-                }
-            }
+            // The ready date (`deliveryDate`) and the floor split are worked out
+            // below, once the pickup is resolved: launch item 3 counts from the
+            // PICKUP, not the booking. The old "same-day before 10am / express
+            // before 2pm" booking cut-offs are gone (client, 11–12 Oct).
+            let deliveryDate = null
+            let floorAllocation = []
 
             // ───────── WINDOW BOOKING (client D1–D8, 2026-10-08) ─────────
             //
@@ -1678,8 +1673,8 @@ class BookOrderService extends BaseService {
             // marked READY — a standard order's delivery day is +2 and is not
             // known yet, and under D6 it might not even be a working day. So
             // the delivery side records the INTENT (timing + fee) only, and
-            // `deliveryDate` keeps coming from `calculateDueDate` so the queue
-            // sort, the SLA clocks and capacity are untouched by this change.
+            // `deliveryDate` is the ready day worked out below (launch item 3),
+            // which the queue sort, the SLA clocks and the hold breach read.
             let scheduling = null
             if (post.pickupTiming || post.deliveryTiming) {
                 const schedSettings =
@@ -1758,6 +1753,32 @@ class BookOrderService extends BaseService {
                 }
             }
 
+            // ───────── READY DATE AND THE DAILY FLOOR (launch item 3) ─────────
+            // Counted from the pickup (window start / Anytime service start /
+            // pickupDate), Tue–Sat 1, Sunday ½, Monday 0, ready by 19:00; the
+            // pieces go on the floor limit. One rule with the booking screen
+            // (`speedOptionsFor`), so the screen never offers what this refuses.
+            // Refused BEFORE any order exists: Regular never is; Ready Today /
+            // Express get the client's confirmed sentence (12 Oct).
+            {
+                const pieces = (post.items || []).reduce((n, i) => n + (Number(i.quantity) || 0), 0)
+                const speed = post.deliverySpeed || DELIVERY_SPEED.STANDARD
+                const { speeds } = await BookingWindowService.speedOptionsFor({
+                    pickup: { leg: scheduling?.pickup || null, pickupDate: post.pickupDate, pickupTime: post.pickupTime },
+                    pieces,
+                })
+                const row = speeds.find((s) => s.speed === speed) || speeds[speeds.length - 1]
+                if (!row.available) {
+                    return BaseService.sendFailedResponse({
+                        error: row.message,
+                        unavailableReason: row.unavailableReason,
+                        speeds: speeds.map(({ allocation, ...rest }) => rest),
+                    })
+                }
+                deliveryDate = row.readyDate
+                floorAllocation = row.allocation
+            }
+
             const oscNumber = generateOscNumber()
             let newOrder = null
             let offerBreakdown = null // set by the offer-eligible billing branches
@@ -1805,30 +1826,20 @@ class BookOrderService extends BaseService {
                     })
                 }
 
-                if (
-                    post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-                    post.items.length > adminOrderDetails.sameDayCapacity
-                ) {
+                // Client, 12 Oct 2026: "Heavy and set items (duvets, suits and
+                // the like) are still not covered by plans." Only heavy pieces
+                // were refused, so a non-heavy set (a suit) went through. A set
+                // item always carries `fromSet` (catalog pricing requires it).
+                const setItem = post.items.find((item) => item.fromSet)
+                if (setItem) {
                     return BaseService.sendFailedResponse({
-                        error: `Same day delivery is currently at full capacity. Please reduce your items or choose the express delivery speed.`,
+                        error: `Your subscription plan does not cover set or heavy items. "${setItem.type}" is not covered. Please remove it or pay per item.`,
                     })
                 }
 
-                if (
-                    post.deliverySpeed === DELIVERY_SPEED.EXPRESS &&
-                    post.items.length > adminOrderDetails.expressCapacity
-                ) {
-                    return BaseService.sendFailedResponse({
-                        error: `Express delivery is currently at full capacity. Please reduce your items or choose the standard delivery speed.`,
-                    })
-                }
-
-                if (
-                    post.deliverySpeed === DELIVERY_SPEED.STANDARD &&
-                    post.items.length > adminOrderDetails.standardCapacity
-                ) {
-                    finalMessage += ` We expect this to take ${adminOrderDetails.standardDeliveryPeriod} days. We appreciate your patience and understanding.`
-                }
+                // (The per-speed capacity gates that stood here read fields
+                // commented out of AdminOrderDetails, so they never fired. The
+                // daily floor limit above replaces them — launch item 3.)
 
                 // The plan allowance counts PIECES (a line of 3 shirts is 3
                 // items) and is checked against what is LEFT this month. It used
@@ -1900,6 +1911,7 @@ class BookOrderService extends BaseService {
                     paymentDate: new Date(),
                     ...customerOrderFields(post),
                     deliveryDate,
+                    floorAllocation,
                 }
 
                 // Claim the plan items ATOMICALLY, after every refusal above and
@@ -2088,6 +2100,7 @@ class BookOrderService extends BaseService {
                     stageHistory: [stageHistory],
                     ...customerOrderFields(post),
                     deliveryDate,
+                    floorAllocation,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 // per-piece: store each physical item individually
@@ -2255,6 +2268,7 @@ class BookOrderService extends BaseService {
                     paymentDate: new Date(),
                     ...customerOrderFields(post),
                     deliveryDate,
+                    floorAllocation,
                 }
                 newOrder = new BookOrderModel(newOrderItem)
                 // per-piece: store each physical item individually
@@ -2345,24 +2359,9 @@ class BookOrderService extends BaseService {
             crmOnOrderCreated(newOrder)
             referralOnOrderCreated(newOrder)
 
-            // update the capacity in admin order settings
-            if (
-                post.deliverySpeed === DELIVERY_SPEED.SAME_DAY &&
-                adminOrderDetails.sameDayCapacity > 0
-            ) {
-                adminOrderDetails.sameDayCapacity -= post.items.length
-            } else if (
-                post.deliverySpeed === DELIVERY_SPEED.EXPRESS &&
-                adminOrderDetails.expressCapacity > 0
-            ) {
-                adminOrderDetails.expressCapacity -= post.items.length
-            } else if (
-                post.deliverySpeed === DELIVERY_SPEED.STANDARD &&
-                adminOrderDetails.standardCapacity > 0
-            ) {
-                adminOrderDetails.standardCapacity -= post.items.length
-            }
-            await adminOrderDetails.save()
+            // (The per-speed capacity decrement that stood here wrote to fields
+            // commented out of AdminOrderDetails — a no-op. The order's
+            // `floorAllocation` is now what the daily floor limit counts.)
             await ActivityModel.create({
                 title: 'New Order Registered',
                 description: `Order ${oscNumber} created for a customer ${post.fullName}.`,

@@ -75,7 +75,8 @@ function priceFromCatalog(items, { catalog = [], sets = [] } = {}) {
         return {
             ok: false,
             unknown: [],
-            error: `That is more than ${MAX_BOOKING_PIECES} pieces. Please check the numbers, or contact us to arrange a large order.`,
+            // Client's exact words, 12 Oct 2026 (the cap stays at 200).
+            error: 'For more than 200 pieces, call or WhatsApp us on +234 707 325 4943 and we will plan it with you.',
         }
     }
 

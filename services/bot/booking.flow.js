@@ -43,6 +43,9 @@ module.exports = {
         let bAddress = slots.bPickupAddress || null
         let bLandmark = slots.bLandmark || null
         let bDate = slots.bDatePhrase || null
+        // The day bDate resolved to, kept so a chat that crosses midnight
+        // doesn't re-read "13 October" against a new clock (F-74).
+        let bDay = slots.bDay || null
         let bTime = slots.bTime || null
         let bTimeAuto = slots.bTimeAuto || false
         let bPhone = slots.bPhone || null
@@ -72,9 +75,30 @@ module.exports = {
         // parse of the raw text — NEVER dump the whole message as the date (that
         // was the "When should we come?" loop). Parsed every turn so a multi-slot
         // answer ("tomorrow morning, same address") fills date + time at once.
-        const dt = this._parseDateTimeFromText(text)
+        const dt = this._parseDateTimeFromText(text, { written: step === 'collect-datetime' })
         if (!bDate) bDate = slots.pickupDate || dt.datePhrase || null
         if (!bTime) bTime = slots.pickupTime || dt.timePhrase || null
+        // A day we can't turn into a date ("next week") is not kept: without a
+        // real pickup date the speeds and the booking would count from NOW and
+        // could offer Ready Today for a later pickup (F-72). Ask for it again.
+        let unreadDay = null
+        let pickupDay = null
+        if (bDate) {
+            pickupDay = bDay && slots.bDatePhrase === bDate ? new Date(bDay) : this._resolvePickupDate(bDate)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            if (!pickupDay) {
+                unreadDay = bDate
+                bDate = null
+            } else if (pickupDay < today) {
+                // The chosen day passed while we were chatting: ask again (F-74).
+                pickupDay = null
+                bDate = null
+            }
+            // A speed was offered for the old day; choose again for the new one (F-80).
+            if (!bDate) bSpeed = null
+        }
+        bDay = pickupDay ? pickupDay.toISOString() : null
         if (!bPhone && step === 'collect-phone') {
             const m = String(text || '').match(/(\+?\d[\d\s-]{6,}\d)/)
             if (m) bPhone = m[1].replace(/\s+/g, '')
@@ -103,6 +127,7 @@ module.exports = {
                 bPickupAddress: bAddress,
                 bLandmark,
                 bDatePhrase: bDate,
+                bDay,
                 bTime,
                 bTimeAuto,
                 bPhone,
@@ -152,9 +177,11 @@ module.exports = {
                     replies: ["No problem — I've cancelled that. Tell me what you'd like to change or add."],
                 }
             }
-            if (this.isAffirmative(text)) {
+            // Never place without a real pickup day; if it was lost (F-74) the
+            // re-summary below asks for it again.
+            if (this.isAffirmative(text) && pickupDay) {
                 return await this._placeBooking({
-                    userId, bItems, bServiceType, bAddress, bLandmark, bDate, bTime, bTimeAuto, bPhone, bSpeed,
+                    userId, bItems, bServiceType, bAddress, bLandmark, bDate, pickupDay, bTime, bTimeAuto, bPhone, bSpeed,
                 })
             }
             // otherwise treat it as a correction and fall through to re-summarise
@@ -217,7 +244,11 @@ module.exports = {
         // (and say so at confirm) rather than trapping the customer on this step.
         if (!bDate) {
             return {
-                replies: ['When should we come? A day is fine — e.g. "tomorrow" or "Saturday" — and add a rough time (morning/afternoon) if you have one.'],
+                replies: [
+                    unreadDay
+                        ? `I couldn't pin down the day from "${String(unreadDay).slice(0, 40)}". Which day should we come? e.g. "tomorrow", "Saturday" or "20 October".`
+                        : 'When should we come? A day is fine — e.g. "tomorrow" or "Saturday" — and add a rough time (morning/afternoon) if you have one.',
+                ],
                 state: persist('collect-datetime'),
             }
         }
@@ -229,18 +260,18 @@ module.exports = {
         // backend cutoff rule as the single source), with charge + ETA. Parses the
         // reply here so a multi-slot "tomorrow express" is caught too.
         if (!bSpeed) {
-            const avail = this._availableSpeeds(setting)
-            const availSpeeds = avail.map((s) => s.speed)
+            const avail = await this._availableSpeeds(setting, { bItems, bDate, pickupDay, bTime })
+            const availSpeeds = avail.filter((s) => s.available).map((s) => s.speed)
             const candidate = this._parseDeliverySpeed(text)
             if (candidate && availSpeeds.includes(candidate)) {
                 bSpeed = candidate
             } else {
-                const note =
-                    candidate && !availSpeeds.includes(candidate)
-                        ? `Sorry, ${candidate} isn't available right now (past today's cut-off). `
-                        : ''
+                const refused = avail.find((s) => s.speed === candidate && !s.available)
+                const note = refused?.message ? `${refused.message} ` : ''
+                // The refused speed's reason leads the reply once; the list
+                // below leaves it out (review F-60: it appeared twice).
                 return {
-                    replies: [`${note}${this._speedOfferText(avail)}`],
+                    replies: [`${note}${this._speedOfferText(avail, { skipNoteFor: refused?.speed })}`],
                     state: persist('collect-speed'),
                 }
             }
@@ -262,8 +293,14 @@ module.exports = {
             "Here's your booking:",
             `• Items: ${itemsLine}`,
             `• Service: ${bServiceType} (classic tier)`,
-            `• Pickup: ${bAddress}${bLandmark ? ` (landmark: ${bLandmark})` : ''}${bDate ? `, ${bDate}` : ''}${bTime ? ` ${bTime}${bTimeAuto ? ' (default window — tell me if you’d prefer another time)' : ''}` : ''}`,
-            `• Delivery: ${this._describeSpeed(bSpeed, setting)}`,
+            // The DATE we read, not the customer's words, so a misread day is
+            // seen before "yes" ("Saturday 24 October", F-78/F-81).
+            `• Pickup: ${bAddress}${bLandmark ? ` (landmark: ${bLandmark})` : ''}${pickupDay ? `, ${pickupDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}` : ''}${bTime ? ` ${bTime}${bTimeAuto ? ' (default window — tell me if you’d prefer another time)' : ''}` : ''}`,
+            `• Delivery: ${this._describeSpeed(
+                bSpeed,
+                setting,
+                (await this._availableSpeeds(setting, { bItems, bDate, pickupDay, bTime })).find((s) => s.speed === bSpeed && s.available),
+            )}`,
             `Estimated total: about ${naira(estimate)} — you'll see the exact amount once it's placed.`,
             'Shall I place it? (yes/no)',
         ].join('\n')
@@ -287,7 +324,7 @@ module.exports = {
         }
     },
 
-    async _placeBooking({ userId, bItems, bServiceType, bAddress, bLandmark, bDate, bTime, bTimeAuto, bPhone, bSpeed }) {
+    async _placeBooking({ userId, bItems, bServiceType, bAddress, bLandmark, bDate, pickupDay = null, bTime, bTimeAuto, bPhone, bSpeed }) {
         const defaults = await BotContextService.savedDefaults(userId)
         const phone = bPhone || defaults.phoneNumber
         const basePayload = {
@@ -318,7 +355,7 @@ module.exports = {
             },
         }
         if (bTime) basePayload.pickupTime = bTime
-        const day = this._resolvePickupDate(bDate)
+        const day = pickupDay || this._resolvePickupDate(bDate)
         if (day) basePayload.pickupDate = day
 
         // (1) Subscriber → try the plan first.
@@ -402,7 +439,9 @@ module.exports = {
         // Delivery-speed cutoff passed mid-chat (before 2pm/10am) or the speed is
         // at capacity → don't dead-end: send them back to pick another speed
         // (the offer will now exclude the unavailable one). Keeps all other slots.
-        if (/before 10am|before 2pm|full capacity/i.test(msg)) {
+        // + the launch-item-3 refusals (full, too many pieces, Ready Today's
+        // noon/Sunday rule), so a speed that filled mid-chat reroutes too.
+        if (/before 10am|before 2pm|full capacity|is full for|Full today|Too many pieces for|needs a pickup before 12:00|not available for this pickup/i.test(msg)) {
             return {
                 replies: [`${msg} Let's choose another delivery speed.`],
                 state: {
@@ -413,6 +452,7 @@ module.exports = {
                         bServiceType,
                         bPickupAddress: bAddress,
                         bDatePhrase: bDate,
+                        bDay: day ? day.toISOString() : null,
                         bTime,
                         bTimeAuto: !!bTimeAuto,
                         bPhone,

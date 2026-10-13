@@ -1065,13 +1065,15 @@ const run = (async () => {
         JSON.stringify(BW.normalizeWorkingDays({ mon: false, tue: true, wed: true })) ===
             JSON.stringify(['tue', 'wed']))
 
-    // D6: "the promised delivery date must also skip unticked days".
-    ok('D6 standard (+2) from Saturday skips the closed Monday → Tuesday',
-        BW.deliveryDayForSpeed({ from: satD(9), deliverySpeed: DELIVERY_SPEED.STANDARD, workingDays: WDAYS }).getDate() === 13)
-    ok('D6 express (+1) from Sunday skips the closed Monday → Tuesday',
-        BW.deliveryDayForSpeed({ from: sunD(9), deliverySpeed: DELIVERY_SPEED.EXPRESS, workingDays: WDAYS }).getDate() === 13)
-    ok('  …and same-day on a closed day cannot be promised that day',
-        BW.deliveryDayForSpeed({ from: monD(9), deliverySpeed: DELIVERY_SPEED.SAME_DAY, workingDays: WDAYS }).getDate() === 13)
+    // D6: "the promised delivery date must also skip unticked days" — now the
+    // launch-item-3 engine (deliveryDayForSpeed was removed, review F-59).
+    const D6S = { workingDays: WDAYS, halfDays: ['sun'] }
+    ok('D6 express picked up Sunday skips the closed Monday → Tuesday',
+        BW.earliestReadyDay({ speed: DELIVERY_SPEED.EXPRESS, pickupAt: sunD(9), settings: D6S }).getDate() === 13)
+    ok('D6 standard picked up Saturday: Sunday ½ + Monday 0 + Tuesday 1 + Wednesday 1 → Wednesday (client example)',
+        BW.earliestReadyDay({ speed: DELIVERY_SPEED.STANDARD, pickupAt: satD(9), settings: D6S }).getDate() === 14)
+    ok('  …and Ready Today is never offered on a closed day',
+        BW.earliestReadyDay({ speed: DELIVERY_SPEED.SAME_DAY, pickupAt: monD(9), settings: D6S }) === null)
 
     // D1: 15:00 window with a 60-minute cutoff closes at 14:00.
     ok('D1 the cutoff bites exactly at 14:00 for a 15:00 window',
@@ -1323,37 +1325,25 @@ const run = (async () => {
     // sentinel that ~10 readers compare as an instant: overdue, due-today, the
     // hold breach branch). The customer-facing promise is a separate field.
     console.log('\nN1 — deliveryDate stays the deadline; the promise is its own field')
-    const { calculateDueDate } = require(path.join(ROOT, 'util/helper'))
     const { deliveryPromise } = BW
     const { presentOrder } = require(path.join(ROOT, 'util/orderView'))
 
-    // Clock-independent invariant: whatever day the harness runs on, a
-    // working-day-aware due date must LAND on a ticked day. A frozen-date test
-    // would assert a specific calendar day and rot.
-    ok('D6(b) a working-day-aware due date always lands on a WORKING day',
+    // Clock-independent invariant (launch item 3 engine; calculateDueDate was
+    // removed, review F-59): whatever day the harness runs on, a ready date must
+    // LAND on a ticked day.
+    ok('D6(b) a ready date always lands on a WORKING day',
         [DELIVERY_SPEED.STANDARD, DELIVERY_SPEED.EXPRESS].every((speed) => {
-            const due = calculateDueDate(speed, WDAYS)
-            // null is legitimate past a cutoff; only a returned date is judged.
-            return due === null || BW.isWorkingDay(due, WDAYS)
+            const day = BW.earliestReadyDay({ speed, pickupAt: new Date(), settings: { workingDays: WDAYS, halfDays: ['sun'] } })
+            return day !== null && BW.isWorkingDay(day, WDAYS)
         }))
     ok('  …and it keeps the 19:00 end-of-day sentinel, which is NOT a promise',
-        (() => {
-            const due = calculateDueDate(DELIVERY_SPEED.STANDARD, WDAYS)
-            return due !== null && due.getHours() === 19
-        })())
-    // Back-compat: the argument is optional, and omitting it must behave
-    // exactly as before, or every caller that has no settings to hand changes.
-    ok('  …while omitting workingDays keeps the original calendar behaviour',
-        (() => {
-            const legacy = calculateDueDate(DELIVERY_SPEED.STANDARD)
-            const expected = new Date()
-            expected.setDate(expected.getDate() + 2)
-            return legacy.toDateString() === expected.toDateString()
-        })())
-    const dueSrc = fs.readFileSync(path.join(ROOT, 'util/helper.js'), 'utf8')
-    ok('  …and both booking paths now pass the working days',
-        /calculateDueDate\(\s*\n?\s*post\.deliverySpeed,\s*\n?\s*adminOrderSetting\.workingDays,/.test(boSrc) &&
-            /calculateDueDate\(\s*\n?\s*post\.deliverySpeed,\s*\n?\s*adminOrderSetting\.workingDays,/.test(
+        BW.readyDeadline(new Date()).getHours() === 19)
+    const dueSrc = fs.readFileSync(path.join(ROOT, 'util/bookingWindow.js'), 'utf8')
+    // Launch item 3 replaced calculateDueDate on both booking paths with the
+    // ready-date engine, which reads the working days through the settings.
+    ok('  …and both booking paths now use the ready-date engine (working days included)',
+        /BookingWindowService\.speedOptionsFor\(/.test(boSrc) &&
+            /BookingWindowService\.speedOptionsFor\(/.test(
                 fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8'),
             ))
     ok('  …and the 19:00 is documented as a sentinel so nobody repoints it at 18:30',
@@ -1781,7 +1771,7 @@ const run = (async () => {
             // EARLIER `$set: updateData` in a different settings function, so
             // the naive comparison fails against correct code.
             const start = adminSrcTz.indexOf('async updateAdminSettings(req)')
-            const body = adminSrcTz.slice(start, start + 6000)
+            const body = adminSrcTz.slice(start, start + 9000)
             return (
                 start > -1 &&
                 body.indexOf('blockedServiceTypes') > -1 &&
@@ -1937,7 +1927,7 @@ const run = (async () => {
         // code the moment anyone documents it — the same way two assertions in
         // this file have already been tripped by their own prose.
         ok('entering the real items clears itemsPending in the SAME write',
-            /items: explodedItems,[\s\S]{0,900}itemsPending: false,[\s\S]{0,80}\$push/.test(
+            /items: explodedItems,[\s\S]{0,900}itemsPending: false,[\s\S]{0,900}\$push/.test(
                 bookSrc,
             ))
         ok('both markers are DECLARED on the schema (Mongoose drops the rest)',
@@ -2597,6 +2587,185 @@ const run = (async () => {
         }
         ok('the cancellation verdict (order view, history) runs without a ReferenceError',
             !threw && verdict && typeof verdict.allowed === 'boolean', threw ? threw.message : '')
+    }
+
+    console.log('\nLaunch fix 3 — ready dates, Ready Today, Anytime per date, the daily floor limit')
+    {
+        const RW = require(path.join(ROOT, 'util/bookingWindow'))
+        const S = { workingDays: ['tue', 'wed', 'thu', 'fri', 'sat', 'sun'], halfDays: ['sun'], floorLimits: { dailyPieces: 150, sameDayPieces: 30, expressPieces: 50 } }
+        const at = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min)
+        const txt = (x) => (x ? RW.dayText(x) : null)
+        ok('client: a 1-day order picked up Sunday evening is ready Tuesday',
+            txt(RW.earliestReadyDay({ speed: 'express', pickupAt: at(2026, 10, 11, 18), settings: S })) === 'Tuesday 13 October')
+        ok('client: a 1-day order picked up Saturday evening is ready Tuesday (Sun ½ + Mon 0)',
+            txt(RW.earliestReadyDay({ speed: 'express', pickupAt: at(2026, 10, 10, 18), settings: S })) === 'Tuesday 13 October')
+        ok('client: a 2-day order picked up Saturday evening is ready Wednesday',
+            txt(RW.earliestReadyDay({ speed: 'standard', pickupAt: at(2026, 10, 10, 18), settings: S })) === 'Wednesday 14 October')
+        ok('Ready Today: pickup before 12:00 on a full day is today; 12:30 or a Sunday is not',
+            txt(RW.earliestReadyDay({ speed: 'same-day', pickupAt: at(2026, 10, 13, 11), settings: S })) === 'Tuesday 13 October' &&
+                RW.earliestReadyDay({ speed: 'same-day', pickupAt: at(2026, 10, 13, 12, 30), settings: S }) === null &&
+                RW.earliestReadyDay({ speed: 'same-day', pickupAt: at(2026, 10, 11, 9), settings: S }) === null)
+        ok('the ready deadline is 19:00 on the ready day',
+            RW.readyDeadline(at(2026, 10, 14)).getHours() === 19)
+        ok('limits: Sunday is half (75 / Express 25), Monday is 0',
+            RW.dailyLimit(at(2026, 10, 11), 'floor', S) === 75 && RW.dailyLimit(at(2026, 10, 11), 'express', S) === 25 &&
+                RW.dailyLimit(at(2026, 10, 12), 'floor', S) === 0)
+        const spread = RW.allocateFloor({ speed: 'standard', pieces: 180, firstDay: at(2026, 10, 13), usage: { '2026-10-13': { total: 110 } }, settings: S })
+        ok('client: 40 left on Tuesday + a 180-piece order → 40 Tue + 140 Wed, ready Wednesday',
+            JSON.stringify(spread.allocation) === JSON.stringify([{ date: '2026-10-13', pieces: 40 }, { date: '2026-10-14', pieces: 140 }]) &&
+                txt(spread.readyDay) === 'Wednesday 14 October')
+        const sunday = RW.allocateFloor({ speed: 'standard', pieces: 100, firstDay: at(2026, 10, 11), usage: {}, settings: S })
+        ok('client: 100 pieces from Sunday → 75 Sun, Monday skipped, 25 Tue, ready Tuesday',
+            JSON.stringify(sunday.allocation) === JSON.stringify([{ date: '2026-10-11', pieces: 75 }, { date: '2026-10-13', pieces: 25 }]) &&
+                txt(sunday.readyDay) === 'Tuesday 13 October')
+        ok('Regular is never refused, even when every day is full for a while',
+            RW.allocateFloor({ speed: 'standard', pieces: 10, firstDay: at(2026, 10, 13), usage: { '2026-10-13': { total: 150 }, '2026-10-14': { total: 150 } }, settings: S }).ok === true)
+        const labels = { 'same-day': 'Ready Today', express: 'Express', standard: 'Standard' }
+        const forty = RW.speedOptions({ pickupAt: at(2026, 10, 13, 9), pieces: 40, settings: S, usage: {}, labels })
+        ok('client: a 40-piece order → "Too many pieces for Ready Today. Choose Express or Standard, or call us…"',
+            forty[0].message === 'Too many pieces for Ready Today. Choose Express or Standard, or call us on +234 707 325 4943.' && forty[1].available && forty[2].available)
+        const full = RW.speedOptions({ pickupAt: at(2026, 10, 13, 9), pieces: 10, settings: S, usage: { '2026-10-13': { total: 30, 'same-day': 30 }, '2026-10-14': { total: 50, express: 50 } }, labels })
+        ok('client: Express full names the day; Ready Today full reads "Full today"',
+            full[1].message === 'Express is full for Wednesday. Choose Standard, or pick another pickup day.' && full[0].message === 'Full today')
+        const sixty = RW.speedOptions({ pickupAt: at(2026, 10, 13, 9), pieces: 60, settings: S, usage: {}, labels })
+        ok('"Choose …" lists only the speeds that still fit (60 pieces fit neither fast speed)',
+            sixty[0].message === 'Too many pieces for Ready Today. Choose Standard, or call us on +234 707 325 4943.')
+        ok('a fast speed needs room in the floor total too (Regular filled the day)',
+            RW.allocateFloor({ speed: 'express', pieces: 5, firstDay: at(2026, 10, 14), usage: { '2026-10-14': { total: 150 } }, settings: S }).reason === 'full')
+        ok('display names: messages use the on-screen speed name',
+            RW.speedOptions({ pickupAt: at(2026, 10, 13, 9), pieces: 40, settings: S, labels: { ...labels, standard: 'Regular' } })[0].message.includes('Choose Express or Regular'))
+        const moved = RW.speedOptions({ pickupAt: at(2026, 10, 13, 9), pieces: 10, settings: S, usage: { '2026-10-15': { total: 150 } }, labels })
+        ok('a first day with no room at all says "Ready <day> instead of <day>"',
+            moved[2].movedFromText === 'Ready Friday instead of Thursday')
+        ok('Anytime per date: a closed Monday reads "Closed that day"',
+            RW.anytimeOnDate({ date: at(2026, 10, 12), now: at(2026, 10, 11, 10), settings: S }).note === 'Closed that day' &&
+                RW.anytimeOnDate({ date: at(2026, 10, 13), now: at(2026, 10, 11, 10), settings: { ...S, anytimeOpenFrom: '08:00' } }).open === true)
+        ok('the pickup instant: a window starts at its start time on its date',
+            RW.pickupInstant({ leg: { timing: 'window', date: at(2026, 10, 13), windowStart: '15:00' }, now: at(2026, 10, 12, 9), settings: S }).getHours() === 15)
+        ok('a recount keeps the days: extra pieces on the last day, removed ones off the last days',
+            JSON.stringify(RW.adjustAllocation([{ date: 'a', pieces: 4 }, { date: 'b', pieces: 6 }], 40)) === JSON.stringify([{ date: 'a', pieces: 4 }, { date: 'b', pieces: 36 }]) &&
+                RW.adjustAllocation([{ date: 'a', pieces: 4 }, { date: 'b', pieces: 6 }], 3)[0].pieces === 3)
+        // Review F-56: a text pickup time must never make Ready Today look possible.
+        const satTen = at(2026, 10, 17, 10)
+        const rtFor = (t) => RW.readyTodayAllowed(RW.pickupInstant({ pickupDate: '2026-10-20', pickupTime: t, now: satTen, settings: S }), S)
+        // A bare hour is a pickup hour (08:00–19:00): 1–7 are afternoon/evening, 12 is noon (F-56, F-62).
+        const lateTimes = ['evening', 'afternoon', 'noon', 'night', '2-4pm', '1 to 3pm', 'between 2 and 4pm',
+            'around 2', '2', '2:30', 'after 3', "3 o'clock", '12-2pm', '12:30-2pm', '12 - 3pm', '15:00', 'sometime soon',
+            // F-63: a late word beats a bare morning-looking number; "12am" is never early.
+            'evening, around 8', '8 in the evening', '9 tonight', '10 at night', '8-10 in the evening', '12am', '12:30am',
+            // F-65: written dates are not the time; a range start never beats a later am/pm; hour 0 is never early.
+            '2026-10-14 15:00', '2026-10-14T15:00:00', '9-10 at 3pm', '14-10-2026 3pm', '00:30', '0:15', '230pm',
+            // Round 5: a range start never beats a later colon time (F-65); negations and an evening word beat
+            // "by noon" (F-67); dot times, month-first dates and a standalone pm are not plain (F-68).
+            '9-10 at 15:00', '10-11 at 2:30', 'not before noon', 'not by noon', 'afternoon, by noon', 'by noon or evening',
+            '8.30pm', '11.30pm', 'Oct 10 around 2', '9 o clock pm', '9:30 p m', 'no later than 10',
+            // Round 6: a bare range start shares its end's pm (F-69); seconds keep the pm (F-70).
+            '8-10pm', '8 to 10pm', 'between 8 and 10pm', '9 or 10pm', '10-11pm', '9:00:00 pm', '9:30:00 PM',
+            'sunday 8-10pm', 'wed evening']
+        ok('F-56/F-62/F-63: late words (even beside a number), bare hours 1–7, "12-2pm", "12am" and unreadable text do not allow Ready Today',
+            lateTimes.every((t) => rtFor(t) === false))
+        ok('F-56/F-64: morning times still do, and dates/counts in the text are not read as the time',
+            ['morning', '9am', '10am-12pm', '11-1pm', '11:30-1pm', 'around 10', '09:00', '9 a.m.', '',
+                '14 Oct 9am', '20/10 at 9am', '2 bags at 9am', 'between 9 and 11',
+                // F-66: genuine mornings that were refused.
+                'before noon', 'morning, before noon', 'by noon', '10-12 noon', 'between 10 and noon', '10 or noon',
+                'around 9 maybe', '930am', '2026-10-14 09:30', '2026-10-14T09:00:00', '10th Oct 9am', 'tomorrow morning',
+                '8-10am', '9:00:00 am', 'Wednesday 9am', 'wed morning', '10-12pm', '11-1pm'].every((t) => rtFor(t) === true))
+        // F-60: the assistant names a refused speed's reason once, not twice.
+        const BotParsers = require(path.join(ROOT, 'services/bot/parsers'))
+        const offerTxt = BotParsers._speedOfferText.call(BotParsers, [
+            { speed: 'same-day', label: 'Ready Today', available: false, message: 'Full today' },
+            { speed: 'express', label: 'Express', available: false, message: 'Too many pieces for Express. Choose Standard, or call us on +234 707 325 4943.' },
+            { speed: 'standard', label: 'Standard', available: true, charge: 0, eta: 'ready Thursday 15 October, by 7:00 PM' },
+        ], { skipNoteFor: 'express' })
+        ok('F-60: the refused speed is left out of the notes (the reply already leads with it)',
+            !/Too many pieces for Express/.test(offerTxt) && /\(Full today\)/.test(offerTxt) && /• Standard/.test(offerTxt))
+        // F-72: a written pickup day is read; one that can't be read is asked again, never counted from now.
+        const tue9 = new Date(2026, 9, 13, 9, 0)
+        const wd = (p) => BotParsers._writtenPickupDate(p, tue9)?.date?.toDateString() || null
+        ok('F-72: written pickup days resolve to the right date',
+            ['20 October', '20th of Oct', 'Oct 20', '20/10', 'the 20th'].every((p) => wd(p) === 'Tue Oct 20 2026') &&
+            wd('in 3 days') === 'Fri Oct 16 2026' && wd('5/1') === 'Tue Jan 05 2027')
+        ok('F-72: an unreadable, impossible or just-passed day is null (asked again), and "3rd floor" is not a date',
+            ['next week', 'asap', '31/02', '12 October', '10/10/2026', '3rd floor'].every((p) => wd(p) === null) &&
+            BotParsers._resolvePickupDate('next week') === null &&
+            BotParsers._parseDateTimeFromText('12/4 Allen Avenue').datePhrase === null)
+        const flowSrc = fs.readFileSync(path.join(ROOT, 'services/bot/booking.flow.js'), 'utf8')
+        ok('F-72: the booking flow drops an unresolved day and re-asks it',
+            /if \(!pickupDay\) \{\s*unreadDay = bDate/.test(flowSrc) && /I couldn't pin down the day/.test(flowSrc))
+        // F-73: a written date never overrides a named weekday; they must agree, or the day is asked again.
+        const dp = (t) => BotParsers._parseDateTimeFromText(t, { written: true }).datePhrase
+        ok('F-73: time ranges and "may be" are not dates; a weekday beside a written date is kept for the agreement check',
+            dp('saturday 10/11 am') === 'saturday' && dp('friday by 3 may be 4pm') === 'friday' &&
+            dp('9/10am') === null && dp('saturday 20 october') === 'saturday 20 october')
+        ok('F-73: a weekday that disagrees with the written date is not resolved (asked again)',
+            (() => {
+                // Clock-independent: a date 3 days out, named with the wrong weekday / as "tomorrow".
+                const d3 = new Date(); d3.setDate(d3.getDate() + 3)
+                const dm = `${d3.getDate()}/${d3.getMonth() + 1}`
+                const wrongDay = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][(d3.getDay() + 1) % 7]
+                const rightDay = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][d3.getDay()]
+                return BotParsers._resolvePickupDate(`${wrongDay} ${dm}`) === null &&
+                    BotParsers._resolvePickupDate(`tomorrow ${dm}`) === null &&
+                    BotParsers._resolvePickupDate(`${rightDay} ${dm}`)?.toDateString() === d3.toDateString()
+            })())
+        // F-78: a weekday beside a bare ordinal or "next week" is not the coming weekday.
+        ok('F-78: "<weekday> <Nth>" resolves to that date; "<weekday> next week" is not the coming one',
+            (() => {
+                const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+                const d10 = new Date(); d10.setDate(d10.getDate() + 10)
+                const ord = BotParsers._resolvePickupDate(dp(`${names[d10.getDay()]} ${d10.getDate()}th`))
+                const plain = BotParsers._resolvePickupDate('saturday')
+                const later = BotParsers._resolvePickupDate(dp('saturday next week'))
+                return ord?.toDateString() === d10.toDateString() &&
+                    !!later && (new Date().getDay() === 0 ? later >= plain : later > plain) &&
+                    dp('book for saturday 24th please') === 'saturday 24th'
+            })())
+        // Round 10: a bare day right after the weekday counts; a house number or a slash pair doesn't;
+        // "not next week" is the coming one; the summary shows the date read.
+        ok('F-78: "<weekday> 24" reads the date; "<weekday>, at 24 Allen Avenue" and "No 24/4" do not',
+            (() => {
+                const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+                const d = new Date(); d.setDate(d.getDate() + 8)
+                while (d.getDate() < 13) d.setDate(d.getDate() + 1)
+                const wd = names[d.getDay()], dd = d.getDate()
+                const r = (t, s) => BotParsers._resolvePickupDate(BotParsers._parseDateTimeFromText(t, { written: s }).datePhrase)?.toDateString()
+                return r(`${wd} ${dd}`, true) === d.toDateString() && r(`${wd} ${dd} by 10am`, true) === d.toDateString() &&
+                    r(`book ${wd}, pickup at ${dd} allen avenue`, false) !== d.toDateString() &&
+                    r(`book ${wd}, no ${dd}/4 allen avenue`, false) !== d.toDateString()
+            })())
+        ok('F-78: "this saturday, not next week" is the coming Saturday',
+            BotParsers._resolvePickupDate(dp('this saturday, not next week'))?.toDateString() === BotParsers._resolvePickupDate('saturday')?.toDateString())
+        ok('F-78/F-81: the booking summary shows the pickup DATE read, not the customer\'s words',
+            /pickupDay\.toLocaleDateString\('en-GB', \{ weekday: 'long', day: 'numeric', month: 'long' \}\)/.test(flowSrc))
+        ok('F-79: "around 9 may work" and "may 10 am" are not May dates; "9 may" still is',
+            dp('around 9 may work') === null && dp('may 10 am') === null && wd('9 may') !== null)
+        ok('F-80: dropping the pickup day also clears the speed chosen for it',
+            /if \(!bDate\) bSpeed = null/.test(flowSrc))
+        // F-74: the resolved day is kept; confirm never places without it; places are not dates.
+        ok('F-74: the flow keeps the resolved day (bDay), re-asks a day that passed, and confirm needs a pickup day',
+            /bDay && slots\.bDatePhrase === bDate \? new Date\(bDay\)/.test(flowSrc) && /pickupDay < today/.test(flowSrc) &&
+            /this\.isAffirmative\(text\) && pickupDay/.test(flowSrc) && wd('the 3rd floor') === null)
+        // Review F-57: Anytime on a closed day counts from the next opening, never from now.
+        const closedMon = RW.pickupInstant({ leg: { timing: 'anytime', date: at(2026, 10, 19) }, now: satTen, settings: { ...S, anytimeOpenFrom: '08:00', anytimeOpenTo: '17:00' } })
+        ok('F-57: Anytime on a closed Monday counts from Tuesday 08:00, not from now',
+            txt(closedMon) === 'Tuesday 20 October' && closedMon.getHours() === 8)
+        const bo3 = fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')
+        ok('the 10am / 2pm booking cut-offs are gone from booking',
+            !/must be placed before 10am/.test(bo3) && !/must be placed before 2pm/.test(bo3) &&
+                !/must be placed before 10am/.test(fs.readFileSync(path.join(ROOT, 'services/intake-user.service.js'), 'utf8')))
+        ok('plans refuse set items, not only heavy ones',
+            /const setItem = post\.items\.find\(\(item\) => item\.fromSet\)/.test(bo3))
+        ok('the item edit keeps the date and only adjusts the floor split',
+            /floorAllocation: adjustAllocation\(/.test(bo3))
+        const qbMsg = require(path.join(ROOT, 'util/quickBooking')).applyCountOnlyBooking({ itemCount: 201 })
+        const ciMsg = require(path.join(ROOT, 'util/catalogItems')).priceFromCatalog([{ type: 'shirt', quantity: 201 }], { catalog: [{ name: 'shirt', price: 100 }] })
+        const CLIENT_200 = 'For more than 200 pieces, call or WhatsApp us on +234 707 325 4943 and we will plan it with you.'
+        ok('both 200-piece refusals use the client\'s exact text',
+            qbMsg.error === CLIENT_200 && ciMsg.error === CLIENT_200)
+        const adminSrc3 = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
+        ok('admin settings refuse a fast share larger than the floor limit',
+            /neither can be larger than it/.test(adminSrc3))
     }
 
     console.log(`\n${pass} passed, ${fail} failed\n`)

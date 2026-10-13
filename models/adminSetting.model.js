@@ -147,6 +147,25 @@ const adminSettingSchema = new mongoose.Schema(
             default: () => ['tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         },
 
+        // Launch item 3 (client 11–12 Oct 2026). A half day counts ½ towards a
+        // ready date and gets half of each floor limit (Sunday). Read through
+        // `util/bookingWindow.normalizeHalfDays`, so a document without it
+        // behaves as the default.
+        halfDays: {
+            type: [String],
+            default: () => ['sun'],
+        },
+        // The daily floor limit in PIECES (client 12 Oct): one number for the
+        // whole floor, with the Ready Today (`same-day`) and Express shares
+        // INSIDE it; Regular uses the rest. × the day's weight (Sunday half,
+        // Monday 0). Replaces the dead `*Capacity` fields below, which were
+        // never read from here.
+        floorLimits: {
+            dailyPieces: { type: Number, default: 150, min: 0 },
+            sameDayPieces: { type: Number, default: 30, min: 0 },
+            expressPieces: { type: Number, default: 50, min: 0 },
+        },
+
         // D2(b): Anytime dispatch is open 08:00–17:00 on a working day, "both
         // settings". Outside those hours the app promises first thing on the
         // next working day rather than refusing the booking.

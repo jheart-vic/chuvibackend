@@ -44,7 +44,6 @@ const {
     buildStageUpdate,
     generateReferenceId,
     roundToNearestHundred,
-    calculateDueDate,
     getObjectId,
     normalizePhone,
 } = require('../util/helper')
@@ -75,6 +74,7 @@ const {
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 const BaseService = require('./base.service')
+const BookingWindowService = require('./bookingWindow.service')
 const mongoose = require('mongoose')
 const { GENERAL_STATUS } = require('../util/constants')
 
@@ -286,25 +286,23 @@ class IntakeUserService extends BaseService {
 
             totalPrice += extraDeliveryCost
             // totalPrice += extraDeliveryCost * post.items.length
-           // D6(b): the promised date skips days the business is closed —
-           // without the working days a Saturday standard order is due Monday,
-           // and with Monday unticked it reads OVERDUE on a day nobody worked.
-           const deliveryDate = calculateDueDate(
-                post.deliverySpeed,
-                adminOrderSetting.workingDays,
-            )
-            if (deliveryDate === null) {
-                if (post.deliverySpeed === DELIVERY_SPEED.SAME_DAY) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Same-day orders must be placed before 10am. Please select express or standard delivery.',
-                    })
-                }
-                if (post.deliverySpeed === DELIVERY_SPEED.EXPRESS) {
-                    return BaseService.sendFailedResponse({
-                        error: 'Express orders must be placed before 2pm. Please select standard delivery.',
-                    })
-                }
+            // Launch item 3: a walk-in is picked up NOW, so the ready date counts
+            // from now (Tue–Sat 1, Sunday ½, Monday 0, ready by 19:00) and its
+            // pieces go on the daily floor limit like any booking. Same rule
+            // and sentences as the app (`speedOptionsFor`).
+            const counterPieces = (post.items || []).reduce((n, i) => n + (Number(i.quantity) || 0), 0)
+            const counterSpeed = post.deliverySpeed || DELIVERY_SPEED.STANDARD
+            const { speeds: counterSpeeds } = await BookingWindowService.speedOptionsFor({ pieces: counterPieces })
+            const counterRow =
+                counterSpeeds.find((s) => s.speed === counterSpeed) || counterSpeeds[counterSpeeds.length - 1]
+            if (!counterRow.available) {
+                return BaseService.sendFailedResponse({
+                    error: counterRow.message,
+                    unavailableReason: counterRow.unavailableReason,
+                })
             }
+            const deliveryDate = counterRow.readyDate
+            const floorAllocation = counterRow.allocation
 
             // ── Counter payment (client item #8) ────────────────────────────
             // Decide how this is being paid BEFORE the order exists, so a wallet
@@ -376,6 +374,7 @@ class IntakeUserService extends BaseService {
                 ],
                 ...(customerId && { userId: customerId }),
                 deliveryDate,
+                floorAllocation,
             }
             const newOrder = new BookOrderModel(newOrderItem)
             // per-piece: store each physical item individually (pricing above was

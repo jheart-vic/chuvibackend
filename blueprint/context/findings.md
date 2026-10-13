@@ -88,4 +88,39 @@ stubbed models confirmed it). Harmless for security: the value never reaches a q
 **Suggested fix:** Refuse a present-but-non-string `referralCode` with the same 400 message
 (`referralCode != null && referralCode !== '' && typeof referralCode !== 'string'`), before the
 update. Nothing current is lost.
+
+### F-82 [P3] open - Beside a weekday, a bare day-of-month followed by a word outside the short time list ("saturday 24 10am", "saturday 24 noon") still resolves to the coming weekday
+
+**File:** services/bot/parsers.js:398 (the bare 13–31 lookahead allows only end, punctuation or by/at/around/about/in/from/or/and/morning/afternoon/evening/please/pls)
+**Found:** 2026-10-13 by /audit independent round 11 (scope: current; lens: quality)
+**Why it matters:** Frozen clock Tue 13 Oct, rules-only parse on the day question: "saturday 24 10am", "saturday 24 9:30am", "saturday 24 noon", "saturday 24 between 9 and 11", "saturday 24 anytime", "saturday 24 thanks", "saturday 24 latest 10", "saturday 24 if possible", "saturday 24 2026" and "saturday 2026-10-24" all resolve to Sat 17 Oct (meant: Sat 24). "saturday 24 10am" is an ordinary answer. Stubbed bookingFlow: the summary reads "Pickup: … Saturday 17 October 10am … Standard — ready Wednesday 21 October", so the week-early date is plain before "yes". With an LLM, `pickupDate` is usually just "Saturday 24" (the time goes to `pickupTime`), which resolves correctly. b6bdb30 gave Sat 17 for all of these, so this item did not introduce or worsen it; it is the residue of F-78, now visible at confirm. P3.
+**Suggested fix:** Also allow a clock time (`\d{1,2}(?::\d{2})?\s*[ap]\.?m`), "noon"/"midday", "between", "latest", "anytime" and a 4-digit year after the bare number, or invert the guard: read the bare 13–31 unless it is followed by an address or count word (the existing NOT_A_DAY list plus a capitalised or alphabetic street name). Add "saturday 24 10am" to the F-78 briefCheck check. Nothing current is lost.
+**Resolution:**
+
+### F-83 [P3] open - Off the day question, "saturday 24, Allen Avenue" reads the house number as the pickup date when it falls on that weekday; a count after a comma or "and" forces a re-ask
+
+**File:** services/bot/parsers.js:398 (`[,.!?;]` and `and`/`or` are accepted after the bare number), reached from services/bot/booking.flow.js:78-79 on any step when the LLM leaves `pickupDate` empty
+**Found:** 2026-10-13 by /audit independent round 11 (scope: current; lens: quality)
+**Why it matters:** Nigerian addresses are often written "24, Allen Avenue". Frozen clock Tue 13 Oct, rules-only parse off the day question: "saturday 24, allen avenue ikeja" → Sat 24 Oct (meant: Sat 17, the 24 is the house number). Stubbed bookingFlow: `bDay` Sat 24 Oct and the summary reads "Saturday 24 October". This only happens when the house number is a date that falls on the named weekday within the next month (about 1 in 7), when the weekday and the address share a message, and when there is no LLM `pickupDate` slot. The summary shows the date plainly. "saturday 20, 5 trousers", "saturday 20 and 5 trousers" and "saturday 13 or 14 shirts" read the number as a day that disagrees, so the day is asked again (the safe direction). New in this round: before f30c3d3 no bare number was read beside a weekday (code inspection of 01fdf64 parsers.js), so this gave Sat 17. P3.
+**Suggested fix:** Off the day question (`written` false), accept the bare number only when it is followed by the end of the text or a time word, not by a comma followed by more words; or pass `{ bare: written }` like the `slash` option, so the bare reading is used on the day question only. Nothing current is lost.
+**Resolution:**
+
+### F-84 [P3] open - The re-ask for a disagreeing weekday and bare day echoes the weekday twice ("saturday saturday 14")
+
+**File:** services/bot/parsers.js:398 (the bare alternative's match text includes the weekday) and 202 (`datePhrase = \`${datePhrase} ${w.text}\``); shown by services/bot/booking.flow.js:249
+**Found:** 2026-10-13 by /audit independent round 11 (scope: current; lens: quality)
+**Why it matters:** Stubbed bookingFlow, Tue 13 Oct, "saturday 14" (the 14th is a Wednesday): the safe re-ask reads `I couldn't pin down the day from "saturday saturday 14"`. The stored `bDatePhrase` is also "saturday saturday 24" for a good answer, but that is no longer shown in the summary. Cosmetic, new in this round.
+**Suggested fix:** Capture only the number in the bare alternative's returned `text` (for example `text: m[2] ?? m[0]`), or skip the weekday prefix when `w.text` already starts with it. Nothing current is lost.
+**Resolution:**
+
+### F-55 [P3] open - `preferSlot` now saves on the lead, post-delivery and reactivation schedules, but those workflows ignore it
+
+**File:** services/crm.service.js:140-144 (ignored at services/crm.service.js:420-426 and 575-581)
+**Found:** 2026-10-12 by /audit independent round 3 (scope: current; lens: quality)
+**Why it matters:** Before this delta `normalizeSchedule` dropped `preferSlot`; it now validates and persists it on every schedule. Only `startRegisteredNotBookedWorkflow` passes it on to `scheduleMessages`. `startLeadWorkflow` and `startReactivationWorkflow` build entries without it, so the window snap always uses `any`, and post-delivery is not windowed at all. A `leadSchedule` step saved with `preferSlot: morning` returns success and changes nothing (stubbed probe: accepted, saved). The shared `CrmScheduleStep` Swagger schema describes `preferSlot` as "Which daily send window the step prefers" for every schedule. Same class as F-54 but milder: admin-only, and the frontend is told to send the value back unchanged rather than edit it.
+**Suggested fix:** Either pass `preferSlot: s.preferSlot` into the lead and reactivation entries (scheduleMessages already honours it), or refuse a non-`any` preferSlot outside `registeredNotBookedSchedule` and say so in the CrmScheduleStep description. Nothing current is lost.
+**Decision (user, 2026-10-12):** make the workflows HONOUR the window. Build it as its own follow-up `/fix` after launch item 6 lands:
+- Lead and reactivation pass each step's `preferSlot` into their scheduled entries (`scheduleMessages` already honours it), so "morning" means the next morning window.
+- Post-delivery messages are order messages, which the client exempted from the send windows ("order and payment messages still go immediately"). So that schedule refuses a non-`any` window with a clear message instead of pretending.
+- Docs: the CrmScheduleStep description says which workflows use `preferSlot`.
 **Resolution:**

@@ -1,5 +1,33 @@
 # Current Session Log
 
+## ███ 2026-10-13 — Live main repaired (3 hotfixes); item 3 final review. Launch FRI 16 Oct (DB cleared Fri morning). ███
+- **Live main = `d0f3cc0`.** Each fix landed by fast-forward (`gh` isn't installed: push the branch, then
+  `git push origin <branch>:main`):
+  - `e2a72af`: merge `35c17a8` (item 2 × booking hotfix) had DROPPED the `amountPaidSoFar` import. On main the
+    order view, order history, cancel and the Intake item edit all threw ReferenceError. The merge also re-added
+    two hotfix plan lines (the atomic deduction was overwritten, and rollback refunded twice). The fix restores
+    the import, removes those lines, and restores briefCheck from item 6 plus a guard that calls the order read.
+  - `a1a4039`: `/api/admin/search-orders[/:id]` answered 500 (it called non-existent AdminController methods).
+    It now uses SearchController.
+  - `d0f3cc0`: Intake's pending list and dashboard count include picked-up UNPAID orders (`awaitingPayment`,
+    `paymentHoldRaised`). Six were invisible on live. `intakeUnpaidStaging.js` 11/0.
+  - These three went WITHOUT an independent review (user's call, for speed). A review is offered.
+  - **Lesson:** after any PR merge, run main's own briefCheck and staging in a temp worktree. Never resolve
+    conflicts in a GitHub merge commit.
+- **Audit of live main (user's request):**
+  - Stations S1–S5, rider and delivery, and QC → delivered all pass.
+  - A 153-route GET sweep as admin: 0 errors after the fixes.
+  - Tracking and history for all 36 orders since 1 Oct: fine after the fix.
+  - **The in-app assistant's OpenAI key has no credits** (429), so it runs on the keyword fallback. The client
+    must top up before Friday.
+  - testingdb `pricePerPiece` = 700 is bad test data; prod is 1/0.7/0.6.
+- **Item 3** branch `fix/ready-dates-and-daily-floor-limit`, HEAD `9eb60ba`, base `b6bdb30`:
+  - Review rounds 1–4 fixed F-56/57/62/63/64 (the pickup-time reader).
+  - Round 4 passed. The user then had ALL remaining findings fixed (F-58..F-61, F-65, F-66).
+  - Evidence: briefCheck 504/0, readyDateStaging 32/0, an 89-phrase probe with 0 wrong.
+  - Next: round-5 review, then `/complete`, then rebase onto main, run main's tests, fast-forward.
+- **Next items:** 5 (Google sign-up; groundwork done), 4, 7, 8 (Fri morning), 9 (after launch).
+
 ## ███ 2026-10-12 (later) — Launch fix 6 (registration welcome + schedule save) COMPLETED. Next: item 3. ███
 - Archive `blueprint/history/fixes/registration-welcome-sms-and-schedule-save.md` (round-3 receipt, F-50..F-54).
   The work commit is the user's; they push and open the PR. Item 2 is already merged to origin/main (PR #252, as a

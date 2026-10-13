@@ -13,7 +13,7 @@ These are corrections, so each work item goes through `/fix` (archived under
 |---|---|---|---|---|
 | 1 | Booking screen data + window-only free rule | 10, 11, 12, 14, 15 + FE labels | 2 | **DONE 2026-10-11** — archive `blueprint/history/fixes/booking-screen-data-and-window-only-free-rule.md`, review PASSED (2nd round; F-09..F-15 found and closed). Branch `fix/booking-screen-data-and-window-only-free-rule`, lands as a PR after the 3 earlier stacked fix PRs. Also fixed a LIVE bug: `OFFER_TRIGGER` not imported in offer.service.js since 620cca4. F-16 [P3] (window-only line wording) left open. |
 | 2 | Quick Booking: nothing paid at booking | 3 | 1 | **DONE 2026-10-12** — archive `blueprint/history/fixes/quick-booking-nothing-paid-at-booking.md`, review PASSED (round 10). Branch `fix/quick-booking-nothing-paid-at-booking`, lands as a PR after the S1 PR; conflicts with the booking hotfix (dced480) in `bookOrder.service.js` — keep this branch's version. Grew well past client item 3: it also closes holes still live on `main` until it merges (F-38 re-used Paystack reference activates a plan, F-45 free `subscribe-plan`, F-49 every `charge.failed` returns 500, hotfix F-28 plan-items race). FE notes: FE-CHANGELOG-2026-10-11 §3. Open: F-47 [P3] (→ item 9). Client to confirm: plans count pieces; F-20 (offer honoured at re-price after expiry); 200-piece cap. |
-| 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date **+ 3b daily floor limit** (+ set items on plans, 200-piece message) | 1, 2, 9 + item-2 answers | 2 → **3.5–4** | Ready to spec (Q1, 3b and big-order spreading all answered 12 Oct) |
+| 3 | Ready date (Sun ½, Mon 0, from the day after pickup, ready by 19:00) + Ready Today rule (pickup before 12:00, not Sunday) + Anytime per date **+ 3b daily floor limit** (+ set items on plans, 200-piece message) | 1, 2, 9 + item-2 answers | 2 → **3.5–4** | **DONE 2026-10-13** — archive `blueprint/history/fixes/ready-dates-and-daily-floor-limit.md`, review PASSED (round 11; F-56..F-81 found and closed). Ready Today reads a pickup time only when plainly written (unreadable = withheld); the assistant must resolve a real pickup DAY (re-asks otherwise) and its summary shows the date read. Open P3s: F-82, F-83, F-84 (assistant day phrasing). FE notes in the spec. |
 | 4 | Anytime agreed parts (Intake alert, top of list, all-windows-full → Urgent at window price + offer kept + next open day, "Urgent opens at") | 13 | 1.5–2 | Ready to spec (Q2 answered) |
 | 5 | Google sign-up: terms, referral code, phone normalisation | 5 | 1 | **DONE 2026-10-13** — archive `blueprint/history/fixes/google-sign-up-terms-referral-and-phone.md`, review PASSED (1st round). User decisions: terms RECORDED not required (`termsAccepted` + `termsAcceptedAt` on the user); an unknown or own referral code is REFUSED with a message; shared phones allowed. `googleProfileStaging.js` 11/0. Open: F-75 [P3] (non-string code ignored). FE: send `termsAccepted: true` (and `referralCode`, pre-filled from `?ref=`) on the phone step and the email form. |
 | 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | **DONE 2026-10-12**. Archive `blueprint/history/fixes/registration-welcome-sms-and-schedule-save.md`; review PASSED (3 rounds; F-50..F-54 closed). Branch `fix/registration-welcome-sms-and-schedule-save`, stacked on item 2 (now merged). FE notes in FE-CHANGELOG-2026-10-11 §4. **Ask the client:** the welcome goes out immediately, outside the send windows (builder default), and F-55 (windows on the other follow-ups). |
@@ -178,6 +178,35 @@ Verbatim:
 > The floor washes a big bag in batches across the day and the next anyway. Waiting for an
 > empty day could push a big customer a week out, block that whole day for everyone else, and
 > still go over the limit.
+
+## Item 3 confirmations — ANSWERED 2026-10-12 (binding, "Go ahead and build")
+
+Verbatim:
+
+> *1. Express before 2 PM* — Agreed. Remove it.
+> *2. Which day the pieces count on* — Correct. Count them on the ready day.
+> *3. One shared 150* — Correct. Ready Today and Express come out of the 150, and Regular
+> uses the rest.
+> *4. Fast speeds need room in the 150* — Correct. One change to the words: Express is never
+> ready today, so please name the day instead of "Full today". For example:
+> "Express is full for Wednesday. Choose Standard, or pick another pickup day."
+> For Ready Today, "Full today" is fine.
+> *5. Ready Today message* — OK, with one change. Only offer the speeds that still have room.
+> A 40 piece order is too big for Ready Today but still fits Express, so it should read:
+> "Too many pieces for Ready Today. Choose Express or Standard, or call us on +234 707 325
+> 4943." If Express is also too small or full, leave Express out.
+> Also, point 3 says Regular and point 5 says Standard. Please use the same name the customer
+> sees on the speed button, everywhere.
+> *6. Two bookings at the same moment* — Agreed. Accept it.
+
+So:
+- The **Express 14:00 booking cut-off is removed**.
+- Every message names speeds by their **on-screen display name** (`displayNames.deliverySpeeds`).
+- **Express full:** "Express is full for <ready day>. Choose <Standard>, or pick another
+  pickup day."
+- **Ready Today full:** "Full today".
+- **"Too many pieces for <speed>"** lists only the speeds that still fit, then "or call us
+  on +234 707 325 4943".
 
 What this means for item 3:
 - **Regular never waits for an empty day.** It fills the room left on its first possible
