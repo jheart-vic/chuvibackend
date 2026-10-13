@@ -305,8 +305,19 @@ router.post(ROUTE_CREATE_BOOK_ORDER, [intakeUserAuth], (req, res) => {
  * /intake-user/get-pending-orders:
  *   get:
  *     summary: Get all pending orders
+ *     description: >
+ *       Orders waiting for Intake: PAID orders booked online that are on their way,
+ *       and every order whose bag a rider has PICKED UP — paid or not (payment is
+ *       checked at tagging). An unpaid one carries `awaitingPayment: true`: show
+ *       "Unpaid — raise payment hold" and use POST /intake-user/order/{id}/payment-hold.
+ *       A Quick Booking still waiting to be counted is on the Quick Booking queue
+ *       instead. The dashboard's `pendingOrders` count uses the same rule.
  *     tags:
  *       - Intake User
+ *     parameters:
+ *       - { in: query, name: page, schema: { type: integer, example: 1 } }
+ *       - { in: query, name: limit, schema: { type: integer, example: 10 } }
+ *       - { in: query, name: search, schema: { type: string } }
  *     responses:
  *       200:
  *         description: List of pending book orders
@@ -320,44 +331,57 @@ router.post(ROUTE_CREATE_BOOK_ORDER, [intakeUserAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     message:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           _id:
- *                             type: string
- *                             example: "64d3c9c0f1b2a8e9d0f12345"
- *                           fullName:
- *                             type: string
- *                             example: "John Doe"
- *                           phoneNumber:
- *                             type: string
- *                             example: "+1234567890"
- *                           serviceType:
- *                             type: string
- *                             example: "wash-and-iron"
- *                           serviceTier:
- *                             type: string
- *                             example: "premium"
- *                           amount:
- *                             type: number
- *                             example: 150
- *                           paymentStatus:
- *                             type: string
- *                             example: "pending"
- *                           stage:
+ *                       type: object
+ *                       properties:
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 4 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 10 }
+ *                             totalPages: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items:
  *                             type: object
  *                             properties:
- *                               status:
+ *                               awaitingPayment: { type: boolean, example: true, description: "Unpaid — tagging stays locked until it is paid" }
+ *                               paymentHoldRaised: { type: boolean, example: false, description: "A payment hold (and link) is already open" }
+ *                               balanceDue: { type: number, nullable: true, example: null, description: "Set only when a paid order's bill went up" }
+ *                               _id:
+ *                                 type: string
+ *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "John Doe"
+ *                               phoneNumber:
+ *                                 type: string
+ *                                 example: "+1234567890"
+ *                               serviceType:
+ *                                 type: string
+ *                                 example: "wash-and-iron"
+ *                               serviceTier:
+ *                                 type: string
+ *                                 example: "premium"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 150
+ *                               paymentStatus:
  *                                 type: string
  *                                 example: "pending"
- *                               note:
+ *                               stage:
+ *                                 type: object
+ *                                 properties:
+ *                                   status:
+ *                                     type: string
+ *                                     example: "pending"
+ *                                   note:
+ *                                     type: string
+ *                                     example: "Awaiting pickup"
+ *                               createdAt:
  *                                 type: string
- *                                 example: "Awaiting pickup"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-01-13T12:34:56.789Z"
+ *                                 format: date-time
+ *                                 example: "2026-01-13T12:34:56.789Z"
  *       500:
  *         description: Server error
  */

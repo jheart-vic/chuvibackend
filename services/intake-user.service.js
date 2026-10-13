@@ -121,6 +121,28 @@ async function resolveRider(riderId) {
 const { logSafely } = require('../util/safeLog')
 const { markProductionClearedIfReady } = require('../util/productionClock')
 
+// Intake's pending list (and its dashboard count — one query, so the card
+// equals the list). An order is listed when it is PAID and booked online
+// (coming in), or when its bag has been PICKED UP — paid or not. It used to
+// require payment for both, so a bag a rider brought in for an unpaid order sat
+// in no Intake list at all and could never be received, held for payment or
+// tagged (client ruling: payment is checked AT TAGGING, not before). A Quick
+// Booking still waiting to be counted stays on its own queue.
+const pendingOrdersQuery = () => ({
+    'stage.status': ORDER_STATUS.PENDING,
+    $or: [
+        {
+            paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
+            channel: { $in: [ORDER_CHANNEL.WHATSAPP, ORDER_CHANNEL.WEBSITE] },
+        },
+        {
+            isPickUp: true,
+            'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
+            itemsPending: { $ne: true },
+        },
+    ],
+})
+
 class IntakeUserService extends BaseService {
     async createBookOrder(req, res) {
         try {
@@ -453,11 +475,9 @@ class IntakeUserService extends BaseService {
                 pickupsAwaitingRider,
                 deliveriesAwaitingRider,
             ] = await Promise.all([
-                    // pending orders — unchanged
-                    BookOrderModel.countDocuments({
-                        'stage.status': ORDER_STATUS.PENDING,
-                        paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
-                    }),
+                    // pending orders — the SAME query as getPendingOrders, so the
+                    // card always equals the list behind it
+                    BookOrderModel.countDocuments(pendingOrdersQuery()),
 
                     // tagging queue — matches getTaggingQueue exactly
                     BookOrderModel.countDocuments({
@@ -2068,25 +2088,7 @@ class IntakeUserService extends BaseService {
             const { page = 1, limit = 10, search = '' } = req.query
             const skip = (Number(page) - 1) * Number(limit)
 
-            const query = {
-                'stage.status': ORDER_STATUS.PENDING,
-                paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
-                $or: [
-                    {
-                        channel: {
-                            $in: [
-                                ORDER_CHANNEL.WHATSAPP,
-                                ORDER_CHANNEL.WEBSITE,
-                            ],
-                        },
-                    },
-                    {
-                        isPickUp: true,
-                        'dispatchDetails.pickup.status':
-                            PICKUP_STATUS.PICKED_UP,
-                    },
-                ],
-            }
+            const query = pendingOrdersQuery()
 
             if (search) {
                 query.$and = [
@@ -2106,11 +2108,20 @@ class IntakeUserService extends BaseService {
                     .skip(skip)
                     .limit(Number(limit))
                     .select(
-                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage dispatchDetails createdAt',
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount balanceDue paymentStatus paymentHold channel stage dispatchDetails createdAt',
                     )
                     .lean(),
                 BookOrderModel.countDocuments(query),
             ])
+
+            // An unpaid bag can now be on this list (it is physically here). The
+            // screen shows "Unpaid — raise payment hold"; tagging stays gated on
+            // payment (itemTagGate), and POST /order/:id/payment-hold sends the
+            // customer the link.
+            for (const o of orders) {
+                o.awaitingPayment = o.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS
+                o.paymentHoldRaised = Boolean(o.paymentHold?.raisedAt && !o.paymentHold?.clearedAt)
+            }
 
             return BaseService.sendSuccessResponse({
                 message: {
