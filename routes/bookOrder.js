@@ -1176,7 +1176,7 @@ router.post(ROUTE_REJECT_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (req
 
 /**
  * @swagger
- * /api/bookOrder/order/{id}/items:
+ * /bookOrder/order/{id}/items:
  *   patch:
  *     summary: Enter the real items and recalculate the bill (client item #7)
  *     description: >
@@ -1262,7 +1262,7 @@ router.patch(ROUTE_ORDER_ITEMS_EDIT, [multiAuth(ROLE.ADMIN, ROLE.INTAKE_AND_TAG)
 
 /**
  * @swagger
- * /api/bookOrder/booking-availability:
+ * /bookOrder/booking-availability:
  *   get:
  *     summary: Pickup/delivery times a customer can choose (client D1–D5)
  *     description: >

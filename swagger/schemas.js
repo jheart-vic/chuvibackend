@@ -1961,6 +1961,10 @@
  *         - $ref: '#/components/schemas/BookOrder'
  *         - type: object
  *           properties:
+ *             urgent:
+ *               type: boolean
+ *               example: true
+ *               description: "Launch item 4: an Urgent pickup that is paid (or a Quick Booking). Show an Urgent badge. On the pickup queue these rows come FIRST, then oldest. Always false on the delivery queue."
  *             needsRider:
  *               type: boolean
  *               description: True when no rider is assigned to this leg yet.

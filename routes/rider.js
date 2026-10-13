@@ -930,7 +930,7 @@ router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
  *         description: Number of records per page
  *     responses:
  *       200:
- *         description: List of pickups assigned to the rider
+ *         description: List of pickups assigned to the rider. Paid Urgent pickups come first (launch item 4), then oldest.
  *         content:
  *           application/json:
  *             schema:
@@ -951,6 +951,10 @@ router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"
+ *                               urgent:
+ *                                 type: boolean
+ *                                 example: false
+ *                                 description: "Launch item 4: a paid Urgent pickup. Show an Urgent badge."
  *                               fullName:
  *                                 type: string
  *                                 example: "John Doe"

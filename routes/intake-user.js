@@ -2478,7 +2478,7 @@ router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (r
 
 /**
  * @swagger
- * /api/intake-user/order/{id}/payment-hold:
+ * /intake-user/order/{id}/payment-hold:
  *   post:
  *     summary: Put an order on a payment hold (N1)
  *     description: >
@@ -2537,7 +2537,7 @@ router.post(ROUTE_ORDER_PAYMENT_HOLD, [intakeUserAuth], (req, res) => {
 
 /**
  * @swagger
- * /api/intake-user/order/{id}/approve-transfer:
+ * /intake-user/order/{id}/approve-transfer:
  *   post:
  *     summary: Mark a bank transfer as received and release the payment hold (N1)
  *     description: >
