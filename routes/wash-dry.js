@@ -579,6 +579,23 @@ router.get(ROUTE_WASH_AND_DRY_GET_HOLD, [washAndDryAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     message: { type: string, example: "Order released from hold and returned to wash queue" }
+ *       400:
+ *         description: >
+ *           Refused. A hold whose type needs an admin (the count-mismatch hold,
+ *           "Count differs from rider count") is refused for anyone but an admin
+ *           with error "Only admin can release this." and requiresAdmin true;
+ *           show it as a notice, not as a failure.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: false }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     error: { type: string, example: "Only admin can release this." }
+ *                     requiresAdmin: { type: boolean, example: true }
  *       404:
  *         description: Order not found or not on hold
  *       500:

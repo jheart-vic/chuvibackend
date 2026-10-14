@@ -25,6 +25,7 @@ const {
     selectHeldItems,
     stampRelease,
     nothingToRelease,
+    adminOnlyRefusal,
 } = require('../util/releaseItemHold')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
@@ -2428,6 +2429,16 @@ class SortAndPretreatService extends BaseService {
                         where: 'for sort & pretreat on this order',
                     }),
                 })
+            // R15: a hold type that needs an admin is refused with the
+            // client's sentence (util/releaseItemHold.js adminOnlyRefusal).
+            const refusal = await adminOnlyRefusal({
+                order,
+                items: mine,
+                role: req.user.userType || req.user.role,
+                orderLevel: orderParked && !itemId,
+            })
+            if (refusal) return BaseService.sendFailedResponse(refusal)
+
 
             const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {

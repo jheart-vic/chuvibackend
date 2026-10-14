@@ -2016,7 +2016,7 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  * @swagger
  * /intake-user/hold/{id}/release:
  *   patch:
- *     summary: Release an order from hold back to wash queue
+ *     summary: Release an order from hold back to the tagging queue
  *     tags:
  *       - Intake User
  *     parameters:
@@ -2026,7 +2026,7 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
  *     responses:
  *       200:
- *         description: Order released from hold and returned to wash queue
+ *         description: Order released from hold and returned to tagging queue
  *         content:
  *           application/json:
  *             schema:
@@ -2036,7 +2036,28 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  *                 data:
  *                   type: object
  *                   properties:
- *                     message: { type: string, example: "Order released from hold and returned to wash queue" }
+ *                     message: { type: string, example: "Order released from hold and returned to tagging queue" }
+ *       400:
+ *         description: >
+ *           Refused. A hold whose type needs an admin (the count-mismatch hold,
+ *           "Count differs from rider count") is refused for anyone but an admin
+ *           with error "Only admin can release this." and requiresAdmin true;
+ *           show it as a notice, not as a failure.
+ *           A payment hold is never released here by Intake (requiresPayment
+ *           true): it clears when paid, when Intake records a POS or transfer
+ *           payment, or when an admin waives it.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: false }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     error: { type: string, example: "Only admin can release this." }
+ *                     requiresAdmin: { type: boolean, example: true }
+ *                     requiresPayment: { type: boolean, example: true }
  *       404:
  *         description: Order not found or not on hold
  *       500:

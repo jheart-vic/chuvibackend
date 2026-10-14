@@ -31,7 +31,9 @@ const {
     selectHeldItems,
     stampRelease,
     nothingToRelease,
+    adminOnlyRefusal,
 } = require('../util/releaseItemHold')
+const HoldTypeModel = require('../models/holdType.model')
 const {
     planCounterPayment,
     settleCounterPayment,
@@ -2550,6 +2552,33 @@ class IntakeUserService extends BaseService {
                         where: 'for intake & tag on this order',
                     }),
                 })
+
+            // R15: a hold type that needs an admin (the count-mismatch hold) is
+            // refused here with the client's own sentence, not an error.
+            const role = req.user.userType || req.user.role
+            const clearsOrderHold = orderParked && !itemId
+            const refusal = await adminOnlyRefusal({
+                order,
+                items: mine,
+                role,
+                orderLevel: clearsOrderHold,
+            })
+            if (refusal) return BaseService.sendFailedResponse(refusal)
+
+            // A payment hold is not Intake's to release: it clears itself when
+            // the customer pays, when Intake records a POS or transfer payment
+            // (Mark paid), or when an admin waives it. Releasing it here took an
+            // unpaid order out of Payment holds while it was still unpaid.
+            if (
+                clearsOrderHold &&
+                role !== ROLE.ADMIN &&
+                order.orderHold?.holdTypeKey === HoldTypeModel.PAYMENT_HOLD_KEY
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'This order is waiting for payment. It moves on by itself once paid. To record a POS or transfer payment use Mark paid; only an admin can waive it.',
+                    requiresPayment: true,
+                })
+            }
 
             const releaseIds = new Set(mine.map((i) => String(i._id)))
 

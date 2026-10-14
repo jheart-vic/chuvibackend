@@ -73,4 +73,49 @@ function nothingToRelease({ itemId, where }) {
         : `No pieces are currently on hold ${where}.`
 }
 
-module.exports = { selectHeldItems, stampRelease, nothingToRelease }
+// R15 (client V1 test plan, 14 Oct 2026): "Only the roles allowed for a hold
+// type can release it; admin can release all. Anyone else gets 'Only admin can
+// release this' instead of an error."
+//
+// `HoldType.requiresAdminApproval` was seeded on the count-mismatch hold from
+// the start, but no release path ever read it, so Intake could wave through the
+// very discrepancy it was party to (T3.04). This is the one place it is read.
+const ADMIN_ONLY_MESSAGE = 'Only admin can release this.'
+
+/**
+ * Returns a refusal `{ error, requiresAdmin }` when a non-admin is about to
+ * release a hold whose type needs an admin, else null.
+ *
+ * @param {object}   order        the order being released
+ * @param {object[]} items        the pieces this release would clear
+ * @param {string}   role         the caller's role
+ * @param {boolean}  orderLevel   true when the release also clears the
+ *                                order-level hold (`orderHold.holdTypeKey`)
+ */
+async function adminOnlyRefusal({ order, items = [], role, orderLevel = false }) {
+    const { ROLE } = require('./constants')
+    if (role === ROLE.ADMIN) return null
+
+    const keys = new Set(
+        items.map((i) => i?.holdDetails?.reason).filter(Boolean),
+    )
+    if (orderLevel && order?.orderHold?.holdTypeKey) {
+        keys.add(order.orderHold.holdTypeKey)
+    }
+    if (!keys.size) return null
+
+    const HoldTypeModel = require('../models/holdType.model')
+    const adminOnly = await HoldTypeModel.exists({
+        key: { $in: [...keys] },
+        requiresAdminApproval: true,
+    })
+    return adminOnly ? { error: ADMIN_ONLY_MESSAGE, requiresAdmin: true } : null
+}
+
+module.exports = {
+    selectHeldItems,
+    stampRelease,
+    nothingToRelease,
+    adminOnlyRefusal,
+    ADMIN_ONLY_MESSAGE,
+}
