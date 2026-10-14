@@ -360,7 +360,8 @@ module.exports = {
 
         // (1) Subscriber → try the plan first.
         let subLead = ''
-        const sub = await SubscriptionModel.findOne({ userId, status: 'active' }).lean()
+        // Feature 21: the one usable-plan rule (a cancelled plan works until its paid month ends).
+        const sub = await require('../../util/subscriptionAccess').findUsableSubscription(userId, { lean: true })
         if (sub) {
             const subRes = await this._createOrderSafe(userId, {
                 ...basePayload,

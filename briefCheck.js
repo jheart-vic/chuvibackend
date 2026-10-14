@@ -239,8 +239,9 @@ ok('an audit row with that category validates',
 const cats = [...sub.matchAll(/category:\s*['"`]([a-z_-]+)['"`]/g)].map((m) => m[1])
 ok('no hardcoded audit category strings left in subscription.service',
     cats.length === 0, JSON.stringify(cats))
+// 5 since feature 21: cancelling a FAILED plan writes its own audit entry (F-94).
 ok('the plan writes log through the non-fatal auditSafely wrapper',
-    (sub.match(/await auditSafely\(\{/g) || []).length === 4)
+    (sub.match(/await auditSafely\(\{/g) || []).length === 5)
 ok('createAuditLog is only reached via that wrapper',
     (sub.match(/createAuditLog\(/g) || []).length === 1)
 // The wrapper now lives in util/safeLog.js (shared with intake-user 3.1 and
@@ -2860,6 +2861,125 @@ const run = (async () => {
         const adminSrc3 = fs.readFileSync(path.join(ROOT, 'services/admin.service.js'), 'utf8')
         ok('admin settings refuse a fast share larger than the floor limit',
             /neither can be larger than it/.test(adminSrc3))
+    }
+
+    console.log('\nFeature 21 — subscription item rollover')
+    {
+        const SA = require(path.join(ROOT, 'util/subscriptionAccess'))
+        const paid = new Date(2026, 10, 10, 10)
+        const back = (days) => new Date(paid.getTime() - days * 86400000)
+        ok('rollover carries the leftovers, capped at half the plan rounded down (25 → 12)',
+            SA.carriedItems({ remainingItems: 20, monthlyLimits: 25, status: 'active', paidAt: paid }) === 12 &&
+                SA.carriedItems({ remainingItems: 5, monthlyLimits: 25, status: 'active', paidAt: paid }) === 5 &&
+                SA.carriedItems({ remainingItems: 0, monthlyLimits: 25, status: 'active', paidAt: paid }) === 0 &&
+                SA.carriedItems({ remainingItems: -2, monthlyLimits: 25, status: 'active', paidAt: paid }) === 0 &&
+                SA.carriedItems({ remainingItems: 30, monthlyLimits: 15, status: 'active', paidAt: paid }) === 7)
+        ok('a failed renewal keeps the rollover only when paid within 7 days of the first failure',
+            SA.carriedItems({ remainingItems: 20, monthlyLimits: 25, status: 'failed', failedAt: back(3), paidAt: paid }) === 12 &&
+                SA.carriedItems({ remainingItems: 20, monthlyLimits: 25, status: 'failed', failedAt: back(7), paidAt: paid }) === 12 &&
+                SA.carriedItems({ remainingItems: 20, monthlyLimits: 25, status: 'failed', failedAt: back(8), paidAt: paid }) === 0)
+        const now = new Date()
+        ok('usable plan: active, or cancelled until its paid month ends; never failed or expired',
+            SA.isUsable({ status: 'active' }, now) &&
+                SA.isUsable({ status: 'cancelled', currentPeriodEnd: new Date(now.getTime() + 60000) }, now) &&
+                !SA.isUsable({ status: 'cancelled', currentPeriodEnd: new Date(now.getTime() - 60000) }, now) &&
+                !SA.isUsable({ status: 'failed' }, now) && !SA.isUsable({ status: 'expired' }, now))
+        ok('Paystack statuses are mapped onto ours (non-renewing/complete → cancelled, attention → failed)',
+            SA.PAYSTACK_STATUS_MAP['non-renewing'] === 'cancelled' && SA.PAYSTACK_STATUS_MAP.complete === 'cancelled' &&
+                SA.PAYSTACK_STATUS_MAP.attention === 'failed' && SA.PAYSTACK_STATUS_MAP.active === 'active')
+        const whSrc = fs.readFileSync(path.join(ROOT, 'util/webhook.handler.js'), 'utf8')
+        const renewal = whSrc.slice(whSrc.indexOf('async function handleRenewal'), whSrc.indexOf('async function reportUnappliedRenewal'))
+        ok('the renewal applies the rollover BEFORE the loyalty bonus and moves the paid-until date',
+            renewal.indexOf('carriedItems(') > 0 && renewal.indexOf('carriedItems(') < renewal.indexOf('applySubscriberLoyalty(') &&
+                /subscription\.remainingItems = plan\.monthlyLimits \+ carried/.test(renewal) &&
+                /subscription\.currentPeriodEnd = subscription\.nextPaymentDate/.test(renewal))
+        const code = (src) => src.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n') // ignore commented-out lines
+        ok('cancel and the Paystack disable event keep the record (no delete)',
+            !/findOneAndDelete\(\{\s*subscriptionCode/.test(code(whSrc)) &&
+                !/findByIdAndDelete\(subscription\._id\)/.test(code(fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8'))))
+        ok('booking, booking-options, the bot and the dashboard use the one usable-plan rule',
+            /findUsableSubscription\(userId, \{ populate: true \}\)/.test(fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')) &&
+                /findUsableSubscription\(userId, \{ populate: true, lean: true \}\)/.test(fs.readFileSync(path.join(ROOT, 'services/bookOrder.service.js'), 'utf8')) &&
+                /findUsableSubscription\(userId, \{ lean: true \}\)/.test(fs.readFileSync(path.join(ROOT, 'services/bot/booking.flow.js'), 'utf8')) &&
+                /findUsableSubscription\(userId, \{ populate: true, lean: true \}\)/.test(fs.readFileSync(path.join(ROOT, 'services/user.service.js'), 'utf8')))
+        ok('a plan change closes the customer\'s other plan (starts fresh)',
+            (whSrc.match(/await closeOtherPlans\(user\._id, subscription\._id\)/g) || []).length === 2)
+        const rcSrc = fs.readFileSync(path.join(ROOT, 'crons/reconcilePaystack.js'), 'utf8')
+        ok('F-90: a replaced plan is stopped on Paystack, and a late charge on an expired plan is reported, never revived',
+            /paystackAxios\.post\('\/subscription\/disable'/.test(whSrc) && /if \(subscription\.status === 'expired'\) \{\s*await reportUnappliedRenewal/.test(whSrc))
+        ok('F-94: a failed plan can be cancelled, and re-subscribing to the same plan within 7 days carries its leftovers',
+            /status: \{ \$in: \['active', 'failed'\] \}/.test(fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8')) &&
+                /SubscriptionModel\.findOne\(\{ userId: user\._id, planId, status: 'failed' \}\)/.test(whSrc) &&
+                /remainingItems: plan\.monthlyLimits \+ carried,/.test(whSrc) && /subscription\.remainingItems = plan\.monthlyLimits \+ carried/.test(whSrc))
+        // Client 2026-10-14: failure SMS + My Plan banner + day-5 reminder; SMS rules (no dashes, N not ₦).
+        {
+            // 20 unused on a 25-item plan: re-subscribing keeps 12 (half, rounded down), so the texts say 12 (F-100).
+            const sms = SA.renewalFailedSms({ status: 'failed', failedAt: new Date(2026, 10, 10, 9), remainingItems: 20 }, 25)
+            const rem = SA.renewalReminderSms({ status: 'failed', failedAt: new Date(2026, 10, 10, 9), remainingItems: 20 }, 25)
+            ok('renewal failed: the SMS and the day-5 reminder use the client\'s wording, with no dashes or naira sign',
+                sms === "Chuvi: Your plan renewal didn't go through. Subscribe again by Tuesday 17 November to keep your 12 unused items." &&
+                    /^Chuvi reminder: 2 days left\. Subscribe again by Tuesday 17 November to keep your 12 unused items\.$/.test(rem) &&
+                    !/[–—₦-]/.test(sms + rem))
+            const b = SA.renewalFailedBanner({ status: 'failed', planId: 'p1', failedAt: new Date(2026, 10, 10, 9), remainingItems: 20 }, new Date(2026, 10, 12), 25)
+            ok('renewal failed: My Plan gets a banner with the same plan, the keep-by date and the items',
+                b && b.planId === 'p1' && b.unusedItems === 12 && /Subscribe again by Tuesday 17 November to keep your 12/.test(b.message) &&
+                    SA.renewalFailedBanner({ status: 'active' }) === null)
+            ok('F-100: the promised count is what re-subscribing keeps — unused, capped at half the plan',
+                SA.unusedItems({ remainingItems: 20 }, 25) === 12 && SA.unusedItems({ remainingItems: 5 }, 25) === 5 &&
+                    /renewalFailedSms\(sub, plan\?\.monthlyLimits\)/.test(whSrc) &&
+                    /renewalReminderSms\(sub, plan\?\.monthlyLimits\)/.test(fs.readFileSync(path.join(ROOT, 'crons/renewalFailedReminder.js'), 'utf8')) &&
+                    /renewalFailedBanner\(failed, new Date\(\), failed\?\.planId\?\.monthlyLimits\)/.test(fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8')))
+            ok('F-99: My Plan matches its own Paystack subscription code first, else the newest one on the plan that has not ended',
+                /valid\.find\(\(sub\) => sub\.subscription_code === subscription\.subscriptionCode\)/.test(fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8')) &&
+                    /!ENDED\.includes\(sub\.status\)\)\s*\.sort\(/.test(fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8')))
+            ok('renewal failed: the SMS goes once per failure, and the day-5 reminder cron is registered and latched',
+                /if \(res\.modifiedCount\) \{[\s\S]{0,600}sendSms\(owner\.phoneNumber, renewalFailedSms\(sub, plan\?\.monthlyLimits\)\)/.test(whSrc) &&
+                    /require\('\.\/crons\/renewalFailedReminder\.js'\)/.test(fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8')) &&
+                    /renewalReminderSentAt: null/.test(fs.readFileSync(path.join(ROOT, 'crons/renewalFailedReminder.js'), 'utf8')))
+            ok('client correction: the old failed plan is switched off only after the NEW payment succeeds (inside the charge.success path)',
+                (whSrc.match(/await closeOtherPlans\(/g) || []).length === 2 &&
+                    whSrc.indexOf('async function handleChargeFailed') > -1 &&
+                    !/closeOtherPlans/.test(whSrc.slice(whSrc.indexOf('async function handleChargeFailed'), whSrc.indexOf('async function handleChargeFailed') + 3000)))
+        }
+        // Review round 2 (F-90 reopened, F-95..F-98) and the email-token bug.
+        {
+            const rcSrc2 = fs.readFileSync(path.join(ROOT, 'crons/reconcilePaystack.js'), 'utf8')
+            const remSrc = fs.readFileSync(path.join(ROOT, 'crons/renewalFailedReminder.js'), 'utf8')
+            ok('F-90: a failed or expired record is never reused by a new subscription or its subscription.create',
+                (whSrc.match(/status: \{ \$nin: \['failed', 'expired'\] \}/g) || []).length === 2)
+            ok('subscription.create stores the Paystack email token (|| not |) and maps the status',
+                /subscription\.paystackEmailToken = data\.email_token \|\| ''/.test(whSrc) && /PAYSTACK_STATUS_MAP\[data\.status\] \|\| 'active'/.test(whSrc))
+            ok('F-95: the nightly reconcile keeps a failed plan failed whatever Paystack says',
+                /if \(sub\.status === "failed"\) continue;/.test(rcSrc2))
+            const R = require(path.join(ROOT, 'crons/renewalFailedReminder'))
+            ok('F-96: the reminder day is the 5th CALENDAR day in Lagos (a 09:00, 15:00 or 23:00 failure → the same day)',
+                R.calendarDaysSince(new Date(2026, 9, 19, 9), new Date(2026, 9, 24, 10)) === 5 &&
+                    R.calendarDaysSince(new Date(2026, 9, 19, 15), new Date(2026, 9, 24, 10)) === 5 &&
+                    R.calendarDaysSince(new Date(2026, 9, 19, 23), new Date(2026, 9, 24, 10)) === 5 &&
+                    /calendarDaysSince\(s\.failedAt, now\) === 5/.test(remSrc))
+            ok('F-97: a failed invoice never turns an expired (replaced) plan back to failed',
+                (whSrc.match(/status: \{ \$ne: 'expired' \} \},\s*\{ status: 'failed'/g) || []).length === 2)
+            const close = whSrc.slice(whSrc.indexOf('async function closeOtherPlans'), whSrc.indexOf('async function attachPaystackCode'))
+            ok('F-98: old plans are closed locally BEFORE the Paystack calls, which time out after 10 s',
+                close.indexOf('updateMany(') > -1 && close.indexOf('updateMany(') < close.indexOf('paystackAxios.get(') &&
+                    (close.match(/\{ timeout: 10000 \}/g) || []).length === 2)
+        }
+        // Risk fixes A, B, C (2026-10-14).
+        ok('risk A: a plan that activates without a Paystack code fetches its own (newest, not ended, not taken)',
+            (whSrc.match(/await attachPaystackCode\(subscription\._id, user, planCode \|\| plan\.paystackPlanCode/g) || []).length === 2 &&
+                /async function attachPaystackCode[\s\S]{0,2500}if \(taken\.has\(c\)\) continue[\s\S]{0,600}!ENDED\.includes\(ps\.status\)/.test(whSrc))
+        ok('risk B: a renewal with an unknown code is adopted by the customer\'s ONE code-less plan (else reported)',
+            /if \(candidates\.length === 1\) \{[\s\S]{0,300}subscriptionCode: \{ \$in: \[null, ''\] \} \},\s*\{ \$set: \{ subscriptionCode \} \}/.test(whSrc))
+        ok('risk C: a refused switch-off is marked pending and retried nightly until Paystack confirms',
+            /\$set: \{ paystackDisablePending: true \}/.test(whSrc) &&
+                /paystackDisablePending: true,\s*subscriptionCode: \{ \$exists: true, \$ne: null \}/.test(fs.readFileSync(path.join(ROOT, 'crons/reconcilePaystack.js'), 'utf8')))
+        ok('F-91: a plan change does not send the "your plan expired, renew" email',
+            /status: 'expired', remainingItems: 0, expiryReminderSentAt: new Date\(\)/.test(whSrc))
+        ok('F-93: cancel disables on Paystack whenever Paystack would still charge (not only "active")',
+            /if \(!\['cancelled', 'complete', 'completed', 'non-renewing'\]\.includes\(isSubActive\)\)/.test(fs.readFileSync(path.join(ROOT, 'services/subscription.service.js'), 'utf8')))
+        ok('the nightly reconcile selects real Paystack codes, handles each record on its own, and expires ended cancelled plans',
+            /subscriptionCode: \{ \$exists: true, \$ne: null \}/.test(rcSrc) && /catch \(err\) \{\s*summary\.failed \+= 1/.test(rcSrc) &&
+                /status: "cancelled", currentPeriodEnd: \{ \$lte: now \}/.test(rcSrc))
     }
 
     console.log(`\n${pass} passed, ${fail} failed\n`)

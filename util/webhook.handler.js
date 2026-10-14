@@ -11,6 +11,8 @@ const createNotification = require('./createNotification')
 const notifyBot = require('./notifyBot')
 const sendEmail = require('./emailService')
 const { markProductionClearedIfReady } = require('./productionClock')
+const { carriedItems, renewalFailedSms, PAYSTACK_STATUS_MAP } = require('./subscriptionAccess')
+const sendSms = require('./sendSms')
 
 // Subscriber loyalty rewards (client confirmed 2026-08-29): payment NEVER changes
 // (same price, same monthly schedule) — only that month's ITEM BUNDLE grows, scaled
@@ -337,13 +339,41 @@ async function handleRenewal(data, user, reference, { claimed = false } = {}) {
     const subscriptionCode = data.subscription?.subscription_code
     let rowWritten = claimed
     try {
-        const subscription = await SubscriptionModel.findOne({ subscriptionCode })
+        let subscription = await SubscriptionModel.findOne({ subscriptionCode })
+        // Risk fix B (2026-10-14): a code we don't know may belong to the
+        // customer's own plan whose code never arrived (subscription.create came
+        // before charge.success). If exactly ONE of this customer's plans has no
+        // code yet — and, when Paystack names the plan, it's that plan — adopt
+        // the code and apply the renewal instead of reporting it unapplied.
+        if (!subscription && subscriptionCode) {
+            const planCode = data.plan?.plan_code
+            const candidates = await SubscriptionModel.find({
+                userId: user._id,
+                subscriptionCode: { $in: [null, ''] },
+                status: { $in: ['active', 'cancelled', 'failed'] },
+                ...(planCode && { paystackSubscriptionId: planCode }),
+            }).select('_id').lean()
+            if (candidates.length === 1) {
+                const adopted = await SubscriptionModel.updateOne(
+                    { _id: candidates[0]._id, subscriptionCode: { $in: [null, ''] } },
+                    { $set: { subscriptionCode } },
+                )
+                if (adopted.modifiedCount) subscription = await SubscriptionModel.findById(candidates[0]._id)
+            }
+        }
         if (!subscription) {
             await reportUnappliedRenewal(data, user, reference, 'no subscription of ours has this Paystack code', { rowWritten })
             return
         }
         if (String(subscription.userId) !== String(user._id)) {
             await reportUnappliedRenewal(data, user, reference, 'the subscription with this Paystack code belongs to another customer', { rowWritten })
+            return
+        }
+        // Review F-90: a plan that was replaced or ended is never revived by a
+        // late charge on its old Paystack subscription — that would leave the
+        // customer with two active plans. The money is reported for an admin.
+        if (subscription.status === 'expired') {
+            await reportUnappliedRenewal(data, user, reference, 'the plan was already replaced or had expired', { rowWritten })
             return
         }
 
@@ -372,14 +402,36 @@ async function handleRenewal(data, user, reference, { claimed = false } = {}) {
 
         const plan = await PlanModel.findById(subscription.planId)
 
+        // Feature 21 (client rules 2026-10-11): carry the items left over,
+        // capped at half the plan (rounded down) — or nothing if a failed
+        // renewal is paid more than a week after it failed. Worked out from the
+        // status BEFORE it is set back to active, and BEFORE the loyalty bonus,
+        // so the cap never cuts the bonus.
+        const carried =
+            plan?.monthlyLimits != null
+                ? carriedItems({
+                    remainingItems: subscription.remainingItems,
+                    monthlyLimits: plan.monthlyLimits,
+                    status: subscription.status,
+                    failedAt: subscription.failedAt,
+                    paidAt: data.paid_at,
+                })
+                : 0
+
         subscription.status = 'active'
+        subscription.failedAt = undefined
+        subscription.renewalReminderSentAt = undefined
         subscription.lastPaymentAt = new Date(data.paid_at)
         if (data.subscription.next_payment_date) {
             subscription.nextPaymentDate = new Date(data.subscription.next_payment_date)
+            // The paid month now runs to the next payment date: a cancelled
+            // plan stays usable until then (feature 21, rule 4).
+            subscription.currentPeriodEnd = subscription.nextPaymentDate
         }
         if (plan?.monthlyLimits != null) {
-            // fresh month, fresh item allowance
-            subscription.remainingItems = plan.monthlyLimits
+            // fresh month, plus what carried over
+            subscription.remainingItems = plan.monthlyLimits + carried
+            subscription.rolledOverItems = carried
         }
         // Subscriber loyalty: this renewal is one more consecutive month.
         subscription.consecutiveMonths = (subscription.consecutiveMonths || 0) + 1
@@ -553,23 +605,145 @@ async function handlePaymentFailed(data) {
     try {
         if (!data.subscription) return
 
-        // A missed payment breaks the consecutive-month loyalty streak.
-        await SubscriptionModel.findOneAndUpdate(
-            { subscriptionCode: data.subscription.subscription_code },
+        // A missed payment breaks the consecutive-month loyalty streak. Never
+        // on an expired (replaced) plan (review F-97).
+        const touched = await SubscriptionModel.findOneAndUpdate(
+            { subscriptionCode: data.subscription.subscription_code, status: { $ne: 'expired' } },
             { status: 'failed', consecutiveMonths: 0, loyaltyRewardsApplied: [] },
         )
+        if (touched) await markFirstFailure(data.subscription.subscription_code)
     } catch (error) {
         console.error('Error in handlePaymentFailed:', error)
         return
     }
 }
 
-async function handleSubscriptionDisable(data) {
-    console.log(data, 'handleSubscriptionDisable')
+// Feature 21 (rule 6): a plan change starts fresh. When a plan activates, the
+// customer's OTHER plan (e.g. the one they cancelled to "upgrade") is closed
+// with nothing carried, so exactly one plan is usable.
+async function closeOtherPlans(userId, keepId) {
+    const others = await SubscriptionModel.find({
+        userId, _id: { $ne: keepId }, status: { $in: ['active', 'cancelled', 'failed'] },
+    }).select('subscriptionCode paystackEmailToken status').lean()
+    if (!others.length) return
+    // Closed HERE first (review F-98), so a slow Paystack can't leave two
+    // usable plans. `expiryReminderSentAt` set so the "your plan expired,
+    // renew" email never goes to a customer who just changed plan (F-91).
+    await SubscriptionModel.updateMany(
+        { _id: { $in: others.map((o) => o._id) } },
+        { $set: { status: 'expired', remainingItems: 0, expiryReminderSentAt: new Date() } },
+    )
+    // Review F-90: then stop each old plan ON PAYSTACK, or it would keep
+    // charging the card. This only runs after the NEW payment succeeded (the
+    // charge.success path, client correction 2026-10-14). Best effort, 10 s per
+    // call: a Paystack hiccup is logged and never undoes the new plan; a late
+    // charge on the old one is refused by handleRenewal.
+    const paystackAxios = require('../services/paystack.client.service')
+    for (const o of others) {
+        if (!o.subscriptionCode || o.status === 'cancelled') continue
+        try {
+            const res = await paystackAxios.get(`/subscription/${o.subscriptionCode}`, { timeout: 10000 })
+            const ps = res.data?.data
+            if (ps && !['cancelled', 'complete', 'completed', 'non-renewing'].includes(ps.status)) {
+                await paystackAxios.post('/subscription/disable', {
+                    code: o.subscriptionCode,
+                    token: o.paystackEmailToken || ps.email_token,
+                }, { timeout: 10000 })
+            }
+        } catch (err) {
+            console.error(`Could not disable replaced plan ${o._id} on Paystack:`, err?.response?.data?.message || err?.message)
+            // Risk fix C (2026-10-14): the nightly reconcile retries until
+            // Paystack confirms the old plan is stopped.
+            await SubscriptionModel.updateOne({ _id: o._id }, { $set: { paystackDisablePending: true } }).catch(() => {})
+        }
+    }
+}
+
+// Risk fix A (2026-10-14): Paystack can send `subscription.create` (which carries
+// the new plan's Paystack code) BEFORE the payment's `charge.success`, when our
+// record doesn't exist yet — so nothing stored the code and the first renewal
+// was reported unapplied. When a plan activates without a code, ask Paystack
+// for the customer's subscriptions and take the newest one on this plan that
+// hasn't ended and isn't already on another of our records. Best effort, 10 s
+// per call; renewal adoption (fix B) is the safety net.
+async function attachPaystackCode(subscriptionId, user, planCode, customerCode) {
     try {
-        await SubscriptionModel.findOneAndDelete({
-            subscriptionCode: data.subscription_code,
-        })
+        const sub = await SubscriptionModel.findById(subscriptionId).select('subscriptionCode').lean()
+        if (!sub || sub.subscriptionCode || !planCode) return
+        const code = customerCode || user.customerCode
+        if (!code) return
+        const paystackAxios = require('../services/paystack.client.service')
+        const cust = await paystackAxios.get(`/customer/${code}`, { timeout: 10000 })
+        const codes = (cust.data?.data?.subscriptions || []).map((s) => s.subscription_code).filter(Boolean)
+        if (!codes.length) return
+        const taken = new Set(
+            (await SubscriptionModel.find({ subscriptionCode: { $in: codes } }).select('subscriptionCode').lean())
+                .map((r) => r.subscriptionCode),
+        )
+        const ENDED = ['cancelled', 'complete', 'completed', 'non-renewing']
+        const found = []
+        for (const c of codes) {
+            if (taken.has(c)) continue
+            try {
+                const r = await paystackAxios.get(`/subscription/${c}`, { timeout: 10000 })
+                const ps = r.data?.data
+                if (ps && ps.plan?.plan_code === planCode && !ENDED.includes(ps.status)) found.push(ps)
+            } catch (err) {
+                console.error(`attachPaystackCode: could not read ${c}:`, err?.message)
+            }
+        }
+        const best = found.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0]
+        if (!best) return
+        await SubscriptionModel.updateOne(
+            { _id: subscriptionId, subscriptionCode: { $in: [null, ''] } },
+            {
+                $set: {
+                    subscriptionCode: best.subscription_code,
+                    ...(best.email_token && { paystackEmailToken: best.email_token }),
+                    ...(best.next_payment_date && { nextPaymentDate: new Date(best.next_payment_date) }),
+                },
+            },
+        )
+    } catch (err) {
+        console.error('attachPaystackCode failed:', err?.response?.data?.message || err?.message)
+    }
+}
+
+// Feature 21 (rule 3): the failed-payment week counts from the FIRST failed
+// payment, so a later retry failing again doesn't restart it.
+async function markFirstFailure(subscriptionCode) {
+    const res = await SubscriptionModel.updateOne(
+        { subscriptionCode, status: 'failed', failedAt: null },
+        { $set: { failedAt: new Date() } },
+    )
+    // Client 2026-10-14: tell the customer the moment a renewal fails, by SMS,
+    // once per failure (a later retry failing again sends nothing). Never fails
+    // the webhook.
+    if (res.modifiedCount) {
+        try {
+            const sub = await SubscriptionModel.findOne({ subscriptionCode }).lean()
+            const owner = sub && (await UserModel.findById(sub.userId).select('phoneNumber').lean())
+            // The number they'd keep: unused, capped at half the plan (F-100).
+            const plan = sub && (await PlanModel.findById(sub.planId).select('monthlyLimits').lean())
+            if (owner?.phoneNumber) await sendSms(owner.phoneNumber, renewalFailedSms(sub, plan?.monthlyLimits))
+        } catch (err) {
+            console.error('renewal-failed SMS failed:', err?.message)
+        }
+    }
+}
+
+async function handleSubscriptionDisable(data) {
+    try {
+        // Feature 21 (rule 4): never delete. A disabled active plan is
+        // cancelled but stays usable until its paid month ends; a failed one
+        // keeps `failed`, so its one-week grace still applies.
+        const sub = await SubscriptionModel.findOne({ subscriptionCode: data.subscription_code, status: 'active' })
+        if (sub) {
+            sub.status = 'cancelled'
+            sub.cancelledAt = new Date()
+            if (!sub.currentPeriodEnd && sub.nextPaymentDate) sub.currentPeriodEnd = sub.nextPaymentDate
+            await sub.save()
+        }
     } catch (error) {
         console.error('Error in handleSubscriptionDisable:', error)
         return
@@ -597,6 +771,10 @@ async function handleSubscriptionCreate(data) {
             userId: user._id,
             paystackAuthorizationToken: authorizationCode,
             paystackSubscriptionId: planCode,
+            // Review F-90: the new Paystack code belongs on the NEW plan, never on
+            // an old failed/expired record (that revived it and lost the old code
+            // we need to switch it off).
+            status: { $nin: ['failed', 'expired'] },
         }
         user.customerCode = customerCode
         await user.save()
@@ -610,8 +788,11 @@ async function handleSubscriptionCreate(data) {
         if (subscription) {
             subscription.subscriptionCode = data.subscription_code
             subscription.paystackSubscriptionId = planCode
-            subscription.paystackEmailToken = data.email_token | ''
-            subscription.status = data.status || 'active'
+            // `||`, not `|`: the bitwise OR stored the number 0, so cancel had no
+            // email token to switch the plan off on Paystack with.
+            subscription.paystackEmailToken = data.email_token || ''
+            // Mapped: Paystack's own statuses aren't all in our enum (feature 21).
+            subscription.status = PAYSTACK_STATUS_MAP[data.status] || 'active'
             subscription.nextPaymentDate = data.next_payment_date
                 ? new Date(data.next_payment_date)
                 : null
@@ -643,10 +824,17 @@ async function handleInvoiceFailed(data) {
     try {
         if (!data.subscription) return
 
-        await SubscriptionModel.findOneAndUpdate(
-            { subscriptionCode: data.subscription.subscription_code },
-            { status: 'failed' },
+        // A missed payment breaks the consecutive-month loyalty streak (the
+        // model's rule). `handlePaymentFailed` carried that reset but no webhook
+        // event reaches it; this is the handler Paystack's failure calls.
+        // Review F-97: a replaced or ended (`expired`) plan is never turned back
+        // into `failed` — its customer may already be on a new plan.
+        const touched = await SubscriptionModel.findOneAndUpdate(
+            { subscriptionCode: data.subscription.subscription_code, status: { $ne: 'expired' } },
+            { status: 'failed', consecutiveMonths: 0, loyaltyRewardsApplied: [] },
         )
+        if (!touched) return
+        await markFirstFailure(data.subscription.subscription_code)
 
         // 🔔 Tell the customer their subscription renewal failed (fire-and-forget)
         if (data.customer?.email) {
@@ -688,6 +876,12 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
             userId: user._id,
             paystackSubscriptionId: planCode,
             paystackAuthorizationToken: authorizationCode,
+            // Review F-90: never reuse a FAILED or EXPIRED record. A re-subscribe
+            // to the same plan with the same card would otherwise take over the
+            // failed record, its old Paystack subscription would never be
+            // switched off, and the customer would be billed twice. A new record
+            // is created instead, and closeOtherPlans switches the old one off.
+            status: { $nin: ['failed', 'expired'] },
         }
 
         let subscription = await SubscriptionModel.findOne(filter)
@@ -703,6 +897,23 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
         }
         const planId = plan._id
         const paystackId = plan.paystackPlanCode || null
+
+        // Review F-94 (user decision 2026-10-14): a failed renewal is paid by
+        // RE-SUBSCRIBING to the same plan. Within 7 days of the failure the
+        // leftover items still carry over (capped at half, rule 1); later, or
+        // on a different plan, it starts fresh (rules 3 and 6).
+        const prevFailed = await SubscriptionModel.findOne({ userId: user._id, planId, status: 'failed' })
+            .sort({ failedAt: -1 })
+            .lean()
+        const carried = prevFailed
+            ? carriedItems({
+                remainingItems: prevFailed.remainingItems,
+                monthlyLimits: plan.monthlyLimits,
+                status: 'failed',
+                failedAt: prevFailed.failedAt,
+                paidAt: data.paid_at,
+            })
+            : 0
 
         if (!subscription) {
             console.log(
@@ -728,7 +939,9 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
                 status: 'active',
                 currentPeriodEnd: nextPaymentDate,
                 nextPaymentDate: nextPaymentDate,
-                remainingItems: plan.monthlyLimits,
+                // plus what a failed same-plan renewal carries (F-94)
+                remainingItems: plan.monthlyLimits + carried,
+                rolledOverItems: carried,
                 // first paid month starts the loyalty streak
                 consecutiveMonths: 1,
                 loyaltyRewardsApplied: [],
@@ -736,6 +949,8 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
                 remainingPickupDeliveries: plan.freePickupDeliveryPerWeek || 0,
                 logisticsWeekStart: new Date(data.paid_at),
             })
+            await closeOtherPlans(user._id, subscription._id)
+            await attachPaystackCode(subscription._id, user, planCode || plan.paystackPlanCode, data.customer?.customer_code)
 
             return
         } else {
@@ -745,8 +960,9 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
             subscription.startDate = new Date(data.paid_at)
             subscription.planId = planId
             subscription.monthlyLimits = plan.monthlyLimits
-            // a (re)subscription starts with the plan's full allowance
-            subscription.remainingItems = plan.monthlyLimits
+            // a (re)subscription starts with the plan's full allowance, plus
+            // what a failed same-plan renewal carries within its week (F-94)
+            subscription.remainingItems = plan.monthlyLimits + carried
             subscription.userId = user._id
             subscription.lastPaymentAt = new Date(data.paid_at)
             // (re)subscribing restarts the consecutive-month loyalty streak
@@ -756,7 +972,18 @@ async function handleNormalSubscription(data, _user = null, verifiedPlan = null)
             subscription.remainingPickupDeliveries =
                 plan.freePickupDeliveryPerWeek || 0
             subscription.logisticsWeekStart = new Date(data.paid_at)
+            // Feature 21: a (re)subscription is a fresh paid month — no leftover
+            // failure or cancellation (only the F-94 carry above).
+            const nextPaymentDate = generateNextPaymentDate('monthly')
+            subscription.currentPeriodEnd = nextPaymentDate
+            subscription.nextPaymentDate = nextPaymentDate
+            subscription.rolledOverItems = carried
+            subscription.failedAt = undefined
+            subscription.renewalReminderSentAt = undefined
+            subscription.cancelledAt = undefined
             await subscription.save()
+            await closeOtherPlans(user._id, subscription._id)
+            await attachPaystackCode(subscription._id, user, planCode || plan.paystackPlanCode, data.customer?.customer_code)
         }
 
         await notifyBot({

@@ -19,7 +19,7 @@ These are corrections, so each work item goes through `/fix` (archived under
 | 6 | Follow-up messages: registration welcome by SMS + in-app (editable CRM template, first name + offer end day) + **schedule save bug** | 4 | 0.5 | **DONE 2026-10-12**. Archive `blueprint/history/fixes/registration-welcome-sms-and-schedule-save.md`; review PASSED (3 rounds; F-50..F-54 closed). Branch `fix/registration-welcome-sms-and-schedule-save`, stacked on item 2 (now merged). FE notes in FE-CHANGELOG-2026-10-11 §4. **Ask the client:** the welcome goes out immediately, outside the send windows (builder default), and F-55 (windows on the other follow-ups). |
 | 7 | Written explanations for 1 and 7a–7p | 1, 7 | 1 | Not started |
 | 8 | Clear test data, keep settings | 8 | 0.5 | Run LAST, at the client's time (likely Thursday night) |
-| 9 | Subscription rollover | build plan 21 | 3.5–4.5 | After 1–8. Rules in memory `chuvi-subscription-rollover` |
+| 9 | Subscription rollover | build plan 21 | 3.5–4.5 | **DONE 2026-10-14** — build-plan feature 21, archive `blueprint/history/features/21-subscription-item-rollover.md`, review PASSED (round 5; F-90..F-100 closed). Half-plan carry-over at renewal; failed renewal → SMS + My Plan banner + day-5 reminder, re-subscribe to the same plan within 7 days keeps the items; cancel keeps the plan to the end of the paid month; plan change starts fresh and switches the old plan off on Paystack (retried nightly). Waiting on the client: automatic refund of a charge on a replaced plan (9D). Open P3s: F-101, F-102. |
 
 **Follow-ups found along the way (not client items, small, each its own `/fix`):**
 - **F-55: CRM windows.** Lead and reactivation messages honour each step's morning/evening

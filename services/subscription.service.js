@@ -7,6 +7,7 @@ const paystackAxios = require('./paystack.client.service')
 const createAuditLog = require('../util/createAuditLog')
 const { getObjectId } = require('../util/helper')
 const { AUDIT_LOG_CATEGORIES } = require('../util/constants')
+const { findUsableSubscription, PAYSTACK_STATUS_MAP, GRACE_MS, renewalFailedBanner } = require('../util/subscriptionAccess')
 
 // Brief 2.5 — "cannot create plan" when the plan was actually created.
 // createAuditLog RETHROWS, and every plan write logs AFTER the data is already
@@ -246,10 +247,12 @@ class SubscriptionService extends BaseService {
         try {
             const userId = req.user.id
 
+            // A FAILED plan can be cancelled too (review F-94), so a customer
+            // whose renewal failed can stop Paystack retrying the card.
             const subscription = await SubscriptionModel.findOne({
                 userId: userId,
-                status: 'active',
-            })
+                status: { $in: ['active', 'failed'] },
+            }).sort({ createdAt: -1 })
 
             if (!subscription) {
                 return BaseService.sendFailedResponse({
@@ -269,7 +272,10 @@ class SubscriptionService extends BaseService {
 
                 subscriptionStatus = isSubActive
 
-                if (isSubActive == 'active') {
+                // Review F-93: stop it on Paystack whenever Paystack would still
+                // charge it — `active`, but also `attention` (a failed charge we
+                // haven't heard about yet) — not only when it says `active`.
+                if (!['cancelled', 'complete', 'completed', 'non-renewing'].includes(isSubActive)) {
                     const response = await paystackAxios.post(
                         '/subscription/disable',
                         {
@@ -291,20 +297,51 @@ class SubscriptionService extends BaseService {
                 })
             }
 
-            await SubscriptionModel.findByIdAndDelete(subscription._id)
-            // Paystack has already been told and the record is gone; an audit
-            // problem must not report this as a failed cancellation.
+            // A failed plan stays `failed` (not usable): its leftovers still carry
+            // if the customer re-subscribes to the same plan within 7 days of the
+            // failure (review F-94); Paystack has now stopped retrying the card.
+            if (subscription.status === 'failed') {
+                await SubscriptionModel.updateOne({ _id: subscription._id }, { $set: { cancelledAt: new Date() } })
+                await auditSafely({
+                    userId: getObjectId(userId),
+                    category: AUDIT_LOG_CATEGORIES.SUBSCRIPTION,
+                    action: `Stopped failed subscription with code ${sub_code}`,
+                })
+                const keepBy = subscription.failedAt ? new Date(new Date(subscription.failedAt).getTime() + GRACE_MS) : null
+                const left = Math.max(Number(subscription.remainingItems) || 0, 0)
+                return BaseService.sendSuccessResponse({
+                    message: keepBy && left > 0 && keepBy > new Date()
+                        ? `Your plan is stopped, because the last renewal payment didn't go through. To keep your leftover items, subscribe to the same plan again by ${keepBy.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}.`
+                        : "Your plan is stopped, because the last renewal payment didn't go through.",
+                    currentPeriodEnd: null,
+                })
+            }
+
+            // Feature 21 (rule 4): keep the record. The plan stays usable until
+            // the month the customer paid for ends; the nightly reconcile then
+            // marks it expired with nothing carried.
+            const paidUntil = subscription.currentPeriodEnd || subscription.nextPaymentDate || null
+            await SubscriptionModel.updateOne(
+                { _id: subscription._id },
+                { $set: { status: 'cancelled', cancelledAt: new Date(), ...(paidUntil && { currentPeriodEnd: paidUntil }) } },
+            )
+            // Paystack has already been told; an audit problem must not report
+            // this as a failed cancellation.
             await auditSafely({
                 userId: getObjectId(userId),
                 category: AUDIT_LOG_CATEGORIES.SUBSCRIPTION,
                 action: `Cancelled subscription with code ${sub_code}`,
             })
 
+            const until = paidUntil
+                ? new Date(paidUntil).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+                : null
             return BaseService.sendSuccessResponse({
                 message:
-                    subscriptionStatus === 'active'
-                        ? 'Subscription cancelled Successfully'
+                    !['cancelled', 'complete', 'completed', 'non-renewing'].includes(subscriptionStatus)
+                        ? `Your plan is cancelled. ${until ? `You can keep using your items until ${until}.` : 'You can keep using your items until your paid month ends.'}`
                         : 'You have already cancelled your subscription',
+                currentPeriodEnd: paidUntil,
             })
         } catch (error) {
             console.error('Cancel subscription error:', error)
@@ -325,22 +362,24 @@ class SubscriptionService extends BaseService {
                 })
             }
 
-            const filter = {
-                userId: userId,
-                status: 'active',
-                $or: [
-                    { currentPeriodEnd: { $gt: new Date() } },
-                    { currentPeriodEnd: { $exists: false } },
-                ],
-            }
-
-            let subscription =
-                await SubscriptionModel.findOne(filter).populate('planId')
+            // Feature 21: the one usable-plan rule — active, or cancelled with
+            // its paid month not over (the app shows "Cancelled — usable until").
+            let subscription = await findUsableSubscription(userId, { populate: true })
 
             if (!subscription) {
+                // Client 2026-10-14: a failed renewal shows a banner on My Plan —
+                // "Your plan renewal didn't go through. Subscribe again by <date>
+                // to keep your <X> unused items." — whose button opens the normal
+                // checkout for the same plan (`renewalFailed.planId`).
+                const failed = await SubscriptionModel.findOne({ userId, status: 'failed' })
+                    .sort({ failedAt: -1 })
+                    .populate('planId', 'monthlyLimits')
+                    .lean()
                 return BaseService.sendSuccessResponse({
                     message: 'No active subscription1',
                     subscription: null,
+                    // The count is what re-subscribing keeps: capped at half the plan (F-100).
+                    renewalFailed: renewalFailedBanner(failed, new Date(), failed?.planId?.monthlyLimits),
                 })
             }
 
@@ -382,15 +421,29 @@ class SubscriptionService extends BaseService {
                     }),
                 )
 
-                const matchedSub = fetchedSubscriptions.find(
-                    (sub) =>
-                        sub &&
-                        sub.plan?.plan_code ===
-                            subscription.paystackSubscriptionId,
-                )
+                // Review F-99: after a same-plan re-subscribe the customer has TWO
+                // Paystack subscriptions on that plan code (the old, switched-off
+                // one and the new one), so the plan code alone isn't enough. Match
+                // the record's own subscription code first; otherwise take the
+                // newest one on that plan that Paystack hasn't ended.
+                const ENDED = ['cancelled', 'complete', 'completed', 'non-renewing']
+                const valid = fetchedSubscriptions.filter(Boolean)
+                const matchedSub =
+                    (subscription.subscriptionCode &&
+                        valid.find((sub) => sub.subscription_code === subscription.subscriptionCode)) ||
+                    valid
+                        .filter((sub) => sub.plan?.plan_code === subscription.paystackSubscriptionId && !ENDED.includes(sub.status))
+                        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0] ||
+                    null
 
-                if (matchedSub && matchedSub.status !== 'active') {
-                    // await SubscriptionModel.findByIdAndDelete(subscription._id);
+                // A cancelled plan is non-renewing on Paystack but still usable
+                // until its paid month ends (feature 21), so only an ACTIVE
+                // record is refused when Paystack says it stopped.
+                if (
+                    matchedSub &&
+                    subscription.status !== 'cancelled' &&
+                    (PAYSTACK_STATUS_MAP[matchedSub.status] || matchedSub.status) !== 'active'
+                ) {
                     return BaseService.sendFailedResponse({
                         error: 'Your subscription is no longer active, please subscribe again to continue enjoying our services',
                     })
@@ -408,7 +461,11 @@ class SubscriptionService extends BaseService {
                     if (!subscription.paystackEmailToken) {
                         subscription.paystackEmailToken = matchedSub.email_token
                     }
-                    subscription.status = matchedSub.status
+                    // Mapped (feature 21): Paystack's `non-renewing` etc. are not in
+                    // our enum, and a cancelled record stays cancelled.
+                    if (subscription.status !== 'cancelled') {
+                        subscription.status = PAYSTACK_STATUS_MAP[matchedSub.status] || subscription.status
+                    }
 
                     await subscription.save() // ✅ single save
                     subscription = subscription.toObject()

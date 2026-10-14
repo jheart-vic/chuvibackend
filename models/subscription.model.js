@@ -22,6 +22,19 @@ const subscriptionSchema = new mongoose.Schema({
   expiryReminderSentAt: { type: Date },
   lastPaymentAt: { type: Date },
   lastPaymentReference: String,
+  // Feature 21 (client rules 2026-10-11). The FIRST failed renewal payment of
+  // the current failure: paid within 7 days of it, the leftover items still
+  // carry over; later, they are forfeited. Cleared on renewal.
+  failedAt: { type: Date },
+  // When the day-5 "2 days left" SMS went out for the current failure (client
+  // 2026-10-14), so it is sent once. Cleared with `failedAt`.
+  renewalReminderSentAt: { type: Date },
+  // A replaced plan we could not switch off on Paystack yet (risk fix C,
+  // 2026-10-14). The nightly reconcile retries until Paystack says it stopped.
+  paystackDisablePending: { type: Boolean },
+  // What the last renewal carried over (at most half the plan). Audit only:
+  // it is already inside `remainingItems`, which stays the one balance.
+  rolledOverItems: { type: Number, default: 0 },
   // pendingPlan: {
   //   type: mongoose.Schema.Types.ObjectId,
   //   ref: "SubscriptionPlan",

@@ -318,6 +318,15 @@ router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
  * /subscription/cancel-subscription:
  *   post:
  *     summary: Cancel an active subscription
+ *     description: >
+ *       Feature 21: the plan is NOT deleted. It stops renewing on Paystack, becomes
+ *       `status: cancelled`, and stays usable (bookings, remaining items) until
+ *       `currentPeriodEnd` — the end of the month the customer paid for. After that it
+ *       expires with nothing carried over. To change plan ("Upgrade Plan"), cancel and
+ *       then subscribe to the new plan: it starts fresh and the old plan is closed.
+ *       A plan whose renewal FAILED can be cancelled too: Paystack stops retrying the card,
+ *       and the reply says by when subscribing to the SAME plan again keeps the leftover
+ *       items (within 7 days of the failed payment). `currentPeriodEnd` is then null.
  *     tags:
  *       - Subscription
  *     requestBody:
@@ -328,7 +337,29 @@ router.post(ROUTE_SUBSCRIBE_PLAN, [auth], async (req, res) => {
  *             type: object
  *     responses:
  *       200:
- *         description: Subscription cancelled successfully
+ *         description: Subscription cancelled; usable until the paid month ends
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Your plan is cancelled. You can keep using your items until Saturday 14 November."
+ *                     currentPeriodEnd:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: "2026-11-14T10:00:00.000Z"
+ *       400:
+ *         description: No active subscription found, or Paystack refused the cancellation
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       500:
  *         description: Server error
  */
@@ -370,6 +401,16 @@ router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
  *           type: string
  *           enum: [active, cancelled, expired, pending, failed]
  *           example: active
+ *           description: "`cancelled` = stops renewing but usable until `currentPeriodEnd` (show \"Cancelled — usable until <date>\"). `failed` = the renewal payment failed; bookings are blocked; paid within 7 days the leftover items still carry over."
+ *         rolledOverItems:
+ *           type: number
+ *           example: 12
+ *           description: "Feature 21: items the last renewal carried over (at most half the plan, rounded down). Already included in `remainingItems`."
+ *         failedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: "When the current failed renewal first failed (the 7-day grace counts from here). Null when not failed."
  *         startDate:
  *           type: string
  *           format: date-time
@@ -384,6 +425,7 @@ router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
  *         currentPeriodEnd:
  *           type: string
  *           format: date-time
+ *           description: "The end of the month the customer paid for. Moved on every renewal. A cancelled plan is usable until then."
  *         cancelledAt:
  *           type: string
  *           format: date-time
@@ -415,7 +457,8 @@ router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
  *
  * /subscription/current-subscription:
  *   get:
- *     summary: Get the current active subscription of the user
+ *     summary: Get the customer's usable subscription
+ *     description: "Feature 21: returns the plan the customer can book against — `active`, or `cancelled` with `currentPeriodEnd` still ahead. `subscription` is null when there is none."
  *     tags:
  *       - Subscription
  *     responses:
@@ -437,6 +480,21 @@ router.post(ROUTE_CANCEL_SUBSCRIPTION, [auth], async (req, res) => {
  *                       allOf:
  *                         - $ref: '#/components/schemas/Subscription'
  *                       nullable: true
+ *                     renewalFailed:
+ *                       type: object
+ *                       nullable: true
+ *                       description: >
+ *                         Feature 21 (client 2026-10-14): present when there is no usable plan and the
+ *                         customer's last renewal FAILED. Show `message` as a banner on My Plan; its button
+ *                         opens the normal checkout for `planId` (the same plan). Re-subscribing by
+ *                         `keepItemsBy` keeps `unusedItems` (capped at half the plan). After that date
+ *                         `unusedItems` is 0 and the message just invites them to subscribe again.
+ *                       properties:
+ *                         planId: { type: string, example: "64f1a2b3c4d5e6f7890abc56" }
+ *                         failedAt: { type: string, format: date-time, example: "2026-11-10T09:00:00.000Z" }
+ *                         keepItemsBy: { type: string, format: date-time, example: "2026-11-17T09:00:00.000Z" }
+ *                         unusedItems: { type: number, example: 20 }
+ *                         message: { type: string, example: "Your plan renewal didn't go through. Subscribe again by Tuesday 17 November to keep your 20 unused items." }
  *       500:
  *         description: Server error
  */

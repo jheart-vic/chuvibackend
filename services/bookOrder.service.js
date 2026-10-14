@@ -102,6 +102,7 @@ const {
 } = require('../util/referralHooks')
 const { recoveryOnOrderDelivered } = require('../util/recoveryHooks')
 const { markUrgentPickupIfReady } = require('../util/urgentPickup')
+const { findUsableSubscription } = require('../util/subscriptionAccess')
 
 // Launch item 4 (client Q2): an Urgent pickup booked because every window that
 // day was full is a WINDOW pickup for offers — "keep your offer" — so a free
@@ -1798,18 +1799,16 @@ class BookOrderService extends BaseService {
             let logisticsPaymentUrl = null // set when a subscriber pays an overflow fee by card
 
             if (post.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
-                const subscription = await SubscriptionModel.findOne({
-                    userId,
-                }).populate('planId')
+                // Feature 21: the one usable-plan rule — active, or cancelled
+                // with its paid month not over. (A bare `findOne({ userId })`
+                // could pick an old record when the customer had more than one.)
+                const subscription = await findUsableSubscription(userId, { populate: true })
                 if (!subscription) {
+                    const anyPlan = await SubscriptionModel.exists({ userId })
                     return BaseService.sendFailedResponse({
-                        error: 'No active subscription found for user',
-                    })
-                }
-
-                if (subscription.status !== 'active') {
-                    return BaseService.sendFailedResponse({
-                        error: 'Subscription is not active',
+                        // A failed renewal (bookings blocked during its grace
+                        // week, as today) or an expired plan.
+                        error: anyPlan ? 'Subscription is not active' : 'No active subscription found for user',
                     })
                 }
 
@@ -2678,10 +2677,8 @@ class BookOrderService extends BaseService {
                     BookingWindowService.getDisplayNames(),
                     WalletModel.findOne({ userId }).lean(),
                     WalletCreditService.getCreditBalances(userId),
-                    SubscriptionModel.findOne({ userId, status: 'active' })
-                        .sort({ createdAt: -1 })
-                        .populate('planId')
-                        .lean(),
+                    // Feature 21: the one usable-plan rule.
+                    findUsableSubscription(userId, { populate: true, lean: true }),
                     BookOrderModel.findOne({
                         userId,
                         'stage.status': { $ne: ORDER_STATUS.CANCELLED },

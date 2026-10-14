@@ -28,7 +28,7 @@ Shipped before the Blueprint was adopted (2026-10-09):
 
 Next, after the launch work and before the first renewals in early November 2026:
 
-- [ ] 21. **Subscription item rollover** - carry up to half the plan (rounded down) at renewal, a 1-week grace after a failed payment, and cancelled plans usable until the paid month ends (client rules 2026-10-11)
+- [x] 21. **Subscription item rollover** - carry up to half the plan (rounded down) at renewal, a 1-week grace after a failed payment, and cancelled plans usable until the paid month ends (client rules 2026-10-11)
 
 Planned (order follows the program plan in `blueprint/context/chuvi-program-plan.md`):
 

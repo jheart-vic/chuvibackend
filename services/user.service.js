@@ -79,9 +79,8 @@ class UserService extends BaseService {
                     .sort({ createdAt: -1 })
                     .lean(),
 
-                SubscriptionModel.findOne({ userId, status: 'active' })
-                    .populate('planId')
-                    .lean(),
+                // Feature 21: the one usable-plan rule.
+                require('../util/subscriptionAccess').findUsableSubscription(userId, { populate: true, lean: true }),
             ])
 
             return BaseService.sendSuccessResponse({

@@ -49,6 +49,8 @@ require('./crons/unassignedDispatchScan.js')
 require('./crons/holdSlaScan.js')
 // N1 Phase 3: payment-hold reminders at 6h / 24h, admin alert at 48h.
 require('./crons/paymentHoldReminders.js')
+// Feature 21 (client 2026-10-14): day-5 "2 days left" SMS after a failed renewal.
+require('./crons/renewalFailedReminder.js')
 
 
 const port = process.env.PORT || 7001;
