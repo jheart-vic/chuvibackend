@@ -107,7 +107,7 @@ async function main() {
             return r.insertedId
         }
         const release = (svc, orderId, userId, userType, body = {}) =>
-            svc.releaseFromHold({ params: { id: String(orderId) }, user: { id: userId, userType }, body })
+            svc.releaseFromHold({ params: { id: String(orderId) }, user: { id: userId, userType }, body: { note: 'STG fixed', ...body } })
         const stage = async (id) => (await BookOrderModel.findById(id).lean()).stage.status
 
         console.log('\n1. Intake cannot release the count-mismatch hold')

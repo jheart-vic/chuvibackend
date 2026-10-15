@@ -457,6 +457,9 @@ const bookOrderSchema = new mongoose.Schema(
                         offerId: { type: mongoose.Schema.Types.ObjectId },
                         name: { type: String },
                         type: { type: String }, // baseline | personal | promotion
+                        // V1 batch 3b (FE F20): this offer's own money off the
+                        // items (0 for an offer that only waived a fee).
+                        discount: { type: Number },
                     },
                 ],
                 creditApplied: Number, // wallet reward credit used
@@ -641,6 +644,8 @@ const bookOrderSchema = new mongoose.Schema(
                 // the customer was actually asked for.
                 amount: { type: Number },
                 paymentUrl: { type: String },
+                // V1 batch 3b: last time staff resent the link (double-tap guard).
+                linkResentAt: { type: Date },
                 remindersSent: { type: [String], default: undefined },
                 clearedAt: { type: Date },
                 // 'paystack' | 'wallet' | 'bank-transfer' | 'waiver' | 'counter'

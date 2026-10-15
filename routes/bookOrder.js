@@ -1316,7 +1316,7 @@ router.post(ROUTE_REJECT_CANCELLATION_REQUEST_ID, [customerExperienceAuth], (req
  *                   properties:
  *                     message: { $ref: '#/components/schemas/ItemEditResult' }
  *       400:
- *         description: Missing reason or items, a zero quantity, a cancelled order, or tagging has begun and the caller is not an admin
+ *         description: "Missing reason or items, a zero quantity, a cancelled order, or tagging has begun and the caller is not an admin. Also refused with noChange true when the items sent are the same as already on the order (These are the same items already on the order, so nothing was changed). V1 batch 3b."
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }

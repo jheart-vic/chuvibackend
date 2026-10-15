@@ -32,6 +32,28 @@ const {
 // `addDeliveryPromise` needs both. Added to every rider select.
 const PROMISE_FIELDS = 'deliveryDate scheduling'
 
+// V1 batch 3b (client 15 Oct, rider cards): a red "Urgent pickup" / "Urgent
+// delivery" badge when that leg's timing is Urgent, those jobs at the top, and
+// the speed by its admin display name (e.g. "Ready in 24 hours"), never a code.
+async function riderJobFlags(rows, leg) {
+    const AdminSettingModel = require('../models/adminSetting.model')
+    const { resolveLabel } = require('../util/displayName')
+    const setting = await AdminSettingModel.findOne().select('displayNames').lean()
+    const out = (rows || []).map((o) => {
+        const urgentPickup = o.scheduling?.pickup?.timing === 'anytime' || Boolean(o.urgentPickup)
+        const urgentDelivery = o.scheduling?.delivery?.timing === 'anytime'
+        return {
+            ...o,
+            urgentPickup,
+            urgentDelivery,
+            urgent: leg === 'pickup' ? urgentPickup : urgentDelivery,
+            speedLabel: o.deliverySpeed ? resolveLabel('deliverySpeeds', o.deliverySpeed, setting?.displayNames).label : null,
+        }
+    })
+    // Urgent first; the rest keep their order (Array.sort is stable).
+    return out.sort((a, b) => Number(b.urgent) - Number(a.urgent))
+}
+
 const BaseService = require('./base.service')
 const createNotification = require('../util/createNotification')
 const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
@@ -65,7 +87,7 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails dispatchTag createdAt ${PROMISE_FIELDS}`,
+                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed quickBooking itemsPending amount paymentStatus items stage dispatchDetails dispatchTag createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
             const rows = data.map((order) => {
@@ -78,7 +100,7 @@ class RiderService extends BaseService {
                 }
             })
             return BaseService.sendSuccessResponse({
-                message: { data: rows, pagination },
+                message: { data: await riderJobFlags(rows, 'delivery'), pagination },
             })
         } catch (error) {
             console.error('Error in getRiderAssignedDeliveries:', error)
@@ -103,7 +125,7 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: `oscNumber fullName phoneNumber deliveryAddress serviceType serviceTier stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
+                select: `oscNumber fullName phoneNumber deliveryAddress serviceType serviceTier deliverySpeed quickBooking itemsPending items._id stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
 
@@ -120,6 +142,8 @@ class RiderService extends BaseService {
 
                 return {
                     ...order,
+                    // V1 batch 3b (FE F13): the piece count on every rider list.
+                    itemCount: (order.items || []).length,
                     deliveryLandmark: order.deliveryAddress?.landmark || null,
                     dispatchDetails: {
                         ...order.dispatchDetails,
@@ -133,7 +157,7 @@ class RiderService extends BaseService {
             })
 
             return BaseService.sendSuccessResponse({
-                message: { data: ordersWithMeta, pagination },
+                message: { data: await riderJobFlags(ordersWithMeta, 'delivery'), pagination },
             })
         } catch (error) {
             console.error('Error in getActiveDeliveries:', error)
@@ -409,7 +433,7 @@ class RiderService extends BaseService {
                 limit,
                 // Launch item 4 (D2a): Urgent pickups first, then oldest.
                 sort: { urgentPickup: -1, createdAt: 1 },
-                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed amount paymentStatus items stage dispatchDetails urgentPickup createdAt ${PROMISE_FIELDS}`,
+                select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed quickBooking itemsPending amount paymentStatus items stage dispatchDetails urgentPickup createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
             const rows = data.map((order) => {
@@ -425,7 +449,7 @@ class RiderService extends BaseService {
                 }
             })
             return BaseService.sendSuccessResponse({
-                message: { data: rows, pagination },
+                message: { data: await riderJobFlags(rows, 'pickup'), pagination },
             })
         } catch (error) {
             console.error('Error in getRiderAssignedPickups:', error)
@@ -450,7 +474,7 @@ class RiderService extends BaseService {
             const { data, pagination } = await paginate(BookOrderModel, query, {
                 page,
                 limit,
-                select: `oscNumber fullName phoneNumber pickupAddress serviceType serviceTier stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
+                select: `oscNumber fullName phoneNumber pickupAddress serviceType serviceTier deliverySpeed quickBooking itemsPending items._id stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
             })
 
@@ -467,6 +491,7 @@ class RiderService extends BaseService {
 
                 return {
                     ...order,
+                    itemCount: (order.items || []).length,
                     pickupLandmark: order.pickupAddress?.landmark || null,
                     dispatchDetails: {
                         ...order.dispatchDetails,
@@ -480,7 +505,7 @@ class RiderService extends BaseService {
             })
 
             return BaseService.sendSuccessResponse({
-                message: { data: ordersWithMeta, pagination },
+                message: { data: await riderJobFlags(ordersWithMeta, 'pickup'), pagination },
             })
         } catch (error) {
             console.error('Error in getActivePickups:', error)
@@ -1011,7 +1036,7 @@ class RiderService extends BaseService {
                 page,
                 limit,
                 sort: { updatedAt: -1 },
-                select: 'oscNumber fullName phoneNumber serviceType serviceTier amount pickupAddress stage dispatchDetails createdAt updatedAt',
+                select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed quickBooking items._id amount pickupAddress stage dispatchDetails createdAt updatedAt',
                 lean: true,
             })
 
@@ -1023,6 +1048,8 @@ class RiderService extends BaseService {
 
             for (const order of data) {
                 normalizeOrderAddresses(order)
+                order.itemCount = (order.items || []).length
+                delete order.items
                 // use the most recent dispatch action as anchor
                 const deliveryUpdatedAt =
                     order.dispatchDetails?.delivery?.updatedAt

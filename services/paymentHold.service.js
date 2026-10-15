@@ -714,6 +714,64 @@ class PaymentHoldService {
      * must not stop the hold being raised, because the SMS can still tell the
      * customer to pay in the app.
      */
+    /**
+     * V1 batch 3b (FE F24): resend the payment link for an order already on a
+     * payment hold. A FRESH Paystack link (an old one may have expired), sent
+     * with the client's payment-reminder text; the pay-by time stays the bill's.
+     * A second tap within a minute is refused so the customer gets one SMS.
+     */
+    static async resendLink({ orderId, actorId }) {
+        try {
+            const order = await BookOrderModel.findById(orderId)
+            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found' })
+            if (order.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS) {
+                return BaseService.sendFailedResponse({ error: 'This order is already paid.' })
+            }
+            if (!this.isOnPaymentHold(order)) {
+                return BaseService.sendFailedResponse({
+                    error: 'This order is not waiting for payment. Raise a payment hold first.',
+                })
+            }
+            const last = order.paymentHold.linkResentAt
+            if (last && Date.now() - new Date(last).getTime() < 60 * 1000) {
+                return BaseService.sendFailedResponse({
+                    error: 'The link was sent less than a minute ago. Please wait before sending it again.',
+                })
+            }
+            const amount = amountDue(order)
+            const paymentUrl = await this._buildPaymentLink(order)
+            const now = new Date()
+            await BookOrderModel.updateOne(
+                { _id: order._id },
+                {
+                    $set: {
+                        'paymentHold.linkResentAt': now,
+                        ...(paymentUrl ? { 'paymentHold.paymentUrl': paymentUrl } : {}),
+                    },
+                },
+                { runValidators: false },
+            )
+            await this._tellCustomer({
+                order,
+                amount,
+                paymentUrl,
+                body: OrderSms.TEXTS.paymentReminder(order, {
+                    amount,
+                    link: paymentUrl,
+                    billAt: order.paymentHold.raisedAt,
+                }),
+                title: 'Payment needed to start your order',
+            })
+            await this._log(actorId, `Resent the payment link for order ${order.oscNumber}`, order._id)
+            return BaseService.sendSuccessResponse({
+                message: { resent: true, amount, paymentUrl: paymentUrl || null, sentAt: now },
+            })
+        } catch (error) {
+            console.error('resend payment link failed:', error)
+            return BaseService.sendFailedResponse({ error: 'Could not resend the payment link. Please try again.' })
+        }
+    }
+
     static async _buildPaymentLink(order) {
         try {
             if (!order.userId) return null // walk-in with no account

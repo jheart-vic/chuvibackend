@@ -33,6 +33,7 @@ const {
   ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID,
   ROUTE_UNASSIGN_RIDER_ID_TO_PICKUP_ORDER_ID,
   ROUTE_ORDER_PAYMENT_HOLD,
+  ROUTE_ORDER_PAYMENT_HOLD_RESEND,
   ROUTE_ORDER_PAYMENT_APPROVE_TRANSFER,
 } = require("../util/page-route");
 const intakeUserAuth = require("../middlewares/intakeUserAuth");
@@ -1999,6 +2000,16 @@ router.get(ROUTE_INTAKE_QUICK_BOOKINGS, [intakeUserAuth], (req, res) => {
  *                               holdTime:      { type: string, format: date-time }
  *                               stationStatus: { type: string, example: "sort-and-pretreat-station" }
  *                               operator:      { type: string, example: "Victor Jp", nullable: true }
+ *                               holdTypeKey: { type: string, nullable: true, example: count_differs_from_rider, description: "The hold type (V1 batch 3b)." }
+ *                               counts:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 description: "For a count dispute: what was booked, what the rider counted, what Intake counted."
+ *                                 properties:
+ *                                   booked: { type: integer, example: 10 }
+ *                                   rider: { type: integer, example: 10 }
+ *                                   intake: { type: integer, example: 9 }
+ *                                   riderReason: { type: string, nullable: true }
  *                               flaggedItems:
  *                                 type: array
  *                                 items:
@@ -2012,6 +2023,8 @@ router.get(ROUTE_INTAKE_QUICK_BOOKINGS, [intakeUserAuth], (req, res) => {
  *                                     assignTo:      { type: string, example: "sort-and-pretreat" }
  *                                     heldByStation: { type: string, example: "wash-and-dry-station" }
  *                                     heldAt:        { type: string, format: date-time }
+ *                                     rejectionCount: { type: integer, example: 2, description: "Times this piece was rejected at a handoff. A second rejection goes to admin (holdReason second-rejection, assignTo admin)." }
+ *                                     releaseNote: { type: string, nullable: true, description: "The note given when the piece was released (Fixed, send again)." }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -2034,6 +2047,15 @@ router.get(ROUTE_INTAKE_USER_GET_HOLD, [intakeUserAuth], (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemId: { type: string, description: "Release ONE piece; omit to release every piece assigned to this station." }
+ *               note: { type: string, example: "Re-dried, now fully dry", description: "REQUIRED for station staff (client 15 Oct: the station it is assigned to releases it, with a note). Saved as holdDetails.releaseNote and in the piece history. Admin may omit it." }
  *     responses:
  *       200:
  *         description: Order released from hold and returned to tagging queue
@@ -2564,6 +2586,51 @@ router.patch(ROUTE_UNASSIGN_RIDER_ID_TO_DEVLIVERY_ORDER_ID, [intakeUserAuth], (r
 router.post(ROUTE_ORDER_PAYMENT_HOLD, [intakeUserAuth], (req, res) => {
     const intakeUserController = new IntakeUserController()
     return intakeUserController.raisePaymentHold(req, res)
+})
+
+/**
+ * @swagger
+ * /intake-user/order/{id}/payment-hold/resend:
+ *   post:
+ *     summary: Resend the payment link for an order already on a payment hold
+ *     description: >
+ *       V1 launch batch 3b (FE F24). Makes a FRESH Paystack link (an old one may have expired) and sends the
+ *       customer the payment reminder SMS with it; the pay-by time stays the bill's. Intake or admin. A second
+ *       tap within a minute is refused, so the customer gets one SMS.
+ *     tags: [Intake & Tag]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Link sent
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         resent: { type: boolean, example: true }
+ *                         amount: { type: number, example: 7900 }
+ *                         paymentUrl: { type: string, nullable: true, example: "https://checkout.paystack.com/abc123" }
+ *                         sentAt: { type: string, format: date-time }
+ *       400:
+ *         description: Already paid, not on a payment hold, or sent less than a minute ago
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_ORDER_PAYMENT_HOLD_RESEND, [intakeUserAuth], (req, res) => {
+    const intakeUserController = new IntakeUserController()
+    return intakeUserController.resendPaymentLink(req, res)
 })
 
 /**

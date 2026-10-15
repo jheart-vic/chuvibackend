@@ -96,6 +96,20 @@ function presentOrder(order) {
     if (!order.pricing) order.pricing = buildPricingFallback(order)
     normalizeOrderAddresses(order)
     addDeliveryPromise(order)
+    addPayBy(order)
+    return order
+}
+
+// V1 batch 3b (FE F5): a Quick Booking waiting for payment carries its pay-by
+// time, the same one its bill SMS gives (12 noon the day after the bill).
+function addPayBy(order) {
+    const hold = order?.paymentHold
+    if (order?.quickBooking && hold?.raisedAt && !hold.clearedAt) {
+        const { payByDate } = require('./orderSms')
+        order.payBy = payByDate(hold.raisedAt)
+    } else if (order) {
+        order.payBy = null
+    }
     return order
 }
 
@@ -107,6 +121,7 @@ module.exports = {
     buildPricingFallback,
     normalizeOrderAddresses,
     addDeliveryPromise,
+    addPayBy,
     presentOrder,
     presentOrders,
 }

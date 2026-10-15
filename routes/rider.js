@@ -62,6 +62,13 @@ const router = require('express').Router()
  *                           items:
  *                             type: object
  *                             properties:
+ *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
+ *                               quickBooking: { type: boolean, example: false, description: "Booked by number of items; the bill comes after the count." }
+ *                               urgentPickup: { type: boolean, example: true, description: "Pickup timing is Urgent: show a red Urgent pickup badge." }
+ *                               urgentDelivery: { type: boolean, example: false, description: "Delivery timing is Urgent: show a red Urgent delivery badge." }
+ *                               urgent: { type: boolean, example: true, description: "Urgent for THIS list (pickup lists: urgentPickup; delivery lists: urgentDelivery). Urgent jobs come first." }
+ *                               deliveryPromise: { $ref: '#/components/schemas/DeliveryPromise' }
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"
@@ -392,6 +399,14 @@ router.get(ROUTE_RIDER_ORDER_ID, riderAuth, (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
+ *                               deliverySpeed: { type: string, example: standard }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
+ *                               quickBooking: { type: boolean, example: false, description: "Booked by number of items; the bill comes after the count." }
+ *                               urgentPickup: { type: boolean, example: true, description: "Pickup timing is Urgent: show a red Urgent pickup badge." }
+ *                               urgentDelivery: { type: boolean, example: false, description: "Delivery timing is Urgent: show a red Urgent delivery badge." }
+ *                               urgent: { type: boolean, example: true, description: "Urgent for THIS list (pickup lists: urgentPickup; delivery lists: urgentDelivery). Urgent jobs come first." }
+ *                               deliveryPromise: { $ref: '#/components/schemas/DeliveryPromise' }
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"
@@ -944,6 +959,12 @@ router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
+ *                               quickBooking: { type: boolean, example: false, description: "Booked by number of items; the bill comes after the count." }
+ *                               urgentPickup: { type: boolean, example: true, description: "Pickup timing is Urgent: show a red Urgent pickup badge." }
+ *                               urgentDelivery: { type: boolean, example: false, description: "Delivery timing is Urgent: show a red Urgent delivery badge." }
+ *                               deliveryPromise: { $ref: '#/components/schemas/DeliveryPromise' }
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"
@@ -1085,6 +1106,14 @@ router.get(ROUTE_RIDER_ASSIGNED_PICKUPS, [riderAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
+ *                               deliverySpeed: { type: string, example: standard }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
+ *                               quickBooking: { type: boolean, example: false, description: "Booked by number of items; the bill comes after the count." }
+ *                               urgentPickup: { type: boolean, example: true, description: "Pickup timing is Urgent: show a red Urgent pickup badge." }
+ *                               urgentDelivery: { type: boolean, example: false, description: "Delivery timing is Urgent: show a red Urgent delivery badge." }
+ *                               urgent: { type: boolean, example: true, description: "Urgent for THIS list (pickup lists: urgentPickup; delivery lists: urgentDelivery). Urgent jobs come first." }
+ *                               deliveryPromise: { $ref: '#/components/schemas/DeliveryPromise' }
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"

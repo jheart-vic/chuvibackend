@@ -57,6 +57,7 @@ const {
     ROUTE_ADMIN_REP_LINK_REPORT,
     ROUTE_ADMIN_SIGNUP_ATTEMPTS,
     ROUTE_ADMIN_DUE_TODAY_NOT_AT_QC,
+    ROUTE_ADMIN_ALERTS,
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -1531,6 +1532,40 @@ router.get(ROUTE_ADMIN_DISPATCH_DATA_COUNT, adminAuth, (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               holdMeta:
+ *                                 type: object
+ *                                 properties:
+ *                                   heldSince: { type: string, format: date-time }
+ *                                   heldMinutes: { type: integer, example: 95 }
+ *                                   slaThresholdMinutes: { type: integer, example: 360 }
+ *                                   slaBreached: { type: boolean, example: false }
+ *                                   holdTypeKey: { type: string, nullable: true, example: count_differs_from_rider }
+ *                                   holdTypeName: { type: string, nullable: true, example: "Count dispute" }
+ *                                   counts:
+ *                                     type: object
+ *                                     nullable: true
+ *                                     description: "A count dispute's booked, rider and Intake counts (V1 batch 3b)."
+ *                                     properties:
+ *                                       booked: { type: integer, example: 10 }
+ *                                       rider: { type: integer, example: 10 }
+ *                                       intake: { type: integer, example: 9 }
+ *                                       riderReason: { type: string, nullable: true }
+ *                                   heldPieceCount: { type: integer, example: 1 }
+ *                                   totalPieceCount: { type: integer, example: 12 }
+ *                                   holdScope: { type: string, enum: [order, items], description: "order = the whole order is parked (Intake / payment hold); items = only these pieces are held." }
+ *                                   heldPieces:
+ *                                     type: array
+ *                                     items:
+ *                                       type: object
+ *                                       properties:
+ *                                         itemId: { type: string }
+ *                                         tagId: { type: string, nullable: true, example: "TAG 06" }
+ *                                         type: { type: string, example: shirt }
+ *                                         reason: { type: string, nullable: true, example: second-rejection }
+ *                                         heldAt: { type: string, format: date-time }
+ *                                         heldByStation: { type: string, nullable: true }
+ *                                         assignTo: { type: string, nullable: true, example: admin }
+ *                                         rejectionCount: { type: integer, example: 2, description: "Times rejected at a handoff; 2 or more = admin only." }
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"
@@ -3870,6 +3905,89 @@ router.get(ROUTE_ADMIN_REP_LINK_REPORT, [adminAuth], (req, res) => {
  *                                 additionalProperties: { type: integer }
  *                                 example: { "Sort & Pretreat": 3 }
  */
+/**
+ * @swagger
+ * /admin/alerts:
+ *   get:
+ *     summary: Admin alert lists — count disputes, possible missing items, repeat-mismatch customers
+ *     description: >
+ *       V1 launch batch 3b (FE F40/F41). countDisputes = orders held because Intake's count differs from the
+ *       rider's; possibleMissing = those where Intake counted fewer (with how many may be missing);
+ *       repeatMismatch = customers at or over the recount repeat limit (setting recountCover.repeatLimit in
+ *       repeatDays). Admin is also notified of each as it happens.
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: The three lists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         counts:
+ *                           type: object
+ *                           properties:
+ *                             countDisputes: { type: integer, example: 2 }
+ *                             possibleMissing: { type: integer, example: 1 }
+ *                             repeatMismatch: { type: integer, example: 0 }
+ *                         repeatLimit: { type: integer, example: 3 }
+ *                         repeatDays: { type: integer, example: 60 }
+ *                         countDisputes:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId: { type: string }
+ *                               oscNumber: { type: string, example: "OSC-20261020-004" }
+ *                               customerName: { type: string, example: "Ifeoma Nwosu" }
+ *                               phoneNumber: { type: string, example: "08031234567" }
+ *                               heldSince: { type: string, format: date-time }
+ *                               counts:
+ *                                 type: object
+ *                                 properties:
+ *                                   booked: { type: integer, example: 10 }
+ *                                   rider: { type: integer, example: 10 }
+ *                                   intake: { type: integer, example: 9 }
+ *                                   riderReason: { type: string, nullable: true }
+ *                         possibleMissing:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId: { type: string }
+ *                               oscNumber: { type: string, example: "OSC-20261020-004" }
+ *                               missing: { type: integer, example: 1 }
+ *                               counts:
+ *                                 type: object
+ *                                 properties:
+ *                                   booked: { type: integer, example: 10 }
+ *                                   rider: { type: integer, example: 10 }
+ *                                   intake: { type: integer, example: 9 }
+ *                                   riderReason: { type: string, nullable: true }
+ *                         repeatMismatch:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               userId: { type: string }
+ *                               customerName: { type: string, example: "Tunde Bakare" }
+ *                               phoneNumber: { type: string, example: "08021234567" }
+ *                               mismatches: { type: integer, example: 3 }
+ *                               lastAt: { type: string, format: date-time }
+ *                               coverStopped: { type: boolean, example: true }
+ */
+router.get(ROUTE_ADMIN_ALERTS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getAdminAlerts(req, res)
+})
+
 router.get(ROUTE_ADMIN_DUE_TODAY_NOT_AT_QC, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getDueTodayNotAtQc(req, res)

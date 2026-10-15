@@ -1239,6 +1239,24 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // V1 batch 3b (FE F19): the same items as already on the order change
+            // nothing. Before this, re-sending them re-priced the order at today's
+            // prices (an old order went from N2,700 to N2,500 and refunded N200).
+            const itemKey = (list) => {
+                const by = new Map()
+                for (const i of list || []) {
+                    const k = `${i?.type || 'item'}|${i?.serviceTier || order.serviceTier || ''}`
+                    by.set(k, (by.get(k) || 0) + (Number(i?.quantity) || 1))
+                }
+                return [...by.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, q]) => `${k}x${q}`).join(',')
+            }
+            if (itemKey(items) === itemKey(order.items)) {
+                return BaseService.sendFailedResponse({
+                    error: 'These are the same items already on the order, so nothing was changed.',
+                    noChange: true,
+                })
+            }
+
             const adminOrderSetting = await AdminSettingModel.findOne({})
             if (!adminOrderSetting) {
                 return BaseService.sendFailedResponse({
@@ -1435,6 +1453,23 @@ class BookOrderService extends BaseService {
                 previousTotal,
                 newTotal,
                 difference,
+                // V1 batch 3b (FE F19): the new bill's lines, so the care level
+                // uplift shows on its own line (not under pickup and delivery).
+                pricing: {
+                    itemsBase: pricing?.itemsBase ?? null,
+                    tierUplift: pricing?.tierUplift ?? 0,
+                    itemsSubtotal: pricing?.itemsSubtotal ?? null,
+                    speedCharge: pricing?.speedCharge ?? 0,
+                    pickupFee: pricing?.pickupFee ?? 0,
+                    deliveryFee: pricing?.deliveryFee ?? 0,
+                    offerDiscount: pricing?.offerDiscount ?? 0,
+                    freePickupWaived: pricing?.freePickupWaived ?? 0,
+                    freeDeliveryWaived: pricing?.freeDeliveryWaived ?? 0,
+                    appliedOffers: pricing?.appliedOffers || [],
+                    creditApplied: pricing?.creditApplied ?? 0,
+                    recountCover: pricing?.recountCover ?? 0,
+                    orderTotal: pricing?.orderTotal ?? newTotal,
+                },
                 recountCover,
                 coverReason: coverDecision.reason,
                 pieceCount: countPieces(explodedItems),
@@ -1585,6 +1620,7 @@ class BookOrderService extends BaseService {
                 offerId: b.offerId,
                 name: b.name,
                 type: 'baseline',
+                discount: Number(b.discount) || 0,
             })
         }
         if (breakdown?.personal)
@@ -1592,12 +1628,14 @@ class BookOrderService extends BaseService {
                 offerId: breakdown.personal.offerId,
                 name: breakdown.personal.name,
                 type: 'personal',
+                discount: Number(breakdown.personal.discount) || 0,
             })
         if (breakdown?.promotion)
             appliedOffers.push({
                 offerId: breakdown.promotion.offerId,
                 name: breakdown.promotion.name,
                 type: 'promotion',
+                discount: Number(breakdown.promotion.discount) || 0,
             })
         return {
             itemsBase,

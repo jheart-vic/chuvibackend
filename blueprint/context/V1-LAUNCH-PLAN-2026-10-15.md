@@ -86,6 +86,41 @@ read-only smoke test: what was checked, nothing changed; (c) Batch 2 "Change Ite
 missing item" alert: done or not; (d) written Sunday clear plan with admin Ijeomahikechukwup@gmail.com.
 **Code freeze: Saturday 9 PM.**
 
+## Client answers, 15 Oct night — holds, rider cards, recovery credit, word list (BINDING, verbatim)
+1. HOLDS. Your recommendation is right.
+Admin only: count disputes, "Possible missing item", damage (only after customer care taps "Customer informed"), and a piece rejected twice.
+Payment holds: they clear when paid. S1 can record a POS or transfer payment with its reference. Admin can waive with a reason.
+Every other hold: the station it is assigned to, with a note. Admin can release any hold.
+
+2. RIDER CARDS. Yes, with two small changes.
+Show a red "Urgent pickup" or "Urgent delivery" badge when the timing is Urgent, and put those jobs at the top.
+Show the speed on pickups and on deliveries, using the speed's display name from admin settings (for example "Ready in 24 hours"), not the word Express.
+Both show when both apply.
+
+3. CLOSING A COMPLAINT WITH A DISCOUNT. Yes.
+Customer care gives recovery credit for the next order, never money off an unpaid bill.
+Most per case: N5,000. Above that, it goes to admin to approve.
+The credit lasts 90 days.
+One SMS: "{firstName}, we are sorry about your order {orderCode}. We have added N{amount} credit to your CHUVI wallet for your next order. It is valid for 90 days."
+
+4. WORD LISTS.
+a. Staff screens and history lines, please use these everywhere:
+Stations: Intake and Tag, Sort and Pretreat, Wash and Dry, Press, Quality Check and Pack, Rider, Customer Care, Admin.
+Statuses: Booked, Needs rider, Rider on the way, Picked up, Waiting for payment, At Intake, Sorting, Washing, Pressing, Quality check, Ready, Out for delivery, Ready waiting redelivery, Delivered, Collected, Returned unwashed, Cancelled.
+Hold words: On hold, Waiting for admin, Customer informed.
+Buttons: Start pickup, Picked up, Customer not available, Send to (next station), Receive all, Report problem, Fixed send again, Mark ready, Assign rider, Out for delivery, Delivered, Customer collected, Escalate for cancellation, Send payment link, Check payment.
+History lines: "[time] [station]: [what happened] by [staff name]". Example: "10:42 Intake and Tag: 6 pieces counted by Chioma".
+Same words everywhere: "Care level" (never tier), "Urgent" (never Anytime), "Holds", and speeds by their display names.
+b. The "includes" lines under items: after launch.
+Saturday 12 noon for all screens and the switches.
+
+## Client, 15 Oct night — hold release FINAL (supersedes "the station that raised it releases it")
+"Keep it as today. Your way is right. The station the hold is assigned to (the one that fixes it) releases it with
+'Fixed, send again' and a note. The station that raised it sees 'Monitoring' and must accept the piece again when it
+comes back, so it keeps the final word. When a station holds a piece for its own reason, it releases it itself. A
+second rejection of the same piece goes to admin only. Admin only: count disputes, 'Possible missing item', and damage
+(after customer care taps 'Customer informed'). Admin can release any hold."
+
 ## SMS texts (client, verbatim — words in braces are placeholders; N, no dashes)
 
 - **Booking received:** Hi {firstName}, we have your CHUVI booking {orderCode}. Our rider comes {window}. Questions? Call or WhatsApp 07073254943.

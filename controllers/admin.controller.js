@@ -237,6 +237,18 @@ class AdminController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    // V1 launch batch 3b (FE F40/F41): count disputes, possible missing
+    // items and repeat-mismatch customers, as lists.
+    async getAdminAlerts(req, res) {
+        try {
+            const { adminAlerts } = require('../util/adminAlerts')
+            return BaseController.sendSuccessResponse(res, { message: await adminAlerts() })
+        } catch (error) {
+            console.error('admin alerts failed:', error)
+            return BaseController.sendFailedResponse(res, { error: 'Could not load the alerts.' })
+        }
+    }
+
     // V1 launch batch 3 (B34): orders due today that have not reached QC.
     async getDueTodayNotAtQc(req, res) {
         try {

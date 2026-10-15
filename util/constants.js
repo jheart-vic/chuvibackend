@@ -295,6 +295,9 @@ const PRETREATMENT_OPTIONS = {
     SPOT_CLEANING: 'spot_cleaning',
     SPECIAL_DETERGENT: 'special_detergent',
     FABRIC_SOFTENER_PREP: 'fabric_softener_prep',
+    // V1 batch 3b (FE): Soak and Brush off were travelling in the item note.
+    SOAK: 'soak',
+    BRUSH_OFF: 'brush_off',
     NO_PRETREATMENT: 'no_pretreatment_needed',
 }
 

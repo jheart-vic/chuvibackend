@@ -143,7 +143,7 @@ async function main() {
 
             r = await WashService.releaseFromHold(req(washer, o._id, { itemId: second }))
             ok(!r.success && /only admin can release this/i.test(r.data?.error || ''), `W&D cannot release the admin piece: "${r.data?.error}"`)
-            r = await WashService.releaseFromHold(req(washer, o._id, { itemId: first }))
+            r = await WashService.releaseFromHold(req(washer, o._id, { itemId: first, note: 'Re-dried' }))
             ok(r.success, 'W&D can still release its own first-rejection piece')
             ok(adminAssignedRefusal({ order: after, itemId: second, role: ROLE.ADMIN }) === null, 'admin is never refused')
         }

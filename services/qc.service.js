@@ -15,7 +15,7 @@ const {
 } = require('../util/constants')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const { QUEUE_SORT } = require('../util/queueSort')
-const { onHoldScope, describeHeld } = require('../util/itemHold')
+const { onHoldScope, describeHeld, rejectionCount, holdCounts } = require('../util/itemHold')
 const {
     selectHeldItems,
     stampRelease,
@@ -91,6 +91,7 @@ class QCService extends BaseService {
                         limit: 5,
                         sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                         select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage createdAt qcDetails',
+                        withPromise: true,
                         lean: true,
                     },
                 ),
@@ -141,6 +142,7 @@ class QCService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
+                withPromise: true,
                 lean: true,
             })
 
@@ -209,6 +211,7 @@ class QCService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
+                withPromise: true,
                 lean: true,
             })
 
@@ -614,6 +617,7 @@ class QCService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
+                withPromise: true,
                 lean: true,
             })
             console.log({ data, pagination })
@@ -828,6 +832,7 @@ class QCService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt qcDetails',
+                withPromise: true,
                 lean: true,
             })
 
@@ -1062,7 +1067,8 @@ class QCService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus qcDetails createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus qcDetails createdAt updatedAt orderHold counts',
+                    withPromise: true,
                     lean: true,
                 },
             )
@@ -1085,6 +1091,7 @@ class QCService extends BaseService {
                         assignTo: i.holdDetails?.assignTo,
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
+                        rejectionCount: rejectionCount(i),
                     }))
 
                 return {
@@ -1100,6 +1107,9 @@ class QCService extends BaseService {
                     holdReason: order.stage.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
+                    // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
+                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    counts: holdCounts(order),
                 }
             })
 
@@ -1188,10 +1198,18 @@ class QCService extends BaseService {
             if (refusal) return BaseService.sendFailedResponse(refusal)
 
 
+            // V1 batch 3b (client 15 Oct): "the station it is assigned to, with a note."
+            // Admin may release without one.
+            if (req.user?.userType !== ROLE.ADMIN && !String(req.body?.note || '').trim()) {
+                return BaseService.sendFailedResponse({
+                    error: 'Add a note saying what was fixed before releasing this piece.',
+                    noteRequired: true,
+                })
+            }
             const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {
                 if (!releaseIds.has(String(item._id))) return item
-                stampRelease(item, { userId, now })
+                stampRelease(item, { userId, now, note: req.body?.note })
                 // ✅ reset qc status so item can be worked on again
                 item.qcStatus = 'pending'
                 item.qcConfirmedAt = null
@@ -1317,6 +1335,7 @@ class QCService extends BaseService {
                 limit,
                 sort: { updatedAt: -1 },
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory qcDetails createdAt updatedAt',
+                withPromise: true,
                 lean: true,
             })
 

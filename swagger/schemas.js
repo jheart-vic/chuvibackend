@@ -83,6 +83,140 @@
  * @swagger
  * components:
  *   schemas:
+ *     Pagination:
+ *       type: object
+ *       description: The pagination block every paginated list returns beside its data.
+ *       properties:
+ *         total: { type: integer, example: 42 }
+ *         page: { type: integer, example: 1 }
+ *         limit: { type: integer, example: 10 }
+ *         pages: { type: integer, example: 5 }
+ *
+ *     BookOrderItem:
+ *       type: object
+ *       description: One PIECE of an order (orders are exploded per piece at booking or at Intake).
+ *       properties:
+ *         _id: { type: string }
+ *         type: { type: string, example: shirt }
+ *         price: { type: number, example: 1300 }
+ *         quantity: { type: integer, example: 1 }
+ *         serviceTier: { type: string, nullable: true, example: classic, description: "The piece's care level (falls back to the order's)." }
+ *         tagId: { type: string, nullable: true, example: "TAG 03" }
+ *         tagColor: { type: string, nullable: true, enum: [white, light, dark] }
+ *         tagState: { type: array, items: { type: string, enum: [damaged, stained, pretreat, delicate] } }
+ *         colorGroup: { type: string, nullable: true, enum: [white, colored] }
+ *         pretreatmentOptions:
+ *           type: array
+ *           items: { type: string, enum: [stain_treatment_required, odor_removal, spot_cleaning, special_detergent, fabric_softener_prep, soak, brush_off, no_pretreatment_needed] }
+ *         currentStation: { type: string, example: wash-and-dry-station }
+ *         flaggedForReview: { type: boolean }
+ *         holdDetails:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             reason: { type: string, example: second-rejection, description: "handoff-rejected = rejected once (back to the sending station); second-rejection = rejected again (admin only); else the hold type." }
+ *             note: { type: string }
+ *             assignTo: { type: string, nullable: true, example: admin, description: "The role that releases it. null once released." }
+ *             heldAt: { type: string, format: date-time }
+ *             heldByStation: { type: string, example: pressing-and-ironing-station }
+ *             releasedAt: { type: string, format: date-time, nullable: true }
+ *             releaseNote: { type: string, nullable: true, example: "Re-dried, now fully dry" }
+ *         tagCorrections:
+ *           type: array
+ *           description: "S2's corrections of S1's colour and stain tags (V1 batch 3)."
+ *           items:
+ *             type: object
+ *             properties:
+ *               field: { type: string, enum: [tagColor, stained] }
+ *               from: { nullable: true, example: white }
+ *               to: { example: dark }
+ *               by: { type: string }
+ *               byName: { type: string, example: "Ada Okafor" }
+ *               at: { type: string, format: date-time }
+ *         actionLog:
+ *           type: array
+ *           description: The piece's history (handoff_received, handoff_rejected, hold_released with its note, …).
+ *           items:
+ *             type: object
+ *             properties:
+ *               action: { type: string, example: hold_released }
+ *               note: { type: string }
+ *               timestamp: { type: string, format: date-time }
+ *
+ *     BookOrder:
+ *       type: object
+ *       description: >
+ *         An order. List endpoints select a subset of these fields; every field shown is real. Station lists
+ *         (Sort, Wash, Press, QC) carry deliveryDate + deliveryPromise for "Ready by" (V1 batch 3b).
+ *       properties:
+ *         _id: { type: string }
+ *         oscNumber: { type: string, example: "OSC-20261020-001", description: "OSC, the Lagos date, then a running serial." }
+ *         fullName: { type: string, example: "Ifeoma Nwosu" }
+ *         phoneNumber: { type: string, example: "08031234567" }
+ *         serviceType: { type: string, example: wash-and-iron }
+ *         serviceTier: { type: string, example: classic }
+ *         deliverySpeed: { type: string, example: standard }
+ *         channel: { type: string, example: website }
+ *         amount: { type: number, example: 7900 }
+ *         paymentStatus: { type: string, example: pending }
+ *         billingType: { type: string, nullable: true, example: pay-per-item }
+ *         quickBooking: { type: boolean, example: true }
+ *         itemsPending: { type: boolean, description: "A Quick Booking still waiting for Intake to list its items." }
+ *         payBy:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: "A Quick Booking waiting for payment: pay by this time to keep the ready date (12 noon the day after the bill, the same as the bill SMS). Null otherwise. V1 batch 3b."
+ *         deliveryDate: { type: string, format: date-time, description: "Internal deadline (19:00 sentinel). Show deliveryPromise.text, not this." }
+ *         deliveryPromise: { $ref: '#/components/schemas/DeliveryPromise' }
+ *         scheduling: { $ref: '#/components/schemas/OrderScheduling' }
+ *         stage:
+ *           type: object
+ *           properties:
+ *             status: { type: string, example: washing }
+ *             note: { type: string }
+ *             updatedAt: { type: string, format: date-time }
+ *         stationStatus: { type: string, example: wash-and-dry-station }
+ *         orderHold:
+ *           type: object
+ *           properties:
+ *             holdTypeKey: { type: string, nullable: true, example: count_differs_from_rider }
+ *         counts:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             customer: { type: integer, nullable: true, description: "Quick Booking: the count the customer booked." }
+ *             rider: { type: integer, nullable: true }
+ *             riderReason: { type: string, nullable: true }
+ *             intake: { type: integer, nullable: true }
+ *         paymentHold:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             raisedAt: { type: string, format: date-time }
+ *             amount: { type: number }
+ *             paymentUrl: { type: string, nullable: true }
+ *             linkResentAt: { type: string, format: date-time, nullable: true }
+ *             clearedAt: { type: string, format: date-time, nullable: true }
+ *         pricing: { $ref: '#/components/schemas/OrderPricing' }
+ *         items: { type: array, items: { $ref: '#/components/schemas/BookOrderItem' } }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
+ *
+ *     Notification:
+ *       type: object
+ *       properties:
+ *         _id: { type: string }
+ *         userId: { type: string }
+ *         title: { type: string, example: "Rejected twice: needs admin" }
+ *         body: { type: string, example: "Order OSC-20261020-004: TAG 06 was rejected a second time." }
+ *         subBody: { type: string, nullable: true }
+ *         type: { type: string, example: order-updated }
+ *         isRead: { type: boolean, example: false }
+ *         page: { type: string, nullable: true, description: "Screen to open when tapped." }
+ *         recordId: { type: string, nullable: true, description: "Record to open (e.g. the order id)." }
+ *         createdAt: { type: string, format: date-time }
+ *
  *     PaginationMeta:
  *       type: object
  *       properties:
@@ -587,6 +721,7 @@
  *               offerId: { type: string, example: 64c0aa11e3c3b4a1d2f1ca10 }
  *               name: { type: string, example: "Weekend 10% off" }
  *               type: { type: string, enum: [baseline, personal, promotion], description: "baseline = a standing policy the client calls a General offer, applied by rule with no selection.", example: baseline }
+ *               discount: { type: number, example: 500, description: "This offer's own money off the items (0 when it only waived a fee). V1 batch 3b; absent on orders booked before." }
  *         creditApplied: { type: number, nullable: true, description: Wallet reward credit used, example: 1000 }
  *         orderTotal: { type: number, description: Amount the order was billed after offers and credit (== order.amount), example: 5700 }
  *         youSaved: { type: number, nullable: true, description: offerDiscount + waived fees + creditApplied, example: 2300 }
@@ -774,6 +909,23 @@
  *           example: 2800
  *           description: Negative when the bill went down.
  *         pieceCount: { type: integer, example: 4 }
+ *         pricing:
+ *           type: object
+ *           description: "The NEW bill's lines (V1 batch 3b, FE F19), so the care level uplift shows on its own line."
+ *           properties:
+ *             itemsBase: { type: number, nullable: true, example: 6000 }
+ *             tierUplift: { type: number, example: 1200, description: "Care level uplift." }
+ *             itemsSubtotal: { type: number, nullable: true, example: 7200 }
+ *             speedCharge: { type: number, example: 0 }
+ *             pickupFee: { type: number, example: 500 }
+ *             deliveryFee: { type: number, example: 500 }
+ *             offerDiscount: { type: number, example: 0 }
+ *             freePickupWaived: { type: number, example: 0 }
+ *             freeDeliveryWaived: { type: number, example: 0 }
+ *             appliedOffers: { type: array, items: { type: object, properties: { offerId: { type: string }, name: { type: string }, type: { type: string }, discount: { type: number } } } }
+ *             creditApplied: { type: number, example: 0 }
+ *             recountCover: { type: number, example: 0 }
+ *             orderTotal: { type: number, example: 8200 }
  *         paymentHold:
  *           nullable: true
  *           allOf: [{ $ref: '#/components/schemas/PaymentHoldResult' }]

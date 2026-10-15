@@ -269,6 +269,17 @@ class IntakeUserController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    // V1 batch 3b (FE F24): send a fresh payment link for an existing hold.
+    async resendPaymentLink(req, res) {
+        const result = await PaymentHoldService.resendLink({
+            orderId: req.params.id,
+            actorId: req.user?.id,
+        })
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
     async approveTransfer(req, res) {
         const result = await PaymentHoldService.approveTransfer({
             orderId: req.params.id,

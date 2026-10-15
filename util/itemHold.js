@@ -101,7 +101,28 @@ const onHoldScope = (orderStatusHold) => ({
 // to show. Works on a loaded document.
 const heldItemCount = (order) => heldItems(order?.items || []).length
 
+// V1 batch 3b (FE F28, R2): how many times a piece was rejected at a handoff
+// (a second rejection goes to admin).
+function rejectionCount(item) {
+    return (item?.actionLog || []).filter((a) => a.action === 'handoff_rejected').length
+}
+
+// V1 batch 3b (FE F28): the three counts a count dispute is about. `booked` is
+// what the customer booked (Quick Booking count, else the pieces on the order).
+function holdCounts(order) {
+    const c = order?.counts || {}
+    if (c.rider == null && c.intake == null && c.customer == null) return null
+    return {
+        booked: c.customer ?? (order.items || []).length,
+        rider: c.rider ?? null,
+        intake: c.intake ?? null,
+        riderReason: c.riderReason || null,
+    }
+}
+
 module.exports = {
+    rejectionCount,
+    holdCounts,
     isItemOnHold,
     heldItems,
     describeHeld,

@@ -16,7 +16,7 @@ const {
 } = require('../util/constants')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const { QUEUE_SORT } = require('../util/queueSort')
-const { onHoldScope } = require('../util/itemHold')
+const { onHoldScope, rejectionCount, holdCounts } = require('../util/itemHold')
 const {
     selectHeldItems,
     stampRelease,
@@ -112,6 +112,7 @@ class WashAndDryService extends BaseService {
                         limit: 5,
                         sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                         select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
+                        withPromise: true,
                         lean: true,
                     },
                 ),
@@ -177,6 +178,7 @@ class WashAndDryService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
+                withPromise: true,
                 lean: true,
             })
 
@@ -656,6 +658,7 @@ class WashAndDryService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber items serviceType serviceTier deliverySpeed stage stationStatus createdAt washDetails',
+                withPromise: true,
                 lean: true,
             })
 
@@ -808,6 +811,7 @@ class WashAndDryService extends BaseService {
                 limit,
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount items stage stationStatus stageHistory washDetails createdAt updatedAt',
+                withPromise: true,
                 lean: true,
             })
             const ordersWithMeta = data.map((order) => {
@@ -905,7 +909,8 @@ class WashAndDryService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory washDetails items createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory washDetails items createdAt updatedAt orderHold counts',
+                    withPromise: true,
                     populate: {
                         path: 'washDetails.operatorId',
                         select: 'fullName',
@@ -932,6 +937,7 @@ class WashAndDryService extends BaseService {
                         assignTo: i.holdDetails?.assignTo,
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
+                        rejectionCount: rejectionCount(i),
                     }))
 
                 return {
@@ -948,6 +954,9 @@ class WashAndDryService extends BaseService {
                     holdReason: order.stage.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
+                    // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
+                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    counts: holdCounts(order),
                 }
             })
 
@@ -1037,10 +1046,18 @@ class WashAndDryService extends BaseService {
             if (refusal) return BaseService.sendFailedResponse(refusal)
 
 
+            // V1 batch 3b (client 15 Oct): "the station it is assigned to, with a note."
+            // Admin may release without one.
+            if (req.user?.userType !== ROLE.ADMIN && !String(req.body?.note || '').trim()) {
+                return BaseService.sendFailedResponse({
+                    error: 'Add a note saying what was fixed before releasing this piece.',
+                    noteRequired: true,
+                })
+            }
             const releaseIds = new Set(mine.map((i) => String(i._id)))
             const updatedItems = order.items.map((item) => {
                 if (!releaseIds.has(String(item._id))) return item
-                stampRelease(item, { userId, now })
+                stampRelease(item, { userId, now, note: req.body?.note })
                 // ✅ reset wash status so item can be worked on again
                 item.washStatus = 'pending'
                 item.washConfirmedAt = null
@@ -1164,6 +1181,7 @@ class WashAndDryService extends BaseService {
                 limit,
                 sort: { updatedAt: -1 },
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount stage stationStatus stageHistory washDetails createdAt updatedAt',
+                withPromise: true,
                 lean: true,
             })
 

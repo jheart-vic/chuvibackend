@@ -2114,6 +2114,9 @@ class AdminService extends BaseService {
                         slaBreached,
                         holdTypeKey: order.orderHold?.holdTypeKey || null,
                         holdTypeName: limit.typeName,
+                        // V1 batch 3b (FE F28): a count dispute's booked, rider
+                        // and Intake counts.
+                        counts: require('../util/itemHold').holdCounts(order),
                         slaSource: limit.source,
                         // how much of the order is stuck, and where
                         heldPieceCount: heldPieces.length,
@@ -2133,6 +2136,7 @@ class AdminService extends BaseService {
                             heldAt: i.holdDetails?.heldAt || null,
                             heldByStation: i.holdDetails?.heldByStation || null,
                             assignTo: i.holdDetails?.assignTo || null,
+                            rejectionCount: require('../util/itemHold').rejectionCount(i),
                         })),
                     },
                 }

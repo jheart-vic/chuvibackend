@@ -27,7 +27,7 @@ const {
     ORDER_SERVICE_TYPE,
     PAYMENT_METHOD,
 } = require('../util/constants')
-const { onHoldScope } = require('../util/itemHold')
+const { onHoldScope, rejectionCount, holdCounts } = require('../util/itemHold')
 const {
     selectHeldItems,
     stampRelease,
@@ -2519,7 +2519,7 @@ class IntakeUserService extends BaseService {
                     page,
                     limit,
                     sort: { 'stage.updatedAt': -1 },
-                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus userId stageHistory washDetails items createdAt updatedAt',
+                    select: 'oscNumber fullName phoneNumber serviceType serviceTier amount stage stationStatus userId stageHistory washDetails items createdAt updatedAt orderHold counts',
                     populate: {
                         path: 'intakeStaffId washDetails.operatorId',
                         select: 'fullName',
@@ -2544,6 +2544,7 @@ class IntakeUserService extends BaseService {
                         assignTo: i.holdDetails?.assignTo,
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
+                        rejectionCount: rejectionCount(i),
                     }))
 
                 const assignedToUs = (order.items || []).some(
@@ -2576,6 +2577,9 @@ class IntakeUserService extends BaseService {
                     holdReason: order.stage.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
+                    // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
+                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    counts: holdCounts(order),
                 }
             })
 
@@ -2679,6 +2683,14 @@ class IntakeUserService extends BaseService {
                 })
             }
 
+            // V1 batch 3b (client 15 Oct): "the station it is assigned to, with a note."
+            // Admin may release without one.
+            if (req.user?.userType !== ROLE.ADMIN && !String(req.body?.note || '').trim()) {
+                return BaseService.sendFailedResponse({
+                    error: 'Add a note saying what was fixed before releasing this piece.',
+                    noteRequired: true,
+                })
+            }
             const releaseIds = new Set(mine.map((i) => String(i._id)))
 
             // ── THE TAG RESET BELONGS TO INTAKE'S OWN HOLDS ONLY ────────────
@@ -2700,7 +2712,7 @@ class IntakeUserService extends BaseService {
             const updatedItems = order.items.map((item) => {
                 if (!releaseIds.has(String(item._id))) return item
                 const wasOurs = raisedHere(item)
-                stampRelease(item, { userId, now })
+                stampRelease(item, { userId, now, note: req.body?.note })
                 if (wasOurs) {
                     item.tagStatus = 'pending'
                     item.tagId = ''

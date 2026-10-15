@@ -55,11 +55,20 @@ function selectHeldItems({ order, itemId = null, isMine }) {
  * Stamp the release on one piece — the ONE place these three fields are written.
  * Mutates and returns the item; the caller saves.
  */
-function stampRelease(item, { userId, now = new Date() }) {
+function stampRelease(item, { userId, now = new Date(), note = null }) {
     if (!item.holdDetails) return item
     item.holdDetails.releasedAt = now
     item.holdDetails.releasedByOperatorId = userId
     item.holdDetails.assignTo = null
+    // V1 batch 3b (FE F28): the note sent with "Fixed, send again" is kept on
+    // the hold and in the piece's history.
+    const text = typeof note === 'string' ? note.trim() : ''
+    if (text) {
+        item.holdDetails.releaseNote = text
+        if (Array.isArray(item.actionLog)) {
+            item.actionLog.push({ action: 'hold_released', note: text, timestamp: now })
+        }
+    }
     return item
 }
 

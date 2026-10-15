@@ -104,10 +104,18 @@ router.get(ROUTE_HANDOFFS_PENDING, [stationAuth], (req, res) => {
  *                   properties:
  *                     message: { $ref: '#/components/schemas/Handoff' }
  *       400:
- *         description: Gate/completion violation or invalid stations
+ *         description: "Gate/completion violation or invalid stations. V1 batch 3: a whole-order move that is short names each missing piece and where it is."
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: false }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     error: { type: string, example: "The whole order must be here before it can move on. Missing: TAG 03 is at Wash & Dry." }
+ *                     missingPieces: { type: string, example: "TAG 03 is at Wash & Dry", description: "Only on the whole-order refusal: each missing piece and its station (up to 5, then and N more)." }
  */
 router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
     const controller = new HandoffController()
@@ -166,10 +174,18 @@ router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
  *                         stageStatus: { type: string, example: washing }
  *                         stationStatus: { type: string, example: wash-and-dry-station }
  *       400:
- *         description: Already confirmed or invalid rejectedItems
+ *         description: "Already confirmed or invalid rejectedItems. V1 batch 3: a whole-order move that is short names each missing piece and where it is."
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: false }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     error: { type: string, example: "The whole order must be here before it can move on. Missing: TAG 03 is at Wash & Dry." }
+ *                     missingPieces: { type: string, example: "TAG 03 is at Wash & Dry", description: "Only on the whole-order refusal: each missing piece and its station (up to 5, then and N more)." }
  */
 router.post(ROUTE_ORDER_HANDOFF_CONFIRM, [stationAuth], (req, res) => {
     const controller = new HandoffController()

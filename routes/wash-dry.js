@@ -531,6 +531,16 @@ router.get(ROUTE_WASH_AND_ACTIVE_DRYING, [washAndDryAuth], (req, res) => {
  *                               holdTime:      { type: string, format: date-time }
  *                               stationStatus: { type: string, example: "sort-and-pretreat-station" }
  *                               operator:      { type: string, example: "Victor Jp", nullable: true }
+ *                               holdTypeKey: { type: string, nullable: true, example: count_differs_from_rider, description: "The hold type (V1 batch 3b)." }
+ *                               counts:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 description: "For a count dispute: what was booked, what the rider counted, what Intake counted."
+ *                                 properties:
+ *                                   booked: { type: integer, example: 10 }
+ *                                   rider: { type: integer, example: 10 }
+ *                                   intake: { type: integer, example: 9 }
+ *                                   riderReason: { type: string, nullable: true }
  *                               flaggedItems:
  *                                 type: array
  *                                 items:
@@ -544,6 +554,8 @@ router.get(ROUTE_WASH_AND_ACTIVE_DRYING, [washAndDryAuth], (req, res) => {
  *                                     assignTo:      { type: string, example: "sort-and-pretreat" }
  *                                     heldByStation: { type: string, example: "wash-and-dry-station" }
  *                                     heldAt:        { type: string, format: date-time }
+ *                                     rejectionCount: { type: integer, example: 2, description: "Times this piece was rejected at a handoff. A second rejection goes to admin (holdReason second-rejection, assignTo admin)." }
+ *                                     releaseNote: { type: string, nullable: true, description: "The note given when the piece was released (Fixed, send again)." }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -566,6 +578,15 @@ router.get(ROUTE_WASH_AND_DRY_GET_HOLD, [washAndDryAuth], (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: string, example: "64d3c9c0f1b2a8e9d0f12345" }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemId: { type: string, description: "Release ONE piece; omit to release every piece assigned to this station." }
+ *               note: { type: string, example: "Re-dried, now fully dry", description: "REQUIRED for station staff (client 15 Oct: the station it is assigned to releases it, with a note). Saved as holdDetails.releaseNote and in the piece history. Admin may omit it." }
  *     responses:
  *       200:
  *         description: Order released from hold and returned to wash queue

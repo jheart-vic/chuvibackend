@@ -215,11 +215,13 @@ exports.ROUTE_ORDER_ITEMS_EDIT = '/order/:id/items'
 // into production. The bank-check list is the client's daily reconciliation.
 exports.ROUTE_ORDER_PAYMENT_HOLD = '/order/:id/payment-hold'
 exports.ROUTE_ORDER_PAYMENT_HOLD_WAIVE = '/order/:id/payment-hold/waive'
+exports.ROUTE_ORDER_PAYMENT_HOLD_RESEND = '/order/:id/payment-hold/resend'
 exports.ROUTE_ORDER_PAYMENT_APPROVE_TRANSFER = '/order/:id/approve-transfer'
 exports.ROUTE_ADMIN_BANK_CHECK_LIST = '/bank-check-list'
 exports.ROUTE_ADMIN_REP_LINK_REPORT = '/reports/rep-links'
 exports.ROUTE_ADMIN_SIGNUP_ATTEMPTS = '/signup-attempts'
 exports.ROUTE_ADMIN_DUE_TODAY_NOT_AT_QC = '/due-today-not-at-qc'
+exports.ROUTE_ADMIN_ALERTS = '/alerts'
 // Renaming delivery speeds / service types / care tiers — DISPLAY NAME ONLY.
 // The stored values are enums and pricing keys and never change.
 exports.ROUTE_ADMIN_DISPLAY_NAMES = '/display-names'
