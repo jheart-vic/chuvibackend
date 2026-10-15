@@ -1,4 +1,5 @@
 const ComplaintCaseModel = require('../models/complaintCase.model')
+const { nextOscNumber } = require('../util/orderNumber')
 const ComplaintTypeModel = require('../models/complaintType.model')
 const FeedbackModel = require('../models/feedback.model')
 const UserModel = require('../models/user.model')
@@ -373,7 +374,7 @@ class RecoveryService {
             billingType: BILLING_TYPE.PAY_PER_ITEM,
             paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
             paymentDate: new Date(),
-            oscNumber: generateOscNumber(),
+            oscNumber: await nextOscNumber(),
             items: orderItems,
             extraNote: `Recovery (${action}) for complaint ${complaint._id}${note ? ` — ${note}` : ''}`,
             stage: { status: ORDER_STATUS.QUEUE, note: 'Recovery order created', updatedAt: new Date() },

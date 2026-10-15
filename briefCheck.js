@@ -1360,7 +1360,7 @@ const run = (async () => {
         /pickupTiming: 'string\|in:window,anytime'/.test(boSrc) &&
             /if \(post\.pickupTiming \|\| post\.deliveryTiming\)/.test(boSrc))
     ok('the legs are resolved BEFORE the order is created, so a refusal leaves nothing',
-        boSrc.indexOf('BookingWindowService.resolveLeg') < boSrc.indexOf('const oscNumber = generateOscNumber()'))
+        boSrc.indexOf('BookingWindowService.resolveLeg') < boSrc.indexOf('const oscNumber = await nextOscNumber()'))
     ok('a same-day pickup is FORCED to Anytime pricing, not trusted from the client',
         /const pickupTiming = BookingWindowService\.resolvePickupTiming\(\{\s*deliverySpeed: post\.deliverySpeed,\s*pickupTiming: post\.pickupTiming,/.test(boSrc))
     ok('the chosen timing owns the fee (one override, not five parallel edits)',

@@ -1,102 +1,57 @@
 /**
- * CLEAR THE TEST DATA — client step B41 (V1 launch, after the Sunday floor test).
+ * THE SUNDAY DATA CLEAR — client instructions of 15 Oct 2026 (they supersede B41).
+ * Written plan: blueprint/context/SUNDAY-DATA-CLEAR-PLAN.md. Run ONLY after the
+ * client says "go" on Sunday evening AND the user confirms in the chat.
  *
- * "Clear the database: delete orders, holds, wallet balances, reward credit,
- *  test offers, test chats, test plans and subscriptions, and rep links on test
- *  sign ups. Keep staff accounts, the price list, settings, and customer
- *  accounts with zero balances. Put the test settings back to the real values."
+ * "CLEAR EVERYTHING that is test data: all customers, staff and rep accounts,
+ *  orders, payments, holds, wallets and credit, subscriptions, referral codes and
+ *  records, leads and CRM message queues, complaints, feedback, notifications and
+ *  the reports built from them. KEEP ONLY: my own admin login, and the settings
+ *  (items and prices, offers, plans, windows, hold types, display names, limits,
+ *  message templates)."  Admin: Ijeomahikechukwup@gmail.com ("only I will have
+ *  the password"). Expenses and supplies: clear. Order numbers start again at 001.
  *
- * KEPT (never touched): users (staff AND customer accounts), prices and items
- * (orderitems, itemsets), every settings document (adminsettings,
- * adminorderdetails, crmsettings, rewardsettings, holdtypes, bookingwindows,
- * complainttypes, templates), offers (the client removes the test offer
- * "Drffg" themselves on Monday), plans, hubs, expenses / supplies.
+ * STEPS (all printed; dry run changes nothing):
+ *   1. Requires a VERIFIED backup of this database from today (backupDb.js) —
+ *      pass its folder with --backup <folder>.
+ *   2. Paystack: every subscription still active on Paystack is switched off
+ *      (the client's Student Plan test included), before the records go.
+ *   3. Deletes every user except the client's admin, and that account becomes
+ *      the admin (it keeps the password they chose; "Forgot password" works too).
+ *   4. Empties every test-data collection (list below); keeps the settings.
+ *   5. Sets the order serial back to 0, so the next order is OSC-<date>-001.
  *
- * EMPTIED: orders and everything hanging off them (holds live on the order),
- * payments, wallet transactions, reward credit, customer-held offers, referrals
- * (rep links on sign-ups) and referral stats, subscriptions, chats and support
- * conversations, complaints, feedback, CRM cards and their message queues and
- * logs, communication logs, notifications, staff activity and audit logs,
- * cancellation requests, wallet adjustment requests, customer experience tasks,
- * queued SMS, refused sign-ups, window deflections, top-up proofs.
+ *   node clearTestData.js --backup <folder>                       dry run
+ *   node clearTestData.js --backup <folder> --execute             testing DB
+ *   CLEAR_LIVE="CLEAR CHUVI LIVE DATA" node clearTestData.js --backup <folder> --execute    LIVE
  *
- * RESET: every wallet to balance 0; on every customer account the per-customer
- * counters this launch added (notAvailableCount, recountMismatches).
- *
- * CRM: B41 does not list the CRM, and a card can be a real lead a rep entered
- * (no account yet). So by DEFAULT every card is KEPT with its order history
- * reset (no orders, stage back to lead, not dormant) and only the queued
- * messages that point at test orders (post-delivery, reactivation) are
- * deleted; lead and registered-not-booked follow-ups stay. Pass --empty-crm to
- * delete every card and every queued message instead.
- *
- * The TEST SETTINGS go back to their real values by hand in admin (the client
- * does that on Monday) — this script prints the values to check.
- *
- * SAFETY:
- *   * Dry run by default: counts what WOULD go, changes nothing.
- *   * --execute deletes. On the live database (laundrydb) it also needs
- *     CLEAR_LIVE="CLEAR CHUVI LIVE DATA", and only ever with the user's go-ahead
- *     in the chat, after the client's Sunday test.
- *   * The database URI is never printed, only its name.
- *
- * Add --empty-crm to delete the CRM cards too (default: keep and reset).
- * Run (dry):     node clearTestData.js
- * Run (testing): MONGODB_URL=<testing uri> node clearTestData.js --execute
- * Run (live):    CLEAR_LIVE="CLEAR CHUVI LIVE DATA" node clearTestData.js --execute
+ * The database URI is never printed, only its name.
  */
 require('dotenv').config()
+const fs = require('fs')
+const path = require('path')
 const mongoose = require('mongoose')
 
+const KEEP_ADMIN_EMAIL = (process.env.CLEAR_KEEP_ADMIN || 'ijeomahikechukwup@gmail.com').toLowerCase()
+
 const EMPTY = [
-    'bookorders',
-    'orders',
-    'payments',
-    'wallettransactions',
-    'walletcredits',
-    'customeroffers',
-    'referrals',
-    'referralstats',
-    'subscriptions',
-    'freeplans',
-    'conversations',
-    'chatmessages',
-    'complaintcases',
-    'feedbacks',
-    // CRM cards: see CRM below (kept and reset by default; --empty-crm empties).
-    'crmmessagelogs',
-    'communicationlogs',
-    'notifications',
-    'activities',
-    'auditlogs',
-    'cancellationrequests',
-    'walletadjustmentrequests',
-    'caretasks',
-    'queuedsms',
-    'signupattempts',
-    'windowdeflections',
-    'updatefunds',
+    'bookorders', 'orders', 'payments', 'wallets', 'wallettransactions', 'walletcredits',
+    'walletadjustmentrequests', 'updatefunds', 'customeroffers', 'referrals', 'referralstats',
+    'subscriptions', 'freeplans', 'conversations', 'chatmessages', 'complaintcases', 'feedbacks',
+    'crmprofiles', 'crmscheduledmessages', 'crmmessagelogs', 'communicationlogs', 'notifications',
+    'activities', 'auditlogs', 'cancellationrequests', 'caretasks', 'queuedsms', 'signupattempts',
+    'windowdeflections', 'staffs', 'expenses', 'supplies',
 ]
 const KEEP = [
-    'users',
-    'staffs',
-    'orderitems',
-    'itemsets',
-    'adminsettings',
-    'adminorderdetails',
-    'crmsettings',
-    'rewardsettings',
-    'holdtypes',
-    'bookingwindows',
-    'complainttypes',
-    'templates',
-    'offers',
-    'plans',
-    'hubs',
-    'expenses',
+    'orderitems', 'itemsets', 'offers', 'plans', 'bookingwindows', 'holdtypes', 'complainttypes',
+    'adminsettings', 'adminorderdetails', 'crmsettings', 'rewardsettings', 'templates', 'hubs',
     'expensecategories',
-    'supplies',
 ]
+
+const arg = (name) => {
+    const i = process.argv.indexOf(name)
+    return i > -1 ? process.argv[i + 1] : null
+}
 
 async function main() {
     const execute = process.argv.includes('--execute')
@@ -105,104 +60,110 @@ async function main() {
     const dbName = (url.match(/\/([A-Za-z0-9_-]+)(\?|$)/) || [])[1] || '<unknown>'
     const live = /laundrydb/i.test(dbName)
     console.log(`Database: ${dbName}${live ? '  (LIVE)' : ''}`)
-    console.log(execute ? 'Mode: EXECUTE (deletes)' : 'Mode: dry run (counts only, nothing changes)')
+    console.log(execute ? 'Mode: EXECUTE' : 'Mode: dry run (counts only, nothing changes)')
     if (execute && live && process.env.CLEAR_LIVE !== 'CLEAR CHUVI LIVE DATA') {
         console.error('Refusing to clear the LIVE database without CLEAR_LIVE="CLEAR CHUVI LIVE DATA".')
         process.exit(2)
     }
 
+    // 1. A verified backup of THIS database, taken today.
+    const backup = arg('--backup')
+    if (execute) {
+        const mf = backup && path.join(backup, 'manifest.json')
+        if (!mf || !fs.existsSync(mf)) {
+            console.error('Refusing: pass --backup <folder> with a backup made by backupDb.js.')
+            process.exit(2)
+        }
+        const m = JSON.parse(fs.readFileSync(mf, 'utf8'))
+        const ageH = (Date.now() - new Date(m.at).getTime()) / 3600000
+        if (m.db !== dbName || ageH > 12) {
+            console.error(`Refusing: the backup is of "${m.db}" from ${m.at}; it must be of "${dbName}" and less than 12 hours old.`)
+            process.exit(2)
+        }
+        console.log(`Backup: ${backup} (${m.db}, ${m.at})`)
+    }
+
     await mongoose.connect(url, { serverSelectionTimeoutMS: 60000 })
     const db = mongoose.connection.db
     const existing = new Set((await db.listCollections().toArray()).map((c) => c.name))
+    const users = db.collection('users')
 
-    console.log('\nTo EMPTY:')
-    let total = 0
-    for (const name of EMPTY) {
-        if (!existing.has(name)) {
-            console.log(`  ${name.padEnd(26)} (no collection)`)
-            continue
+    // The client's admin must exist before anything else goes.
+    const admin = await users.findOne({ email: KEEP_ADMIN_EMAIL })
+    console.log(`\nAdmin to keep: ${KEEP_ADMIN_EMAIL} → ${admin ? `found (now ${admin.userType})` : 'NOT FOUND'}`)
+    if (!admin) {
+        console.error('Refusing: the admin account to keep does not exist. Nothing changed.')
+        await mongoose.disconnect()
+        process.exit(2)
+    }
+
+    // 2. Paystack: switch off every subscription still running there.
+    console.log('\nPaystack subscriptions:')
+    // A rehearsal on a copy sets CLEAR_SKIP_PAYSTACK=1 so Paystack is never touched.
+    const skipPaystack = process.env.CLEAR_SKIP_PAYSTACK === '1'
+    if (skipPaystack) console.log('  skipped (CLEAR_SKIP_PAYSTACK=1)')
+    const subs = skipPaystack ? [] : existing.has('subscriptions') ? await db.collection('subscriptions').find({ subscriptionCode: { $exists: true, $ne: null } }).toArray() : []
+    if (!subs.length) console.log('  none on record')
+    const paystack = require('./services/paystack.client.service')
+    for (const s of subs) {
+        let state = 'unknown'
+        try {
+            const r = await paystack.get(`/subscription/${s.subscriptionCode}`, { timeout: 15000 })
+            const ps = r.data?.data
+            state = ps?.status || 'unknown'
+            const running = ps && !['cancelled', 'complete', 'completed', 'non-renewing'].includes(ps.status)
+            if (running && execute) {
+                await paystack.post('/subscription/disable', { code: s.subscriptionCode, token: s.paystackEmailToken || ps.email_token }, { timeout: 15000 })
+                state = `${ps.status} → disabled`
+            } else if (running) {
+                state = `${ps.status} → would disable`
+            }
+        } catch (e) {
+            state = `could not check (${e?.response?.data?.message || e.message})`
         }
+        console.log(`  ${s.subscriptionCode}  ${state}`)
+    }
+
+    // 3. Users: only the client's admin stays.
+    const toDelete = await users.countDocuments({ _id: { $ne: admin._id } })
+    console.log(`\nUsers: ${toDelete} ${execute ? 'deleted' : 'would be deleted'}; ${KEEP_ADMIN_EMAIL} kept as admin`)
+    if (execute) {
+        await users.deleteMany({ _id: { $ne: admin._id } })
+        await users.updateOne(
+            { _id: admin._id },
+            {
+                $set: { userType: 'admin', status: 'active', isVerified: true, notAvailableCount: 0 },
+                $unset: { recountMismatches: '', statusReason: '', otp: '', otpExpiresAt: '' },
+            },
+        )
+    }
+
+    // 4. Test data.
+    console.log('\nTo EMPTY:')
+    let total = toDelete
+    for (const name of EMPTY) {
+        if (!existing.has(name)) continue
         const n = await db.collection(name).countDocuments()
         total += n
-        if (execute) {
-            const r = await db.collection(name).deleteMany({})
-            console.log(`  ${name.padEnd(26)} ${String(n).padStart(7)}  deleted ${r.deletedCount}`)
-        } else {
-            console.log(`  ${name.padEnd(26)} ${String(n).padStart(7)}`)
-        }
+        if (execute) await db.collection(name).deleteMany({})
+        console.log(`  ${name.padEnd(26)} ${String(n).padStart(7)}${execute ? '  deleted' : ''}`)
     }
 
-    // ── CRM ──
-    const emptyCrm = process.argv.includes('--empty-crm')
-    console.log(`\nCRM (${emptyCrm ? 'EMPTY, --empty-crm' : 'keep cards, reset order history'}):`)
-    if (existing.has('crmprofiles')) {
-        const sched = existing.has('crmscheduledmessages') ? db.collection('crmscheduledmessages') : null
-        const cards = await db.collection('crmprofiles').countDocuments()
-        const queued = sched ? await sched.countDocuments() : 0
-        const orderQueued = sched ? await sched.countDocuments({ workflow: { $in: ['post-delivery', 'reactivation'] } }) : 0
-        const verb = execute ? 'deleted' : 'would delete'
-        if (emptyCrm) {
-            console.log(`  crmprofiles                ${String(cards).padStart(7)}  ${verb}`)
-            console.log(`  crmscheduledmessages       ${String(queued).padStart(7)}  ${verb}`)
-            if (execute) {
-                await db.collection('crmprofiles').deleteMany({})
-                if (sched) await sched.deleteMany({})
-            }
-            total += cards + queued
-        } else {
-            console.log(`  crmprofiles                ${String(cards).padStart(7)}  kept, order history reset`)
-            console.log(`  crmscheduledmessages       ${String(orderQueued).padStart(7)}  post-delivery / reactivation ${verb} (${queued - orderQueued} lead follow-ups kept)`)
-            if (execute) {
-                await db.collection('crmprofiles').updateMany({}, {
-                    $set: { totalOrders: 0, nonSubscriptionOrders: 0, expressOrders: 0, totalSpent: 0, stage: 'lead', wasDormant: false, referralPaused: false },
-                    $unset: { firstOrderAt: '', lastOrderAt: '', dormantSince: '', nextFollowUpAt: '' },
-                })
-                if (sched) await sched.deleteMany({ workflow: { $in: ['post-delivery', 'reactivation'] } })
-            }
-            total += orderQueued
-        }
-    }
-
-    console.log('\nTo RESET:')
-    const wallets = existing.has('wallets') ? await db.collection('wallets').countDocuments({ balance: { $ne: 0 } }) : 0
-    const customers = existing.has('users') ? await db.collection('users').countDocuments({ userType: 'user' }) : 0
-    const flagged = existing.has('users')
-        ? await db.collection('users').countDocuments({
-              userType: 'user',
-              $or: [{ notAvailableCount: { $gt: 0 } }, { 'recountMismatches.0': { $exists: true } }],
-          })
-        : 0
-    if (execute) {
-        if (existing.has('wallets')) await db.collection('wallets').updateMany({}, { $set: { balance: 0 } })
-        if (existing.has('users')) {
-            await db
-                .collection('users')
-                .updateMany({ userType: 'user' }, { $set: { notAvailableCount: 0 }, $unset: { recountMismatches: '' } })
-        }
-    }
-    console.log(`  wallets with money          ${String(wallets).padStart(7)}  → balance 0`)
-    console.log(`  customers with counters     ${String(flagged).padStart(7)}  → counters cleared`)
+    // 5. Order serial back to 0.
+    if (execute) await db.collection('counters').updateOne({ _id: 'orderSerial' }, { $set: { seq: 0 } }, { upsert: true })
+    const today = new Date()
+    const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+    console.log(`\nOrder serial: ${execute ? 'set to 0' : 'would be set to 0'} → next order OSC-${ymd}-001 (the date is the order's own day)`)
 
     console.log('\nKEPT (untouched):')
     for (const name of KEEP) {
         if (!existing.has(name)) continue
-        const n = await db.collection(name).countDocuments()
-        const extra = name === 'users' ? `  (${customers} customers, ${n - customers} staff/admin)` : ''
-        console.log(`  ${name.padEnd(26)} ${String(n).padStart(7)}${extra}`)
+        console.log(`  ${name.padEnd(26)} ${String(await db.collection(name).countDocuments()).padStart(7)}`)
     }
-    const unlisted = [...existing].filter((n) => !EMPTY.includes(n) && !KEEP.includes(n) && !['wallets', 'crmprofiles', 'crmscheduledmessages'].includes(n) && !n.startsWith('system.'))
+    const unlisted = [...existing].filter((n) => !EMPTY.includes(n) && !KEEP.includes(n) && !['users', 'counters'].includes(n) && !n.startsWith('system.'))
     if (unlisted.length) console.log(`\nNOT LISTED (left untouched, check them): ${unlisted.join(', ')}`)
 
-    // The test settings the client changes back on Monday (printed to check).
-    if (existing.has('adminsettings')) {
-        const s = (await db.collection('adminsettings').findOne({})) || {}
-        console.log('\nSettings to check (test values go back to the real ones):')
-        console.log('  unpaidBillTimers  ', JSON.stringify(s.unpaidBillTimers || '(defaults: 180 min, 9 AM, [1440, 4320], 10080)'))
-        console.log('  recountCover      ', JSON.stringify(s.recountCover || '(defaults: 10%, N200, 3 in 60 days)'))
-        console.log('  quietHours        ', JSON.stringify(s.quietHours || '(defaults: 21 to 7)'))
-    }
-
-    console.log(`\n${execute ? 'Cleared' : 'Would clear'} ${total} documents.`)
+    console.log(`\n${execute ? 'Cleared' : 'Would clear'} ${total} records. Settings and ${KEEP_ADMIN_EMAIL} kept.`)
     await mongoose.disconnect()
 }
 

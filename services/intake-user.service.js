@@ -1,4 +1,5 @@
 const ActivityModel = require('../models/activity.model')
+const { nextOscNumber } = require('../util/orderNumber')
 const AdminSettingModel = require('../models/adminSetting.model')
 const BookOrderModel = require('../models/bookOrder.model')
 const { buildTimelineOrderView } = require('../util/orderTimeline')
@@ -350,7 +351,7 @@ class IntakeUserService extends BaseService {
             delete post.secondaryPaymentReference
             delete post.useCredit
 
-            const oscNumber = generateOscNumber()
+            const oscNumber = await nextOscNumber() // client 15 Oct: OSC-<Lagos date>-<running serial>
             // Only the order's own fields come from the staff request; amount,
             // payment, stage, channel, billing type and attribution are the
             // server's (review F-19: the body was spread last and could set

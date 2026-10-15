@@ -1,4 +1,5 @@
 const BaseService = require('./base.service')
+const { nextOscNumber } = require('../util/orderNumber')
 const UserModel = require('../models/user.model')
 const validateData = require('../util/validate')
 const { normalizeAddress, enrichFromSavedAddresses } = require('../util/address')
@@ -2045,7 +2046,7 @@ class BookOrderService extends BaseService {
                 floorAllocation = row.allocation
             }
 
-            const oscNumber = generateOscNumber()
+            const oscNumber = await nextOscNumber() // client 15 Oct: OSC-<Lagos date>-<running serial>
             let newOrder = null
             let offerBreakdown = null // set by the offer-eligible billing branches
             let logisticsPaymentUrl = null // set when a subscriber pays an overflow fee by card
