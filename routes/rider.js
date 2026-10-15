@@ -773,6 +773,9 @@ router.put(ROUTE_RIDER_MARK_DELIVERY_FAILED_ID, riderAuth, (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
+ *                               deliverySpeed: { type: string, example: standard }
+ *                               quickBooking: { type: boolean, example: false }
  *                               oscNumber:
  *                                 type: string
  *                                 example: "OSC-20260428-321782"

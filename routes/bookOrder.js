@@ -624,6 +624,8 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *                               amount:
  *                                 type: number
  *                                 example: 150
+ *                               statusLabel: { type: string, example: Washing, description: "The client's status word (V1 batch 3c). Show this, not stage.status." }
+ *                               payBy: { type: string, format: date-time, nullable: true, description: "A Quick Booking waiting for payment: pay by this time to keep the ready date (12 noon the day after the bill). Null otherwise. V1 batch 3b." }
  *                               pricing:
  *                                 $ref: '#/components/schemas/OrderPricing'
  *                               paymentMethod:
@@ -752,6 +754,8 @@ router.get(ROUTE_BOOK_ORDER_HISTORY, [auth], (req, res) => {
  *                         amount:
  *                           type: number
  *                           example: 150
+ *                         statusLabel: { type: string, example: Washing, description: "The client's status word (V1 batch 3c). Show this, not stage.status." }
+ *                         payBy: { type: string, format: date-time, nullable: true, description: "A Quick Booking waiting for payment: pay by this time to keep the ready date (12 noon the day after the bill). Null otherwise. V1 batch 3b." }
  *                         pricing:
  *                           $ref: '#/components/schemas/OrderPricing'
  *                         paymentMethod:
