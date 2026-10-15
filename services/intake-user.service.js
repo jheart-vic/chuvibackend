@@ -1501,8 +1501,8 @@ class IntakeUserService extends BaseService {
                 statusLabel:
                     legState === (leg === 'pickup' ? PICKUP_STATUS.FAILED : DELIVERY_STATUS.FAILED)
                         ? leg === 'pickup'
-                            ? 'Customer not available: needs rider'
-                            : 'Ready, waiting redelivery'
+                            ? 'Needs rider'
+                            : 'Ready waiting redelivery'
                         : null,
                 failed:
                     legState ===
@@ -2163,13 +2163,13 @@ class IntakeUserService extends BaseService {
                 userId,
                 title: 'Tagging Completed',
                 body: `All items on order ${order.oscNumber} have been confirmed tagged.`,
-                subBody: `Please proceed to send the order to Sort & Pretreat station.`,
+                subBody: `Please proceed to send the order to Sort and Pretreat station.`,
                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
             })
 
             await createAuditLog({userId: getObjectId(userId), action: `Completed tagging for order ${order.oscNumber}`, category: 'order', orderId: order._id})
             return BaseService.sendSuccessResponse({
-                message: 'All items tagged. Ready to send to Sort & Pretreat.',
+                message: 'All items tagged. Ready to send to Sort and Pretreat.',
             })
         } catch (error) {
             console.log(error)
@@ -3100,6 +3100,8 @@ class IntakeUserService extends BaseService {
                     order: buildTimelineOrderView(order, trackingStatus),
                     pipeline,
                     itemTimeline,
+                    // V1 batch 3c (client word list): "[time] [station]: [what happened] by [staff name]".
+                    historyLines: await require('../util/historyLines').historyLines(order._id),
                 },
             })
         } catch (error) {

@@ -64,7 +64,7 @@ module.exports = {
             if (open) {
                 return {
                     replies: [
-                        "I can see you already have a complaint with us that's still being handled, so I won't open a duplicate — our Customer Experience team is on it. Would you like me to connect you to a person for an update?",
+                        "I can see you already have a complaint with us that's still being handled, so I won't open a duplicate — our Customer Care team is on it. Would you like me to connect you to a person for an update?",
                     ],
                     state: { intent: BOT_INTENT.FILE_COMPLAINT, step: 'offered-handoff', slots: {} },
                 }
@@ -161,7 +161,7 @@ module.exports = {
                 }
                 return {
                     replies: [
-                        `Done — I've logged your complaint for order ${oscNumber}. Our Customer Experience team will review it and reach out to you. I'm sorry again for the trouble.`,
+                        `Done — I've logged your complaint for order ${oscNumber}. Our Customer Care team will review it and reach out to you. I'm sorry again for the trouble.`,
                     ],
                 }
             }

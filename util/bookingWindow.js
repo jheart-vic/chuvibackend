@@ -494,7 +494,7 @@ const sameDayLegPlan = ({ settings, morningWindow = null }) => {
         },
         disclosure: morningWindow
             ? 'Same-day pickup runs in the morning window; delivery returns in the evening window.'
-            : 'Same-day pickup is an Anytime trip and is charged at the Anytime rate. Delivery returns in the evening window at the window rate.',
+            : 'Same-day pickup is an Urgent trip and is charged at the Urgent rate. Delivery returns in the evening window at the window rate.',
     }
 }
 
@@ -824,7 +824,7 @@ const anytimeOnDate = ({ date, now, settings }) => {
     }
     if (isSameDay(day, now)) {
         const at = minutesOfDay(now)
-        if (at > to) return closed('Anytime has closed for today')
+        if (at > to) return closed('Urgent has closed for today')
         if (at < from) return { date: key, open: true, servesFrom: atMinutes(day, from), note: `We will come from ${fromText}.` }
         return { date: key, open: true, servesFrom: new Date(now), note: 'We will dispatch as soon as we can.' }
     }

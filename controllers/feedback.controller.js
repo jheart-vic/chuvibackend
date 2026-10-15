@@ -99,6 +99,9 @@ class FeedbackController extends BaseController {
     async completeAction(req, res) {
         return send(res, await new RecoveryApiService().completeAction(req))
     }
+    async giveCredit(req, res) {
+        return send(res, await new RecoveryApiService().giveCredit(req))
+    }
     async requestCredit(req, res) {
         return send(res, await new RecoveryApiService().requestCredit(req))
     }

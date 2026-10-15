@@ -39,7 +39,8 @@ const rewardSettingSchema = new mongoose.Schema(
             laundry: { type: Number, default: 90 },
         },
         // recovery compensation above this needs Ops Manager / Founder approval
-        recoveryApprovalThreshold: { type: Number, default: 10000 },
+        // (client 15 Oct: "Most per case: N5,000. Above that, it goes to admin.")
+        recoveryApprovalThreshold: { type: Number, default: 5000 },
         // complaint SLA (hours): first review + target resolution
         complaintReviewHours: { type: Number, default: 24 },
         complaintResolutionHours: { type: Number, default: 72 },

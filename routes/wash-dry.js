@@ -710,6 +710,18 @@ router.get(ROUTE_WASH_AND_DRY_HISTORY, [washAndDryAuth], (req, res) => {
  *                     message:
  *                       type: object
  *                       properties:
+ *                         historyLines:
+ *                           type: array
+ *                           description: "The order history in the client's words (V1 batch 3c): [time] [station]: [what happened] by [staff name]. Show `line`."
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               line: { type: string, example: "10:42 Intake and Tag: Order tagged by Chioma" }
+ *                               at: { type: string, format: date-time }
+ *                               station: { type: string, example: "Intake and Tag" }
+ *                               what: { type: string, example: "Order tagged" }
+ *                               by: { type: string, nullable: true, example: "Chioma" }
+ *                               detail: { type: string, nullable: true }
  *                         order:
  *                           allOf:
  *                             - $ref: '#/components/schemas/TimelineOrder'

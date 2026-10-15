@@ -345,7 +345,7 @@ class BookingWindowService {
                 // so rather than implying a wait.
                 note: anytimeOpen
                     ? 'We will dispatch as soon as we can.'
-                    : 'Outside our Anytime hours — we will come first thing on the next working day.',
+                    : 'Outside our Urgent hours — we will come first thing on the next working day.',
             }
             // Launch item 4: "Urgent opens at 8:00 AM tomorrow".
             anytime.opensAt = anytimeOpen ? null : anytime.servesFrom
@@ -561,7 +561,7 @@ class BookingWindowService {
         if (!windowId) {
             return {
                 ok: false,
-                error: `Choose a ${leg} time window, or select Anytime.`,
+                error: `Choose a ${leg} time window, or select Urgent.`,
                 requiresChoice: true,
             }
         }
@@ -1209,7 +1209,7 @@ class BookingWindowService {
                 userId: order.userId,
                 amount,
                 orderId,
-                description: `Anytime ${leg} refund for order ${order.oscNumber} — served inside a window`,
+                description: `Urgent ${leg} refund for order ${order.oscNumber} — served inside a window`,
             })
 
             await BookOrderModel.updateOne(
@@ -1220,7 +1220,7 @@ class BookingWindowService {
                         [`scheduling.${leg}.refund.amount`]: amount,
                         [`scheduling.${leg}.refund.paidAt`]: new Date(),
                         [`scheduling.${leg}.refund.reason`]:
-                            'Paid for Anytime but served inside a window.',
+                            'Paid for Urgent but served inside a window.',
                     },
                 },
             )
@@ -1229,7 +1229,7 @@ class BookingWindowService {
                 await createNotification({
                     userId: order.userId,
                     title: 'Refund to your wallet',
-                    body: `We served your ${leg} inside our normal time window, so ₦${amount.toLocaleString('en-NG')} of the Anytime charge for order ${order.oscNumber} has gone back to your wallet.`,
+                    body: `We served your ${leg} inside our normal time window, so ₦${amount.toLocaleString('en-NG')} of the Urgent charge for order ${order.oscNumber} has gone back to your wallet.`,
                     subBody: `Order ID: ${order.oscNumber}`,
                     type: NOTIFICATION_TYPE.ORDER_UPDATED,
                 })

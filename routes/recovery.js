@@ -13,6 +13,7 @@ const {
     ROUTE_RECOVERY_CASE_ACTIONS,
     ROUTE_RECOVERY_CASE_ACTION_COMPLETE,
     ROUTE_RECOVERY_CASE_CREDIT_REQUEST,
+    ROUTE_RECOVERY_CASE_CREDIT_GIVE,
     ROUTE_RECOVERY_CASE_CREDIT_APPROVE,
     ROUTE_RECOVERY_CASE_CREDIT_REJECT,
     ROUTE_RECOVERY_CASE_CREDIT_MARK_PAID,
@@ -432,11 +433,69 @@ router.post(ROUTE_RECOVERY_CASE_CREDIT_REQUEST, [customerExperienceAuth], (req, 
 )
 /**
  * @swagger
+ * /recovery/cases/{id}/credit/give:
+ *   post:
+ *     summary: Give recovery credit in one step (customer care closing a complaint with a discount)
+ *     description: >
+ *       V1 launch batch 3c (client 15 Oct). Recovery credit for the NEXT order, never money off an unpaid bill.
+ *       Within the per-case limit (setting recoveryApprovalThreshold, N5,000 — counted with credit already given
+ *       on the case) it is granted now: the credit lasts the recovery expiry (setting creditExpiryDays.recovery,
+ *       90 days) and the customer gets one SMS: "{firstName}, we are sorry about your order {orderCode}. We have
+ *       added N{amount} credit to your CHUVI wallet for your next order. It is valid for 90 days." Above the limit
+ *       it waits for admin (granted false, pendingApproval true; admin is notified and approves with
+ *       POST /recovery/cases/{id}/credit/approve, which then grants it and sends the same SMS). Admin's own give
+ *       is granted at once.
+ *     tags: [Recovery (Staff)]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount, reason]
+ *             properties:
+ *               amount: { type: number, example: 3000 }
+ *               reason: { type: string, example: "Shirt returned with a stain" }
+ *     responses:
+ *       200:
+ *         description: Granted, or waiting for admin
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         granted: { type: boolean, example: true }
+ *                         pendingApproval: { type: boolean, example: false }
+ *                         amount: { type: number, example: 3000 }
+ *                         compensationId: { type: string }
+ *                         limit: { type: number, nullable: true, example: 5000, description: "Set when waiting for admin." }
+ *                         alreadyGiven: { type: number, nullable: true, example: 0 }
+ *                         complaint: { $ref: '#/components/schemas/ComplaintCase' }
+ *       400:
+ *         description: Amount not positive, no reason, or complaint not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_RECOVERY_CASE_CREDIT_GIVE, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().giveCredit(req, res),
+)
+/**
+ * @swagger
  * /recovery/cases/{id}/credit/approve:
  *   post:
- *     summary: Approve a compensation (CX ≤ ₦10,000, else admin)
+ *     summary: Approve a compensation (CX up to the per-case limit, N5,000 by default; above it admin)
  *     description: >
- *       §7 gate: CX may approve wallet credit up to the threshold (₦10,000);
+ *       §7 gate: CX may approve wallet credit up to the threshold (setting recoveryApprovalThreshold, N5,000 by default, client 15 Oct);
  *       anything above, any CASH compensation, or an amount that takes the
  *       CUMULATIVE approved total on the case above the threshold requires an
  *       admin (Operations Manager/Founder). Requires `confirmed: true` (the

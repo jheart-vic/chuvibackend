@@ -48,6 +48,7 @@ async function riderJobFlags(rows, leg) {
             urgentDelivery,
             urgent: leg === 'pickup' ? urgentPickup : urgentDelivery,
             speedLabel: o.deliverySpeed ? resolveLabel('deliverySpeeds', o.deliverySpeed, setting?.displayNames).label : null,
+            statusLabel: o.statusLabel || (o.stage ? require('../util/statusLabel').orderStatusLabel(o) : null),
         }
     })
     // Urgent first; the rest keep their order (Array.sort is stable).
@@ -1256,6 +1257,8 @@ class RiderService extends BaseService {
                     order: buildTimelineOrderView(order, trackingStatus),
                     pipeline,
                     itemTimeline,
+                    // V1 batch 3c (client word list): "[time] [station]: [what happened] by [staff name]".
+                    historyLines: await require('../util/historyLines').historyLines(order._id),
                 },
             })
         } catch (error) {

@@ -97,6 +97,8 @@ function presentOrder(order) {
     normalizeOrderAddresses(order)
     addDeliveryPromise(order)
     addPayBy(order)
+    // V1 batch 3c: the client's status word for this order.
+    if (order.stage) order.statusLabel = require('./statusLabel').orderStatusLabel(order)
     return order
 }
 

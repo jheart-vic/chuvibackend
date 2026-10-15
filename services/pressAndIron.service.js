@@ -1124,6 +1124,8 @@ class PressAndIronService extends BaseService {
                     },
                     pipeline,
                     itemTimeline,
+                    // V1 batch 3c (client word list): "[time] [station]: [what happened] by [staff name]".
+                    historyLines: await require('../util/historyLines').historyLines(order._id),
                 },
             })
         } catch (error) {

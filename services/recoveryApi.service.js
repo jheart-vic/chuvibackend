@@ -179,6 +179,40 @@ class RecoveryApiService extends BaseService {
 
     // §7: request a compensation (wallet credit OR cash). Each call is a separate
     // action with its own amount/reason/evidence.
+    // V1 batch 3c: give recovery credit in one step (granted within the case
+    // limit, else waiting for admin).
+    async giveCredit(req) {
+        try {
+            const result = await RecoveryService.giveCredit(req.params.id, {
+                amount: req.body?.amount,
+                reason: req.body?.reason,
+                givenBy: getObjectId(req.user.id),
+                giverRole: req.user.userType,
+            })
+            await createAuditLog({
+                userId: getObjectId(req.user.id),
+                category: AUDIT_LOG_CATEGORIES.RECOVERY,
+                action: result.granted
+                    ? `Gave N${result.amount} recovery credit on complaint ${req.params.id}`
+                    : `Asked admin to approve N${result.amount} recovery credit on complaint ${req.params.id}`,
+            })
+            return BaseService.sendSuccessResponse({
+                message: {
+                    granted: result.granted,
+                    pendingApproval: result.pendingApproval,
+                    amount: result.amount,
+                    compensationId: result.compensationId,
+                    limit: result.limit ?? null,
+                    alreadyGiven: result.alreadyGiven ?? null,
+                    complaint: result.complaint,
+                },
+            })
+        } catch (error) {
+            console.error(error)
+            return BaseService.sendFailedResponse({ error: error.message || 'Could not give the recovery credit' })
+        }
+    }
+
     async requestCredit(req) {
         try {
             const complaint = await RecoveryService.requestCompensation(req.params.id, {

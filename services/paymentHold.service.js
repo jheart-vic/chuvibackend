@@ -610,7 +610,7 @@ class PaymentHoldService {
                 await notifyRoles({
                     roles: [ROLE.ADMIN],
                     title: byIntake
-                        ? 'Bank transfer approved by Intake & Tag'
+                        ? 'Bank transfer approved by Intake and Tag'
                         : 'Bank transfer approved',
                     body: `Order ${order.oscNumber}: ₦${amount.toLocaleString('en-NG')} marked paid by transfer (ref ${cleanRef}).`,
                     subBody: byIntake

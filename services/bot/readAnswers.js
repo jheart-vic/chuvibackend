@@ -79,7 +79,7 @@ module.exports = {
             )
         if (allowHandoffOffer && !done && (overdue || asksAboutDelay)) {
             reply +=
-                "\n\nI'm sorry it's taking longer than expected. Would you like me to connect you to a Customer Experience officer?"
+                "\n\nI'm sorry it's taking longer than expected. Would you like me to connect you to a Customer Care officer?"
             return {
                 replies: [reply],
                 state: { intent: BOT_INTENT.ORDER_STATUS, step: 'offered-handoff', slots: {} },
@@ -221,7 +221,7 @@ module.exports = {
         const fees = []
         if (setting?.pickupFee != null) fees.push(`pickup ${naira(setting.pickupFee)}`)
         if (setting?.deliveryFee != null) fees.push(`delivery ${naira(setting.deliveryFee)}`)
-        const lines = ['Here are some of our per-piece prices (classic tier):', ...sample]
+        const lines = ['Here are some of our per-piece prices (Classic care level):', ...sample]
         if (fees.length) lines.push(`Pickup/delivery: ${fees.join(', ')}.`)
         lines.push(`${tierNote.trim()} Tell me your items and I can work out an exact quote.`)
         return lines.join('\n')

@@ -292,7 +292,7 @@ module.exports = {
         const summary = [
             "Here's your booking:",
             `• Items: ${itemsLine}`,
-            `• Service: ${bServiceType} (classic tier)`,
+            `• Service: ${bServiceType} (Classic care level)`,
             // The DATE we read, not the customer's words, so a misread day is
             // seen before "yes" ("Saturday 24 October", F-78/F-81).
             `• Pickup: ${bAddress}${bLandmark ? ` (landmark: ${bLandmark})` : ''}${pickupDay ? `, ${pickupDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}` : ''}${bTime ? ` ${bTime}${bTimeAuto ? ' (default window — tell me if you’d prefer another time)' : ''}` : ''}`,

@@ -612,7 +612,7 @@ class WashAndDryService extends BaseService {
             await notifyAdminEvent({
                 event: ADMIN_EVENT.ITEM_ON_HOLD,
                 title: 'Item Placed on Hold',
-                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} was placed on hold at Wash & Dry by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
+                body: `Item ${item.type} (Tag: ${item.tagId || itemId}) on order ${order.oscNumber} was placed on hold at Wash and Dry by ${user.fullName}. Reason: ${reason}.${note ? ` Note: ${note}.` : ''} Assigned to: ${assignTo}`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: NOTIFICATION_TYPE.ORDER_ON_HOLD,
                 recordId: order._id,
@@ -1370,6 +1370,8 @@ class WashAndDryService extends BaseService {
                     },
                     pipeline,
                     itemTimeline,
+                    // V1 batch 3c (client word list): "[time] [station]: [what happened] by [staff name]".
+                    historyLines: await require('../util/historyLines').historyLines(order._id),
                 },
             })
         } catch (error) {

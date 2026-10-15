@@ -479,7 +479,7 @@ class BotOrchestratorService {
         await this._openHandoffCase(convo, userId)
         const sys = await ConversationService.postSystemMessage(
             convo._id,
-            "You're now in our support queue — a Customer Experience officer will reply right here shortly.",
+            "You're now in our support queue — a Customer Care officer will reply right here shortly.",
         )
         if (sys) emitChatMessage(convo, sys)
         // let the customer know (best-effort; never breaks the flow)
@@ -487,7 +487,7 @@ class BotOrchestratorService {
             await createNotification({
                 userId,
                 title: 'Connecting you to support',
-                body: 'A Customer Experience officer will reply in your chat shortly.',
+                body: 'A Customer Care officer will reply in your chat shortly.',
                 type: NOTIFICATION_TYPE.SYSTEM,
             })
         } catch (_) {

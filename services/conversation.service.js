@@ -195,7 +195,7 @@ class ConversationService {
         await convo.save()
         const message = await this.postSystemMessage(
             conversationId,
-            "You're now connected to our Customer Experience team.",
+            "You're now connected to our Customer Care team.",
         )
         return message
     }

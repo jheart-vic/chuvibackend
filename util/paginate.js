@@ -20,7 +20,11 @@ const paginate = async (model, query = {}, options = {}) => {
     ]);
     if (withPromise && lean) {
       const { addDeliveryPromise } = require("./orderView");
-      for (const row of data) addDeliveryPromise(row);
+      const { orderStatusLabel } = require("./statusLabel");
+      for (const row of data) {
+        addDeliveryPromise(row);
+        if (row.stage) row.statusLabel = orderStatusLabel(row);
+      }
     }
 
     return {

@@ -53,14 +53,24 @@ function prettifyName(raw) {
 // The station labels staff actually use, rather than the enum value. Anything not
 // listed falls back to prettifying the slug with the "-station" suffix dropped.
 const STATION_LABELS = {
-    'intake-and-tag-station': 'Intake & Tag',
-    'sort-and-pretreat-station': 'Sort & Pretreat',
-    'wash-and-dry-station': 'Wash & Dry',
-    'pressing-and-ironing-station': 'Press & Iron',
-    'qc-station': 'Quality Control',
+    'intake-and-tag-station': 'Intake and Tag',
+    'sort-and-pretreat-station': 'Sort and Pretreat',
+    'wash-and-dry-station': 'Wash and Dry',
+    'pressing-and-ironing-station': 'Press',
+    'qc-station': 'Quality Check and Pack',
     'admin-station': 'Admin',
     'rider-station': 'Rider',
     pending: 'Pending',
+    // V1 batch 3c (client word list, 15 Oct): the same names for roles, so a
+    // hold's "assigned to" reads like the station.
+    'intake-and-tag': 'Intake and Tag',
+    'sort-and-pretreat': 'Sort and Pretreat',
+    'wash-and-dry': 'Wash and Dry',
+    press: 'Press',
+    qc: 'Quality Check and Pack',
+    rider: 'Rider',
+    'customer-experience': 'Customer Care',
+    admin: 'Admin',
 }
 
 function stationLabel(raw) {

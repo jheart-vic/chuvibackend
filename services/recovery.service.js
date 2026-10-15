@@ -168,7 +168,7 @@ class RecoveryService {
         const typeNames = types.map((t) => t.name).join(', ')
         await ConversationService.postSystemMessage(
             convo._id,
-            `Complaint received: ${typeNames}. Our Customer Experience team will review it shortly.`,
+            `Complaint received: ${typeNames}. Our Customer Care team will review it shortly.`,
         )
 
         // notify Customer Experience (owns all cases) + admins
@@ -523,7 +523,7 @@ class RecoveryService {
                 return acc
             }, {})
         const settings = await this.getSettings()
-        const approvalThreshold = settings.recoveryApprovalThreshold ?? 10000
+        const approvalThreshold = settings.recoveryApprovalThreshold ?? 5000
 
         return {
             complaint,
@@ -593,6 +593,69 @@ class RecoveryService {
 
     // §7: request a compensation (a separate action each time). type is
     // wallet-credit (default) or cash; cash requires the customer's bank details.
+    // V1 batch 3c (client 15 Oct): "Customer care gives recovery credit for the
+    // next order, never money off an unpaid bill. Most per case: N5,000. Above
+    // that, it goes to admin to approve. The credit lasts 90 days." One step:
+    // within the case limit the credit is granted now (and the customer gets the
+    // client's SMS); above it, it waits for admin, who is notified.
+    async giveCredit(caseId, { amount, reason, givenBy, giverRole }) {
+        const complaint = await this.requestCompensation(caseId, {
+            type: RECOVERY_COMPENSATION_TYPE.WALLET_CREDIT,
+            amount,
+            reason,
+            requestedBy: givenBy,
+        })
+        const comp = complaint.compensations[complaint.compensations.length - 1]
+        const settings = await this.getSettings()
+        const threshold = Number(settings.recoveryApprovalThreshold ?? 5000)
+        const already = this.cumulativeApprovedComp(complaint)
+        const withinLimit = comp.amount <= threshold && already + comp.amount <= threshold
+        if (withinLimit || giverRole === ROLE.ADMIN) {
+            const done = await this.approveCompensation(caseId, {
+                compensationId: comp._id,
+                approvedBy: givenBy,
+                approverRole: giverRole,
+                confirmed: true,
+            })
+            return { complaint: done, granted: true, pendingApproval: false, amount: comp.amount, compensationId: comp._id }
+        }
+        this.notifyStaff([ROLE.ADMIN], {
+            title: 'Recovery credit needs approval',
+            body: `N${comp.amount.toLocaleString('en-NG')} recovery credit on a complaint is above the N${threshold.toLocaleString('en-NG')} limit per case.`,
+            page: 'complaint',
+            recordId: String(complaint._id),
+        })
+        return {
+            complaint,
+            granted: false,
+            pendingApproval: true,
+            amount: comp.amount,
+            compensationId: comp._id,
+            limit: threshold,
+            alreadyGiven: already,
+        }
+    }
+
+    // The client's SMS (15 Oct), sent once per granted recovery credit.
+    async _recoveryCreditSms(complaint, amount, settings) {
+        try {
+            const user = await UserModel.findById(complaint.userId).select('fullName phoneNumber').lean()
+            if (!user?.phoneNumber) return
+            const order = complaint.orderId
+                ? await BookOrderModel.findById(complaint.orderId).select('oscNumber').lean()
+                : null
+            const days = Number(settings?.creditExpiryDays?.recovery ?? 90)
+            const firstName = String(user.fullName || '').trim().split(/\s+/)[0] || 'Hello'
+            const text = order?.oscNumber
+                ? `${firstName}, we are sorry about your order ${order.oscNumber}. We have added N${Number(amount).toLocaleString('en-NG')} credit to your CHUVI wallet for your next order. It is valid for ${days} days.`
+                : `${firstName}, we are sorry about your experience. We have added N${Number(amount).toLocaleString('en-NG')} credit to your CHUVI wallet for your next order. It is valid for ${days} days.`
+            const sendSms = require('../util/sendSms')
+            await sendSms(user.phoneNumber, text)
+        } catch (error) {
+            console.error('recovery credit SMS failed:', error?.message)
+        }
+    }
+
     async requestCompensation(caseId, { type, amount, reason, evidence, bankDetails, requestedBy }) {
         amount = Math.round(Number(amount))
         if (!amount || amount <= 0) throw new Error('Amount must be positive')
@@ -686,6 +749,7 @@ class RecoveryService {
             comp.approvedBy = approvedBy
             comp.decidedAt = now
             comp.walletCreditId = credit._id
+            await this._recoveryCreditSms(complaint, comp.amount, settings)
         }
 
         // approved compensation may also link the configured Recovery Offer (once)
@@ -711,6 +775,9 @@ class RecoveryService {
                     : `${naira} recovery credit added to your wallet`,
             },
             sourceSystem: COMM_SOURCE_SYSTEM.RECOVERY,
+            // V1 batch 3c: a wallet credit's SMS is the client's own text
+            // (_recoveryCreditSms) — this update stays in-app so it is ONE SMS.
+            ...(isCash ? {} : { channels: ['in-app'] }),
             messageType: isCash ? 'recovery-cash-approved' : 'recovery-credit-approved',
             relatedRef: complaint._id,
             relatedModel: 'ComplaintCase',
@@ -791,7 +858,7 @@ class RecoveryService {
         this.recordStatus(
             complaint,
             COMPLAINT_STATUS.CLOSED,
-            reason || 'Closed by Customer Experience (no customer response)',
+            reason || 'Closed by Customer Care (no customer response)',
             closedBy,
         )
         complaint.confirmed = false
@@ -867,7 +934,7 @@ class RecoveryService {
         }
         await ConversationService.postSystemMessage(
             complaint.conversationId,
-            'Your complaint has been reopened. Our Customer Experience team will take another look.',
+            'Your complaint has been reopened. Our Customer Care team will take another look.',
         )
         await this.notifyStaff([ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN], {
             title: 'Complaint reopened',

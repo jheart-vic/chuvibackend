@@ -342,7 +342,7 @@ ok('"Blazers-/-jackets-/-hoodie" reads properly too',
     prettifyName('Blazers-/-jackets-/-hoodie') === 'Blazers / Jackets / Hoodie',
     prettifyName('Blazers-/-jackets-/-hoodie'))
 ok('"intake-and-tag-station" reads as a station name',
-    stationLabel('intake-and-tag-station') === 'Intake & Tag',
+    stationLabel('intake-and-tag-station') === 'Intake and Tag',
     stationLabel('intake-and-tag-station'))
 ok('an unknown station still reads as words, never as a slug',
     !/-/.test(stationLabel('some-new-station')))
@@ -1583,7 +1583,7 @@ const run = (async () => {
     ok('a bank transfer approval REQUIRES a matchable reference',
         /transfer reference or the sender’s name is required/.test(phSrc))
     ok('  …and every approval notifies an admin for the daily bank check',
-        /Bank transfer approved by Intake & Tag/.test(phSrc) &&
+        /Bank transfer approved by Intake and Tag/.test(phSrc) &&
             /approvedByRole/.test(phSrc))
     // The waiver must not grow its own copy of the dispatch stop. Asserted by
     // WHERE the gate is called, not by searching for the word "dispatch" — the

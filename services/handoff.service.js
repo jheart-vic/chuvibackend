@@ -31,8 +31,8 @@ const {
 // it is the only interpretation in this package we had to make ourselves.
 const STAGE_ENTRY_NOTICE = {
     [ORDER_STATUS.SORT_AND_PRETREAT]: {
-        title: 'Order in Sort & Pretreat',
-        body: (osc) => `Order ${osc} is now in the Sort & Pretreat station.`,
+        title: 'Order in Sort and Pretreat',
+        body: (osc) => `Order ${osc} is now in the Sort and Pretreat station.`,
         type: NOTIFICATION_TYPE.ORDER_UPDATED,
         customerSilent: true,
     },

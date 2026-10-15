@@ -1524,6 +1524,8 @@ class QCService extends BaseService {
                     order: buildTimelineOrderView(order, trackingStatus),
                     pipeline,
                     itemTimeline,
+                    // V1 batch 3c (client word list): "[time] [station]: [what happened] by [staff name]".
+                    historyLines: await require('../util/historyLines').historyLines(order._id),
                 },
             })
         } catch (error) {

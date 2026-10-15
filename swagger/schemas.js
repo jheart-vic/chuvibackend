@@ -177,6 +177,10 @@
  *             note: { type: string }
  *             updatedAt: { type: string, format: date-time }
  *         stationStatus: { type: string, example: wash-and-dry-station }
+ *         statusLabel:
+ *           type: string
+ *           example: Washing
+ *           description: "The client's status word (V1 batch 3c): Booked, Needs rider, Rider on the way, Picked up, Waiting for payment, At Intake, Sorting, Washing, Pressing, Quality check, Ready, Out for delivery, Ready waiting redelivery, Delivered, Collected, Returned unwashed, Cancelled; holds: On hold, Waiting for admin. Show this, not stage.status."
  *         orderHold:
  *           type: object
  *           properties:
