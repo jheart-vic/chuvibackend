@@ -50,7 +50,7 @@ async function decideCover({ order, previousTotal, newTotal, adminSetting }) {
     if (order.quickBooking) return { cover: 0, eligible: false, reason: 'quick-booking' }
     if (s.percent <= 0 || s.maxAmount <= 0) return { cover: 0, eligible: false, reason: 'no-cover-set' }
     const prior = await recentMismatches(order.userId, s.repeatDays)
-    if (order.userId && prior >= s.repeatLimit) {
+    if (order.userId && s.repeatLimit > 0 && prior >= s.repeatLimit) {
         return { cover: 0, eligible: false, reason: 'repeat-limit', repeatLimitReached: true, prior }
     }
     const percentCap = Math.floor((previousTotal * s.percent) / 100)

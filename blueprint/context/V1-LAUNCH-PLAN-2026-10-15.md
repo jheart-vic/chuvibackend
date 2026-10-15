@@ -130,3 +130,46 @@ B34 3 PM due-today · B35 piece positions · B36 counters match lists · B37 nam
 "talk to someone", low score list · B39 feedback timing/quiet hours · B40 settings/templates · B41 data clear ·
 B42 Paystack live check. Unknown (never cited): B7 B8 B10 B12 B18 B19 B21 B24–B26 B29–B32.
 User 15 Oct: treat B1/B2 as the frontend described them.
+
+## Agreed order of work after Batch 2 (user, 15 Oct evening) — follow this
+1. Independent review of Batch 1 + 2 (running in the background) while the DATA-CLEAR script is written
+   and dry-run on testingdb (keep staff, price list, settings, customers with zero balances; delete orders,
+   holds, wallet balances, reward credit, test offers, chats, test plans/subscriptions, rep links on test
+   sign-ups — B41). Run for real on Sunday night after the client's test, with the user's go-ahead.
+2. Batch 3 LOW-RISK half → build, test, push before tomorrow's general test:
+   item 20 per-window prices + Urgent price; item 20 3 PM due-today check; item 16 S2 corrects colour/stain
+   tags (White, Light, Dark); item 17 second rejection of a piece → admin; item 17 missing-piece message
+   names the tag and station.
+3. Fix the review findings → test main → push.
+4. Final check: briefCheck + all staging suites on main + a live smoke test (read-only; staging scripts
+   refuse laundrydb by design). The client's general test tomorrow is the real live check.
+5. Batch 3 CORE half behind an admin switch, OFF by default (turn on only after it passes): item 17 routes
+   enforced per piece + item 18 per-piece service change / Iron Only "looks dirty"; item 15 S2 holds one
+   piece and receives the rest; item 19 damage "Customer informed" gate + partial delivery.
+6. Tomorrow: fix whatever the frontend/client general test finds.
+
+## SUNDAY DATA CLEAR — client instructions (15 Oct, via FE) — SUPERSEDE B41
+Verbatim: "Please send me the plan in writing first. Run it only after I say 'go' on Sunday evening, after our
+floor test. Before you start: take a full backup of the database. CLEAR EVERYTHING that is test data: all
+customers, staff and rep accounts, orders, payments, holds, wallets and credit, subscriptions, referral codes and
+records, leads and CRM message queues, complaints, feedback, notifications and the reports built from them. KEEP
+ONLY: my own admin login, and the settings (items and prices, offers, plans, windows, hold types, display names,
+limits, message templates). I will correct the settings myself on Monday and create the real staff and rep
+accounts. MY TEST PLAN: cancel the Student Plan subscription on my own card at Paystack, so it is never charged
+again. ORDER NUMBERS: start the order serials fresh, so the first real order is 001. PAYSTACK: after the clear,
+switch to the live keys so I can make a N100 live payment on Monday."
+- Written plan for the client: `blueprint/context/SUNDAY-DATA-CLEAR-PLAN.md` (questions: which admin login —
+  only admin@chuvi.com exists, with the DEFAULT password; order number format OSC-001?; expenses/supplies?).
+- To build: backup script (no mongodump here → export collections as EJSON to a folder OUTSIDE the repo);
+  clearTestData.js rework (delete ALL users except the client's admin, CRM too); Paystack disable of test
+  subscriptions; sequential order serial (counter) reset to 0; live-keys switch is a Render env change (user).
+- SECURITY found 15 Oct: anyone could self-register as admin (fixed: inactive until activated); the public
+  seed route made admin@chuvi.com / Admin@1234 (closed); THE LIVE ADMIN STILL USES Admin@1234 — user to change.
+- CLIENT ANSWERS (15 Oct, verbatim): "1. Admin email: please make Ijeomahikechukwup@gmail.com the admin. Only I
+  will have the password. 2. Order number: please keep the format we already use, OSC, then the date, then the
+  serial. The first real order should read OSC-20261020-001. Please don't add CHVI. 3. Expenses and supplies:
+  clear them, they are test entries. We will not use the supplies screens at launch. Weekly costs will go into
+  the reporting feature's cost form when it is built."
+  → keep ONLY that admin (we never know its password: they set it with Forgot password); delete admin@chuvi.com;
+    order number OSC-<YYYYMMDD of the order>-<running serial, 3 digits, never resets> starting 001; clear
+    expenses and supplies.

@@ -214,6 +214,19 @@ class PaymentHoldService {
             }
 
             const now = new Date()
+            // Review 15 Oct (P0): a CANCELLED order whose hold is cleared (the
+            // return fee paid) must stay cancelled — only the hold is closed.
+            if (order.stage?.status === ORDER_STATUS.CANCELLED) {
+                await BookOrderModel.updateOne(
+                    { _id: order._id },
+                    {
+                        $set: { 'paymentHold.clearedAt': now, 'paymentHold.clearedBy': source },
+                        $unset: { 'orderHold.holdTypeKey': '', 'orderHold.escalatedAt': '' },
+                    },
+                    { runValidators: false },
+                )
+                return { ok: true, cancelled: true }
+            }
             await BookOrderModel.updateOne(
                 { _id: order._id },
                 {
@@ -707,7 +720,10 @@ class PaymentHoldService {
             const PaystackService = require('./paystack.service')
             const svc = new PaystackService()
             const res = await svc.initializePayment({
-                body: { transactionType: 'order', orderId: String(order._id) },
+                // Review 15 Oct (P0): a link raised by staff (bill, recount,
+                // return fee) must never spend the customer's reward credit;
+                // credit is used only when the customer taps Pay.
+                body: { transactionType: 'order', orderId: String(order._id), useCredit: false },
                 user: { id: String(order.userId) },
             })
             if (!res?.success) return null

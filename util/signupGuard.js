@@ -46,4 +46,33 @@ async function logAttempt(fields) {
     }
 }
 
-module.exports = { INVALID_PHONE, PHONE_IN_USE, nigerianMobile, phoneVariants, accountWithPhone, logAttempt }
+// SECURITY (review 15 Oct): the public sign-up paths took the role from the
+// request, so anyone could register as admin (email form, Google, Apple). A
+// staff or admin account made there now starts INACTIVE until an existing admin
+// switches it on in the Staff screen (login already refuses inactive accounts).
+// Customers are unchanged.
+async function staffSignupGate(userType) {
+    const { ROLE, GENERAL_STATUS } = require('./constants')
+    if (!userType || userType === ROLE.USER) return {}
+    return {
+        status: GENERAL_STATUS.INACTIVE,
+        statusReason: 'Waiting for an admin to activate this staff account.',
+    }
+}
+async function notifyStaffSignup(user) {
+    try {
+        const { ROLE, NOTIFICATION_TYPE } = require('./constants')
+        if (!user || user.userType === ROLE.USER) return
+        const { notifyRoles } = require('./notifyRoles')
+        await notifyRoles({
+            roles: [ROLE.ADMIN],
+            title: 'New staff account to activate',
+            body: `${user.fullName || user.email} signed up as ${user.userType}. Activate it in Staff if this is a real staff member.`,
+            type: NOTIFICATION_TYPE.SYSTEM,
+        })
+    } catch (err) {
+        console.error('staff signup notice failed:', err?.message)
+    }
+}
+
+module.exports = { staffSignupGate, notifyStaffSignup, INVALID_PHONE, PHONE_IN_USE, nigerianMobile, phoneVariants, accountWithPhone, logAttempt }

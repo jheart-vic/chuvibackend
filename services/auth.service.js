@@ -30,6 +30,8 @@ const {
 } = require('../util/referralHooks')
 
 const {
+    staffSignupGate,
+    notifyStaffSignup,
     INVALID_PHONE,
     PHONE_IN_USE,
     nigerianMobile,
@@ -132,6 +134,7 @@ class AuthService extends BaseService {
                 phoneNumber: normalizePhone(post.phoneNumber),
                 userType: post.userType || ROLE.USER,
                 servicePlatform: 'local',
+                ...(await staffSignupGate(post.userType)),
                 // Launch item 5: recorded when the form sends it, never required.
                 ...(post.termsAccepted === true || post.termsAccepted === 'true'
                     ? { termsAccepted: true, termsAcceptedAt: new Date() }
@@ -139,6 +142,7 @@ class AuthService extends BaseService {
             })
 
             await newUser.save()
+            await notifyStaffSignup(newUser)
 
             if (newUser.userType === ROLE.USER) {
                 crmOnUserRegistered(newUser)
@@ -399,10 +403,12 @@ class AuthService extends BaseService {
                 isVerified: true,
                 servicePlatform: 'google',
                 userType: post.userType,
+                ...(await staffSignupGate(post.userType)),
             }
 
             const newUser = new UserModel(userObject)
             await newUser.save()
+            await notifyStaffSignup(newUser)
 
             if (newUser.userType === ROLE.USER) {
                 crmOnUserRegistered(newUser)
@@ -569,12 +575,14 @@ class AuthService extends BaseService {
                 isVerified: true,
                 servicePlatform: 'apple', // Mark this user as using the "Apple" service for signup
                 userType, // You can pass userType from the frontend (e.g., "admin", "regular")
+                ...(await staffSignupGate(userType)),
             }
 
             // 9. Create a new user in the database
             const newUser = new UserModel(userObject)
 
             await newUser.save()
+            await notifyStaffSignup(newUser)
 
             if (newUser.userType === ROLE.USER) {
                 crmOnUserRegistered(newUser)
@@ -1068,6 +1076,12 @@ class AuthService extends BaseService {
     // Admin related services
     async registerAdmin(req, res) {
         try {
+            // SECURITY (review 15 Oct): this public route seeded admin@chuvi.com
+            // with a password written in the code. Only for a brand-new database,
+            // and only when the server is started with ADMIN_SEED_ENABLED=true.
+            if (process.env.ADMIN_SEED_ENABLED !== 'true') {
+                return BaseService.sendFailedResponse({ error: 'Not available.' })
+            }
             const adminEmail = 'admin@chuvi.com'
 
             const adminExists = await UserModel.findOne({
@@ -1118,14 +1132,15 @@ class AuthService extends BaseService {
                     userType: ROLE.ADMIN,
                 })
 
+            // The failure first: with no account, `user` is undefined (review 15 Oct).
+            if (!success) {
+                return BaseService.sendFailedResponse({ error: error })
+            }
+
             if (user.userType !== 'admin') {
                 return BaseService.sendFailedResponse({
                     error: 'Access denied. Admins only',
                 })
-            }
-
-            if (!success) {
-                return BaseService.sendFailedResponse({ error: error })
             }
 
             res.cookie('accessToken', accessToken, {

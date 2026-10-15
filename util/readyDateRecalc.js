@@ -29,17 +29,26 @@ async function recalcReadyDate(orderId, { from = 'pickup', at = new Date() } = {
                 ? {}
                 : { leg: order.scheduling?.pickup || null, pickupDate: order.pickupDate, pickupTime: order.pickupTime }
 
-        // Take this order's own pieces off the floor before asking for room.
+        // Take this order's own pieces off the floor before asking for room;
+        // put them back if anything fails (review 15 Oct).
         await BookOrderModel.updateOne({ _id: orderId }, { $unset: { floorAllocation: '' } })
-        const { speeds } = await BookingWindowService.speedOptionsFor({ pickup, pieces, quickBooking: order.quickBooking === true, ...(from === 'payment' && { now: at }) })
+        const restore = () =>
+            order.floorAllocation?.length
+                ? BookOrderModel.updateOne({ _id: orderId }, { $set: { floorAllocation: order.floorAllocation } })
+                : null
+        let speeds
+        try {
+            ;({ speeds } = await BookingWindowService.speedOptionsFor({ pickup, pieces, quickBooking: order.quickBooking === true, ...(from === 'payment' && { now: at }) }))
+        } catch (e) {
+            await restore()
+            throw e
+        }
         const row =
             speeds.find((s) => s.speed === order.deliverySpeed && s.available) ||
             speeds.find((s) => s.speed === 'standard')
-        if (!row?.readyDate) {
-            if (order.floorAllocation?.length) {
-                await BookOrderModel.updateOne({ _id: orderId }, { $set: { floorAllocation: order.floorAllocation } })
-            }
-            return { changed: false }
+        if (!row?.readyDate || !row.allocation?.length) {
+            await restore()
+            if (!row?.readyDate) return { changed: false }
         }
         const previous = order.deliveryDate || null
         await BookOrderModel.updateOne(
@@ -63,8 +72,9 @@ async function recalcReadyDate(orderId, { from = 'pickup', at = new Date() } = {
 /** After a Quick Booking is paid: a new date if it was paid after the pay-by time. */
 async function afterQuickBookingPaid(orderId, paidAt = new Date()) {
     try {
-        const order = await BookOrderModel.findById(orderId).select('quickBooking paymentHold userId oscNumber').lean()
+        const order = await BookOrderModel.findById(orderId).select('quickBooking paymentHold userId oscNumber stage').lean()
         if (!order?.quickBooking || !order.paymentHold?.raisedAt) return null
+        if (order.stage?.status === 'cancelled') return null
         if (paidAt <= payByDate(order.paymentHold.raisedAt)) return null
         const res = await recalcReadyDate(orderId, { from: 'payment', at: paidAt })
         if (res.changed && order.userId) {

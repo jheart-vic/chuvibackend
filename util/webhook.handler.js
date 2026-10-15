@@ -1087,15 +1087,26 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
         // V1 batch 2: a redelivery fee in this balance is now paid.
         await require('./redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
         // V1 batch 2 (R21): paid after the pay-by time → a new ready date.
-        await require('./readyDateRecalc').afterQuickBookingPaid(order._id)
+        if (order.stage?.status !== 'cancelled') await require('./readyDateRecalc').afterQuickBookingPaid(order._id)
 
         // Overpaid (a link opened before the bill went DOWN): the excess goes
         // back to the wallet (review F-33).
         if (paid !== null && paid - 0.5 > due && order.userId) {
             try {
-                await refundToWallet({
+                // Review 15 Oct (P0): if reward credit already paid part of the
+                // bill and the customer then paid the whole amount by card, the
+                // credit goes back as CREDIT; only real extra cash is refunded.
+                let creditBack = 0
+                if (Number(order.creditPaidAtPay) > 0) {
+                    const WalletCreditService = require('../services/walletCredit.service')
+                    const { restored } = await WalletCreditService.reverseOrderCredits(order._id, { reason: `Order ${order.oscNumber} paid in full by card` })
+                    creditBack = restored || 0
+                    await BookOrderModel.updateOne({ _id: order._id }, { $unset: { creditPaidAtPay: '' } })
+                }
+                const cashBack = Math.round(paid - due - creditBack)
+                if (cashBack > 0) await refundToWallet({
                     userId: order.userId,
-                    amount: Math.round(paid - due),
+                    amount: cashBack,
                     orderId: order._id,
                     description: `Order ${order.oscNumber} overpaid after its bill changed — excess returned`,
                 })

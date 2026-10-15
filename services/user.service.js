@@ -65,7 +65,7 @@ class UserService extends BaseService {
                 BookOrderModel.findOne({
                     $or: [{ userId }, { phoneNumber: req.user.phoneNumber }],
                     'stage.status': {
-                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.HOLD],
+                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED, ORDER_STATUS.HOLD],
                     },
                     $nor: [
                         {

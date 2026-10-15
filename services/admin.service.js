@@ -101,14 +101,14 @@ class AdminService extends BaseService {
             // ── Active orders ───────────────────────────────────────────────
             const totalActiveOrders = await BookOrderModel.countDocuments({
                 'stage.status': {
-                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
+                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED],
                 },
             })
 
             // ── Overdue & due today ─────────────────────────────────────────
             const overdueOrders = await BookOrderModel.countDocuments({
                 deliveryDate: { $lt: now },
-                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
+                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED] },
                 $nor: [
                     {
                         'stage.status': ORDER_STATUS.READY,
@@ -120,7 +120,7 @@ class AdminService extends BaseService {
 
             const dueToday = await BookOrderModel.countDocuments({
                 deliveryDate: { $gte: now, $lte: todayEnd },
-                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
+                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED] },
                 $nor: [
                     {
                         'stage.status': ORDER_STATUS.READY,
@@ -861,8 +861,9 @@ class AdminService extends BaseService {
                             { $unwind: '$stageHistory' },
                             {
                                 $match: {
-                                    'stageHistory.status':
-                                        ORDER_STATUS.DELIVERED,
+                                    'stageHistory.status': {
+                                        $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
+                                    },
                                     'stageHistory.updatedAt': {
                                         $gte: twelveHoursAgo,
                                         $lte: now,
@@ -1011,7 +1012,7 @@ class AdminService extends BaseService {
                 case 'active':
                     filter = {
                         'stage.status': {
-                            $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.HOLD],
+                            $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED, ORDER_STATUS.HOLD],
                         },
                     }
                     break
@@ -1019,7 +1020,7 @@ class AdminService extends BaseService {
                 case 'overdue':
                     filter = {
                         deliveryDate: { $lt: now },
-                        'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
+                        'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED] },
                         $nor: [
                             {
                                 'stage.status': ORDER_STATUS.READY,
@@ -1033,7 +1034,7 @@ class AdminService extends BaseService {
                 case 'dueToday':
                     filter = {
                         deliveryDate: { $gte: now, $lte: todayEnd },
-                        'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
+                        'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED] },
                         $nor: [
                             {
                                 'stage.status': ORDER_STATUS.READY,
@@ -1850,7 +1851,7 @@ class AdminService extends BaseService {
                 case 'delivered':
                     filter = {
                             $or: [
-                                { 'stage.status': ORDER_STATUS.DELIVERED },
+                                { 'stage.status': { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] } },
                                 {
                                     isDelivery: true,
                                     'dispatchDetails.delivery.status': DELIVERY_STATUS.DELIVERED,

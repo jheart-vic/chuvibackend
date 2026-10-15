@@ -57,6 +57,8 @@ const {
 // N1: cancellation is refused once tagging begins, and the fees after pickup
 // are flat charges that ignore a free-pickup offer (the trip was still made).
 const { taggingBegun, cancellationOutcome } = require('../util/cancellationFees')
+// Finished orders (review 15 Oct): nothing to cancel, escalate or approve.
+const FINISHED = ['delivered', 'collected', 'returned-unwashed']
 const {
     isCountOnlyBooking,
     applyCountOnlyBooking,
@@ -155,7 +157,7 @@ class BookOrderService extends BaseService {
         }
         // FE report 15 Oct: a delivered (or collected) order showed tier "red".
         // It is finished, so there is nothing to cancel: tier "none".
-        if (status === ORDER_STATUS.DELIVERED || status === ORDER_STATUS.COLLECTED) {
+        if (FINISHED.includes(status)) {
             return { tier: 'none', allowed: false, reason: 'This order is already complete. If something is wrong, raise a complaint.' }
         }
 
@@ -349,12 +351,20 @@ class BookOrderService extends BaseService {
             creditsReversed,
             feeApplied: feeCharged,
         }
-        // V1 launch batch 2 (R21, T9.03): an order cancelled after pickup that
-        // was never paid owes the trips. Its bill becomes that fee (kept beside
-        // the original amount), a payment link goes by SMS, and the clothes go
-        // back only once it is paid ("Returned unwashed").
-        const returnFee = paidSoFar === 0 ? Math.max(0, Math.round(feeApplied) || 0) : 0
-        if (returnFee > 0) {
+        // Review 15 Oct (P0): a cancelled order's open payment hold is closed
+        // here, so a later payment can never send it back to the queue.
+        if (order.paymentHold?.raisedAt && !order.paymentHold?.clearedAt) {
+            order.paymentHold.clearedAt = now
+            order.paymentHold.clearedBy = 'cancelled'
+            if (order.orderHold) order.orderHold.holdTypeKey = undefined
+        }
+        // V1 launch batch 2 (R21, T9.03): an order cancelled after pickup owes
+        // the trips. What the CASH paid did not cover is owed (review 15 Oct: a
+        // reward-credit payment is reversed above, so it must not wipe the fee).
+        // Its bill becomes that amount (kept beside the original), a payment
+        // link goes by SMS, and the clothes go back only once it is paid.
+        const returnFee = Math.max(0, Math.round(feeApplied) || 0) - feeCharged
+        if (returnFee > 0 && order.dispatchDetails?.pickup?.status === PICKUP_STATUS.PICKED_UP) {
             order.cancellation.returnFeeDue = returnFee
             order.cancellation.originalAmount = Number(order.amount || 0)
             order.amount = returnFee
@@ -363,7 +373,7 @@ class BookOrderService extends BaseService {
             order.paymentStatus = PAYMENT_ORDER_STATUS.PENDING
         }
         await order.save()
-        if (returnFee > 0) {
+        if (order.cancellation.returnFeeDue > 0) {
             try {
                 const PaymentHoldService = require('./paymentHold.service')
                 const link = await PaymentHoldService._buildPaymentLink(order)
@@ -592,6 +602,9 @@ class BookOrderService extends BaseService {
             if (order.stage?.status === ORDER_STATUS.CANCELLED) {
                 return BaseService.sendFailedResponse({ error: 'This order is already cancelled.' })
             }
+            if (FINISHED.includes(order.stage?.status)) {
+                return BaseService.sendFailedResponse({ error: 'This order is already complete. If something is wrong, raise a complaint.' })
+            }
             const existing = await CancellationRequestModel.findOne({
                 orderId: order._id,
                 status: CANCELLATION_REQUEST_STATUS.PENDING,
@@ -815,9 +828,11 @@ class BookOrderService extends BaseService {
             if (order.stage?.status === ORDER_STATUS.CANCELLED) {
                 return BaseService.sendFailedResponse({ error: 'Order is already cancelled' })
             }
-            if (decision.tier === 'red') {
+            if (decision.tier === 'red' || FINISHED.includes(order.stage?.status)) {
                 return BaseService.sendFailedResponse({
-                    error: 'Processing has already started on this order — it can no longer be cancelled.',
+                    error: FINISHED.includes(order.stage?.status)
+                        ? 'This order is already complete. If something is wrong, raise a complaint.'
+                        : 'Processing has already started on this order — it can no longer be cancelled.',
                 })
             }
 
@@ -1230,6 +1245,22 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // Review 15 Oct (P0): reward credit spent at Pay counts as paid. If
+            // the bill now goes DOWN, give the credit back first and settle the
+            // rest in cash — otherwise the credit would come back as wallet cash.
+            if (Number(order.creditPaidAtPay) > 0) {
+                const probe = await this._repriceForItems({ order, items, adminOrderSetting: await AdminSettingModel.findOne({}) })
+                if (probe.newTotal < Number(order.amount || 0)) {
+                    const { restored } = await WalletCreditService.reverseOrderCredits(order._id, {
+                        reason: `Order ${order.oscNumber} bill reduced after the items were checked`,
+                        performedBy: actorId,
+                    })
+                    const bal = Math.max(0, Number(order.balanceDue || 0) + (restored || 0))
+                    await BookOrderModel.updateOne({ _id: order._id }, { $set: { balanceDue: bal }, $unset: { creditPaidAtPay: '' } })
+                    order.balanceDue = bal
+                    order.creditPaidAtPay = undefined
+                }
+            }
             const previousTotal = Number(order.amount || 0)
             // R13: the staff NAME is saved with the change, not only the id.
             const actorName = actorId

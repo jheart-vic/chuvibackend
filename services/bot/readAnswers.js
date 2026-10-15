@@ -68,7 +68,7 @@ module.exports = {
         const line = this._readinessAndDispatchLine(order, status, text)
         if (line) reply += `\n${line}`
 
-        const done = ['delivered', 'cancelled'].includes(status)
+        const done = ['delivered', 'collected', 'returned-unwashed', 'cancelled'].includes(status)
         const overdue =
             !done &&
             order.deliveryDate &&
@@ -239,7 +239,7 @@ module.exports = {
         try {
             const order = await BookOrderModel.findOne({
                 userId,
-                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.CANCELLED] },
+                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.RETURNED_UNWASHED, ORDER_STATUS.CANCELLED] },
             })
                 .sort({ createdAt: -1 })
                 .lean()

@@ -97,20 +97,32 @@ class PaystackService extends BaseService {
       // cancellation gives it back. Send useCredit: false to keep it.
       if (transactionType === 'order' && String(order.userId) === String(userId)) {
         const optOut = post.useCredit === false || post.useCredit === 'false'
-        if (!optOut) {
+        // Review 15 Oct (P1): once per order — a double tap must not spend twice.
+        const claimed = optOut
+          ? null
+          : await BookOrderModel.updateOne(
+              { _id: order._id, creditPaidAtPay: { $exists: false }, paymentStatus: { $ne: 'success' } },
+              { $set: { creditPaidAtPay: 0 } },
+            )
+        if (claimed?.modifiedCount) {
           const WalletCreditService = require('./walletCredit.service')
           const due = amountDue(order)
           const { applied } = await WalletCreditService.applyCreditsToAmount(userId, order._id, due, `Order ${order.oscNumber}`)
+          await BookOrderModel.updateOne({ _id: order._id }, { $set: { creditPaidAtPay: applied || 0 } })
           if (applied > 0) {
             const left = Math.max(0, due - applied)
             if (left <= 0) {
               await BookOrderModel.updateOne(
                 { _id: order._id },
-                { $set: { paymentStatus: 'success', paymentDate: new Date(), paymentMethod: 'wallet' }, $unset: { balanceDue: '' } },
+                { $set: { paymentStatus: 'success', paymentDate: new Date(), paymentMethod: 'wallet', billingType: 'pay-from-wallet' }, $unset: { balanceDue: '' } },
               )
               try {
                 const PaymentHoldService = require('./paymentHold.service')
                 await PaymentHoldService.clear({ orderId: order._id, source: 'reward-credit', actorId: userId })
+                // Review 15 Oct (P1): the same follow-ups as a card payment.
+                const fresh = await BookOrderModel.findById(order._id)
+                await require('../util/urgentPickup').markUrgentPickupIfReady(fresh)
+                await require('../util/orderSms').bookingReceived(fresh)
                 await require('../util/redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
                 await require('../util/readyDateRecalc').afterQuickBookingPaid(order._id)
               } catch (e) {

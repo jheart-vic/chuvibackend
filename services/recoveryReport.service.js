@@ -53,7 +53,7 @@ class RecoveryReportService extends BaseService {
     // stage-history entry. Used as the denominator of "feedback received".
     async _deliveredInRange(from, to) {
         const rows = await BookOrderModel.aggregate([
-            { $match: { 'stage.status': ORDER_STATUS.DELIVERED } },
+            { $match: { 'stage.status': { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] } } },
             {
                 $project: {
                     deliveredAt: {
@@ -66,9 +66,9 @@ class RecoveryReportService extends BaseService {
                                                 input: '$stageHistory',
                                                 as: 'h',
                                                 cond: {
-                                                    $eq: [
+                                                    $in: [
                                                         '$$h.status',
-                                                        ORDER_STATUS.DELIVERED,
+                                                        [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                                                     ],
                                                 },
                                             },

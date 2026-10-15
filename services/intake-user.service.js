@@ -175,6 +175,10 @@ class IntakeUserService extends BaseService {
 
             const customerId = customer ? customer._id : null
 
+            // A POS receipt number may arrive as a number (review 15 Oct).
+            for (const k of ['paymentReference', 'secondaryPaymentReference']) {
+                if (typeof req.body?.[k] === 'number') req.body[k] = String(req.body[k])
+            }
             const validateRule = {
                 fullName: 'string|required',
                 phoneNumber: 'string|required',
@@ -1387,7 +1391,7 @@ class IntakeUserService extends BaseService {
     // Shared dispatch work queue. `leg` is 'pickup' or 'delivery'; a row is
     // actionable when it has no rider yet (delivery.status defaults to 'ready'
     // whether or not one is assigned, so the rider field is the only signal).
-    async _dispatchQueue(req, { leg, stage, flag }) {
+    async _dispatchQueue(req, { leg, stage, flag, orReturns = false }) {
         const {
             page = 1,
             limit = 20,
@@ -1398,6 +1402,21 @@ class IntakeUserService extends BaseService {
         } = req.query
 
         const query = { [flag]: true, 'stage.status': stage }
+        if (orReturns) {
+            delete query['stage.status']
+            query.$and = [
+                {
+                    $or: [
+                        { 'stage.status': stage },
+                        {
+                            'stage.status': ORDER_STATUS.CANCELLED,
+                            'dispatchDetails.pickup.status': PICKUP_STATUS.PICKED_UP,
+                            'cancellation.returnedAt': { $exists: false },
+                        },
+                    ],
+                },
+            ]
+        }
         if (needsRider === 'true') query[`dispatchDetails.${leg}.rider`] = null
         if (needsRider === 'false')
             query[`dispatchDetails.${leg}.rider`] = { $ne: null }
@@ -1742,10 +1761,13 @@ class IntakeUserService extends BaseService {
 
     async getDeliverableOrders(req) {
         try {
+            // Review 15 Oct: the return of a cancelled order (clothes collected,
+            // not yet handed back) is a delivery job too, so it is listed here.
             return await this._dispatchQueue(req, {
                 leg: 'delivery',
                 stage: ORDER_STATUS.READY,
                 flag: 'isDelivery',
+                orReturns: true,
             })
         } catch (error) {
             console.log(error)
@@ -1909,6 +1931,19 @@ class IntakeUserService extends BaseService {
                     error: `The return can be scheduled once the customer pays N${order.cancellation.returnFeeDue.toLocaleString('en-NG')} for pickup and delivery.`,
                     requiresPayment: true,
                     returnFeeDue: order.cancellation.returnFeeDue,
+                })
+            }
+            // Review 15 Oct (P1): an unpaid redelivery fee stops the next run
+            // here too, not only when the tag is printed.
+            const unpaidFee = (order.dispatchDetails?.delivery?.redeliveryFees || [])
+                .filter((f) => !f.paidAt)
+                .reduce((n, f) => n + Number(f.amount || 0), 0)
+            if (unpaidFee > 0 && order.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS) {
+                return BaseService.sendFailedResponse({
+                    error: `The redelivery fee of N${unpaidFee.toLocaleString('en-NG')} must be paid before this order goes out again.`,
+                    requiresPayment: true,
+                    redeliveryFee: true,
+                    outstandingAmount: unpaidFee,
                 })
             }
             if (!isReturn && order.isDelivery && !isTagPrinted(order)) {

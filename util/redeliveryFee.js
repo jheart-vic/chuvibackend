@@ -19,7 +19,8 @@ async function chargeRedelivery(orderId) {
     if (fee <= 0) return null
     const order = await BookOrderModel.findById(orderId).select('amount balanceDue paymentStatus oscNumber userId').lean()
     if (!order) return null
-    const owed = order.paymentStatus === 'success' ? 0 : Number(order.balanceDue || 0)
+    // Never paid and no balance yet: the whole bill is still owed (review 15 Oct).
+    const owed = order.paymentStatus === 'success' ? 0 : Number(order.balanceDue || 0) || Number(order.amount || 0)
     await BookOrderModel.updateOne(
         { _id: orderId },
         {

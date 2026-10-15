@@ -694,6 +694,9 @@ const bookOrderSchema = new mongoose.Schema(
         // from a real ₦0 one.
         // V1 batch 2 (R21): the last time the ready date was worked out again.
         readyDateRecalc: { at: Date, from: String, previous: Date },
+        // Reward credit spent when the customer tapped Pay (review 15 Oct): kept so
+        // a recount down or an overpayment gives it back as credit, not cash.
+        creditPaidAtPay: { type: Number },
         // Once-per-order customer SMS (util/orderSms.js): when each was sent.
         smsLog: {
             bookingReceived: { type: Date },
