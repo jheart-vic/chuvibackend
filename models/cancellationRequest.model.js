@@ -13,12 +13,16 @@ const cancellationRequestSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
+        // The customer (a walk-in may have no account, so not required).
         userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true,
             index: true,
         },
+        // V1 launch batch 2 (R12): who put it on admin's list. 'customer' asked
+        // in the app; 'staff' is S1's "Escalate for cancellation".
+        source: { type: String, enum: ['customer', 'staff'], default: 'customer' },
+        escalatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         reason: { type: String, required: true },
         status: {
             type: String,

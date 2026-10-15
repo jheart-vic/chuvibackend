@@ -44,6 +44,20 @@ const userSchema = new mongoose.Schema(
         customerCode: { type: String },
         // permanent personal referral code (one per customer, for life)
         referralCode: { type: String, unique: true, sparse: true },
+        // V1 launch batch 2 (R22): times a rider found the customer not available
+        // (pickup or delivery), recorded against the customer.
+        notAvailableCount: { type: Number, default: 0 },
+        // V1 batch 2 (R17): every recount mismatch, recorded against the customer.
+        recountMismatches: [
+            {
+                _id: false,
+                at: Date,
+                orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
+                previousPieces: Number,
+                newPieces: Number,
+                covered: Number,
+            },
+        ],
         emailToken: { type: String },
         otpExpiresAt: { type: Date, select: false },
         isVerified: { type: Boolean, default: false },

@@ -129,6 +129,39 @@ const adminSettingSchema = new mongoose.Schema(
         // logistics, so deriving the charge would make cancelling a free-pickup
         // order cost nothing and absorb the rider's trip. The trip is real work.
         cancellationPickupFee: { type: Number, default: 1000 },
+        // V1 launch batch 2 (client 15 Oct, B9/R24): every unpaid-bill timer is a
+        // setting, in MINUTES so the test values (10 / 30 / 45 / 60) fit as well
+        // as the real ones. Counted from when the bill (payment hold) was raised.
+        // V1 batch 2 (R21, R24): a Quick Booking whose real count is more than
+        // this many times the booked count gets a new ready date.
+        quickBookingRecountTrigger: { type: Number, default: 2, min: 1 },
+        // V1 batch 2 (R23): no SMS (and no feedback request) in these hours,
+        // Lagos time; held until endHour.
+        quietHours: {
+            startHour: { type: Number, default: 21, min: 0, max: 23 },
+            endHour: { type: Number, default: 7, min: 0, max: 23 },
+        },
+        // V1 batch 2 (R17): recount cover and the repeat-mismatch limit. 0 in
+        // either cover limit means no cover. Launch 10% and N200 (test N600).
+        recountCover: {
+            percent: { type: Number, default: 10, min: 0 },
+            maxAmount: { type: Number, default: 200, min: 0 },
+            repeatLimit: { type: Number, default: 3, min: 0 },
+            repeatDays: { type: Number, default: 60, min: 1 },
+        },
+        unpaidBillTimers: {
+            // first reminder SMS: real 3 hours, test 10 minutes
+            firstReminderMinutes: { type: Number, default: 180, min: 1 },
+            // second reminder SMS at this hour on the day after the bill (9 AM)
+            nextDayReminderHour: { type: Number, default: 9, min: 0, max: 23 },
+            // "Call: unpaid bill" tasks for customer experience: real 24 h and 72 h
+            taskMinutes: { type: [Number], default: () => [1440, 4320] },
+            // admin flag: real 7 days, test 60 minutes
+            adminFlagMinutes: { type: Number, default: 10080, min: 1 },
+        },
+        // V1 launch batch 2 (R22): the charge for the second and later
+        // redelivery after "Customer not available". Unset → the delivery fee.
+        redeliveryFee: { type: Number, min: 0 },
         cancellationReturnFee: { type: Number, default: 1000 },
 
         // ─────────── WINDOW BOOKING / WORKING DAYS (client D1–D6, 2026-10-08) ───────────

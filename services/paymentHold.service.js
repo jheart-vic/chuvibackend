@@ -204,6 +204,11 @@ class PaymentHoldService {
         try {
             const order = await BookOrderModel.findById(orderId)
             if (!order) return { ok: false, reason: 'not-found' }
+            // V1 batch 2: the "Call: unpaid bill" tasks close once the bill is paid
+            // (not when the hold is only being replaced by a changed bill).
+            if (!quiet) {
+                await require('../util/careTasks').closeTasks({ orderId, type: 'unpaid-bill', reason: 'paid' })
+            }
             if (!this.isOnPaymentHold(order)) {
                 return { ok: false, reason: 'not-on-payment-hold' }
             }
@@ -393,9 +398,36 @@ class PaymentHoldService {
      * sweep that overlaps another cannot double-send and a missed sweep sends
      * late rather than never.
      */
+    /**
+     * The unpaid-bill steps for one hold, from the admin settings (V1 launch
+     * batch 2, client 15 Oct): reminder SMS at firstReminderMinutes and at
+     * nextDayReminderHour on the day after the bill; customer experience tasks
+     * at each taskMinutes; an admin flag at adminFlagMinutes.
+     */
+    static unpaidSteps(raisedAt, timers = {}) {
+        const t0 = new Date(raisedAt).getTime()
+        const min = 60 * 1000
+        const first = Number(timers.firstReminderMinutes) > 0 ? Number(timers.firstReminderMinutes) : 180
+        const hour = Number.isFinite(Number(timers.nextDayReminderHour)) ? Number(timers.nextDayReminderHour) : 9
+        const tasks = Array.isArray(timers.taskMinutes) && timers.taskMinutes.length ? timers.taskMinutes.map(Number).filter((n) => n > 0) : [1440, 4320]
+        const flag = Number(timers.adminFlagMinutes) > 0 ? Number(timers.adminFlagMinutes) : 10080
+        const nextDay = new Date(t0)
+        nextDay.setDate(nextDay.getDate() + 1)
+        nextDay.setHours(hour, 0, 0, 0)
+        return [
+            { latch: 'reminder-1', at: t0 + first * min, audience: 'customer' },
+            { latch: 'reminder-next-day', at: nextDay.getTime(), audience: 'customer' },
+            ...tasks.map((m, i) => ({ latch: `task-${i + 1}`, at: t0 + m * min, audience: 'task', n: i + 1 })),
+            { latch: 'admin-flag', at: t0 + flag * min, audience: 'admin' },
+        ]
+    }
+
     static async runReminderSweep({ now = new Date() } = {}) {
         const tally = { considered: 0, sent: 0, byLatch: {} }
         try {
+            const AdminSettingModel = require('../models/adminSetting.model')
+            const setting = await AdminSettingModel.findOne().select('unpaidBillTimers').lean()
+            const timers = setting?.unpaidBillTimers || {}
             const open = await BookOrderModel.find({
                 'paymentHold.raisedAt': { $exists: true },
                 'paymentHold.clearedAt': { $exists: false },
@@ -408,11 +440,10 @@ class PaymentHoldService {
 
             for (const order of open) {
                 const raisedAt = new Date(order.paymentHold.raisedAt)
-                const hours = (now - raisedAt) / 3600000
                 const sent = order.paymentHold.remindersSent || []
 
-                for (const step of this.SCHEDULE) {
-                    if (hours < step.afterHours) continue
+                for (const step of this.unpaidSteps(raisedAt, timers)) {
+                    if (now.getTime() < step.at) continue
                     if (sent.includes(step.latch)) continue
 
                     // Claim the latch FIRST. If the send then fails we lose one
@@ -435,10 +466,18 @@ class PaymentHoldService {
                         if (step.audience === 'admin') {
                             await notifyRoles({
                                 roles: [ROLE.ADMIN],
-                                title: 'Payment hold unpaid after 48 hours',
-                                body: `Order ${order.oscNumber} has been awaiting payment for 48 hours (₦${amount.toLocaleString('en-NG')}).`,
+                                title: 'Unpaid bill flagged',
+                                body: `Order ${order.oscNumber} is still waiting for payment of N${amount.toLocaleString('en-NG')}.`,
                                 subBody: 'Decide whether to waive it, chase the customer, or cancel.',
                                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                            })
+                        } else if (step.audience === 'task') {
+                            await require('../util/careTasks').openTask({
+                                key: `unpaid-bill:${order._id}:${step.n}`,
+                                type: 'unpaid-bill',
+                                title: 'Call: unpaid bill',
+                                detail: `Order ${order.oscNumber}: N${amount.toLocaleString('en-NG')} is still unpaid. Call ${order.fullName || 'the customer'}.`,
+                                order,
                             })
                         } else {
                             await this._tellCustomer({
@@ -539,6 +578,11 @@ class PaymentHoldService {
                 },
                 { runValidators: false },
             )
+
+            // V1 batch 2: a redelivery fee in this balance is now paid.
+            await require('../util/redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
+            // V1 batch 2 (R21): paid after the pay-by time → a new ready date.
+            await require('../util/readyDateRecalc').afterQuickBookingPaid(order._id)
 
             await this.clear({
                 orderId: order._id,

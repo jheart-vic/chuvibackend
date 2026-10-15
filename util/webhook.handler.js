@@ -1084,6 +1084,10 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
         // V1 launch batch 1: the booking is confirmed now that it is paid
         // (sent once; a Quick Booking already had it at booking).
         await require('./orderSms').bookingReceived(order)
+        // V1 batch 2: a redelivery fee in this balance is now paid.
+        await require('./redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
+        // V1 batch 2 (R21): paid after the pay-by time → a new ready date.
+        await require('./readyDateRecalc').afterQuickBookingPaid(order._id)
 
         // Overpaid (a link opened before the bill went DOWN): the excess goes
         // back to the wallet (review F-33).

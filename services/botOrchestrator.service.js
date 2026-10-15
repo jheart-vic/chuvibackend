@@ -414,7 +414,13 @@ class BotOrchestratorService {
                     convo, userId, text, slots, step: convo.botState?.step,
                 })
             case BOT_INTENT.PRICING:
-                return { replies: [await this.pricingReply(text, slots)] }
+                // V1 launch batch 2 (B16, T2.02): "No estimate. Points him to
+                // listing his items in Book." The exact price shows there.
+                return {
+                    replies: [
+                        "I can't give an estimate in chat. Open Book and list your items: you'll see the exact price, with pickup and delivery, before you confirm. Or choose Quick Booking and we'll count and send your bill.",
+                    ],
+                }
             case BOT_INTENT.TURNAROUND:
                 return { replies: [await this.turnaroundReply(userId)] }
             case BOT_INTENT.SERVICE_INFO:
@@ -461,6 +467,10 @@ class BotOrchestratorService {
         convo.mode = 'human'
         convo.botState = { intent: null, step: null, slots: {} }
         await convo.save()
+        // V1 launch batch 2 (B38, T2.06): "Complaint created for the customer
+        // experience officer, linked to the customer." Linked to their latest
+        // order when they have one. Never breaks the handover.
+        await this._openHandoffCase(convo, userId)
         const sys = await ConversationService.postSystemMessage(
             convo._id,
             "You're now in our support queue — a Customer Experience officer will reply right here shortly.",
@@ -476,6 +486,35 @@ class BotOrchestratorService {
             })
         } catch (_) {
             /* non-fatal */
+        }
+    }
+
+    async _openHandoffCase(convo, userId) {
+        try {
+            const ComplaintCaseModel = require('../models/complaintCase.model')
+            const ComplaintTypeModel = require('../models/complaintType.model')
+            const BookOrderModel = require('../models/bookOrder.model')
+            const open = await ComplaintCaseModel.findOne({
+                userId,
+                status: { $nin: ['closed', 'resolved', 'customer-confirmed'] },
+                description: /^Asked to talk to someone/,
+            }).lean()
+            if (open) return open
+            const type =
+                (await ComplaintTypeModel.findOne({ name: /^other$/i, active: true }).lean()) ||
+                (await ComplaintTypeModel.findOne({ active: true }).sort({ createdAt: 1 }).lean())
+            if (!type) return null
+            const order = await BookOrderModel.findOne({ userId }).sort({ createdAt: -1 }).select('_id').lean()
+            const RecoveryService = require('./recovery.service')
+            return await RecoveryService.openCase({
+                userId,
+                orderId: order?._id,
+                complaintTypeId: type._id,
+                description: 'Asked to talk to someone in the in-app assistant.',
+            })
+        } catch (err) {
+            console.error('handoff complaint failed (non-fatal):', err?.message)
+            return null
         }
     }
 

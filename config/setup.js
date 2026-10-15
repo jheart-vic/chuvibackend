@@ -287,7 +287,7 @@ const createDefaultHoldTypes = async () => {
       // Booking count check. "The admin approves it before the order moves."
       {
         key: "count_differs_from_rider",
-        name: "Count differs from rider count",
+        name: "Count dispute",
         description:
           "Intake counted a different number of items than the rider recorded at pickup. Only an admin can approve this order to move on.",
         stations: [ROLE.INTAKE_AND_TAG],
@@ -475,6 +475,15 @@ const backfillFailedDeliveryStage = async () => {
 // stop the others nor bring the boot down — the server is already listening by
 // the time this runs (server.js starts HTTP first), so throwing here would take
 // down a live process over a seed.
+// V1 launch batch 2 (R22): the count hold is called "Count dispute". Renames
+// only the old default name, so an admin's own wording is never overwritten.
+async function renameCountDisputeHold() {
+  await HoldTypeModel.updateOne(
+    { key: "count_differs_from_rider", name: "Count differs from rider count" },
+    { $set: { name: "Count dispute" } }
+  );
+}
+
 async function setupApp() {
   const steps = [
     ["init", init],
@@ -489,6 +498,7 @@ async function setupApp() {
     ["schedulingSettings", ensureSchedulingSettings],
     ["defaultBookingWindow", createDefaultBookingWindow],
     ["failedDeliveryStage", backfillFailedDeliveryStage],
+    ["countDisputeName", renameCountDisputeHold],
   ];
   for (const [name, step] of steps) {
     try {

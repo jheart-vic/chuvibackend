@@ -169,8 +169,9 @@ class WalletService extends BaseService {
     try {
       const { bookOrderId, description = "Order Payment" } = req.body;
       const userId = req.user.id;
-      // Opt-in: only spend reward credits when the customer toggles it on.
-      const useCredit = req.body.useCredit === true || req.body.useCredit === "true";
+      // V1 launch batch 2 (B13): reward credit is used by default; the
+      // customer switches it off with useCredit: false.
+      const useCredit = !(req.body.useCredit === false || req.body.useCredit === "false");
 
       const validateRule = {
         bookOrderId: "string|required",
@@ -222,6 +223,10 @@ class WalletService extends BaseService {
       await bookOrder.save();
       // Launch item 4: a paid Urgent pickup now alerts Intake (once).
       await require("../util/urgentPickup").markUrgentPickupIfReady(bookOrder);
+      // V1 batch 2: a redelivery fee in this balance is now paid.
+      await require("../util/redeliveryFee").markRedeliveryFeesPaid(bookOrder._id).catch(() => {});
+      // V1 batch 2 (R21): paid after the pay-by time → a new ready date.
+      await require("../util/readyDateRecalc").afterQuickBookingPaid(bookOrder._id);
 
       // Same release the Paystack webhook performs: a paid order leaves its
       // payment hold and its processing clock can start. Non-fatal — the

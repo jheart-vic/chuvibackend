@@ -172,6 +172,7 @@ module.exports = {
         if (status === ORDER_STATUS.OUT_FOR_DELIVERY)
             return 'It’s ready and out for delivery right now.'
         if (status === ORDER_STATUS.DELIVERED) return 'It’s already been delivered.'
+        if (status === ORDER_STATUS.COLLECTED) return 'It’s already been collected.'
         return 'Not yet — it’s still being worked on.'
     },
 
@@ -238,7 +239,7 @@ module.exports = {
         try {
             const order = await BookOrderModel.findOne({
                 userId,
-                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] },
+                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.CANCELLED] },
             })
                 .sort({ createdAt: -1 })
                 .lean()

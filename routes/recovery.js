@@ -22,6 +22,8 @@ const {
     ROUTE_RECOVERY_CASE_DASHBOARD,
     ROUTE_RECOVERY_CASE_MESSAGES,
     ROUTE_RECOVERY_MONTHLY_REPORT,
+    ROUTE_RECOVERY_TASKS,
+    ROUTE_RECOVERY_TASK_CLOSE,
 } = require('../util/page-route')
 
 /**
@@ -869,6 +871,122 @@ router.post(ROUTE_RECOVERY_CASE_MESSAGES, [customerExperienceAuth], (req, res) =
  */
 router.get(ROUTE_RECOVERY_MONTHLY_REPORT, [adminAuth], (req, res) =>
     new FeedbackController().monthlyRecoveryReport(req, res),
+)
+
+/**
+ * @swagger
+ * /recovery/tasks:
+ *   get:
+ *     summary: Customer experience task list
+ *     description: >
+ *       V1 launch batch 2 (client 15 Oct). Tasks the system raises for the customer experience
+ *       officer: "2 failed pickups: call customer" (type failed-pickups) and "Call: unpaid bill"
+ *       (type unpaid-bill, at the 24 h and 72 h settings). Newest first. An unpaid-bill task closes by
+ *       itself when the bill is paid (closeReason "paid") or the order is cancelled.
+ *     tags: [Recovery]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [open, closed, all], default: open }
+ *       - in: query
+ *         name: type
+ *         schema: { type: string, enum: [failed-pickups, unpaid-bill] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *     responses:
+ *       200:
+ *         description: The tasks
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               type: { type: string, enum: [failed-pickups, unpaid-bill], example: failed-pickups }
+ *                               title: { type: string, example: "2 failed pickups: call customer" }
+ *                               detail: { type: string, example: "Order OSC-20261015-123456: the rider could not reach Obinna Eze twice. Call them to pick a new time." }
+ *                               orderId: { type: string }
+ *                               oscNumber: { type: string, example: "OSC-20261015-123456" }
+ *                               customerName: { type: string, example: "Obinna Eze" }
+ *                               phoneNumber: { type: string, example: "08031234567" }
+ *                               status: { type: string, enum: [open, closed], example: open }
+ *                               createdAt: { type: string, format: date-time }
+ *                               closedAt: { type: string, format: date-time, nullable: true }
+ *                               closedBy: { type: string, nullable: true, example: "Chioma" }
+ *                               closeReason: { type: string, nullable: true, example: "called, new time Thursday" }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 2 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
+ */
+router.get(ROUTE_RECOVERY_TASKS, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().listCareTasks(req, res),
+)
+
+/**
+ * @swagger
+ * /recovery/tasks/{id}/close:
+ *   post:
+ *     summary: Close a customer experience task
+ *     tags: [Recovery]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               note: { type: string, example: "called, new time Thursday" }
+ *     responses:
+ *       200:
+ *         description: Closed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         id: { type: string }
+ *                         status: { type: string, example: closed }
+ *                         closedAt: { type: string, format: date-time }
+ *       400:
+ *         description: Not found or already closed
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(ROUTE_RECOVERY_TASK_CLOSE, [customerExperienceAuth], (req, res) =>
+    new FeedbackController().closeCareTask(req, res),
 )
 
 module.exports = router

@@ -80,7 +80,7 @@ module.exports = {
         // start: find a delivered order to review
         const order = await BookOrderModel.findOne({
             userId,
-            'stage.status': ORDER_STATUS.DELIVERED,
+            'stage.status': { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
         })
             .sort({ createdAt: -1 })
             .lean()

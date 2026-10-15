@@ -105,6 +105,13 @@ class UserController extends BaseController {
         }
         return BaseController.sendSuccessResponse(res, result.data)
     }
+    async checkPayment(req, res) {
+        const paystackService = new PaystackService()
+        const result = await paystackService.checkPayment(req)
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
     async initializePayment(req, res) {
         const paystackService = new PaystackService()
         const initializePayment = await paystackService.initializePayment(req)

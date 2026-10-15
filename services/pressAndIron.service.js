@@ -633,6 +633,10 @@ class PressAndIronService extends BaseService {
                         stationStatus:
                             STATION_STATUS.PRESSING_AND_IRONING_STATION,
                     },
+                    // FE report 15 Oct: a held piece shows in the Hold list of the
+                    // station it is ASSIGNED to (R5: the sender fixes it), as well as
+                    // the station that raised it.
+                    { 'items.holdDetails.assignTo': ROLE.PRESS },
                     {
                         'items.holdDetails.heldByStation':
                             STATION_STATUS.PRESSING_AND_IRONING_STATION,
@@ -642,6 +646,7 @@ class PressAndIronService extends BaseService {
 
             if (search) {
                 baseQuery.$and = [
+                    ...baseQuery.$and,
                     {
                         $or: [
                             { oscNumber: { $regex: search, $options: 'i' } },
@@ -1031,12 +1036,13 @@ class PressAndIronService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
+                        ORDER_STATUS.COLLECTED,
                     ],
                 },
                 {
                     key: 'delivered',
                     label: 'Delivered',
-                    completedBy: ORDER_STATUS.DELIVERED,
+                    completedBy: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                 },
             ]
 

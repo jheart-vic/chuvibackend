@@ -54,7 +54,8 @@ async function raiseCountMismatchHold({
     const notify = notifyRoles || require('./notifyRoles').notifyRoles
 
     const now = new Date()
-    const note = `Count differs from rider: rider recorded ${riderCount}, Intake counted ${intakeCount}. Needs admin approval.`
+    // V1 launch batch 2 (R22): the hold is "Count dispute".
+    const note = `Count dispute: rider recorded ${riderCount}, Intake counted ${intakeCount}. Needs admin approval.`
 
     await Model.updateOne(
         { _id: order._id },
@@ -94,7 +95,7 @@ async function raiseCountMismatchHold({
     // and a record of the work must never reverse the work.
     try {
         await Activity.create({
-            title: 'Order held — count differs from rider',
+            title: 'Order held: count dispute',
             description: `Order ${order.oscNumber}: rider ${riderCount}, Intake ${intakeCount}.`,
             type: ACTIVITY_TYPE.ORDER_UPDATED,
             orderId: order._id,
@@ -110,11 +111,22 @@ async function raiseCountMismatchHold({
         // it — the order cannot move until one of them acts.
         await notify({
             roles: [ROLE.ADMIN],
-            title: 'Order on hold: count differs from rider',
-            body: `Order ${order.oscNumber} — rider recorded ${riderCount}, Intake counted ${intakeCount}.`,
+            title: 'Count dispute',
+            body: `Order ${order.oscNumber}: rider recorded ${riderCount}, Intake counted ${intakeCount}.`,
             subBody: 'Only an admin can approve this order to continue.',
             type: NOTIFICATION_TYPE.ORDER_UPDATED,
         })
+        // R22: "S1 counts fewer than the rider: also 'Possible missing item' to
+        // admin at once."
+        if (intakeCount < riderCount) {
+            await notify({
+                roles: [ROLE.ADMIN],
+                title: 'Possible missing item',
+                body: `Order ${order.oscNumber}: the rider collected ${riderCount} pieces but Intake counted ${intakeCount}. ${riderCount - intakeCount} may be missing.`,
+                subBody: 'Check the bag and the rider before approving the count.',
+                type: NOTIFICATION_TYPE.ORDER_UPDATED,
+            })
+        }
     } catch (error) {
         console.error('count-mismatch notify failed:', error?.message)
     }

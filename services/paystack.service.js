@@ -91,6 +91,42 @@ class PaystackService extends BaseService {
         }
       }
 
+      // V1 launch batch 2 (B13, T2.14): "Reward credit applied by default
+      // unless he switches it off." Credit goes first (oldest expiry), and the
+      // card is asked only for the rest. Applied to THIS order, so a later
+      // cancellation gives it back. Send useCredit: false to keep it.
+      if (transactionType === 'order' && String(order.userId) === String(userId)) {
+        const optOut = post.useCredit === false || post.useCredit === 'false'
+        if (!optOut) {
+          const WalletCreditService = require('./walletCredit.service')
+          const due = amountDue(order)
+          const { applied } = await WalletCreditService.applyCreditsToAmount(userId, order._id, due, `Order ${order.oscNumber}`)
+          if (applied > 0) {
+            const left = Math.max(0, due - applied)
+            if (left <= 0) {
+              await BookOrderModel.updateOne(
+                { _id: order._id },
+                { $set: { paymentStatus: 'success', paymentDate: new Date(), paymentMethod: 'wallet' }, $unset: { balanceDue: '' } },
+              )
+              try {
+                const PaymentHoldService = require('./paymentHold.service')
+                await PaymentHoldService.clear({ orderId: order._id, source: 'reward-credit', actorId: userId })
+                await require('../util/redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
+                await require('../util/readyDateRecalc').afterQuickBookingPaid(order._id)
+              } catch (e) {
+                console.error('credit-paid order follow-up failed:', e?.message)
+              }
+              return BaseService.sendSuccessResponse({
+                message: { coveredByCredit: true, creditApplied: applied, amountToPay: 0, orderId: order._id },
+              })
+            }
+            // The rest is a balance on the order, so the link asks only for it.
+            await BookOrderModel.updateOne({ _id: order._id }, { $set: { balanceDue: left } })
+            order.balanceDue = left
+          }
+        }
+      }
+
       const reference = generateReferenceId()
       let amount = 0
       // An order pays its outstanding balance when one is set (F-30).
@@ -145,7 +181,10 @@ class PaystackService extends BaseService {
             // ...(plan && {paystackSubscriptionCode: plan.paystackPlanCode}),
             ...(subExists && {subscriptionId: subExists?._id}),
           },
-          callback_url: "https://www.chuvilaundry.com/user/payment/callback",
+          // B2 (FE 15 Oct, white screen after Paystack): the page Paystack sends
+          // the customer back to is a setting now; that page should call
+          // GET /users/check-payment?reference=… to show the result.
+          callback_url: process.env.PAYSTACK_CALLBACK_URL || "https://www.chuvilaundry.com/user/payment/callback",
         }
       );
       await createAuditLog({userId: getObjectId(user._id), action: `Initialized ${transactionType} payment with reference ${reference}`, category: 'payment'})
@@ -158,6 +197,49 @@ class PaystackService extends BaseService {
       });
     }
   }
+  /**
+   * CHECK PAYMENT (V1 launch batch 2: B9 "Check payment asks Paystack again",
+   * B2 the page after Paystack). Asks Paystack for the transaction by its
+   * reference — or the latest checkout of an order — and, if Paystack says it
+   * succeeded, settles it through the SAME handler the webhook uses (which
+   * claims the reference once, so a webhook arriving later does nothing twice).
+   * Customers may check only their own payments; staff any.
+   */
+  async checkPayment(req) {
+    try {
+      const { reference: ref, orderId } = req.query || {}
+      const role = req.user?.userType
+      const isStaff = role && role !== 'user'
+      let payment = null
+      if (ref) payment = await PaymentModel.findOne({ reference: String(ref) }).lean()
+      else if (orderId) payment = await PaymentModel.findOne({ order: orderId }).sort({ createdAt: -1 }).lean()
+      else return BaseService.sendFailedResponse({ error: 'Send reference or orderId.' })
+      if (!payment) return BaseService.sendFailedResponse({ error: 'No payment found for that.' })
+      if (!isStaff && String(payment.userId) !== String(req.user?.id)) {
+        return BaseService.sendFailedResponse({ error: 'No payment found for that.' })
+      }
+      if (payment.status === 'success') {
+        return BaseService.sendSuccessResponse({ message: { reference: payment.reference, status: 'success', alreadySettled: true } })
+      }
+      const res = await paystackAxios.get(`/transaction/verify/${encodeURIComponent(payment.reference)}`)
+      const data = res?.data?.data || {}
+      if (data.status === 'success') {
+        const { handleChargeSuccess } = require('../util/webhook.handler')
+        await handleChargeSuccess(data)
+        const after = await PaymentModel.findOne({ reference: payment.reference }).lean()
+        return BaseService.sendSuccessResponse({
+          message: { reference: payment.reference, status: after?.status || 'success', paystackStatus: 'success', settledNow: true },
+        })
+      }
+      return BaseService.sendSuccessResponse({
+        message: { reference: payment.reference, status: payment.status, paystackStatus: data.status || 'unknown' },
+      })
+    } catch (error) {
+      console.error('check payment failed:', error?.response?.data || error?.message)
+      return BaseService.sendFailedResponse({ error: 'Could not check this payment with Paystack. Tap to try again.' })
+    }
+  }
+
   async createCustomer(user) {
     const res = await paystackAxios.post(
       "/customer",

@@ -84,6 +84,20 @@ function itemTagGate(order) {
 function dispatchPaymentGate(order) {
     if (!order) return { ok: false, error: 'Order not found' }
 
+    // V1 launch batch 2 (R22): a charged redelivery goes out only once paid.
+    const unpaidFee = (order.dispatchDetails?.delivery?.redeliveryFees || [])
+        .filter((f) => !f.paidAt)
+        .reduce((n, f) => n + Number(f.amount || 0), 0)
+    if (unpaidFee > 0 && order.paymentStatus !== 'success') {
+        return {
+            ok: false,
+            error: `The redelivery fee of N${unpaidFee.toLocaleString('en-NG')} must be paid before this order goes out again.`,
+            requiresPayment: true,
+            redeliveryFee: true,
+            outstandingAmount: unpaidFee,
+        }
+    }
+
     // Genuinely paid → nothing to stop.
     if (order.paymentStatus === 'success') return { ok: true }
 

@@ -51,6 +51,8 @@ require('./crons/holdSlaScan.js')
 require('./crons/paymentHoldReminders.js')
 // Feature 21 (client 2026-10-14): day-5 "2 days left" SMS after a failed renewal.
 require('./crons/renewalFailedReminder.js')
+// V1 launch batch 2 (R23): SMS held by quiet hours go out when they end.
+require('./crons/queuedSmsFlush.js')
 
 
 const port = process.env.PORT || 7001;

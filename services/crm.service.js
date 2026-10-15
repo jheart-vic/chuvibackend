@@ -970,7 +970,12 @@ class CrmService {
     // ─── Cron entry points ───────────────────────────────────────────────────
 
     // Runs every few minutes: send/execute everything due.
-    async dispatchDueMessages() {
+    async dispatchDueMessages({ now = new Date() } = {}) {
+        // V1 launch batch 2 (R23): nothing goes out in quiet hours (9 PM to
+        // 7 AM, settings), the feedback request included; due messages simply
+        // wait and go on the first run after the window ends.
+        const { loadQuietHours, isQuiet } = require('../util/quietHours')
+        if (isQuiet(now, await loadQuietHours())) return 0
         const due = await CrmScheduledMessageModel.find({
             status: CRM_MESSAGE_STATUS.PENDING,
             dueAt: { $lte: new Date() },

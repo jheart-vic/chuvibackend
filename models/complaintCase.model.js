@@ -89,10 +89,11 @@ const complaintCaseSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
+        // Not required since V1 batch 2: "talk to someone" opens a case for a
+        // customer who may not have ordered yet (B38).
         orderId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'BookOrder',
-            required: true,
             index: true,
         },
         feedbackId: { type: mongoose.Schema.Types.ObjectId, ref: 'Feedback' },

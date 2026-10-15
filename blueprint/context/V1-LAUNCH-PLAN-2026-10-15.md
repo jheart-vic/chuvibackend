@@ -1,4 +1,4 @@
-**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |# V1 launch plan — client reply of 15 Oct 2026 ("Everything by Saturday, in 3 batches")
+**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |# V1 launch plan — client reply of 15 Oct 2026 ("Everything by Saturday, in 3 batches")
 
 Source: client PDF `CHUVI_V1_Everything_by_Saturday.pdf` (Downloads), their answer to our
 V1 System Report (`report/CHUVI-V1-System-Report-2026-10-14.pdf`). Binding.
@@ -102,19 +102,31 @@ Built on their side: booking-options speeds (pickupTiming/pickupWindowId/pickupD
 termsAccepted/referralCode, rollover fields, floorLimits in admin order settings.
 
 They ask:
-- FE1 `lastOrderChoices` should include `billingType` (wallet / card memory).
+- FE1 [coded b2] `lastOrderChoices` should include `billingType` (wallet / card memory).
 - FE2 Test accounts with a cancelled-but-paid plan and with a failed renewal (testingdb).
 - FE3 canEnterReferralCode / welcomeOffer.active false on a test customer with orders — expected; they need a fresh account (email code unreadable).
 - FE4 One real Google sign-up with a rep link, end to end.
 Still open from before (backend bugs):
-- FE5 Delivered order's cancellationVerdict.tier is red, not none.
-- FE6 Assigning a pickup rider to an already collected order returns 200 and resets pickup status.
-- FE7 GET /rider/assigned-deliveries has no delivery date or promise.
-- FE8 GET /press-iron/orders/queue still returns started orders.
-- FE9 hasComplaint false in the low-rated list for an order with a complaint.
-- FE10 Held pieces don't appear in the Hold lists of the station they are assigned to.
+- FE5 [coded b2] Delivered order's cancellationVerdict.tier is red, not none.
+- FE6 [coded b2] Assigning a pickup rider to an already collected order returns 200 and resets pickup status.
+- FE7 [already in code] GET /rider/assigned-deliveries has no delivery date or promise.
+- FE8 [already in code] GET /press-iron/orders/queue still returns started orders.
+- FE9 [coded b2] hasComplaint false in the low-rated list for an order with a complaint.
+- FE10 [coded b2] Held pieces don't appear in the Hold lists of the station they are assigned to.
 - FE11 Phone backfill: 5 CRM profiles with unparseable numbers, 12 with none (data; cleared Sunday anyway?).
 For the 14 Oct client brief they need: B1/B2 (orders failing to load; white screen after Paystack),
 F5 (QB unpaid order: bill breakdown fields, pay-by time, Pay endpoint with a fresh link), Update 5
 (per-window price + Urgent price field names = Batch 3 item 20), Update 4 (72 h task setting = item 12),
 Update 7 / Q8 (staff-only lead report = item 4 done; Prospect tag answer = our H2), F17/F19/F23/F26/F28/F40.
+
+## The 14 Oct back-end brief (B1–B42) — NOT received; reconstructed from the test plan's references
+B1 orders failing to load / errors never blank (FE) · B2 payment start, white screen after Paystack (FE) ·
+B3 QB booking saved (W&I, count, window, speed, booking SMS) · B4 one status, route-only history · B5 QB bill ·
+B6 walk-in Ready Today limit · B9 payment holds + timers · B11 speeds/names/prices/no RT on QB · B13 credit on by
+default + reason lines · B14 totals add up · B15 rule 0 = no rule, Always Free · B16 assistant rules · B17 no rider
+phone check · B20 Ready at pack + SMS, delivery card count, rider log, Collected · B22 piece records, colour ·
+B23 whole-order send, Drafts · B27 pretreat per piece · B28 sent time / red at 30 min · B33 hold counts ·
+B34 3 PM due-today · B35 piece positions · B36 counters match lists · B37 names not codes · B38 complaint on
+"talk to someone", low score list · B39 feedback timing/quiet hours · B40 settings/templates · B41 data clear ·
+B42 Paystack live check. Unknown (never cited): B7 B8 B10 B12 B18 B19 B21 B24–B26 B29–B32.
+User 15 Oct: treat B1/B2 as the frontend described them.

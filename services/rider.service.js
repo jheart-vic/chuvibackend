@@ -184,6 +184,28 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.updatedAt = new Date()
             order.markModified('dispatchDetails.delivery')
             await order.save()
+
+            // V1 launch batch 2 (R21, T9.05): the bag of a cancelled order went
+            // back unwashed. Not a delivery: no delivered hooks, no delivered SMS.
+            if (order.stage?.status === ORDER_STATUS.CANCELLED) {
+                await BookOrderModel.updateOne(
+                    { _id: orderId },
+                    {
+                        ...buildStageUpdate(ORDER_STATUS.RETURNED_UNWASHED, STATION_STATUS.RIDER_STATION, 'Returned unwashed'),
+                        $set: {
+                            ...buildStageUpdate(ORDER_STATUS.RETURNED_UNWASHED, STATION_STATUS.RIDER_STATION, 'Returned unwashed').$set,
+                            'cancellation.returnedAt': new Date(),
+                        },
+                    },
+                )
+                await createAuditLog({
+                    userId: getObjectId(userId),
+                    orderId,
+                    category: 'rider',
+                    action: `Order ${order.oscNumber} returned unwashed by rider`,
+                })
+                return BaseService.sendSuccessResponse({ message: 'Clothes returned unwashed' })
+            }
             await BookOrderModel.updateOne(
                 { _id: orderId },
                 buildStageUpdate(
@@ -286,7 +308,17 @@ class RiderService extends BaseService {
 
             // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
 
+            // V1 launch batch 2 (R22): "Ready, waiting redelivery". The leg keeps
+            // the status "failed" (so the failed filters still find it) but loses
+            // its rider, so it shows as needing one; the failure is counted on
+            // the order and against the customer.
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.FAILED
+            order.dispatchDetails.delivery.rider = null
+            order.dispatchDetails.delivery.failedAttempts = (order.dispatchDetails.delivery.failedAttempts || 0) + 1
+            order.dispatchDetails.delivery.failures = [
+                ...(order.dispatchDetails.delivery.failures || []),
+                { at: new Date(), note, rider: userId },
+            ]
             order.dispatchDetails.delivery.updatedAt = new Date()
             // Was overwriting `delivery.note` — the customer's special delivery
             // instruction, and the line the dispatch tag PRINTS. A failed delivery
@@ -312,6 +344,16 @@ class RiderService extends BaseService {
                 })
             }
             await order.save()
+            await UserModel.updateOne({ _id: order.userId?._id || order.userId }, { $inc: { notAvailableCount: 1 } }).catch(() => {})
+            // "The first redelivery is free, later ones are charged": from the
+            // second failure on, the next redelivery carries the fee.
+            if (order.dispatchDetails.delivery.failedAttempts >= 2) {
+                try {
+                    await require('../util/redeliveryFee').chargeRedelivery(order._id)
+                } catch (err) {
+                    console.error('redelivery fee failed:', err?.message)
+                }
+            }
 
             // Same as the pickup case: the rider was notifying themselves, and
             // the office heard nothing. (This one also had no `type` at all, so
@@ -758,13 +800,34 @@ class RiderService extends BaseService {
             }
             // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
 
+            // V1 launch batch 2 (R22): "Customer not available" at pickup sends
+            // the order back to Needs rider for the next window: the leg keeps
+            // the status "failed" (the failed filter still finds it) but loses
+            // its rider. The failure is counted on the order and against the customer.
             order.dispatchDetails.pickup.status = PICKUP_STATUS.FAILED
+            order.dispatchDetails.pickup.rider = null
             order.dispatchDetails.pickup.updatedAt = new Date()
             // `pickup.note` was not a schema path, so this reason was silently
             // discarded on every failed pickup (3.2). It has its own field now.
             order.dispatchDetails.pickup.failureNote = note
+            order.dispatchDetails.pickup.failedAttempts = (order.dispatchDetails.pickup.failedAttempts || 0) + 1
+            order.dispatchDetails.pickup.failures = [
+                ...(order.dispatchDetails.pickup.failures || []),
+                { at: new Date(), note, rider: userId },
+            ]
             order.markModified('dispatchDetails.pickup')
             await order.save()
+            await UserModel.updateOne({ _id: order.userId?._id || order.userId }, { $inc: { notAvailableCount: 1 } }).catch(() => {})
+            // "After 2 failures a task goes to the customer experience officer."
+            if (order.dispatchDetails.pickup.failedAttempts >= 2) {
+                await require('../util/careTasks').openTask({
+                    key: `failed-pickups:${order._id}`,
+                    type: 'failed-pickups',
+                    title: '2 failed pickups: call customer',
+                    detail: `Order ${order.oscNumber}: the rider could not reach ${order.fullName || 'the customer'} twice. Call them to pick a new time.`,
+                    order,
+                })
+            }
 
             // Brief 3.2 — this used to notify `userId`, i.e. the RIDER who just
             // pressed the button, and nobody in the office. A failed pickup also
@@ -836,7 +899,9 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.startedAt = new Date()
             await order.save()
 
-            await BookOrderModel.updateOne(
+            // V1 launch batch 2: a return of a cancelled order stays cancelled
+            // while the rider is out; it becomes "Returned unwashed" on handover.
+            if (order.stage?.status !== ORDER_STATUS.CANCELLED) await BookOrderModel.updateOne(
                 { _id: orderId },
                 {
                     $set: {
@@ -1103,12 +1168,13 @@ class RiderService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
+                        ORDER_STATUS.COLLECTED,
                     ],
                 },
                 {
                     key: 'delivered',
                     label: 'Delivered',
-                    completedBy: ORDER_STATUS.DELIVERED,
+                    completedBy: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                 },
             ]
 

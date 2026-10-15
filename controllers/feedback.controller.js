@@ -9,6 +9,16 @@ const send = (res, result) =>
         : BaseController.sendFailedResponse(res, result.data)
 
 class FeedbackController extends BaseController {
+    // ── customer experience tasks (V1 launch batch 2) ──
+    async listCareTasks(req, res) {
+        const CareTaskService = require('../services/careTask.service')
+        return send(res, await CareTaskService.list(req.query || {}))
+    }
+    async closeCareTask(req, res) {
+        const CareTaskService = require('../services/careTask.service')
+        return send(res, await CareTaskService.close({ id: req.params.id, userId: req.user?.id, note: req.body?.note }))
+    }
+
     // ── feedback (customer + staff list) ──
     async submitFeedback(req, res) {
         return send(res, await new FeedbackService().submitFeedback(req))

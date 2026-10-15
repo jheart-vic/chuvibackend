@@ -17,7 +17,9 @@ const PaymentHoldService = require('../services/paymentHold.service')
  *
  * ⚠️ A new cron only runs if it is REQUIRED in `server.js`.
  */
-cron.schedule('*/20 * * * *', async () => {
+// Every 5 minutes (V1 batch 2): the timers are settings and can be as short
+// as 10 minutes for the client's test.
+cron.schedule('*/5 * * * *', async () => {
     try {
         const tally = await PaymentHoldService.runReminderSweep()
         if (tally.sent) {
@@ -32,4 +34,4 @@ cron.schedule('*/20 * * * *', async () => {
     }
 })
 
-console.log('[paymentHoldReminders] scheduled every 20 minutes (Lagos time)')
+console.log('[paymentHoldReminders] scheduled every 5 minutes (Lagos time)')

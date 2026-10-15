@@ -1474,6 +1474,15 @@ class IntakeUserService extends BaseService {
                 // pickup is otherwise indistinguishable from a healthy assigned
                 // one on this screen (3.2). `legNote` carries the rider's reason.
                 legStatus: legState,
+                // V1 batch 2 (R22): attempts the customer was not available, and
+                // the words for a failed run waiting for its next rider.
+                failedAttempts: o.dispatchDetails?.[leg]?.failedAttempts || 0,
+                statusLabel:
+                    legState === (leg === 'pickup' ? PICKUP_STATUS.FAILED : DELIVERY_STATUS.FAILED)
+                        ? leg === 'pickup'
+                            ? 'Customer not available: needs rider'
+                            : 'Ready, waiting redelivery'
+                        : null,
                 failed:
                     legState ===
                     (leg === 'pickup'
@@ -1767,6 +1776,22 @@ class IntakeUserService extends BaseService {
                 })
             }
 
+            // FE report 15 Oct: assigning a pickup rider to an order already
+            // collected answered 200 and reset the pickup to "scheduled".
+            if (
+                [PICKUP_STATUS.PICKED_UP, PICKUP_STATUS.PICKUP_IN_PROGRESS].includes(
+                    order.dispatchDetails?.pickup?.status,
+                )
+            ) {
+                return BaseService.sendFailedResponse({
+                    error:
+                        order.dispatchDetails.pickup.status === PICKUP_STATUS.PICKED_UP
+                            ? 'This order has already been collected, so it needs no pickup rider.'
+                            : 'The rider is already on the way for this pickup.',
+                    pickupStatus: order.dispatchDetails.pickup.status,
+                })
+            }
+
             const resolved = await resolveRider(riderId)
             if (!resolved.ok) {
                 return BaseService.sendFailedResponse({ error: resolved.error })
@@ -1872,7 +1897,21 @@ class IntakeUserService extends BaseService {
             //
             // This is the only write path that sets dispatchDetails.delivery.rider,
             // so this one guard closes it. Refused BEFORE any write.
-            if (order.isDelivery && !isTagPrinted(order)) {
+            // V1 launch batch 2 (R21, T9.04): a cancelled order's clothes go back
+            // only once the trips are paid. A return needs no dispatch tag.
+            const isReturn = order.stage?.status === ORDER_STATUS.CANCELLED
+            if (
+                isReturn &&
+                order.cancellation?.returnFeeDue > 0 &&
+                order.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: `The return can be scheduled once the customer pays N${order.cancellation.returnFeeDue.toLocaleString('en-NG')} for pickup and delivery.`,
+                    requiresPayment: true,
+                    returnFeeDue: order.cancellation.returnFeeDue,
+                })
+            }
+            if (!isReturn && order.isDelivery && !isTagPrinted(order)) {
                 return BaseService.sendFailedResponse({
                     error: `Print the dispatch tag for order ${order.oscNumber} before assigning a rider.`,
                     needsDispatchTag: true,
@@ -2415,15 +2454,17 @@ class IntakeUserService extends BaseService {
                 $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.INTAKE_AND_TAG_STATION },
-                    {
-                        'items.holdDetails.heldByStation':
-                            STATION_STATUS.INTAKE_AND_TAG_STATION,
-                    },
+                    // FE report 15 Oct: a held piece shows in the Hold list of the
+                    // station it is ASSIGNED to (R5: the sender fixes it), as well as
+                    // the station that raised it.
+                    { 'items.holdDetails.assignTo': ROLE.INTAKE_AND_TAG },
+                    { 'items.holdDetails.heldByStation': STATION_STATUS.INTAKE_AND_TAG_STATION },
                 ],
             }
 
             if (search) {
                 baseQuery.$and = [
+                    ...baseQuery.$and,
                     {
                         $or: [
                             { oscNumber: { $regex: search, $options: 'i' } },
@@ -2944,12 +2985,13 @@ class IntakeUserService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
+                        ORDER_STATUS.COLLECTED,
                     ],
                 },
                 {
                     key: 'delivered',
                     label: 'Delivered',
-                    completedBy: ORDER_STATUS.DELIVERED,
+                    completedBy: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                 },
             ]
 
@@ -3037,14 +3079,27 @@ class IntakeUserService extends BaseService {
                     error: 'User not found',
                 })
 
+            // V1 batch 2 (R21): a cancelled order's bag can also be collected at
+            // the office, once the trips are paid — it ends "Returned unwashed".
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.READY,
+                'stage.status': { $in: [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED] },
             })
             if (!order)
                 return BaseService.sendFailedResponse({
                     error: 'Order not found or not ready for collection',
                 })
+            if (
+                order.stage?.status === ORDER_STATUS.CANCELLED &&
+                order.cancellation?.returnFeeDue > 0 &&
+                order.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: `The clothes can go back once the customer pays N${order.cancellation.returnFeeDue.toLocaleString('en-NG')} for pickup and delivery.`,
+                    requiresPayment: true,
+                    returnFeeDue: order.cancellation.returnFeeDue,
+                })
+            }
 
             const now = new Date()
 
@@ -3052,7 +3107,7 @@ class IntakeUserService extends BaseService {
                 orderId,
                 {
                     $set: {
-                        'stage.status': ORDER_STATUS.DELIVERED,
+                        'stage.status': order.stage?.status === ORDER_STATUS.CANCELLED ? ORDER_STATUS.RETURNED_UNWASHED : ORDER_STATUS.COLLECTED,
                         'stage.note': 'Customer collected order in person',
                         'stage.updatedAt': now,
                         'dispatchDetails.delivery.status':
@@ -3061,7 +3116,7 @@ class IntakeUserService extends BaseService {
                     },
                     $push: {
                         stageHistory: {
-                            status: ORDER_STATUS.DELIVERED,
+                            status: order.stage?.status === ORDER_STATUS.CANCELLED ? ORDER_STATUS.RETURNED_UNWASHED : ORDER_STATUS.COLLECTED,
                             note: 'Customer collected order in person',
                             updatedAt: now,
                         },
@@ -3070,10 +3125,13 @@ class IntakeUserService extends BaseService {
                 { runValidators: false },
             )
 
-            crmOnOrderDelivered(order)
-            offerOnOrderDelivered(order)
-            referralOnOrderDelivered(order)
-            recoveryOnOrderDelivered(order)
+            // A cancelled bag going back unwashed is not a delivery (V1 batch 2).
+            if (order.stage?.status !== ORDER_STATUS.CANCELLED) {
+                crmOnOrderDelivered(order)
+                offerOnOrderDelivered(order)
+                referralOnOrderDelivered(order)
+                recoveryOnOrderDelivered(order)
+            }
 
             await ActivityModel.create({
                 title: 'Order Collected In Person',

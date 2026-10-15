@@ -22,6 +22,7 @@ const {
   ROUTE_BOOKING_AVAILABILITY,
   ROUTE_BOOKING_CONTEXT,
   ROUTE_ORDER_ITEMS_EDIT,
+  ROUTE_ESCALATE_CANCEL_BOOK_ORDER_ID,
 } = require("../util/page-route");
 
 
@@ -887,8 +888,14 @@ router.post(ROUTE_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
  * @swagger
  * /bookOrder/book-order/{id}/staff-cancel:
  *   post:
- *     summary: Cancel an order as staff (admin any stage / intake pre-processing)
+ *     summary: Cancel an order (admin only)
  *     description: >
+ *       **V1 launch batch 2 (client confirmed 15 Oct, R12): only an admin cancels.** Anyone else gets
+ *       requiresAdmin true and canEscalate true; use /book-order/{id}/escalate-cancel. An unpaid order
+ *       cancelled after pickup now owes the trips (N1,000 + N1,000): its amount becomes that fee
+ *       (cancellation.originalAmount keeps the old one), cancellation.returnFeeDue is set, a payment link
+ *       goes by SMS, and the return delivery cannot be assigned until it is paid. The handed-back bag
+ *       ends as stage "returned-unwashed". The text below describes the older intake rule.
  *       Staff-initiated cancellation. An **admin** may cancel at ANY stage,
  *       including orders already in processing. **Intake-and-tag** staff may
  *       cancel only while the order has not yet entered processing (not a Red
@@ -946,6 +953,65 @@ router.post(ROUTE_CANCEL_BOOK_ORDER_ID, [auth], (req, res) => {
  *       500:
  *         description: Server error
  */
+/**
+ * @swagger
+ * /bookOrder/book-order/{id}/escalate-cancel:
+ *   post:
+ *     summary: Escalate an order for cancellation (S1, customer experience)
+ *     description: >
+ *       V1 launch batch 2 (client confirmed 15 Oct, R12): only admin cancels. S1 (or customer
+ *       experience) escalates with a reason, which puts the order on admin's cancellation list
+ *       (GET /bookOrder/cancellation-requests, `source: "staff"`). Admin then approves the request.
+ *       Refused if the order is already cancelled or already on the list.
+ *     tags: [BookOrder]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string, example: "Customer rejected bill" }
+ *     responses:
+ *       200:
+ *         description: On admin's list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         requestId: { type: string }
+ *                         orderId: { type: string }
+ *                         status: { type: string, example: pending }
+ *                         source: { type: string, example: staff }
+ *       400:
+ *         description: No reason, already cancelled, or already escalated
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.post(
+  ROUTE_ESCALATE_CANCEL_BOOK_ORDER_ID,
+  [multiAuth(ROLE.INTAKE_AND_TAG, ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN)],
+  (req, res) => {
+    const bookOrderController = new BookOrderController();
+    return bookOrderController.escalateCancellation(req, res);
+  }
+);
+
 router.post(
   ROUTE_STAFF_CANCEL_BOOK_ORDER_ID,
   [multiAuth(ROLE.ADMIN, ROLE.INTAKE_AND_TAG)],

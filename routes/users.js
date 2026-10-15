@@ -53,6 +53,7 @@ const {
   ROUTE_DELETE_USER,
   ROUTE_CUSTOMER_SUPPORT,
   ROUTE_INITIALIZE_PAYMENT,
+  ROUTE_CHECK_PAYMENT,
   ROUTE_DELETE_ADDRESS,
   ROUTE_ADD_ADDRESS,
   ROUTE_UPDATE_ADDRESS,
@@ -690,6 +691,57 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *                   type: string
  *                   example: "An internal server error occurred. Please try again later."
  */
+/**
+ * @swagger
+ * /users/check-payment:
+ *   get:
+ *     summary: Check a payment with Paystack (and settle it if it succeeded)
+ *     description: >
+ *       V1 launch batch 2 (B9 "Check payment asks Paystack again"; B2 the page after Paystack).
+ *       Send the Paystack `reference` (the callback page gets it as ?reference=) or an `orderId`
+ *       (its latest checkout). If Paystack says it succeeded and we had not recorded it yet, it is
+ *       settled now exactly as the webhook would (once only). A customer can check only their own
+ *       payments; staff can check any. The callback page should call this and show the result, never
+ *       a blank screen.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: reference
+ *         schema: { type: string, example: "pay_1760530000000_123" }
+ *       - in: query
+ *         name: orderId
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: The payment's state
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         reference: { type: string, example: "pay_1760530000000_123" }
+ *                         status: { type: string, example: success, description: "Our record: pending | success | failed" }
+ *                         paystackStatus: { type: string, example: success }
+ *                         settledNow: { type: boolean, example: true }
+ *                         alreadySettled: { type: boolean, example: false }
+ *       400:
+ *         description: Not found, or Paystack could not be reached ("Tap to try again")
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_CHECK_PAYMENT, auth, (req, res) => {
+  const userController = new UserController();
+  return userController.checkPayment(req, res);
+});
+
 router.post(ROUTE_INITIALIZE_PAYMENT, auth, (req, res) => {
   const userController = new UserController();
   return userController.initializePayment(req, res);

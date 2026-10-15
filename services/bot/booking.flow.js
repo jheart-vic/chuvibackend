@@ -418,21 +418,13 @@ module.exports = {
                     ],
                 }
             }
-            // Order exists but is UNPAID — drive payment instead of ending here,
-            // and DON'T call it "done" until money is actually collected.
+            // V1 launch batch 2 (B16, T2.04): "No payments in chat." The order
+            // is placed and unpaid; the customer pays in the app, never here.
+            // Still not "done" while money is owed.
             return {
                 replies: [
-                    `${subLead}Your order ${osc} is placed and awaiting payment — total ${naira(amount)}. How would you like to pay — from your wallet, or by card?`,
+                    `${subLead}Your order ${osc} is placed. The total is ${naira(amount)}. To pay, open the CHUVI app, go to Orders and tap Pay.`,
                 ],
-                state: {
-                    intent: BOT_INTENT.BOOKING_GUIDE,
-                    step: 'collect-payment',
-                    slots: {
-                        payOrderId: String(order?._id || ''),
-                        payAmount: amount,
-                        payOsc: osc,
-                    },
-                },
             }
         }
         const err = result?.data?.error

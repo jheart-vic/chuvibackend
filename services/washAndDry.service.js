@@ -874,16 +874,18 @@ class WashAndDryService extends BaseService {
                 // two $or keys would silently overwrite each other.
                 $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
-                    { stationStatus: STATION_STATUS.WASH_AND_DRY_STATION }, // ← swap
-                    {
-                        'items.holdDetails.heldByStation':
-                            STATION_STATUS.WASH_AND_DRY_STATION, // ← swap
-                    },
+                    { stationStatus: STATION_STATUS.WASH_AND_DRY_STATION },
+                    // FE report 15 Oct: a held piece shows in the Hold list of the
+                    // station it is ASSIGNED to (R5: the sender fixes it), as well as
+                    // the station that raised it.
+                    { 'items.holdDetails.assignTo': ROLE.WASH_AND_DRY },
+                    { 'items.holdDetails.heldByStation': STATION_STATUS.WASH_AND_DRY_STATION },
                 ],
             }
 
             if (search) {
                 baseQuery.$and = [
+                    ...baseQuery.$and,
                     {
                         $or: [
                             { oscNumber: { $regex: search, $options: 'i' } },
@@ -1280,12 +1282,13 @@ class WashAndDryService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
+                        ORDER_STATUS.COLLECTED,
                     ],
                 },
                 {
                     key: 'delivered',
                     label: 'Delivered',
-                    completedBy: ORDER_STATUS.DELIVERED,
+                    completedBy: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                 },
             ]
             const pipeline = PIPELINE.map((step) => {

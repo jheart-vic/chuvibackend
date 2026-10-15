@@ -101,14 +101,14 @@ class AdminService extends BaseService {
             // ── Active orders ───────────────────────────────────────────────
             const totalActiveOrders = await BookOrderModel.countDocuments({
                 'stage.status': {
-                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED],
+                    $nin: [ORDER_STATUS.READY, ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                 },
             })
 
             // ── Overdue & due today ─────────────────────────────────────────
             const overdueOrders = await BookOrderModel.countDocuments({
                 deliveryDate: { $lt: now },
-                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
                 $nor: [
                     {
                         'stage.status': ORDER_STATUS.READY,
@@ -120,7 +120,7 @@ class AdminService extends BaseService {
 
             const dueToday = await BookOrderModel.countDocuments({
                 deliveryDate: { $gte: now, $lte: todayEnd },
-                'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
                 $nor: [
                     {
                         'stage.status': ORDER_STATUS.READY,
@@ -1011,7 +1011,7 @@ class AdminService extends BaseService {
                 case 'active':
                     filter = {
                         'stage.status': {
-                            $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.HOLD],
+                            $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.HOLD],
                         },
                     }
                     break
@@ -1019,7 +1019,7 @@ class AdminService extends BaseService {
                 case 'overdue':
                     filter = {
                         deliveryDate: { $lt: now },
-                        'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
                         $nor: [
                             {
                                 'stage.status': ORDER_STATUS.READY,
@@ -1033,7 +1033,7 @@ class AdminService extends BaseService {
                 case 'dueToday':
                     filter = {
                         deliveryDate: { $gte: now, $lte: todayEnd },
-                        'stage.status': { $ne: ORDER_STATUS.DELIVERED },
+                        'stage.status': { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
                         $nor: [
                             {
                                 'stage.status': ORDER_STATUS.READY,

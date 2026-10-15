@@ -57,7 +57,7 @@ class UserService extends BaseService {
                 BookOrderModel.countDocuments({
                     userId,
                     paymentStatus: 'success',
-                    'stage.status': ORDER_STATUS.DELIVERED,
+                    'stage.status': { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] },
                 }),
 
                 NotificationModel.countDocuments({ userId, isRead: false }),
@@ -65,7 +65,7 @@ class UserService extends BaseService {
                 BookOrderModel.findOne({
                     $or: [{ userId }, { phoneNumber: req.user.phoneNumber }],
                     'stage.status': {
-                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.HOLD],
+                        $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED, ORDER_STATUS.HOLD],
                     },
                     $nor: [
                         {

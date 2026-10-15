@@ -2042,12 +2042,13 @@ class SortAndPretreatService extends BaseService {
                     completedBy: [
                         ORDER_STATUS.OUT_FOR_DELIVERY,
                         ORDER_STATUS.DELIVERED,
+                        ORDER_STATUS.COLLECTED,
                     ],
                 },
                 {
                     key: 'delivered',
                     label: 'Delivered',
-                    completedBy: ORDER_STATUS.DELIVERED,
+                    completedBy: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED],
                 },
             ]
 
@@ -2297,15 +2298,17 @@ class SortAndPretreatService extends BaseService {
                 $and: [onHoldScope(ORDER_STATUS.HOLD)],
                 $or: [
                     { stationStatus: STATION_STATUS.SORT_AND_PRETREAT_STATION },
-                    {
-                        'items.holdDetails.heldByStation':
-                            STATION_STATUS.SORT_AND_PRETREAT_STATION,
-                    },
+                    // FE report 15 Oct: a held piece shows in the Hold list of the
+                    // station it is ASSIGNED to (R5: the sender fixes it), as well as
+                    // the station that raised it.
+                    { 'items.holdDetails.assignTo': ROLE.SORT_AND_PRETREAT },
+                    { 'items.holdDetails.heldByStation': STATION_STATUS.SORT_AND_PRETREAT_STATION },
                 ],
             }
 
             if (search) {
                 baseQuery.$and = [
+                    ...baseQuery.$and,
                     {
                         $or: [
                             { oscNumber: { $regex: search, $options: 'i' } },

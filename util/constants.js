@@ -38,6 +38,8 @@ const DELIVERY_STATUS = {
     READY: 'ready',
     DELIVERED: 'delivered',
     OUT_FOR_DELIVERY: 'out-for-delivery',
+    // V1 launch batch 2 (R22): a failed delivery on a Ready order with no rider
+    // reads "Ready, waiting redelivery" (rows carry statusLabel).
     FAILED: 'failed',
 }
 
@@ -101,6 +103,12 @@ const ORDER_STATUS = {
     PICKED_UP: 'picked-up',
     READY: 'ready',
     DELIVERED: 'delivered',
+    // V1 launch batch 2 (client 15 Oct, B20): a self-collection order ends as
+    // Collected, not Delivered. Both are finished; see FINISHED_ORDER_STATUSES.
+    COLLECTED: 'collected',
+    // V1 launch batch 2 (R21, T9.05): a cancelled order whose clothes went back
+    // to the customer unwashed.
+    RETURNED_UNWASHED: 'returned-unwashed',
     OUT_FOR_DELIVERY: 'out-for-delivery',
     WASHING: 'washing',
     DRYING: 'drying',

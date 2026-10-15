@@ -18,9 +18,22 @@ function cleanSmsText(message) {
         .trim()
 }
 
-const sendSms = async (phoneNumber, message) => {
+// `opts.immediate` skips quiet hours (the flush job, which runs after them).
+const sendSms = async (phoneNumber, message, opts = {}) => {
     try {
         message = cleanSmsText(message)
+        // V1 launch batch 2 (R23): no SMS between 9 PM and 7 AM (settings);
+        // held and sent when the window ends (crons/queuedSmsFlush.js).
+        if (!opts.immediate) {
+            const { loadQuietHours, isQuiet, quietEnds } = require('./quietHours')
+            const hours = await loadQuietHours()
+            const now = new Date()
+            if (isQuiet(now, hours)) {
+                const QueuedSmsModel = require('../models/queuedSms.model')
+                const q = await QueuedSmsModel.create({ to: phoneNumber, message, sendAfter: quietEnds(now, hours) })
+                return { queued: true, sendAfter: q.sendAfter }
+            }
+        }
         const phoneNo = formatPhoneNumber(phoneNumber)
         const response = await axios.post(
             'https://api.ng.termii.com/api/sms/send',

@@ -447,6 +447,9 @@ const bookOrderSchema = new mongoose.Schema(
                     },
                 ],
                 creditApplied: Number, // wallet reward credit used
+                // V1 batch 2 (R17): "Covered by CHUVI" — a small recount increase
+                // CHUVI pays, its own line so the rows still add up.
+                recountCover: Number,
                 orderTotal: Number, // == amount (billed after offers/credit)
                 youSaved: Number, // offerDiscount + waived fees + creditApplied
                 coveredBySubscription: Boolean,
@@ -584,6 +587,12 @@ const bookOrderSchema = new mongoose.Schema(
                 difference: { type: Number },
                 previousPieceCount: { type: Number },
                 newPieceCount: { type: Number },
+                // V1 batch 2 (R13): "Every change saves the staff name, old items
+                // and new items."
+                byName: { type: String },
+                previousItems: [{ _id: false, type: { type: String }, quantity: Number }],
+                newItems: [{ _id: false, type: { type: String }, quantity: Number }],
+                recountCover: { type: Number },
             },
         ],
 
@@ -683,6 +692,8 @@ const bookOrderSchema = new mongoose.Schema(
         // `pickup.note`, order-level `holdDetails` and `itemEdits` that way —
         // a marker that vanishes would make a quick order indistinguishable
         // from a real ₦0 one.
+        // V1 batch 2 (R21): the last time the ready date was worked out again.
+        readyDateRecalc: { at: Date, from: String, previous: Date },
         // Once-per-order customer SMS (util/orderSms.js): when each was sent.
         smsLog: {
             bookingReceived: { type: Date },
@@ -747,6 +758,11 @@ const bookOrderSchema = new mongoose.Schema(
             cashRefunded: { type: Number, default: 0 },
             creditsReversed: { type: Number, default: 0 },
             feeApplied: { type: Number, default: 0 }, // Amber only: fee withheld from cash refund
+            // V1 launch batch 2 (R21): an unpaid order cancelled after pickup owes
+            // the trips; its bill becomes that fee and the return waits for it.
+            returnFeeDue: { type: Number },
+            originalAmount: { type: Number },
+            returnedAt: { type: Date },
         },
         isPickUp: { type: Boolean, default: false },
         isDelivery: { type: Boolean, default: false },
@@ -826,6 +842,9 @@ const bookOrderSchema = new mongoose.Schema(
                 // writing a failure reason into that would put "customer not at
                 // home" on the tag as an instruction to the next rider.
                 failureNote: { type: String },
+                // V1 launch batch 2 (R22): "Customer not available" attempts.
+                failedAttempts: { type: Number, default: 0 },
+                failures: [{ _id: false, at: Date, note: String, rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } }],
                 // Unassigned-dispatch sweep guards (fire once per stage).
                 alertedAt: { type: Date },
                 escalatedAt: { type: Date },
@@ -841,6 +860,11 @@ const bookOrderSchema = new mongoose.Schema(
                 // the dispatch tag prints. NOT the place for a failure reason.
                 note: { type: String },
                 failureNote: { type: String },
+                failedAttempts: { type: Number, default: 0 },
+                failures: [{ _id: false, at: Date, note: String, rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } }],
+                // R22: "the first redelivery is free, later ones are charged."
+                // Each charge is its own line (R19); unpaid ones stop dispatch.
+                redeliveryFees: [{ _id: false, amount: Number, at: Date, paidAt: Date }],
                 startedAt: { type: Date },
                 updatedAt: { type: Date },
                 alertedAt: { type: Date },

@@ -153,6 +153,11 @@ class BookOrderService extends BaseService {
         if (status === ORDER_STATUS.CANCELLED) {
             return { tier: 'none', allowed: false, reason: 'This order is already cancelled.' }
         }
+        // FE report 15 Oct: a delivered (or collected) order showed tier "red".
+        // It is finished, so there is nothing to cancel: tier "none".
+        if (status === ORDER_STATUS.DELIVERED || status === ORDER_STATUS.COLLECTED) {
+            return { tier: 'none', allowed: false, reason: 'This order is already complete. If something is wrong, raise a complaint.' }
+        }
 
         // N1 (client spec 2026-10-07): "any time BEFORE TAGGING BEGINS; once
         // tagged, never." This is STRICTER than the RED stage list below and
@@ -344,7 +349,35 @@ class BookOrderService extends BaseService {
             creditsReversed,
             feeApplied: feeCharged,
         }
+        // V1 launch batch 2 (R21, T9.03): an order cancelled after pickup that
+        // was never paid owes the trips. Its bill becomes that fee (kept beside
+        // the original amount), a payment link goes by SMS, and the clothes go
+        // back only once it is paid ("Returned unwashed").
+        const returnFee = paidSoFar === 0 ? Math.max(0, Math.round(feeApplied) || 0) : 0
+        if (returnFee > 0) {
+            order.cancellation.returnFeeDue = returnFee
+            order.cancellation.originalAmount = Number(order.amount || 0)
+            order.amount = returnFee
+            order.balanceDue = undefined
+            order.itemsPending = false
+            order.paymentStatus = PAYMENT_ORDER_STATUS.PENDING
+        }
         await order.save()
+        if (returnFee > 0) {
+            try {
+                const PaymentHoldService = require('./paymentHold.service')
+                const link = await PaymentHoldService._buildPaymentLink(order)
+                const first = String(order.fullName || '').trim().split(/\s+/)[0] || 'Hello'
+                if (order.phoneNumber) {
+                    await sendSms(
+                        order.phoneNumber,
+                        `${first}, your CHUVI order ${order.oscNumber} is cancelled. Please pay N${returnFee.toLocaleString('en-NG')} for pickup and delivery and we will bring your clothes back: ${link || 'open the CHUVI app, go to Orders and tap Pay.'}`,
+                    )
+                }
+            } catch (e) {
+                console.error('return fee link failed (non-fatal):', e?.message)
+            }
+        }
 
         // 4b) Auto-close any OTHER pending cancellation request for this order —
         //     the order is now cancelled, so a queued request is moot. The Amber
@@ -369,6 +402,8 @@ class BookOrderService extends BaseService {
         // 5) Release the attached offer + CRM (fire-and-forget).
         offerOnOrderCancelled(order, cancelReason)
         crmOnOrderCancelled(order)
+        // V1 batch 2: open customer experience tasks on this order are moot now.
+        await require('../util/careTasks').closeTasks({ orderId: order._id, reason: 'cancelled' })
 
         // 6) Notify + audit — non-fatal: the cancellation & refund are already
         //    committed above, so a messaging/logging failure must not report
@@ -491,13 +526,15 @@ class BookOrderService extends BaseService {
             }
 
             const settings = await AdminSettingModel.findOne({})
-            const graceMinutes = settings?.orderCancellationGraceMinutes ?? 15
-            const decision = this._cancelTier(order, graceMinutes)
 
-            // Intake-and-tag is scoped to pre-processing only.
-            if (role === ROLE.INTAKE_AND_TAG && decision.tier === 'red') {
+            // V1 launch batch 2 (client confirmed 15 Oct, R12): "Only admin
+            // cancels an order, with a reason. S1 can 'Escalate for cancellation'
+            // with a reason, which puts the order on admin's list."
+            if (role !== ROLE.ADMIN) {
                 return BaseService.sendFailedResponse({
-                    error: 'This order is already in processing — only an admin can cancel it now.',
+                    error: 'Only admin can cancel an order. Use Escalate for cancellation, with the reason, to put it on admin\'s list.',
+                    requiresAdmin: true,
+                    canEscalate: true,
                 })
             }
 
@@ -536,6 +573,69 @@ class BookOrderService extends BaseService {
             return BaseService.sendFailedResponse({
                 error: 'Unable to cancel order',
             })
+        }
+    }
+
+    // V1 launch batch 2 (R12): S1 "Escalate for cancellation" with a reason —
+    // the order goes on admin's cancellation list (the same list as customer
+    // requests, marked source "staff"). Only admin then cancels.
+    async escalateCancellation(req) {
+        try {
+            const staffId = req.user.id
+            const orderId = req.params.id
+            const reason = (req.body?.reason || '').trim()
+            if (!reason) {
+                return BaseService.sendFailedResponse({ error: 'Give the reason for the cancellation.', reasonRequired: true })
+            }
+            const order = await BookOrderModel.findById(orderId)
+            if (!order) return BaseService.sendFailedResponse({ error: 'Order not found' })
+            if (order.stage?.status === ORDER_STATUS.CANCELLED) {
+                return BaseService.sendFailedResponse({ error: 'This order is already cancelled.' })
+            }
+            const existing = await CancellationRequestModel.findOne({
+                orderId: order._id,
+                status: CANCELLATION_REQUEST_STATUS.PENDING,
+            }).lean()
+            if (existing) {
+                return BaseService.sendFailedResponse({
+                    error: 'This order is already on admin\'s cancellation list.',
+                    requestId: existing._id,
+                })
+            }
+            const settings = await AdminSettingModel.findOne({})
+            const decision = this._cancelTier(order, settings?.orderCancellationGraceMinutes ?? 15)
+            const request = await CancellationRequestModel.create({
+                orderId: order._id,
+                userId: order.userId || undefined,
+                reason,
+                source: 'staff',
+                escalatedBy: getObjectId(staffId),
+                tierAtRequest: decision.tier,
+            })
+            try {
+                const { notifyRoles } = require('../util/notifyRoles')
+                await notifyRoles({
+                    roles: [ROLE.ADMIN],
+                    title: 'Escalated for cancellation',
+                    body: `Order ${order.oscNumber}: ${reason}`,
+                    subBody: 'Only an admin can cancel it. It is on the cancellation list.',
+                    type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                })
+                await createAuditLog({
+                    userId: getObjectId(staffId),
+                    action: `Escalated order ${order.oscNumber} for cancellation: ${reason}`,
+                    category: AUDIT_LOG_CATEGORIES.ORDER,
+                    orderId: order._id,
+                })
+            } catch (e) {
+                console.warn('escalation side effects failed (non-fatal):', e.message)
+            }
+            return BaseService.sendSuccessResponse({
+                message: { requestId: request._id, orderId: order._id, status: request.status, source: 'staff' },
+            })
+        } catch (error) {
+            console.error('Error escalating cancellation:', error)
+            return BaseService.sendFailedResponse({ error: 'Unable to escalate this order for cancellation' })
         }
     }
 
@@ -683,6 +783,15 @@ class BookOrderService extends BaseService {
             const requestId = req.params.id
             const feeAmount = Math.max(0, Math.round(req.body?.feeAmount) || 0)
             const note = (req.body?.note || '').trim()
+
+            // R12 (client confirmed 15 Oct): only admin cancels. Customer
+            // experience can still see and decline a request.
+            if ((req.user?.userType || req.user?.role) !== ROLE.ADMIN) {
+                return BaseService.sendFailedResponse({
+                    error: 'Only admin can cancel an order. This request stays on admin\'s list.',
+                    requiresAdmin: true,
+                })
+            }
 
             const request = await CancellationRequestModel.findById(requestId)
             if (!request) {
@@ -1122,6 +1231,19 @@ class BookOrderService extends BaseService {
             }
 
             const previousTotal = Number(order.amount || 0)
+            // R13: the staff NAME is saved with the change, not only the id.
+            const actorName = actorId
+                ? (await UserModel.findById(actorId).select('fullName').lean())?.fullName || null
+                : null
+            // "old items and new items": one line per item type with its count.
+            const summariseItems = (list) => {
+                const by = new Map()
+                for (const i of list || []) {
+                    const k = i?.type || 'item'
+                    by.set(k, (by.get(k) || 0) + (Number(i?.quantity) || 1))
+                }
+                return [...by.entries()].map(([type, quantity]) => ({ type, quantity }))
+            }
             // What the customer has actually handed over. A waiver is NOT money
             // — it is permission to proceed — so it must not be treated as a
             // payment here, or reducing a waived order's bill would refund cash
@@ -1129,12 +1251,29 @@ class BookOrderService extends BaseService {
             // a balance due) counts what it paid before that raise (F-30).
             const amountPaid = amountPaidSoFar(order)
 
-            const { newTotal, pricing, breakdown, attached } =
+            const { newTotal: repricedTotal, pricing, breakdown, attached } =
                 await this._repriceForItems({
                     order,
                     items,
                     adminOrderSetting,
                 })
+
+            // V1 batch 2 (R17): recount cover — a small increase on an item-list
+            // booking is covered by CHUVI as its own line; a repeat customer past
+            // the limit gets none. Decided BEFORE the money is worked out.
+            const RecountCover = require('../util/recountCover')
+            const coverDecision = await RecountCover.decideCover({
+                order,
+                previousTotal,
+                newTotal: repricedTotal,
+                adminSetting: adminOrderSetting,
+            })
+            const recountCover = coverDecision.cover || 0
+            const newTotal = repricedTotal - recountCover
+            if (recountCover > 0) {
+                pricing.recountCover = recountCover
+                pricing.orderTotal = newTotal
+            }
 
             const difference = newTotal - previousTotal
             const outstanding = Math.max(0, newTotal - amountPaid)
@@ -1196,17 +1335,34 @@ class BookOrderService extends BaseService {
                             at: now,
                             by: actorId,
                             byRole: actorRole,
+                            byName: actorName,
                             reason,
                             previousTotal,
                             newTotal,
                             difference,
                             previousPieceCount: countPieces(order.items || []),
                             newPieceCount: countPieces(explodedItems),
+                            previousItems: summariseItems(order.items || []),
+                            newItems: summariseItems(items),
+                            ...(recountCover > 0 && { recountCover }),
                         },
                     },
                 },
                 { runValidators: false },
             )
+
+            // V1 batch 2 (R21, confirmed 15 Oct): a Quick Booking whose real count
+            // is more than twice the booking gets its ready date worked out again
+            // with the daily limit (otherwise the 12 Oct rule stands: the date is
+            // kept). Before the bill goes out, so the bill SMS gives the new date.
+            let readyDateChanged = false
+            if (order.quickBooking && Number(order.counts?.customer) > 0) {
+                const trigger = Number(adminOrderSetting.quickBookingRecountTrigger) || 2
+                if (countPieces(explodedItems) > trigger * Number(order.counts.customer)) {
+                    const r = await require('../util/readyDateRecalc').recalcReadyDate(order._id, { from: 'pickup' })
+                    readyDateChanged = Boolean(r.changed)
+                }
+            }
 
             // The bill's offers become the order's offers: an attached offer
             // the new bill no longer applies is released (so it is not spent on
@@ -1214,13 +1370,45 @@ class BookOrderService extends BaseService {
             // is attached. Release first: an order holds one personal offer.
             await this._settleOfferLinkages({ order, breakdown, attached })
 
+            // R17: "Every mismatch is recorded against the customer." An
+            // item-list booking only: a Quick Booking's first listing is its
+            // count, not a mismatch.
+            const prevPieces = countPieces(order.items || [])
+            const newPieces = countPieces(explodedItems)
+            if (!order.quickBooking && prevPieces !== newPieces) {
+                await RecountCover.recordMismatch({
+                    userId: order.userId,
+                    orderId: order._id,
+                    previousPieces: prevPieces,
+                    newPieces,
+                    cover: recountCover,
+                })
+            }
+            if (coverDecision.repeatLimitReached) {
+                try {
+                    const { notifyRoles } = require('../util/notifyRoles')
+                    await notifyRoles({
+                        roles: [ROLE.ADMIN],
+                        title: 'Repeat mismatch',
+                        body: `Order ${order.oscNumber}: ${order.fullName || 'this customer'} has had ${coverDecision.prior} recount mismatches recently, so this increase was not covered.`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    })
+                } catch (e) {
+                    console.error('repeat mismatch alert failed:', e?.message)
+                }
+            }
+
             const result = {
                 previousTotal,
                 newTotal,
                 difference,
+                recountCover,
+                coverReason: coverDecision.reason,
                 pieceCount: countPieces(explodedItems),
                 paymentHold: null,
                 walletRefund: null,
+                readyDateChanged,
             }
 
             // A hold left open by an earlier edit carries the OLD amount and
@@ -2641,7 +2829,7 @@ class BookOrderService extends BaseService {
                 if (view === 'active') {
                     filter['stage.status'] = { $ne: ORDER_STATUS.CANCELLED }
                 } else if (view === 'completed') {
-                    filter['stage.status'] = ORDER_STATUS.DELIVERED
+                    filter['stage.status'] = { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] }
                 } else if (view === 'cancelled') {
                     filter['stage.status'] = ORDER_STATUS.CANCELLED
                 }
@@ -2726,7 +2914,7 @@ class BookOrderService extends BaseService {
                         'stage.status': { $ne: ORDER_STATUS.CANCELLED },
                     })
                         .sort({ createdAt: -1 })
-                        .select('serviceType serviceTier deliverySpeed scheduling pickupAddress')
+                        .select('serviceType serviceTier deliverySpeed scheduling pickupAddress billingType paymentMethod')
                         .lean(),
                     // Only linkages a booking can still use: ATTACHED ones are
                     // already committed to a placed order.
@@ -2785,6 +2973,9 @@ class BookOrderService extends BaseService {
                               pickupTiming: lastOrder.scheduling?.pickup?.timing || null,
                               pickupWindowId: lastOrder.scheduling?.pickup?.windowId || null,
                               pickupAddress: lastOrder.pickupAddress || null,
+                              // FE 15 Oct: how it was paid, to preselect My wallet / Card / My plan.
+                              billingType: lastOrder.billingType || null,
+                              paymentMethod: lastOrder.paymentMethod || null,
                           }
                         : null,
                     welcomeOffer: {

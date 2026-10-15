@@ -111,7 +111,7 @@ class FeedbackService extends BaseService {
             if (!order) {
                 return BaseService.sendFailedResponse({ error: 'Order not found' })
             }
-            if (order.stage?.status !== ORDER_STATUS.DELIVERED) {
+            if (![ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED].includes(order.stage?.status)) {
                 return BaseService.sendFailedResponse({
                     error: 'Feedback can only be given on a delivered order',
                 })
@@ -178,7 +178,7 @@ class FeedbackService extends BaseService {
             if (!order) {
                 return BaseService.sendFailedResponse({ error: 'Order not found' })
             }
-            if (order.stage?.status !== ORDER_STATUS.DELIVERED) {
+            if (![ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED].includes(order.stage?.status)) {
                 return BaseService.sendFailedResponse({
                     error: 'Feedback can only be given on a delivered order',
                 })
@@ -305,7 +305,20 @@ class FeedbackService extends BaseService {
                 sort: { createdAt: -1 },
                 lean: true,
             })
-            return BaseService.sendSuccessResponse({ message: { data, pagination } })
+            // FE report 15 Oct: hasComplaint was false for an order with a
+            // complaint. Derived from ComplaintCase (any door that opened it),
+            // not the feedback row's back-reference, same as the monthly report.
+            const ComplaintCaseModel = require('../models/complaintCase.model')
+            const orderIds = data.map((f) => f.orderId).filter(Boolean)
+            const cases = orderIds.length
+                ? await ComplaintCaseModel.find({ orderId: { $in: orderIds } }).select('orderId').lean()
+                : []
+            const withCase = new Set(cases.map((c) => String(c.orderId)))
+            const rows = data.map((f) => ({
+                ...f,
+                hasComplaint: withCase.has(String(f.orderId)) || Boolean(f.complaintCaseId),
+            }))
+            return BaseService.sendSuccessResponse({ message: { data: rows, pagination } })
         } catch (error) {
             console.error(error)
             return BaseService.sendFailedResponse({ error: 'Failed to list feedback' })
