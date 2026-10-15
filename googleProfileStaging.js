@@ -91,7 +91,7 @@ async function main() {
 
         const b = await google('b')
         const rb = await call(b, { phoneNumber: '12345' })
-        ok(!rb.success && /valid phone number/.test(rb.data.error) && !(await fresh(b)).phoneNumber, `an invalid phone is refused and nothing saved ("${rb.data.error}")`)
+        ok(!rb.success && /Nigerian mobile number/.test(rb.data.error) && !(await fresh(b)).phoneNumber, `an invalid phone is refused and nothing saved ("${rb.data.error}")`)
         const rb2 = await call(b, { phoneNumber: '0805 111 2233' })
         const fb = await fresh(b)
         ok(rb2.success && fb.phoneNumber === '08051112233' && fb.termsAccepted === false && !fb.termsAcceptedAt, 'without termsAccepted the phone still saves (termsAccepted false, no date)')

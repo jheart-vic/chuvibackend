@@ -118,9 +118,10 @@ class BookingWindowService {
             return null
         }
         const pickupOf = (speed) => ({ leg: legFor(speed), pickupDate: draft.pickupDate, pickupTime: draft.pickupTime })
-        const main = await this.speedOptionsFor({ pickup: pickupOf(DELIVERY_SPEED.STANDARD), pieces, now })
+        const quickBooking = !items.length && Number(draft.itemCount) > 0
+        const main = await this.speedOptionsFor({ pickup: pickupOf(DELIVERY_SPEED.STANDARD), pieces, now, quickBooking })
         const sameDayLeg = legFor(DELIVERY_SPEED.SAME_DAY)
-        if (JSON.stringify(sameDayLeg) !== JSON.stringify(legFor(DELIVERY_SPEED.STANDARD))) {
+        if (!quickBooking && JSON.stringify(sameDayLeg) !== JSON.stringify(legFor(DELIVERY_SPEED.STANDARD))) {
             const alt = await this.speedOptionsFor({ pickup: pickupOf(DELIVERY_SPEED.SAME_DAY), pieces, now })
             const i = main.speeds.findIndex((s) => s.speed === DELIVERY_SPEED.SAME_DAY)
             main.speeds[i] = alt.speeds.find((s) => s.speed === DELIVERY_SPEED.SAME_DAY)
@@ -148,22 +149,32 @@ class BookingWindowService {
      * shows and the booking itself enforces (one rule for both).
      * `pickup` is { leg?, pickupDate?, pickupTime? }.
      */
-    static async speedOptionsFor({ pickup = {}, pieces, now = new Date() }) {
+    static async speedOptionsFor({ pickup = {}, pieces, now = new Date(), quickBooking = false }) {
         const adminSetting = (await AdminSettingModel.findOne({}).lean()) || {}
         const settings = await this.getSchedulingSettings()
         const pickupAt = W.pickupInstant({ ...pickup, now, settings })
         const from = W.startOfDay(pickupAt)
         const usage = await this.getFloorUsage({ from, to: W.addDays(from, 130) })
-        return {
-            pickupAt,
-            speeds: W.speedOptions({
-                pickupAt,
-                pieces,
-                settings,
-                usage,
-                labels: this.speedLabels(adminSetting),
-            }),
+        const labels = this.speedLabels(adminSetting)
+        let speeds = W.speedOptions({ pickupAt, pieces, settings, usage, labels })
+        // R21 (V1 launch batch 1): Ready Today is not offered on a Quick
+        // Booking. The real count is only known after pickup, so a same-day
+        // promise could not be kept. One rule for the screen and the booking.
+        if (quickBooking) {
+            speeds = speeds.map((row) =>
+                row.speed === DELIVERY_SPEED.SAME_DAY
+                    ? {
+                          ...row,
+                          available: false,
+                          unavailableReason: 'quick-booking',
+                          message: `${labels[DELIVERY_SPEED.SAME_DAY]} is not offered for Quick Booking. Choose ${labels[DELIVERY_SPEED.EXPRESS]} or ${labels[DELIVERY_SPEED.STANDARD]}.`,
+                          readyDate: null,
+                          allocation: undefined,
+                      }
+                    : row,
+            )
         }
+        return { pickupAt, speeds }
     }
 
     // ───────────────────────── per-window-per-day counts ─────────────────────────

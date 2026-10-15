@@ -1081,6 +1081,9 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
         // Launch item 4: a paid Urgent pickup now alerts Intake and goes to the
         // top of the pickup list (once; never for an abandoned checkout).
         await require('./urgentPickup').markUrgentPickupIfReady(order)
+        // V1 launch batch 1: the booking is confirmed now that it is paid
+        // (sent once; a Quick Booking already had it at booking).
+        await require('./orderSms').bookingReceived(order)
 
         // Overpaid (a link opened before the bill went DOWN): the excess goes
         // back to the wallet (review F-33).

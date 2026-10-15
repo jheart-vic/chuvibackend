@@ -143,7 +143,7 @@ router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
  *                 type: array
  *                 description: "Subset of the handoff's item ids to reject to Hold. On a whole-order gate (intake→sort, press→QC) only two values are accepted: omitted/empty, or every item id in the handoff — a partial rejection is refused with 400."
  *                 items: { type: string }
- *               note: { type: string, example: "2 items still wet" }
+ *               note: { type: string, example: "2 items still wet", description: "The reason. Required when rejectedItems is not empty (V1 batch 1, R5)." }
  *     responses:
  *       200:
  *         description: Handoff confirmed

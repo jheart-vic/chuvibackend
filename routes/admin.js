@@ -53,7 +53,9 @@ const {
     ROUTE_ADMIN_SEND_TO_HOLD_ORDERS,
     ROUTE_ADMIN_RESOLVE_ORDER_HOLD,
     ROUTE_ADMIN_RELEASE_ITEM_HOLD,
-    ROUTE_GET_AUDIT_LOGS
+    ROUTE_GET_AUDIT_LOGS,
+    ROUTE_ADMIN_REP_LINK_REPORT,
+    ROUTE_ADMIN_SIGNUP_ATTEMPTS,
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -3670,6 +3672,163 @@ router.post(ROUTE_ORDER_PAYMENT_HOLD_WAIVE, [adminAuth], (req, res) => {
 router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getBankCheckList(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/reports/rep-links:
+ *   get:
+ *     summary: Rep tracking report (per rep link, who signed up, who paid and how much)
+ *     description: >
+ *       V1 launch batch 1 (client 15 Oct). One row per referrer (rep link), with every customer who
+ *       signed up on that link. A customer counts as paid when they have at least one order with
+ *       paymentStatus success that is not cancelled; totalPaid is the sum of those orders. A waived
+ *       order is not money and is not counted. Sorted by sign-ups, most first.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date, example: "2026-10-01" }
+ *         description: Sign-ups on or after this date.
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date, example: "2026-11-01" }
+ *         description: Sign-ups before this date (exclusive).
+ *       - in: query
+ *         name: referrerId
+ *         schema: { type: string }
+ *         description: Only this rep.
+ *     responses:
+ *       200:
+ *         description: The report
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         from: { type: string, nullable: true, example: "2026-10-01" }
+ *                         to: { type: string, nullable: true, example: null }
+ *                         totals:
+ *                           type: object
+ *                           properties:
+ *                             reps: { type: integer, example: 3 }
+ *                             signups: { type: integer, example: 24 }
+ *                             paidCustomers: { type: integer, example: 9 }
+ *                             totalPaid: { type: number, example: 61400 }
+ *                         reps:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               referrer:
+ *                                 type: object
+ *                                 properties:
+ *                                   id: { type: string, example: "6a0f1c2b3d4e5f6a7b8c9d0e" }
+ *                                   fullName: { type: string, example: "Ada Rep" }
+ *                                   phoneNumber: { type: string, example: "+2348031234567" }
+ *                                   code: { type: string, example: "ADA123" }
+ *                                   role: { type: string, example: "customer" }
+ *                               signups: { type: integer, example: 10 }
+ *                               paidCustomers: { type: integer, example: 4 }
+ *                               paidOrders: { type: integer, example: 5 }
+ *                               totalPaid: { type: number, example: 28600 }
+ *                               customers:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     userId: { type: string, example: "6a0f1c2b3d4e5f6a7b8c9d11" }
+ *                                     fullName: { type: string, example: "Amaka Obi" }
+ *                                     phoneNumber: { type: string, example: "+2348039876543" }
+ *                                     signedUpAt: { type: string, format: date-time }
+ *                                     paid: { type: boolean, example: true }
+ *                                     paidOrders: { type: integer, example: 1 }
+ *                                     totalPaid: { type: number, example: 6000 }
+ *                                     firstPaidAt: { type: string, format: date-time, nullable: true }
+ *       400:
+ *         description: Bad date or referrerId
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_REP_LINK_REPORT, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getRepLinkReport(req, res)
+})
+
+/**
+ * @swagger
+ * /admin/signup-attempts:
+ *   get:
+ *     summary: Refused sign-ups (phone or email already in use), with the referral code used
+ *     description: >
+ *       V1 launch batch 1 (client 15 Oct): one phone number, one account. Every customer sign-up
+ *       refused because the phone or email already belongs to an account is listed here, newest
+ *       first, with the referral code (rep link) that was used and the account that holds the
+ *       details. A phone that is not a real Nigerian mobile is refused with code INVALID_PHONE
+ *       and is not listed.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 20 }
+ *     responses:
+ *       200:
+ *         description: The refused sign-ups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               reason: { type: string, enum: [phone-in-use, email-in-use], example: phone-in-use }
+ *                               method: { type: string, enum: [email, google], example: google }
+ *                               email: { type: string, nullable: true, example: "amaka.second@gmail.com" }
+ *                               phoneNumber: { type: string, nullable: true, example: "08031234567" }
+ *                               fullName: { type: string, nullable: true, example: "Amaka Obi" }
+ *                               referralCode: { type: string, nullable: true, example: "ADA123" }
+ *                               existingAccount:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 properties:
+ *                                   id: { type: string }
+ *                                   fullName: { type: string, example: "Amaka Obi" }
+ *                                   email: { type: string, example: "amaka@gmail.com" }
+ *                                   phoneNumber: { type: string, example: "08031234567" }
+ *                               at: { type: string, format: date-time }
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             total: { type: integer, example: 3 }
+ *                             page: { type: integer, example: 1 }
+ *                             limit: { type: integer, example: 20 }
+ *                             pages: { type: integer, example: 1 }
+ */
+router.get(ROUTE_ADMIN_SIGNUP_ATTEMPTS, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getSignupAttempts(req, res)
 })
 
 /**

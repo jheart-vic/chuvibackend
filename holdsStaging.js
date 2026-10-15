@@ -338,7 +338,7 @@ async function main() {
             'the row names the hold type so staff can see why the clock is longer',
         )
 
-        // past 48 hours it DOES breach
+        // V1 batch 1 (client 15 Oct): "Payment holds never Overdue", even past 48 hours
         const oldPay = await mkHold('PAY2', DELIVERY_SPEED.STANDARD, 50)
         await BookOrderModel.updateOne(
             { _id: oldPay._id },
@@ -346,8 +346,8 @@ async function main() {
         )
         const dash6 = await call(admin.getDashboardStats.bind(admin))
         ok(
-            (dash6 || {}).overdueHolds === 5 && (dash6 || {}).activeHolds === 3,
-            `a 50-hour payment hold IS overdue (active ${(dash6 || {}).activeHolds} want 3, overdue ${(dash6 || {}).overdueHolds} want 5)`,
+            (dash6 || {}).overdueHolds === 4 && (dash6 || {}).activeHolds === 4,
+            `a 50-hour payment hold is still NOT overdue (active ${(dash6 || {}).activeHolds} want 4, overdue ${(dash6 || {}).overdueHolds} want 4)`,
         )
         ok(
             (dash6 || {}).activeHolds + (dash6 || {}).overdueHolds ===
@@ -366,8 +366,8 @@ async function main() {
         )
         const dash7 = await call(admin.getDashboardStats.bind(admin))
         ok(
-            (dash7 || {}).activeHolds === 3,
-            `*** a past delivery date does NOT overdue a payment hold *** (active ${(dash7 || {}).activeHolds}, want 3)`,
+            (dash7 || {}).activeHolds === 4,
+            `*** a past delivery date does NOT overdue a payment hold *** (active ${(dash7 || {}).activeHolds}, want 4)`,
         )
 
         // ── 7 escalation fires once, not every sweep ─────────────────────────
@@ -401,8 +401,8 @@ async function main() {
         )
         const dash8 = await call(admin.getDashboardStats.bind(admin))
         ok(
-            (dash8 || {}).overdueHolds === 6,
-            `*** a type with no limit still breaches on the 6-hour standard clock *** (overdue ${(dash8 || {}).overdueHolds}, want 6)`,
+            (dash8 || {}).overdueHolds === 5,
+            `*** a type with no limit still breaches on the 6-hour standard clock *** (overdue ${(dash8 || {}).overdueHolds}, want 5)`,
         )
 
         // ── 9 the hold-type CRUD endpoints ───────────────────────────────────

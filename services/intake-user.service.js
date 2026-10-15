@@ -205,6 +205,8 @@ class IntakeUserService extends BaseService {
                 // required", which staff could not act on).
                 paymentMethod: 'string',
                 secondaryPaymentMethod: 'string',
+                paymentReference: 'string',
+                secondaryPaymentReference: 'string',
             }
 
             const validateMessage = {
@@ -325,6 +327,9 @@ class IntakeUserService extends BaseService {
                 method: tenderMethod,
                 secondaryMethod: secondaryTender,
                 useCredit,
+                // R16: POS receipt number / transfer reference.
+                reference: post.paymentReference,
+                secondaryReference: post.secondaryPaymentReference,
             })
             if (!paymentPlan.ok) {
                 return BaseService.sendFailedResponse({
@@ -337,6 +342,8 @@ class IntakeUserService extends BaseService {
             // value.
             delete post.paymentMethod
             delete post.secondaryPaymentMethod
+            delete post.paymentReference
+            delete post.secondaryPaymentReference
             delete post.useCredit
 
             const oscNumber = generateOscNumber()
@@ -432,6 +439,15 @@ class IntakeUserService extends BaseService {
 
             crmOnOrderCreated(newOrder)
             referralOnOrderCreated(newOrder)
+
+            // V1 launch batch 1: "Booking received" SMS, now for an order that
+            // needs nothing more; a card order gets it when its payment lands.
+            {
+                const OrderSms = require('../util/orderSms')
+                if (OrderSms.bookingConfirmedAtCreation(newOrder)) {
+                    OrderSms.bookingReceived(newOrder).catch(() => {})
+                }
+            }
 
             await createNotification({
                 userId: userId,

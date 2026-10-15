@@ -1,4 +1,5 @@
 const BaseService = require('./base.service')
+const OrderSms = require('../util/orderSms')
 const BookOrderModel = require('../models/bookOrder.model')
 const HoldTypeModel = require('../models/holdType.model')
 const ActivityModel = require('../models/activity.model')
@@ -154,7 +155,11 @@ class PaymentHoldService {
                 order,
                 amount,
                 paymentUrl,
-                body: `Chuvi: your order ${order.oscNumber} comes to ₦${amount.toLocaleString('en-NG')}. Please pay to start processing${paymentUrl ? `: ${paymentUrl}` : ' in the app'}.`,
+                // V1 launch batch 1: the client's texts. A Quick Booking's bill
+                // carries the pay-by time; any other order was recounted.
+                body: order.quickBooking
+                    ? OrderSms.TEXTS.quickBookingBill(order, { amount, link: paymentUrl, billAt: keepClockFrom?.raisedAt || now })
+                    : OrderSms.TEXTS.recountLink(order, { toPay: amount, link: paymentUrl }),
                 title: 'Payment needed to start your order',
             })
 
@@ -440,7 +445,11 @@ class PaymentHoldService {
                                 order,
                                 amount,
                                 paymentUrl: order.paymentHold.paymentUrl,
-                                body: `Chuvi: a reminder that order ${order.oscNumber} is waiting for payment of ₦${amount.toLocaleString('en-NG')}${order.paymentHold.paymentUrl ? `: ${order.paymentHold.paymentUrl}` : ''}. We start as soon as it clears.`,
+                                body: OrderSms.TEXTS.paymentReminder(order, {
+                                    amount,
+                                    link: order.paymentHold.paymentUrl,
+                                    billAt: order.paymentHold.raisedAt,
+                                }),
                                 title: 'Your order is waiting for payment',
                             })
                         }

@@ -554,10 +554,13 @@ const run = (async () => {
     const { PAYMENT_METHOD: PM, COUNTER_PAYMENT_METHODS } = require(
         path.join(ROOT, 'util/constants'),
     )
-    ok('the four counter tenders the client named are the allowed set',
-        COUNTER_PAYMENT_METHODS.length === 4 &&
-            ['cash', 'pos', 'bank-transfer', 'wallet'].every((m) =>
-                COUNTER_PAYMENT_METHODS.includes(m)))
+    // V1 launch batch 1 (client 15 Oct): "No cash at the counter. POS is the
+    // default, and S1 enters the POS receipt number."
+    ok('the counter tenders are POS, bank transfer and wallet; cash is gone',
+        COUNTER_PAYMENT_METHODS.length === 3 &&
+            ['pos', 'bank-transfer', 'wallet'].every((m) => COUNTER_PAYMENT_METHODS.includes(m)) &&
+            !COUNTER_PAYMENT_METHODS.includes('cash') &&
+            counter.DEFAULT_COUNTER_METHOD === 'pos')
     ok('"transfer" and "card" are accepted as what the screen sends',
         counter.normalizeCounterMethod('transfer') === PM.BANK_TRANFER &&
             counter.normalizeCounterMethod('POS') === PM.POS &&
@@ -565,16 +568,17 @@ const run = (async () => {
     ok('paystack is NOT a counter tender (that is the customer\'s own app)',
         counter.normalizeCounterMethod('paystack') === null &&
             counter.normalizeCounterMethod('') === null)
-    const cashPlan = await counter.planCounterPayment({
-        customerId: null,
-        total: 5000,
-        method: 'cash',
-    })
-    ok('a cash order plans one tender for the whole bill and needs no account',
-        cashPlan.ok &&
-            cashPlan.plan.tenders.length === 1 &&
-            cashPlan.plan.tenders[0].amount === 5000 &&
-            cashPlan.plan.walletAmount === 0)
+    const cashPlan = await counter.planCounterPayment({ customerId: null, total: 5000, method: 'cash' })
+    ok('cash is refused with a sentence the operator can act on',
+        !cashPlan.ok && cashPlan.cashRefused === true && /Cash is not accepted/.test(cashPlan.error))
+    const posNoRef = await counter.planCounterPayment({ customerId: null, total: 5000, method: 'pos' })
+    const posRef = await counter.planCounterPayment({ customerId: null, total: 5000, method: 'pos', reference: 'R-4512' })
+    const trfNoRef = await counter.planCounterPayment({ customerId: null, total: 5000, method: 'transfer' })
+    ok('POS needs the receipt number and a transfer its reference; with it, one tender for the whole bill',
+        !posNoRef.ok && /POS receipt number/.test(posNoRef.error) &&
+            !trfNoRef.ok && /transfer reference/.test(trfNoRef.error) &&
+            posRef.ok && posRef.plan.tenders.length === 1 &&
+            posRef.plan.tenders[0].amount === 5000 && posRef.plan.tenders[0].reference === 'R-4512')
     const noAcct = await counter.planCounterPayment({
         customerId: null,
         total: 5000,
@@ -599,11 +603,11 @@ const run = (async () => {
     ok('a missing or blank tender is refused with the operator sentence, never a field name',
         missing.every((p) => !p.ok && p.error === counter.MISSING_COUNTER_METHOD) &&
             counter.MISSING_COUNTER_METHOD ===
-                'Choose how the customer paid: cash, POS, bank transfer or wallet.')
-    ok('every spelling the S1 screen may send is still accepted',
-        ['cash', 'Cash', 'POS', 'card', 'transfer', 'Bank Transfer', 'bank-transfer', 'wallet'].every(
+                'Choose how the customer paid: POS, bank transfer or wallet.')
+    ok('every spelling the S1 screen may send is still accepted (cash excepted)',
+        ['POS', 'card', 'transfer', 'Bank Transfer', 'bank-transfer', 'wallet'].every(
             (m) => counter.normalizeCounterMethod(m) !== null,
-        ))
+        ) && counter.normalizeCounterMethod('cash') === null)
     ok('there is still no server-side fallback to cash (the tender stays mandatory)',
         !/\|\|\s*PAYMENT_METHOD\.CASH|\|\|\s*'cash'/.test(
             intakeSrc.slice(intakeSrc.indexOf('const tenderMethod'), intakeSrc.indexOf('const paymentPlan')),
@@ -1525,7 +1529,7 @@ const run = (async () => {
         /requiresCountReason: true/.test(riderSrcN1))
     ok('  …but never blocks the pickup — it flags and SMSes the customer',
         /order\.flaggedForReview = true/.test(riderSrcN1) &&
-            /we collected \$\{order\.counts\.rider\}/.test(riderSrcN1) &&
+            /TEXTS\.riderCount\(order, \{ pieces: order\.counts\.rider \}\)/.test(riderSrcN1) &&
             !/sendFailedResponse[\s\S]{0,200}changedAtPickup/.test(riderSrcN1))
     ok('Intake disagreeing with the rider RAISES the hold and stops the order',
         /raiseCountMismatchHold\(/.test(iuSrc) &&

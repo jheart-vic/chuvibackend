@@ -29,6 +29,14 @@ const {
     referralOnReferralCode,
 } = require('../util/referralHooks')
 
+const {
+    INVALID_PHONE,
+    PHONE_IN_USE,
+    nigerianMobile,
+    accountWithPhone,
+    logAttempt: logSignupAttempt,
+} = require('../util/signupGuard')
+
 class AuthService extends BaseService {
     async createUser(req) {
         try {
@@ -69,6 +77,19 @@ class AuthService extends BaseService {
                 // userType: post.userType,
             }).select('-password')
             if (userExists) {
+                // V1 launch batch 1: admin sees refused sign-ups, with the
+                // referral code used.
+                if (post.userType === ROLE.USER) {
+                    await logSignupAttempt({
+                        reason: 'email-in-use',
+                        method: 'email',
+                        email: post.email,
+                        phoneNumber: post.phoneNumber,
+                        fullName: post.fullName,
+                        referralCode: post.referralCode,
+                        existingUserId: userExists._id,
+                    })
+                }
                 // Clear, actionable message + machine-readable signal so the
                 // frontend can show a direct "Log In" button instead of a
                 // generic account-creation error.
@@ -77,6 +98,28 @@ class AuthService extends BaseService {
                     code: 'EMAIL_ALREADY_REGISTERED',
                     action: 'login',
                 })
+            }
+
+            // V1 launch batch 1 (client 15 Oct): a customer signs up with a
+            // real Nigerian mobile, and one phone number is one account.
+            if (post.userType === ROLE.USER) {
+                const phone = nigerianMobile(post.phoneNumber)
+                if (!phone) {
+                    return BaseService.sendFailedResponse({ error: INVALID_PHONE, code: 'INVALID_PHONE' })
+                }
+                const holder = await accountWithPhone(phone)
+                if (holder) {
+                    await logSignupAttempt({
+                        reason: 'phone-in-use',
+                        method: 'email',
+                        email: post.email,
+                        phoneNumber: phone,
+                        fullName: post.fullName,
+                        referralCode: post.referralCode,
+                        existingUserId: holder._id,
+                    })
+                    return BaseService.sendFailedResponse({ error: PHONE_IN_USE, code: 'PHONE_ALREADY_REGISTERED', action: 'login' })
+                }
             }
 
             // Create the user

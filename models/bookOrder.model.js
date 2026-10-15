@@ -519,6 +519,8 @@ const bookOrderSchema = new mongoose.Schema(
                         enum: Object.values(PAYMENT_METHOD),
                     },
                     amount: { type: Number },
+                    // POS receipt number or transfer reference (R16).
+                    reference: { type: String },
                 },
             ],
             creditApplied: { type: Number },
@@ -681,6 +683,12 @@ const bookOrderSchema = new mongoose.Schema(
         // `pickup.note`, order-level `holdDetails` and `itemEdits` that way —
         // a marker that vanishes would make a quick order indistinguishable
         // from a real ₦0 one.
+        // Once-per-order customer SMS (util/orderSms.js): when each was sent.
+        smsLog: {
+            bookingReceived: { type: Date },
+            ready: { type: Date },
+            delivered: { type: Date },
+        },
         quickBooking: { type: Boolean },
         // Cleared by the Intake re-price. Separate from `quickBooking` on
         // purpose: one records HOW the order was taken and never changes, the

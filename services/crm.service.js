@@ -552,7 +552,10 @@ class CrmService {
             CRM_WORKFLOW.POST_DELIVERY,
         ])
         const entries = schedule
-            .filter((s) => s.enabled !== false)
+            // V1 launch batch 1 (client 15 Oct): the "Delivered" SMS now goes at
+            // the moment of delivery (util/orderSms.js), so the CRM's own
+            // delivery confirmation would repeat it an hour later.
+            .filter((s) => s.enabled !== false && s.messageType !== CRM_MESSAGE_TYPE.DELIVERY_CONFIRMATION)
             .map((s) => ({
                 messageType: s.messageType,
                 dueAt: new Date(now + (s.delayMinutes || 0) * 60 * 1000),
@@ -1601,7 +1604,12 @@ class CrmService {
 
             // Only genuine leads count — a backfilled card or one created by its
             // own order was never a lead anyone generated.
-            const cohort = { leadSource: CRM_LEAD_SOURCE.LEAD }
+            // V1 launch batch 1 (client 15 Oct): "count only leads entered by
+            // staff." A staff-entered lead is a lead card created at the office
+            // (createWalkInLead is the only path that sets channel OFFICE on a
+            // lead, and a card's channel is set once, at creation). Sign-ups
+            // (website) and assistant leads (WhatsApp) are left out.
+            const cohort = { leadSource: CRM_LEAD_SOURCE.LEAD, channel: ORDER_CHANNEL.OFFICE }
 
             // This month's lead cohort, loaded once — the "still being worked"
             // count needs to know which of them have ever ordered.

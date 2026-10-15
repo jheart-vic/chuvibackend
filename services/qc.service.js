@@ -29,7 +29,7 @@ const createNotification = require('../util/createNotification')
 const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const updateOrderItemsStage = require('../util/updateOrderItemsStage')
 const createAuditLog = require('../util/createAuditLog')
-const { crmOnOrderReady } = require('../util/crmHooks')
+// (crmOnOrderReady retired here: the Ready SMS in util/orderSms.js replaces it, V1 batch 1.)
 
 class QCService extends BaseService {
     // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -772,9 +772,16 @@ class QCService extends BaseService {
                 type: NOTIFICATION_TYPE.ORDER_READY,
             })
 
-            // CRM "Order Ready" message (client 2026-08-28: trigger = QC done /
-            // ready for dispatch, NOT rider assignment). Fire-and-forget.
-            crmOnOrderReady(order)
+            // V1 launch batch 1 (client 15 Oct): the client's Ready SMS (with the
+            // delivery window, or the collection hours) replaces the CRM's
+            // "Order Ready" message, which would otherwise say it twice.
+            // Read after confirmDeliveryWindow so the window is the confirmed one.
+            try {
+                const fresh = await BookOrderModel.findById(orderId).lean()
+                await require('../util/orderSms').ready(fresh || order)
+            } catch (err) {
+                console.error('ready SMS failed:', err?.message)
+            }
 
             return BaseService.sendSuccessResponse({
                 message: 'Order packed and sealed. Now ready for delivery.',

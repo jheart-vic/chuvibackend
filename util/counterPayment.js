@@ -42,7 +42,9 @@ const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
 // required field with a pre-selected choice — a server-side default would be
 // the silent assumption that "mandatory" exists to prevent. Exported so the
 // screen and the docs take it from one place.
-const DEFAULT_COUNTER_METHOD = PAYMENT_METHOD.CASH
+// V1 launch batch 1 (client 15 Oct): "No cash at the counter. POS is the
+// default, and S1 enters the POS receipt number."
+const DEFAULT_COUNTER_METHOD = PAYMENT_METHOD.POS
 
 // Accepts what the counter screen is likely to send ("transfer", "Cash",
 // "POS", "card") and returns the stored value, or null if it isn't a tender a
@@ -58,8 +60,17 @@ function methodLabel(method) {
     if (method === PAYMENT_METHOD.POS) return 'POS'
     if (method === PAYMENT_METHOD.BANK_TRANFER) return 'bank transfer'
     if (method === PAYMENT_METHOD.WALLET) return 'wallet'
-    return 'cash'
+    if (method === PAYMENT_METHOD.CASH) return 'cash'
+    return String(method || '')
 }
+
+// R16: a POS payment carries the receipt number and a transfer its reference,
+// so each can be matched against the machine and the bank.
+const NEEDS_REFERENCE = {
+    [PAYMENT_METHOD.POS]: 'Enter the POS receipt number.',
+    [PAYMENT_METHOD.BANK_TRANFER]: 'Enter the transfer reference from the POS alert.',
+}
+const CASH_REFUSED = 'Cash is not accepted. Take POS (with the receipt number) or a bank transfer (with the reference).'
 
 const methodList = () =>
     COUNTER_PAYMENT_METHODS.map((m) => methodLabel(m)).join(', ')
@@ -67,7 +78,7 @@ const methodList = () =>
 // Client 2026-10-08: the tender is mandatory. Said to the operator at the
 // counter, not as a field name ("paymentMethod is required" was the old text).
 const MISSING_COUNTER_METHOD =
-    'Choose how the customer paid: cash, POS, bank transfer or wallet.'
+    'Choose how the customer paid: POS, bank transfer or wallet.'
 
 // What the wallet can actually put towards this bill right now. Credits are
 // only counted when the customer opted in, because they are only SPENT then —
@@ -93,9 +104,15 @@ async function planCounterPayment({
     method,
     secondaryMethod,
     useCredit = false,
+    reference = null,
+    secondaryReference = null,
 }) {
     if (method == null || String(method).trim() === '') {
         return { ok: false, error: MISSING_COUNTER_METHOD }
+    }
+    const isCash = (m) => typeof m === 'string' && m.trim().toLowerCase() === PAYMENT_METHOD.CASH
+    if (isCash(method) || isCash(secondaryMethod)) {
+        return { ok: false, error: CASH_REFUSED, cashRefused: true }
     }
     const primary = normalizeCounterMethod(method)
     if (!primary) {
@@ -115,11 +132,15 @@ async function planCounterPayment({
         }
     }
 
+    const ref = (r) => (r == null ? '' : String(r).trim())
     if (primary !== PAYMENT_METHOD.WALLET) {
+        if (NEEDS_REFERENCE[primary] && !ref(reference)) {
+            return { ok: false, error: NEEDS_REFERENCE[primary], referenceRequired: true }
+        }
         return {
             ok: true,
             plan: {
-                tenders: [{ method: primary, amount }],
+                tenders: [{ method: primary, amount, reference: ref(reference) || undefined }],
                 walletAmount: 0,
                 creditOptIn: false,
                 primary,
@@ -133,7 +154,7 @@ async function planCounterPayment({
             ok: false,
             error:
                 'This order has no customer account on file, so there is no wallet to charge. ' +
-                `Take ${methodLabel(PAYMENT_METHOD.CASH)}, POS or a transfer, or register the customer first.`,
+                'Take POS or a transfer, or register the customer first.',
         }
     }
 
@@ -161,19 +182,23 @@ async function planCounterPayment({
                     amount,
                 )} order. Choose how the remaining ${naira(
                     shortfall,
-                )} is paid (cash, POS or transfer) and send it as secondaryPaymentMethod.`,
+                )} is paid (POS or transfer) and send it as secondaryPaymentMethod.`,
             }
         }
         if (second === PAYMENT_METHOD.WALLET) {
             return {
                 ok: false,
-                error: 'The remaining balance cannot be taken from the wallet again — it is already short. Use cash, POS or a transfer.',
+                error: 'The remaining balance cannot be taken from the wallet again — it is already short. Use POS or a transfer.',
             }
+        }
+        if (NEEDS_REFERENCE[second] && !ref(secondaryReference)) {
+            return { ok: false, error: NEEDS_REFERENCE[second], referenceRequired: true }
         }
     }
 
     const tenders = [{ method: PAYMENT_METHOD.WALLET, amount: walletAmount }]
-    if (shortfall > 0) tenders.push({ method: second, amount: shortfall })
+    if (shortfall > 0)
+        tenders.push({ method: second, amount: shortfall, reference: ref(secondaryReference) || undefined })
 
     return {
         ok: true,
@@ -236,6 +261,7 @@ async function settleCounterPayment({ order, plan, customerId, staffId }) {
                 metadata: {
                     counter: true,
                     collectedBy: staffId,
+                    ...(tender.reference && { reference: tender.reference }),
                     ...(tender.method === PAYMENT_METHOD.WALLET && {
                         creditApplied,
                         cashFromBalance: cashPaid,
@@ -251,7 +277,7 @@ async function settleCounterPayment({ order, plan, customerId, staffId }) {
 
     order.paymentStatus = PAYMENT_ORDER_STATUS.SUCCESS
     order.paymentDate = new Date()
-    order.paymentMethod = plan.tenders[0]?.method || PAYMENT_METHOD.CASH
+    order.paymentMethod = plan.tenders[0]?.method || DEFAULT_COUNTER_METHOD
     // Reporting splits on billingType, so a wallet-settled order is stamped
     // pay-from-wallet — the same stamp the bot applies. A SPLIT order is not
     // wallet-billed (the wallet only part-paid it), so it stays pay-per-item.

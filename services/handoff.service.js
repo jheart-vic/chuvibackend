@@ -347,6 +347,15 @@ class HandoffService extends BaseService {
                 })
             }
             const accepted = handoffIds.filter((id) => !rejected.includes(id))
+            // R5 (V1 launch batch 1): "Holds are raised … always with a reason."
+            // A rejection at receipt sends pieces to the sender's Holds, so it
+            // needs one too.
+            if (rejected.length && !String(note || '').trim()) {
+                return BaseService.sendFailedResponse({
+                    error: 'Give a reason for rejecting these pieces.',
+                    reasonRequired: true,
+                })
+            }
 
             // Staleness check BEFORE the gates. If the items this handoff
             // claims have already left the source station by another route,

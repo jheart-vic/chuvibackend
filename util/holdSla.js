@@ -74,6 +74,11 @@ async function loadHoldRules() {
 
 // The breach clause, as $or branches. Without `rules` this is byte-identical to
 // what 4.4 shipped, which is why every existing caller keeps working.
+// V1 launch batch 1 (client 15 Oct, B9/T5.10): "Payment holds never Overdue."
+// An unpaid bill is chased by its own reminders, not by the hold clock, so the
+// payment hold is left out of every breach branch and is always Active.
+const NEVER_OVERDUE_KEY = 'payment'
+
 const breachBranches = (now = new Date(), rules = null) => {
     // admin-edited limits when present, code defaults otherwise
     const speedTable = rules?.speedHours || HOLD_SLA_HOURS
@@ -106,10 +111,15 @@ const breachBranches = (now = new Date(), rules = null) => {
     }))
 
     if (!rules || !rules.types?.length) {
-        return [...speedBranches, ...itemBranches, { deliveryDate: { $lt: now } }]
+        const notPayment = { 'orderHold.holdTypeKey': { $ne: NEVER_OVERDUE_KEY } }
+        return [
+            ...speedBranches.map((b) => ({ ...b, ...notPayment })),
+            ...itemBranches,
+            { deliveryDate: { $lt: now }, ...notPayment },
+        ]
     }
 
-    const typed = rules.types.filter((t) => t.slaHours > 0)
+    const typed = rules.types.filter((t) => t.slaHours > 0 && t.key !== NEVER_OVERDUE_KEY)
     const typedKeys = typed.map((t) => t.key)
     // Types with their own limit get their own branch…
     const typedBranches = typed.map((t) => ({
@@ -122,12 +132,10 @@ const breachBranches = (now = new Date(), rules = null) => {
     // …and everything else (no type, or a type with no limit) falls back to the
     // speed table. Scoped with $nin so a typed hold is judged ONCE, by its own
     // limit, and can never also be caught by the speed branch.
-    const fallbackBranches = typedKeys.length
-        ? speedBranches.map((b) => ({
-              ...b,
-              'orderHold.holdTypeKey': { $nin: typedKeys },
-          }))
-        : speedBranches
+    const fallbackBranches = speedBranches.map((b) => ({
+        ...b,
+        'orderHold.holdTypeKey': { $nin: [...typedKeys, NEVER_OVERDUE_KEY] },
+    }))
 
     // The promised delivery date still overrides — except for types the admin
     // marked "judged only by its own limit" (the payment hold), where on a Quick
@@ -135,12 +143,10 @@ const breachBranches = (now = new Date(), rules = null) => {
     const ownLimitOnly = rules.types
         .filter((t) => t.judgeByOwnLimitOnly)
         .map((t) => t.key)
-    const dateBranch = ownLimitOnly.length
-        ? {
-              deliveryDate: { $lt: now },
-              'orderHold.holdTypeKey': { $nin: ownLimitOnly },
-          }
-        : { deliveryDate: { $lt: now } }
+    const dateBranch = {
+        deliveryDate: { $lt: now },
+        'orderHold.holdTypeKey': { $nin: [...ownLimitOnly, NEVER_OVERDUE_KEY] },
+    }
 
     // Item holds carry no hold TYPE (a station picks a reason, not a type), so
     // they are always judged by the speed table and are unaffected by the typed
@@ -221,6 +227,7 @@ const isHoldBreached = (order, now = new Date(), rules = null) => {
 
     if (order.stage?.status !== ORDER_STATUS.HOLD) return false
     const key = order?.orderHold?.holdTypeKey
+    if (key === NEVER_OVERDUE_KEY) return false
     const type = key && rules?.byKey?.[key]
     // a payment hold is judged ONLY by its own clock
     if (!type?.judgeByOwnLimitOnly) {

@@ -1,6 +1,8 @@
 # V1 Test Plan (Back End, 14 Oct 2026): where the code stands
 
-Source: client PDF `CHUVI_V1_Test_Plan_Back_End.pdf` (T1 to T12, rules R1 to R24).
+Source: client PDF `CHUVI_V1_Test_Plan_Back_End.pdf` (T1 to T12, rules R1 to R24),
+**revised version of 14 Oct** (R2, R3, R5, R6, R7, R17, R24 changed; T1.13, T2.13, T3 and
+T8 rewritten). Rows below follow the revised plan.
 Method: every step was checked against the code on `main` at 8d28b8e (feature 21
 live). This is a **code review, not yet a run**. "Pass" means the code does what
 the Expected line says. It still has to be run end to end on testingdb before we
@@ -40,10 +42,10 @@ the client's locked rule (admin only) and is T3.04.
 | T1.07 | **Fail** | Start pickup **requires the customer's phone number** (as do picked up, delivered and failed). |
 | T1.08 | Partial | Flag (no stop) and SMS work, but the rider must type a reason. The SMS text differs: "we collected 11 item(s) … (you booked 10)", with no phone number to call. |
 | T1.09 | Pass | Rider and S1 agree, so there is no hold. |
-| T1.10 | Not built | No recount cover. N600 more raises a payment hold plus a link SMS (with the ₦ sign). The SMS always goes out. No mismatch record. The change saves only piece counts and totals, not the old and new items. |
+| T1.10 | Not built | No recount cover (revised R17: both limits, 10% of the bill and a naira amount; launch 10% and N200, test 10% and N600). N600 more raises a payment hold plus a link SMS (with the ₦ sign). The SMS always goes out. No mismatch record. The change saves only piece counts and totals, not the old and new items. |
 | T1.11 | Pass | One piece record per tag; colour White/Light/Dark. |
 | T1.12 | Pass | S1 to S2 sends the whole order; `pushedAt` saved; after tagging only admin can change items. |
-| T1.13 | Partial | Accept is all or nothing, but there is no tick list in the API. Today the front end would have to enforce the ticks. |
+| T1.13 | Pass | Revised plan: S2 checks the list and taps All received. Confirming the S1 to S2 handoff with nothing rejected receives every piece and saves the time. |
 | T1.14 | Pass | S2 can set stain, fabric and damage marks after accepting. |
 | T1.15 | Pass | Pretreatment saved per piece; pieces move one by one. |
 | T1.16 | Pass | `pushedAt` lets the screen turn red; 30 min is a front-end rule. |
@@ -93,9 +95,9 @@ the client's locked rule (admin only) and is T3.04.
 | T3.05 | Pass | Admin resolves, with name and time. |
 | T3.06 | Pass | S1 marks the transfer paid with a reference (admin notified, bank-check list). |
 | T3.07 | Partial | Routes are **not enforced by service**. Any forward move is allowed, so a front-end mistake could send T3 to S4. |
-| T3.08 | Not built | No "Report problem: Damaged" and no damage case. |
-| T3.09 | Not built | No "cannot be Ready while the case is open" gate. |
-| T3.10 | Not built | No "Customer informed". |
+| T3.08 | Partial | Revised R6: damage now HOLDS the piece. S3 can hold one piece with a reason and the other pieces move on (item-level holds). There is no "Damaged" hold type and **no damage case** for customer experience with admin copied. |
+| T3.09 | Pass | QC cannot receive the order while a piece is held (whole-order gate into QC, and held pieces cannot move). |
+| T3.10 | Not built | No "Customer informed" step, so nothing makes admin release wait for it. The admin-only release itself now exists (14 Oct fix), so a "Damaged" hold type marked admin-only would cover "only admin releases". No partial delivery approval and no free second trip. |
 | T3.11 | Partial | Customer experience can grant compensation on a case with a reason. It goes in as **recovery credit**, not a wallet refund, and the limit setting is N10,000, not N5,000. |
 | T3.12 | Partial | Per-rider history exists. An admin filter by rider and date is not confirmed. |
 
@@ -148,13 +150,12 @@ the client's locked rule (admin only) and is T3.04.
 | Step | Result | What happens now |
 |---|---|---|
 | T8.01 | Pass | Walk-in transfer confirmed by S1, no admin step. |
-| T8.02 | Pass | |
-| T8.03 | Partial | No tick list in the API (see T1.13). |
-| T8.04 | Partial | Rejecting all pieces puts them on S1's holds and nothing moves. **No reason is required.** |
-| T8.05 | Not verified | S1 re-tag after an S2 rejection: needs a run. |
-| T8.06 | Not built | Second rejection does not go to admin. |
-| T8.07 | Pass | |
-| T8.08 | **Fail** | S2 has its own two-colour field (`colorGroup`: white or coloured), against R10. A tag-colour change by S2 is not refused as such. |
+| T8.02 | Pass | Sent, untagged piece included (see T8.04). |
+| T8.03 | Not built | Revised R7: S2 may correct S1's colour and stain tags. Today S2 cannot change the tag colour (it only has its own two-value `colorGroup`, white or coloured, against R10). Keeping both versions is "after launch". |
+| T8.04 | **Fail** | Revised R2: hold only the untagged piece at receipt and receive the rest. Today the S1 to S2 handoff is whole-order: "accept every item or reject every item", so S2 cannot receive TAG 01 and TAG 02 while holding TAG 03. A "Something is missing" reason is not required either. |
+| T8.05 | **Fail** | Sending one fixed piece from S1 to S2 is refused by the same whole-order gate ("must include every item in the order"). |
+| T8.06 | Not built | Second rejection of the same piece does not go to admin. |
+| T8.07 | Pass | Admin resolves; names and times saved. |
 
 ## T9 · Amaka rejects her bill
 
@@ -212,8 +213,8 @@ the client's locked rule (admin only) and is T3.04.
 1. **Today (fixes, about 1 day):** ~~the P1 admin-only hold release~~ (done 14 Oct); no Change Items before pickup; Change Items refused on plan orders (R18 fallback); no customer phone check at pickup or delivery; a reason required on every rejection and hold; Quick Booking without Ready Today; payment holds never Overdue; SMS cleanup at the single sender (N for ₦, no dashes).
 2. **Counts and riders (about 2 days):** R22 rider SMS text; "Count dispute" and "Possible missing item"; not available at pickup goes back to Needs rider, with failures counted and an officer task after 2; delivery failed goes to "Ready, waiting redelivery" with an SMS and the redelivery fee; Collected; Returned unwashed.
 3. **Money (about 2 to 3 days):** R17 cover, mismatch record and repeat limit; Change Items saving old and new items; R12 escalate and admin-only cancel with a pickup and delivery link, return blocked until paid; R16 no cash and POS receipt number; R20 limit 5,000.
-4. **Timers and messages (about 2 days):** payment reminders, officer task and admin flag as settings; pay-by time and ready-date recompute (R21); 2× trigger; booking received, ready and delivered SMS; 3 PM due-today alert; quiet hours queue; R24 settings.
-5. **Stations (about 3 days):** S2 ticks; whole-order reject; second rejection to admin (R2, R5); route per piece and per-piece service (R4, R8); damage case and "Customer informed" gate (R6); Looks dirty with a 3-hour link (R8); R10 colours at S2; missing-piece message.
+4. **Timers and messages (about 2 days):** payment reminders, officer tasks (24 h then 72 h) and admin flag as settings; pay-by time and ready-date recompute (R21); 2× trigger; booking received, ready and delivered SMS; 3 PM due-today alert; quiet hours queue; R24 settings.
+5. **Stations (about 3 days):** per-piece hold at S2 receipt with the rest received, and S2 correcting colour and stain tags (revised R2, R7); second rejection of a piece to admin (R2, R5); route per piece and per-piece service (R4, R8); damage hold, damage case, "Customer informed" before admin release, partial delivery with a free second trip (revised R6); Looks dirty with a 3-hour link (R8); R10 colours at S2; missing-piece message.
 6. **Rep tracking report** (about half a day).
 
 Estimate: **about 10 to 12 working days of backend work**, plus front end, plus

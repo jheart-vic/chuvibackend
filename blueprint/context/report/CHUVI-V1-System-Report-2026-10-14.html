@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHUVI V1 System Report</title>
+<style>
+  :root {
+    --ink: #1d232a; --muted: #5b6672; --line: #d9dee3; --soft: #f4f6f8;
+    --accent: #0f5c8c; --live: #1f7a3f; --live-bg: #e6f4ea; --prog: #8a5a00; --prog-bg: #fdf1d8;
+    --plan: #5a4a9c; --plan-bg: #ece9f7; --bad: #a12b2b; --bad-bg: #fbe9e9;
+  }
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { background: #fff; color: var(--ink); font: 10.5pt/1.45 "Segoe UI", Calibri, Arial, sans-serif; margin: 0; padding: 0 16px; }
+  h1 { font-size: 24pt; margin: 0 0 4px; color: var(--accent); }
+  h2 { font-size: 15pt; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--accent); color: var(--accent); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 0; }
+  p { margin: 6px 0; }
+  .cover { padding: 30px 0 10px; }
+  .meta { color: var(--muted); }
+  .note { background: var(--soft); border-left: 3px solid var(--accent); padding: 8px 12px; margin: 10px 0; }
+  .warn { background: var(--bad-bg); border-left: 3px solid var(--bad); padding: 8px 12px; margin: 10px 0; }
+  .feature { border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; break-inside: avoid; }
+  .fhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--soft); padding: 6px 10px; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+  .fbody { display: grid; grid-template-columns: 118px 1fr; }
+  .fbody > div { padding: 4px 10px; border-top: 1px solid #eef1f3; }
+  .fbody > div:nth-child(-n+2) { border-top: 0; }
+  .k { color: var(--muted); font-weight: 600; font-size: 9.5pt; }
+  .badge { font-size: 8.5pt; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .live { color: var(--live); background: var(--live-bg); }
+  .prog { color: var(--prog); background: var(--prog-bg); }
+  .plan { color: var(--plan); background: var(--plan-bg); }
+  .gap { color: var(--bad); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 9.5pt; }
+  th, td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); }
+  tr { break-inside: avoid; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  li { margin: 2px 0; }
+  .toc { columns: 2; font-size: 10pt; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .pb { break-before: page; }
+  .r-pass { color: var(--live); font-weight: 600; }
+  .r-partial { color: var(--prog); font-weight: 600; }
+  .r-fail { color: var(--bad); font-weight: 700; }
+  .r-nb { color: var(--plan); font-weight: 600; }
+  @media (max-width: 600px) { .fbody { grid-template-columns: 1fr; } .toc { columns: 1; } }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>CHUVI V1: System Report</h1>
+  <p class="meta">Back end as it stands on 14 October 2026 (code version 8ad7cc7, live on the server). Prepared as the starting point for V2.</p>
+  <div class="note">
+    <p><b>How to read this.</b> Every feature has the same six parts: what it does, who uses it, where it is set, the exact rule or formula, one worked example, and its status.</p>
+    <p><span class="badge live">Live</span> built and running now. <span class="badge prog">In progress</span> partly built, or waiting on a decision. <span class="badge plan">Planned</span> agreed but not built.</p>
+    <p>Money is written as N. Times are Lagos time. Figures are the values set on the live system today; where a value is only a default, it says so. The screens are built by the app team in a separate project; this report describes what the system does and allows.</p>
+  </div>
+  <p><b>Part 2</b> compares the system with the revised V1 Test Plan (back end, 14 Oct) in three lists: what already matches, what is new work, and what is built but different. It is based on reading the code; the scenarios have not yet been run end to end.</p>
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <p><a href="#a">A. Accounts and staff</a></p>
+  <p><a href="#b">B. Booking and pricing</a></p>
+  <p><a href="#c">C. Offers and rewards</a></p>
+  <p><a href="#d">D. Payments and wallet</a></p>
+  <p><a href="#e">E. Order flow: riders, intake, stations</a></p>
+  <p><a href="#f">F. Holds and cancellations</a></p>
+  <p><a href="#g">G. Customer care and the assistant</a></p>
+  <p><a href="#h">H. Messages and CRM</a></p>
+  <p><a href="#i">I. Plans (subscriptions)</a></p>
+  <p><a href="#j">J. Admin, reporting and settings</a></p>
+  <p><a href="#k">K. Time and background jobs</a></p>
+  <p><a href="#l">L. Planned systems (V2 candidates)</a></p>
+  <p><a href="#gaps">Part 2. The V1 Test Plan: matches, new work, gaps</a></p>
+</div>
+
+<!-- ============================ A ============================ -->
+<h2 id="a">A. Accounts and staff</h2>
+
+<div class="feature"><div class="fhead"><h3>A1. Customer sign-up (email or Google)</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Creates a customer account by email and password, or with Google. Google users give their phone number on a second step.</div>
+<div class="k">Who uses it</div><div>Customers.</div>
+<div class="k">Where it is set</div><div>Fixed rules in the system.</div>
+<div class="k">Rule</div><div>One account per email. Phone numbers are stored in one standard form (0803…, +234803… and 234803… are the same number). Ticking the Terms box is recorded with the date and time (<i>termsAccepted</i>), not required. Signing up starts the First Experience offer clock and the "registered, not booked" messages (H3).</div>
+<div class="k">Example</div><div>Amaka signs up with Google, types 0803 123 4567 and ticks Terms. Her record shows phone +2348031234567, terms accepted 14 Oct 18:02, and her Welcome SMS goes out at once.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>A2. Referral code at sign-up</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Links a new customer to the person (or rep) whose code or link they used.</div>
+<div class="k">Who uses it</div><div>Customers and reps.</div>
+<div class="k">Where it is set</div><div>Fixed rules. Reward amounts are in Rewards settings (C5).</div>
+<div class="k">Rule</div><div>A code can be given at sign-up, or later in Refer and Earn, but only before the customer's first order. An unknown code, or the customer's own code, is refused with a message.</div>
+<div class="k">Example</div><div>Amaka opens the rep's link (…?ref=REP12). The code box is filled in. She can still add a code tomorrow; after her first order the box is hidden.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> no admin report per rep of who signed up, who paid and how much (T1.01).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>A3. Staff roles and permissions</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Gives each staff login one role, and each screen checks the role.</div>
+<div class="k">Who uses it</div><div>All staff; admin creates and switches off staff.</div>
+<div class="k">Where it is set</div><div>Admin, Staff.</div>
+<div class="k">Rule</div><div>Roles: S1 Intake and Tag, S2 Sort and Pretreat, S3 Wash and Dry, S4 Press, QC, Rider, Customer Experience, Admin. Admin can open every station. Every staff action is written to the audit log with the person and the time.</div>
+<div class="k">Example</div><div>A rider who opens the S1 screen gets "not allowed". Admin opens it normally.</div>
+<div class="k">Status</div><div>Live. One login holds one role; several roles per person is part of the planned Workforce system (L2).</div>
+</div></div>
+
+<!-- ============================ B ============================ -->
+<h2 id="b">B. Booking and pricing</h2>
+
+<div class="feature"><div class="fhead"><h3>B1. Item price</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Works out the price of every piece from the price list, the service and the care level.</div>
+<div class="k">Who uses it</div><div>Customers (app and assistant), S1 at the counter, Change Items.</div>
+<div class="k">Where it is set</div><div>Admin, Items (price per item); Admin, Order settings (service multipliers and care level multipliers).</div>
+<div class="k">Rule</div><div>Price per piece = (item price × service multiplier, rounded to the nearest N100) × care multiplier. Live service multipliers: Wash and Iron 1.0, Wash Only 0.7, Iron Only 0.6. Care: Classic 1.0, Premium 1.5, VIP 2.0. Care can differ per item.</div>
+<div class="k">Example</div><div>Shirt N600. Wash and Iron: 600. Wash Only: 600 × 0.7 = 420, rounded to 400. Iron Only: 600 × 0.6 = 360, rounded to 400. Premium Wash and Iron: 600 × 1.5 = 900.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B2. The bill and its lines</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Builds one total from separate lines, so the rows always add up.</div>
+<div class="k">Who uses it</div><div>Customers, S1, riders, admin.</div>
+<div class="k">Where it is set</div><div>Fees in Admin, Order settings; offers in the Offer Builder.</div>
+<div class="k">Rule</div><div>Total = items + speed charge + pickup fee + delivery fee − offer lines. Each offer, waiver and fee is its own line. Live fees: pickup N1,000, delivery N1,000 (window price). Speed charges: Express N0, Ready Today N0 (both set to zero today).</div>
+<div class="k">Example</div><div>10 shirts Wash and Iron, Regular, window pickup: 6,000 + 0 + 1,000 + 1,000 = 8,000. On a first order the First Experience offer takes off pickup (−1,000) and delivery (−1,000): total N6,000.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B3. Delivery speeds and the ready date</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Gives each speed a real ready date from the pickup day and time the customer picks.</div>
+<div class="k">Who uses it</div><div>Customers, the assistant, S1, stations (queue order).</div>
+<div class="k">Where it is set</div><div>Admin, Working days and Half days; Admin, Display names (Regular, Express, Ready Today).</div>
+<div class="k">Rule</div><div>Count working days from the day <b>after</b> pickup: Tuesday to Saturday 1, Sunday ½, Monday 0. Regular needs 2, Express 1. The order is ready by 7:00 PM on the day the count is reached. Ready Today counts the pickup day itself, and is offered only for a pickup before 12 noon and never on Sunday.</div>
+<div class="k">Example</div><div>Regular picked up Saturday evening: Sunday ½, Monday 0, Tuesday 1½, Wednesday 2½. Ready Wednesday 7 PM. Express picked up Sunday morning: Monday 0, Tuesday 1. Ready Tuesday 7 PM.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> Ready Today is not blocked for Quick Booking (T3.01).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B4. Daily floor limit</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Stops the floor being promised more pieces in a day than it can wash.</div>
+<div class="k">Who uses it</div><div>Every booking channel (app, assistant, S1, plans).</div>
+<div class="k">Where it is set</div><div>Admin, Order settings, floor limits: 150 a day, Ready Today 30, Express 50.</div>
+<div class="k">Rule</div><div>Pieces count on their ready day. Ready Today and Express come out of the shared 150; Regular uses the rest. Sunday gets half (75), Monday 0. A Regular order that does not fit spreads over the next working days and shows the last day. Ready Today and Express are never spread: if the share is used up they show "Full today" (Express names the day); if the order is too big: "Too many pieces for Express. Choose Standard, or call us on +234 707 325 4943." Above 200 pieces a booking is refused with the call-us message.</div>
+<div class="k">Example</div><div>Tuesday has 40 pieces of room left. A 180-piece Regular order puts 40 on Tuesday and 140 on Wednesday: ready Wednesday. A 60-piece Express order is too big for Express (50): Express is greyed out.</div>
+<div class="k">Status</div><div>Live. A booked order keeps its date when the count changes (client ruling 12 Oct). The revised test plan now asks for a new date when the real count is more than twice the booking (R21); see Part 2.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B5. Pickup and delivery windows</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Lets the customer choose a time window for pickup and delivery, with a limit per window.</div>
+<div class="k">Who uses it</div><div>Customers, the assistant, S1, riders.</div>
+<div class="k">Where it is set</div><div>Admin, Booking windows (name, start, end, days, cutoff, limit; blank limit = no limit). Admin, Working days.</div>
+<div class="k">Rule</div><div>Live window: Evening 3:00 to 6:30 PM, Tuesday to Sunday, booking closes 60 minutes before it starts. One window holds pickups and deliveries together, one order counts as one stop. A full window drops off the list, and the move is recorded for the daily "windows filled / customers moved" count. A day not ticked in Working days has no windows. The delivery window is confirmed when the order is ready.</div>
+<div class="k">Example</div><div>At 1:30 PM on Thursday, today's Evening window is offered. At 2:10 PM it has closed for booking, so Friday Evening is the first window shown.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B6. Urgent (Anytime) pickup and delivery</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Sends a rider as soon as possible instead of in a window.</div>
+<div class="k">Who uses it</div><div>Customers; S1 is alerted and the job goes to the top of the pickup list.</div>
+<div class="k">Where it is set</div><div>Admin, Order settings: Urgent hours 8:00 AM to 5:00 PM; Urgent pickup fee N1,000, delivery fee N1,000.</div>
+<div class="k">Rule</div><div>Open on working days within the hours; outside them the app says when Urgent next opens. Free pickup and delivery offers apply to window bookings only, except when every window that day is full during Urgent hours: then Urgent is charged at the window price and the offer is kept. Refund: if the customer booked Urgent while that day's window could still be booked, and the job was done inside that window, the price difference goes back to the wallet automatically.</div>
+<div class="k">Example</div><div>Booked Urgent at 11:00, picked up at 4:00 PM inside the Evening window: the difference is refunded. Booked at 2:30 PM (window already closed for booking): no refund. Note: today the Urgent fee and the window fee are both N1,000, so there is no difference to refund and Urgent costs no more than a window.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B7. Quick Booking</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Lets a customer book with a rough piece count and pay nothing. We count, bill and send a payment link.</div>
+<div class="k">Who uses it</div><div>Customers (app and assistant), rider, S1.</div>
+<div class="k">Where it is set</div><div>Fixed rules; prices and offers as B1, B2 and C1.</div>
+<div class="k">Rule</div><div>Nothing is paid at booking. The rider enters his count; S1 enters the real items and the system makes the bill (staff can never type an amount): items + pickup + delivery − the best offer (the one worth more on this bill; First Experience always wins on a first order). The order then waits in Payment holds with a Paystack link (D5), and goes to tagging by itself once paid. 1 to 200 pieces.</div>
+<div class="k">Example</div><div>Emeka books "about 5". S1 lists 4 shirts (2,400) and 2 trousers (1,400). Bill: 3,800 + 2,000 trips = N5,800 (Always Free needs N8,000, so it does not apply). Link sent; he pays; the order moves to tagging.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> no pay-by time, no expired-link note, no ready-date recompute (R21).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B8. Counter booking and walk-ins</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Lets S1 book an order at the office, for a walk-in or a registered customer.</div>
+<div class="k">Who uses it</div><div>S1.</div>
+<div class="k">Where it is set</div><div>Same prices and limits as app booking.</div>
+<div class="k">Rule</div><div>A payment method is required: cash, POS, bank transfer or wallet (cash is pre-selected on the screen). A wallet that is short can be topped up by another method in the same payment. Reward credit is used only if the customer says yes. Floor limits apply.</div>
+<div class="k">Example</div><div>Ifeoma, 3 pieces Ready Today at 9 AM, pays by POS. Order created, Ready Today share goes from 30 to 27.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> the revised plan says no cash, and a POS receipt number (R16).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>B9. Display names</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Renames speeds, service types and care levels on every screen without touching stored orders.</div>
+<div class="k">Who uses it</div><div>Admin.</div>
+<div class="k">Where it is set</div><div>Admin, Display names.</div>
+<div class="k">Rule</div><div>Only the label changes. A service type that orders depend on cannot be renamed or removed in general settings, because pricing matches on it.</div>
+<div class="k">Example</div><div>"same-day" is shown as "Ready Today" to customers and staff; old orders keep working.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<!-- ============================ C ============================ -->
+<h2 id="c">C. Offers and rewards</h2>
+
+<div class="feature"><div class="fhead"><h3>C1. Offer system</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Admin builds offers once; the system gives and applies them by rule.</div>
+<div class="k">Who uses it</div><div>Admin (Offer Builder); customers (My Rewards, checkout).</div>
+<div class="k">Where it is set</div><div>Admin, Offers: type, triggers, benefits, minimum order, customer window days, expiry, stacking flag.</div>
+<div class="k">Rule</div><div>Types: personal (given to one customer by a trigger such as first experience, second order, every 5th order, reactivation, recovery, referral level), promotional (open to everyone by rule) and baseline. At most one personal offer per order. A promotion does not combine with a personal offer unless that offer allows it. Every offer is re-checked at the moment it is applied, and the bill says why one was refused. A rule set to 0 means no rule.</div>
+<div class="k">Example</div><div>A promotion "10% off above N10,000" and a personal "free delivery" on the same order: only the personal one applies unless the promotion is marked stackable.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>C2. Live offers today</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>The offers switched on now.</div>
+<div class="k">Who uses it</div><div>Customers.</div>
+<div class="k">Where it is set</div><div>Admin, Offers.</div>
+<div class="k">Rule</div><div><b>First Experience Offer</b> (personal): free pickup and free delivery on the first order; clock starts at registration. <b>Always Free at N8,000</b> (promotional): free pickup and delivery on a window booking of N8,000 or more.</div>
+<div class="k">Example</div><div>A first order of 10 shirts (N6,000 items): pickup and delivery free. A repeat order of N8,400 items in a window: pickup and delivery free; the same order as Urgent: trips charged.</div>
+<div class="k">Status</div><div>Live. <span class="gap">To clean up before launch:</span> First Experience has two minimums set (N4,000 on its benefits, N5,000 on the offer itself, so N5,000 is what applies); a test offer named "Drffg" is active and gives free pickup to everyone above N5,000.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>C3. Reward credit (inside the wallet)</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Holds non-cash credit next to the wallet's cash, each with its own expiry.</div>
+<div class="k">Who uses it</div><div>Customers; admin can adjust credit.</div>
+<div class="k">Where it is set</div><div>Rewards settings, credit lifetimes: laundry 90 days, referral 45, recovery 90, promotional 30.</div>
+<div class="k">Rule</div><div>Credit is spent oldest expiry first, and only when the customer chooses to use it. It is taken for good only when the order completes; a cancelled order gives it back with its original expiry. Every credit row carries a reason line.</div>
+<div class="k">Example</div><div>Wallet cash N2,000, referral credit N400 (expires 20 Nov), laundry credit N1,000 (expires 2 Jan). A N3,000 order with credit switched on: 400 referral, then 1,000 laundry, then 1,600 cash.</div>
+<div class="k">Status</div><div>Live. The revised plan wants credit on by default at Pay (T2.14); today the customer opts in.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>C4. Quick Booking offer pick</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Chooses the offer for a Quick Booking after counting, since nobody chose one at booking.</div>
+<div class="k">Who uses it</div><div>System, at S1's count.</div>
+<div class="k">Where it is set</div><div>Fixed rule.</div>
+<div class="k">Rule</div><div>The offer worth more on this bill (discount plus trips waived; a future credit does not count) is applied; the other stays for next time. First Experience always wins on a first order. An offer valid at booking is honoured even if it expires before counting; the minimum is checked on the counted bill.</div>
+<div class="k">Example</div><div>Customer holds a N500 discount and a free-trips offer on a N6,000 bill: free trips (N2,000) is worth more and is applied.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>C5. Referral reward and levels</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Rewards a customer when a friend they referred completes a first order.</div>
+<div class="k">Who uses it</div><div>Customers (Refer and Earn).</div>
+<div class="k">Where it is set</div><div>Rewards settings: reward %, maximum per reward (off), monthly cap (off), welcome amount (N0, off), levels.</div>
+<div class="k">Rule</div><div>Reward = level % of the friend's first delivered order, paid as referral credit (45 days), once per friend; taken back if that order is fully refunded. Levels are earned by lifetime successful referrals and never lost: Member 5%; Promoter (3) 7%; Ambassador (8) 10%; Champion (15) 15%. A monthly free-laundry credit (N2,000 / N5,000 / N10,000) is given in months the monthly target (2 / 3 / 5) is met.</div>
+<div class="k">Example</div><div>A Member's friend's first order is N8,000 and is delivered: N400 referral credit, expiring in 45 days.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<!-- ============================ D ============================ -->
+<h2 id="d">D. Payments and wallet</h2>
+
+<div class="feature"><div class="fhead"><h3>D1. Card payment (Paystack)</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Takes card payments for orders, top-ups and plans; Paystack's message confirms them.</div>
+<div class="k">Who uses it</div><div>Customers.</div>
+<div class="k">Where it is set</div><div>Paystack keys on the server; webhook at /webhook.</div>
+<div class="k">Rule</div><div>A payment counts only when Paystack's signed message arrives and the amount and reference match what we started. A nightly check reconciles anything missed.</div>
+<div class="k">Example</div><div>Amaka pays N6,000 by card; the order turns Paid when Paystack confirms, not when she closes the card page.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>D2. Wallet and wallet top-up</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Holds the customer's cash balance; tops it up by card or bank transfer.</div>
+<div class="k">Who uses it</div><div>Customers; admin approves transfers.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>Card top-up is instant. A bank-transfer top-up is a request with proof; only admin approves or rejects it, with a reason. A wallet payment never takes the balance below zero.</div>
+<div class="k">Example</div><div>Emeka tops up N10,000 by card: wallet +10,000 at once. He uploads a N5,000 transfer: wallet unchanged until admin approves.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>D3. Counter payments and split payments</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Records how a counter order was paid, including part wallet, part another method.</div>
+<div class="k">Who uses it</div><div>S1.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>Each amount is reported under the method it was paid with.</div>
+<div class="k">Example</div><div>N5,000 order: N3,000 from the wallet and N2,000 by POS. Reports show N3,000 wallet and N2,000 POS.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> cash still allowed (R16).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>D4. Bank transfer confirmed by S1, and the bank-check list</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Lets S1 mark an order paid by transfer, with admin oversight.</div>
+<div class="k">Who uses it</div><div>S1, admin.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>A reference (or sender's name) is required. Every S1 approval notifies admin and appears on that day's bank-check list for matching against the statement.</div>
+<div class="k">Example</div><div>Obinna transfers N3,800; S1 enters reference TRF-88213; the order leaves Payment holds and admin sees it on today's list.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>D5. Payment hold</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Parks an order that owes money until it is paid; nothing is tagged before then.</div>
+<div class="k">Who uses it</div><div>System, S1, admin.</div>
+<div class="k">Where it is set</div><div>Hold type "Awaiting payment" (limit 48 hours). Reminder timings are fixed.</div>
+<div class="k">Rule</div><div>The amount is always the bill (or the balance still owed). The customer gets an SMS and in-app link at once, reminders at 6 and 24 hours; admin is alerted at 48 hours. Card payment clears it; S1 can record a POS or transfer payment; admin can waive it with a reason (the order is processed but cannot be dispatched until paid). Since 14 Oct, S1 cannot "release" an unpaid payment hold.</div>
+<div class="k">Example</div><div>Bill sent Monday 9:00. Reminders 15:00 Monday and 9:00 Tuesday; admin alert 9:00 Wednesday.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> the plan wants 3 hours then 9 AM next day, officer tasks at 24 and 72 hours, an admin flag at 7 days, all as settings, and payment holds never Overdue (B9, R24).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>D6. Staff wallet adjustments</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Lets staff add or take money from a wallet, within a limit per role.</div>
+<div class="k">Who uses it</div><div>S1, Customer Experience, admin.</div>
+<div class="k">Where it is set</div><div>Admin, Order settings, wallet adjustment limits: S1 N5,000, Customer Experience N10,000 (admin no limit).</div>
+<div class="k">Rule</div><div>Within the limit it goes through and is logged with a reason; above it becomes a request for admin.</div>
+<div class="k">Example</div><div>Customer Experience refunds N6,000: goes through today (limit 10,000). The revised plan wants N5,000, so that would go to admin.</div>
+<div class="k">Status</div><div>Live. <span class="gap">To change:</span> set Customer Experience to N5,000 (R20).</div>
+</div></div>
+
+<!-- ============================ E ============================ -->
+<h2 id="e">E. Order flow: riders, intake, stations</h2>
+
+<div class="feature"><div class="fhead"><h3>E1. Rider assignment and pickup</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>S1 assigns a rider; the rider starts the pickup, collects and records his count.</div>
+<div class="k">Who uses it</div><div>S1, riders.</div>
+<div class="k">Where it is set</div><div>Admin, Order settings: unassigned job alert after 30 minutes, escalation after 60.</div>
+<div class="k">Rule</div><div>The job shows only on the assigned rider's list (Urgent first). If the rider's count differs from the booking he gives a reason; the order is flagged (not stopped), the customer gets an SMS with the count, and S1 and admin are told.</div>
+<div class="k">Example</div><div>Booked 10, rider counts 11, reason "customer added one". Flagged; SMS "we collected 11 item(s) … (you booked 10)".</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> the rider must enter the customer's phone number to start and finish (plan: no check); SMS wording differs; "Customer not available" does not return the job to Needs rider or count failures (R22).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E2. Intake count and the count dispute hold</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>S1 counts what arrived; a disagreement with the rider stops the order for admin.</div>
+<div class="k">Who uses it</div><div>S1, admin.</div>
+<div class="k">Where it is set</div><div>Hold type "Count differs from rider count" (admin only).</div>
+<div class="k">Rule</div><div>Same count: the order moves on. Different count: hold, admin alerted; only admin can release it. Anyone else gets "Only admin can release this." (fixed 14 Oct).</div>
+<div class="k">Example</div><div>Rider 5, S1 4: hold raised, admin alerted; S1's Release is refused with the sentence above.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> no separate "Possible missing item" alert when S1 counts fewer (R22).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E3. Change Items (recount)</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Replaces an order's items after counting and settles the difference.</div>
+<div class="k">Who uses it</div><div>S1 (before tagging), admin (any time).</div>
+<div class="k">Where it is set</div><div>Fixed rules; prices and offers as B1 and C1.</div>
+<div class="k">Rule</div><div>The bill is recalculated through the same pricing and offers. Up: the balance becomes a payment hold. Down: the difference goes to the wallet automatically. A reason is required; the customer gets the new bill. After tagging starts, only admin.</div>
+<div class="k">Example</div><div>Paid N6,000 for 10 shirts; S1 counts 11: N600 payment hold. Counts 9: N600 to the wallet.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> allowed before pickup; no recount cover (10% and N200) or mismatch record (R17); plan orders are priced as money (R18); old and new items not saved.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E4. Tagging</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Gives every piece its own tag and record.</div>
+<div class="k">Who uses it</div><div>S1.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>One record per piece, colour White, Light or Dark required. No tag prints until the order is paid (or waived).</div>
+<div class="k">Example</div><div>11 shirts: TAG 01 to TAG 11, each with a colour.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E5. Station handoffs</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Moves pieces between S1, S2, S3, S4 and QC with a send and a receive.</div>
+<div class="k">Who uses it</div><div>All stations.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>S1 to S2 and anything into QC move the whole order. Between S2, S3 and S4 pieces move in any split. A held piece cannot move. The receiving station can reject pieces; rejected pieces go to the sending station's Holds. Sent and received times are saved.</div>
+<div class="k">Example</div><div>S3 sends 6 shirts to S4, later the other 5. QC sees the order only when all 11 are at S4 and sent.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> at S2 receipt one piece cannot be held while the rest are received (revised R2); S2 cannot correct S1's colour (R7); routes are not enforced by service (R4); second rejection does not go to admin (R5).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E6. Sort, pretreat, wash, press, QC and pack</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Records the work at each station per piece, then packs the order.</div>
+<div class="k">Who uses it</div><div>S2, S3, S4, QC.</div>
+<div class="k">Where it is set</div><div>Fixed rules; queue order is by delivery deadline, earliest first.</div>
+<div class="k">Rule</div><div>S2 records stain, stain type, fabric, damage risk and pretreatment per piece. Press is one step. QC passes each piece, then packs; the order becomes Ready only at pack.</div>
+<div class="k">Example</div><div>TAG 02 Soak and Stain treatment (Protein) is saved on that piece.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> no damage case or "Customer informed" step (R6); no "Looks dirty, suggest washing" or per-piece service change (R8); S2 uses its own two colours (white or coloured) instead of White, Light, Dark (R10).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E7. Delivery and failed delivery</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Rider takes the ready order out and marks it delivered or failed.</div>
+<div class="k">Who uses it</div><div>S1, riders.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>Delivered with the rider's name and time. Failed goes back to Ready for reassignment; S1, Customer Experience and admin are told.</div>
+<div class="k">Example</div><div>Customer not home: the order is back in the delivery queue as Ready.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> no "Ready, waiting redelivery", no SMS, no failure count, no redelivery fee; no "Collected" for self collection; no "Returned unwashed" (R22, B20, R21).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>E8. One status and the order timeline</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Keeps one status per order, worked out from where its pieces are.</div>
+<div class="k">Who uses it</div><div>Everyone.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>The order shows the station of its least advanced piece, so it never looks further along than its slowest piece. The history shows only the steps on that service's route.</div>
+<div class="k">Example</div><div>10 pieces at S4 and 1 at S3: the order shows "Washing" until the last piece reaches S4.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<!-- ============================ F ============================ -->
+<h2 id="f">F. Holds and cancellations</h2>
+
+<div class="feature"><div class="fhead"><h3>F1. Holds and hold types</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Stops work on a piece or an order until a problem is solved.</div>
+<div class="k">Who uses it</div><div>All stations, admin (Holds Management).</div>
+<div class="k">Where it is set</div><div>Admin, Hold types (name, which stations may raise it, time limit, alert admin, admin only).</div>
+<div class="k">Rule</div><div>At S1 and for payment a hold stops the whole order; at S2, S3, S4 and QC it stops only that piece. A hold always has a reason. Time limit: the type's own limit, or else by speed (Ready Today 2 h, Express 4 h, Regular 6 h, editable); payment holds 48 h. Each hold is Active or Overdue, never both; the first time it goes Overdue admin gets one alert. Admin-only types can be released only by admin.</div>
+<div class="k">Example</div><div>A Regular order held at 9:00 is Active at 14:00 and Overdue at 15:30.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> payment holds turn Overdue at 48 h; the plan says never (B33).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>F2. Cancellation</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Cancels an order and unwinds money, credit and offers.</div>
+<div class="k">Who uses it</div><div>Customers, Customer Experience, S1, admin.</div>
+<div class="k">Where it is set</div><div>Admin, Order settings: free cancel window 15 minutes; cancellation pickup fee N1,000, return fee N1,000.</div>
+<div class="k">Rule</div><div>Before pickup starts, or within 15 minutes of booking: the customer cancels free, all money back to the wallet. After pickup, before tagging: the customer asks and Customer Experience decides; unpaid orders pay N1,000 + N1,000 (even with a free-trip offer); paid orders get the laundry fee back and the trips are kept. After tagging: no customer cancel. S1 can cancel before processing; admin any time, always with a reason. Credit and offers used are given back.</div>
+<div class="k">Example</div><div>Quick Booking picked up, bill unpaid, admin cancels: N2,000 is charged for the two trips.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> the plan says only admin cancels and S1 escalates; the N2,000 should go as a payment link, and the return waits until it is paid (R12, R21).</div>
+</div></div>
+
+<!-- ============================ G ============================ -->
+<h2 id="g">G. Customer care and the assistant</h2>
+
+<div class="feature"><div class="fhead"><h3>G1. Feedback and the recommendation score</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Collects a rating per delivered order and a 0 to 10 "would you recommend us".</div>
+<div class="k">Who uses it</div><div>Customers; Customer Experience reads the list.</div>
+<div class="k">Where it is set</div><div>CRM settings: how often the 0 to 10 question is asked (every 30 days at most).</div>
+<div class="k">Rule</div><div>4 or 5 stars satisfied, 3 neutral, 1 or 2 low; a low score offers to open a complaint and shows on the officer's list.</div>
+<div class="k">Example</div><div>Emeka gives 2 stars, "late": it appears on Customer Experience's feedback list.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>G2. Complaints and recovery</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Opens a case per complaint, routes it to Customer Experience and records what was done.</div>
+<div class="k">Who uses it</div><div>Customers, Customer Experience, admin.</div>
+<div class="k">Where it is set</div><div>Rewards settings: review 24 h, resolution 72 h, confirm window 48 h, reopen 7 days, approval limit N10,000; Admin, Complaint types.</div>
+<div class="k">Rule</div><div>Not reviewed in 24 h or not resolved in 72 h: escalated, admin told (checked hourly). Recovery actions include a free rewash order through the normal pipeline. Compensation as wallet credit is recovery credit (90 days); Customer Experience approves up to N10,000 per case total, above that or any cash needs admin. The first approval also gives the Recovery Offer, once per case.</div>
+<div class="k">Example</div><div>Chioma approves N500 recovery credit for a torn hem: wallet credit +500, recorded with who and why.</div>
+<div class="k">Status</div><div>Live. <span class="gap">To change:</span> the plan's limit is N5,000 (R20), and it calls this a wallet refund rather than credit.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>G3. Support chat and handover</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>In-app chat that starts with the assistant and can be handed to a person.</div>
+<div class="k">Who uses it</div><div>Customers, Customer Experience, admin.</div>
+<div class="k">Where it is set</div><div>Fixed rules.</div>
+<div class="k">Rule</div><div>Handover puts the chat in the staff queue; the customer is told once when a person joins. Only Customer Experience or admin can close a chat; it is logged; the next message starts a new assistant chat. Messages arrive live.</div>
+<div class="k">Example</div><div>"I want to talk to someone": the chat goes to the support queue.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> the plan wants this to create a complaint linked to the customer (T2.06).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>G4. In-app assistant</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Answers questions and takes approved actions in chat.</div>
+<div class="k">Who uses it</div><div>Customers.</div>
+<div class="k">Where it is set</div><div>Server settings (AI provider and model). Answers come from the same data and rules as the app.</div>
+<div class="k">Rule</div><div>The AI only works out what the customer wants; every answer and action is computed by the system, never invented. It can: give order status, wallet, offers, referral, turnaround and service facts; book (including Quick Booking, speeds with real ready dates and prices); pay from wallet or plan, or send a card link; open a complaint; take feedback; change address; change phone with a code. Each action needs a Yes first. It can never refund, approve compensation, edit credit or close a complaint. Without the AI it falls back to keyword answers.</div>
+<div class="k">Example</div><div>"Book the usual for Thursday": it fills in the last order, shows the speeds with ready dates, asks "Confirm?", then books.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gaps:</span> it quotes a price when asked "how much" (plan: no estimate, point to Book); it offers payment in chat (plan: none).</div>
+</div></div>
+
+<!-- ============================ H ============================ -->
+<h2 id="h">H. Messages and CRM</h2>
+
+<div class="feature"><div class="fhead"><h3>H1. Customer stages and tags (CRM)</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Keeps one card per customer or lead, with a stage and automatic tags.</div>
+<div class="k">Who uses it</div><div>S1 (intake level), admin.</div>
+<div class="k">Where it is set</div><div>CRM settings, thresholds: dormant after 30 days, High Volume average N15,000, High Frequency 2 a month, Express User 50%.</div>
+<div class="k">Rule</div><div>Lead, First order (on booking), Active (2 or more delivered), Loyal (5 or more), Dormant (no order for 30 days, checked nightly), Reactivated (orders again). A merged duplicate card is archived, not deleted.</div>
+<div class="k">Example</div><div>A customer with 5 delivered orders who then goes quiet for 31 days moves from Loyal to Dormant.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>H2. Follow-up message schedules</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Sends timed messages to leads and customers.</div>
+<div class="k">Who uses it</div><div>System; admin edits texts and timings.</div>
+<div class="k">Where it is set</div><div>CRM settings: schedules, send windows (6 to 8 AM, 6 to 8 PM), templates.</div>
+<div class="k">Rule</div><div>Registered not booked: welcome at once; message 1 at 24 hours; messages 2 and 3 in the evening and morning before the Welcome Offer ends; prospect list day 7. Entered leads: welcome, day 2, day 5, prospect day 8. After delivery: confirmation at 1 hour, feedback request at 1 day. Dormant: messages at 0, 14 and 42 days, churned at 56. Booking cancels waiting messages. Follow-ups wait for a send window; order messages do not. Delivery: WhatsApp bot, then SMS, then email.</div>
+<div class="k">Example</div><div>A follow-up due at 10:30 AM goes at 6:00 PM.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> no quiet hours for order SMS (9 PM to 7 AM, R23).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>H3. Order and account SMS</h3><span class="badge prog">In progress</span></div><div class="fbody">
+<div class="k">What it does</div><div>Texts the customer at key moments.</div>
+<div class="k">Who uses it</div><div>System.</div>
+<div class="k">Where it is set</div><div>Welcome text in CRM templates; the order texts are written in the system.</div>
+<div class="k">Rule</div><div>Sent today: registration welcome; rider count differs; bill and payment link; payment reminders; bill changed after recount (with wallet refund); plan renewal failed and day-5 reminder. In-app only: picked up, payment received.</div>
+<div class="k">Example</div><div>"Chuvi: after checking your items, order OSC… comes to ₦6,600 (was ₦6,000). ₦600 is outstanding."</div>
+<div class="k">Status</div><div>In progress. <span class="gap">Missing:</span> booking received, ready (with window or collection hours), delivered, customer not available; pay-by time and expired-link note; N instead of ₦ and no dashes; quiet hours (R23).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>H4. Templates, message log and admin alerts</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Editable message templates, a log of every message sent, and staff notifications.</div>
+<div class="k">Who uses it</div><div>Admin.</div>
+<div class="k">Where it is set</div><div>Admin, Communication templates; CRM templates.</div>
+<div class="k">Rule</div><div>Templates are chosen from a fixed list of keys. Failed messages can be retried. Admin is notified of flagged orders, holds, overdue holds, transfers, escalations and payment problems.</div>
+<div class="k">Example</div><div>Admin edits the "complaint-update" template; the next update uses the new wording.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<!-- ============================ I ============================ -->
+<h2 id="i">I. Plans (subscriptions)</h2>
+
+<div class="feature"><div class="fhead"><h3>I1. Plans and booking with a plan</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Monthly plans paid by card; orders draw items from the plan instead of money.</div>
+<div class="k">Who uses it</div><div>Customers; admin manages plans.</div>
+<div class="k">Where it is set</div><div>Admin, Plans: price, items a month, free pickups and deliveries a week.</div>
+<div class="k">Rule</div><div>Live plans: Student N16,500 (25 items), Standard N25,000 (35), Family N33,500 (60), VIP N52,000 (40). Items count pieces. Heavy and set items are not covered. Speed charges are free. Free pickups and deliveries reset every rolling 7 days from the plan's start and do not carry over. If a plan order is refused (for example not enough items), the assistant falls back to paying per item.</div>
+<div class="k">Example</div><div>Student plan, 25 items: booking 5 shirts leaves 20.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> recount on a plan order returns money, not plan items (R18).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>I2. Renewal, rollover, failed payment, cancel and change of plan</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Handles the monthly renewal and what happens to unused items.</div>
+<div class="k">Who uses it</div><div>Customers, system.</div>
+<div class="k">Where it is set</div><div>Fixed rules (client rules of 10 to 14 Oct).</div>
+<div class="k">Rule</div><div>At renewal unused items carry over, up to half the plan, rounded down. Failed renewal: plan blocked, SMS and My Plan banner at once, reminder on day 5; re-subscribing to the same plan within 7 days keeps the items; the old plan is switched off only after the new payment succeeds. Cancel: stops renewing, usable to the end of the paid month. Change of plan starts fresh. Loyalty bonus: +25% at month 3, +50% at month 6, +100% at month 12; a failed payment resets the count.</div>
+<div class="k">Example</div><div>25-item plan with 20 unused at renewal: 25 + 12 = 37 items.</div>
+<div class="k">Status</div><div>Live (14 Oct).</div>
+</div></div>
+
+<!-- ============================ J ============================ -->
+<h2 id="j">J. Admin, reporting and settings</h2>
+
+<div class="feature"><div class="fhead"><h3>J1. Admin dashboard figures</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Headline numbers for the business.</div>
+<div class="k">Who uses it</div><div>Admin.</div>
+<div class="k">Where it is set</div><div>Fixed formulas.</div>
+<div class="k">Rule</div><div>Average daily revenue = payments in the last 7 days ÷ 7. Revenue per item = 7-day revenue ÷ 7-day garments. Processing time = Ready time − cleared-for-production time (clothes at intake and money complete, whichever is later), for orders Ready today; "Not enough data yet" until one is measured. Holds: Active and Overdue (F1). Orders due today.</div>
+<div class="k">Example</div><div>N12,000 + N18,000 + N9,000 over 7 days: N39,000 ÷ 7 = N5,571 a day.</div>
+<div class="k">Status</div><div>Live. <span class="gap">Gap:</span> no 3 PM alert of orders due today not at QC (B34).</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>J2. Reports</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Monthly lead report, recovery and feedback dashboard, CRM metrics, audit log, daily bank-check list, window fill and moved-customer counts.</div>
+<div class="k">Who uses it</div><div>Admin.</div>
+<div class="k">Where it is set</div><div>Fixed formulas; months are Lagos months.</div>
+<div class="k">Rule</div><div>Recovery "ordered again": of customers compensated in a month, how many placed a real order within 60 days. NPS = % promoters (9 to 10) − % detractors (0 to 6). The CRM's order count counts delivered orders.</div>
+<div class="k">Example</div><div>10 answers: 5 promoters, 1 detractor: NPS = 50 − 10 = 40.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>J3. Settings against the plan's list (R24)</h3><span class="badge prog">In progress</span></div><div class="fbody">
+<div class="k">What it does</div><div>Every number the plan says admin must be able to change.</div>
+<div class="k">Who uses it</div><div>Admin.</div>
+<div class="k">Where it is set</div><div>See the table below.</div>
+<div class="k">Rule</div><div>Exists today: daily limit 150, Ready Today 30, Express 50; speed display names; time limit per hold type; feedback delay (CRM post-delivery schedule); refund limits per role. Missing: recount cover (10% and N200); repeat mismatch limit; pay-by time; reminders (3 h, 9 AM); officer tasks (24 h, 72 h); admin flag (7 days); Quick Booking 2× trigger; Iron Only answer time; "sent waiting turns red" (screen rule today); due-today check time; quiet hours.</div>
+<div class="k">Example</div><div>Admin changes Express from 50 to 40 pieces: the next booking uses 40.</div>
+<div class="k">Status</div><div>In progress. SMS templates: CRM and communication templates are editable in admin; the order SMS are not yet.</div>
+</div></div>
+
+<!-- ============================ K ============================ -->
+<h2 id="k">K. Time and background jobs</h2>
+
+<div class="feature"><div class="fhead"><h3>K1. Lagos time everywhere</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Makes "today", "this month" and every scheduled time mean Lagos time, on any server.</div>
+<div class="k">Who uses it</div><div>Everything.</div>
+<div class="k">Where it is set</div><div>Server.</div>
+<div class="k">Rule</div><div>The whole system runs on Africa/Lagos time. Day and month boundaries are Lagos midnight.</div>
+<div class="k">Example</div><div>A payment at 00:30 on 15 Oct counts on 15 Oct, not on 14 Oct.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<div class="feature"><div class="fhead"><h3>K2. Background jobs</h3><span class="badge live">Live</span></div><div class="fbody">
+<div class="k">What it does</div><div>Timed checks that run without anyone pressing a button.</div>
+<div class="k">Who uses it</div><div>System.</div>
+<div class="k">Where it is set</div><div>Server; timings follow the settings named in each section.</div>
+<div class="k">Rule</div><div>Every few minutes: CRM message queue. Every 20 minutes: payment reminders; overdue holds. Hourly: complaint clocks. 30 and 60 minutes: unassigned rider jobs. Nightly: Paystack reconcile (and retry switching off replaced plans); dormancy scan 1:30 AM; credit and offer expiry. 10:00 AM: broadcasts; expired-plan email; renewal-failed day-5 reminder.</div>
+<div class="k">Example</div><div>A credit that expires today is marked expired overnight and cannot be spent tomorrow.</div>
+<div class="k">Status</div><div>Live.</div>
+</div></div>
+
+<!-- ============================ L ============================ -->
+<h2 id="l">L. Planned systems (V2 candidates)</h2>
+<table>
+<tr><th>System</th><th>What it would do</th><th>Status</th></tr>
+<tr><td>L1. Logistics system</td><td>A dispatch vertical: logistics jobs and rider missions (several stops per run), maps and weather, feeding Smart Book. Urgent's "join the current run" belongs here.</td><td><span class="badge plan">Planned</span> (quoted)</td></tr>
+<tr><td>L2. Workforce system</td><td>Staff identity, more than one role per person and temporary grants, training, Floor Lead, standards and staff cases; includes the platform foundation for several business lines.</td><td><span class="badge plan">Planned</span> (quoted)</td></tr>
+<tr><td>L3. Smart Book</td><td>Operations, cost and learning: costs per order and per piece, supplies, learning from the floor.</td><td><span class="badge plan">Planned</span> (paused behind L2)</td></tr>
+<tr><td>L4. Split flow and saved addresses; set items</td><td>Several addresses per customer, orders split across them; set items (suits, duvet sets) as one line with pieces; recovery orders following the same flow.</td><td><span class="badge plan">Planned</span> (quoted)</td></tr>
+<tr><td>L5. Recurring offers</td><td>Offers that switch on by day and time, with a notification every few days to the eligible group.</td><td><span class="badge plan">Planned</span> (deferred)</td></tr>
+<tr><td>L6. Voice and five languages</td><td>Talk to the assistant by voice, in English, Pidgin, Yoruba, Hausa and Igbo; same rules underneath.</td><td><span class="badge plan">Planned</span> (approved plan)</td></tr>
+<tr><td>L7. WhatsApp assistant</td><td>The separate WhatsApp bot uses this system's existing endpoints.</td><td><span class="badge plan">Planned</span> (separate project)</td></tr>
+<tr><td>L8. Pay now button for a failed plan renewal</td><td>One tap to retry the plan payment.</td><td><span class="badge plan">Planned</span> (after launch)</td></tr>
+</table>
+
+<!-- ============================ PART 2 ============================ -->
+<h2 id="gaps" class="pb">Part 2. The V1 Test Plan (revised, 14 Oct): matches, new work and gaps</h2>
+<p>Every step of T1 to T12 was checked against the code. This is a reading of the code, not yet a run; each scenario still has to be run end to end before "Digital pass".</p>
+<table>
+<tr><th>Steps checked</th><th>Matches the plan</th><th>New work (not built)</th><th>Built, but different</th></tr>
+<tr><td>102</td><td class="r-pass">39</td><td class="r-nb">22</td><td class="r-fail">41 <span class="meta">(26 partly, 14 different, 1 to confirm)</span></td></tr>
+</table>
+
+<h3 id="p2-1">1. What we have built that matches the test plan</h3>
+<p>These steps already work the way the Expected line says.</p>
+<table><tr><th colspan="2">T1: Amaka's first order</th></tr><tr><td style="width:62px">T1.02</td><td>Offers and First Experience as built (B15).</td></tr><tr><td style="width:62px">T1.03</td><td>One total; each offer is its own line in the bill.</td></tr><tr><td style="width:62px">T1.05</td><td>S1 assigns; the job shows only on that rider's list.</td></tr><tr><td style="width:62px">T1.09</td><td>Rider and S1 agree, so there is no hold.</td></tr><tr><td style="width:62px">T1.11</td><td>One piece record per tag; colour White/Light/Dark.</td></tr><tr><td style="width:62px">T1.12</td><td>S1 to S2 sends the whole order; the sent time saved; after tagging only admin can change items.</td></tr><tr><td style="width:62px">T1.13</td><td>Revised plan: S2 checks the list and taps All received. Confirming the S1 to S2 handoff with nothing rejected receives every piece and saves the time.</td></tr><tr><td style="width:62px">T1.14</td><td>S2 can set stain, fabric and damage marks after accepting.</td></tr><tr><td style="width:62px">T1.15</td><td>Pretreatment saved per piece; pieces move one by one.</td></tr><tr><td style="width:62px">T1.16</td><td>the sent time lets the screen turn red; 30 min is a front-end rule.</td></tr><tr><td style="width:62px">T1.17</td><td>Partial sends are allowed between S2, S3 and S4.</td></tr><tr><td style="width:62px">T1.19</td><td>QC gets the order only when every piece is there.</td></tr><tr><td style="width:62px">T1.22</td><td>Addresses and rider log with names and times.</td></tr><tr><td style="width:62px">T1.24</td><td>One status computed from the pieces.</td></tr></table>
+<table><tr><th colspan="2">T2: Emeka, Quick Booking through the assistant</th></tr><tr><td style="width:62px">T2.01</td><td>The bot offers only the services set up.</td></tr><tr><td style="width:62px">T2.08</td><td>No hold when the rider and S1 agree.</td></tr><tr><td style="width:62px">T2.09</td><td>One piece record per item.</td></tr><tr><td style="width:62px">T2.10</td><td>Bill made and Paystack link created (Quick Booking item 6).</td></tr><tr><td style="width:62px">T2.15</td><td>The webhook clears the hold and the order goes to tagging by itself.</td></tr><tr><td style="width:62px">T2.16</td><td>As T1.</td></tr><tr><td style="width:62px">T2.18</td><td>Fixed piece can be sent again.</td></tr><tr><td style="width:62px">T2.21</td><td>A low score appears on the customer experience feedback list.</td></tr></table>
+<table><tr><th colspan="2">T3: Obinna: missing piece, damaged piece</th></tr><tr><td style="width:62px">T3.04</td><td>Fixed 14 Oct: non-admins get "Only admin can release this." (requiresAdmin true) at Intake and at every station; S1 also can no longer release an unpaid payment hold.</td></tr><tr><td style="width:62px">T3.05</td><td>Admin resolves, with name and time.</td></tr><tr><td style="width:62px">T3.06</td><td>S1 marks the transfer paid with a reference (admin notified, bank-check list).</td></tr><tr><td style="width:62px">T3.09</td><td>QC cannot receive the order while a piece is held (whole-order gate into QC, and held pieces cannot move).</td></tr></table>
+<table><tr><th colspan="2">T4: Iron Only with a dirty shirt</th></tr><tr><td style="width:62px">T4.01</td><td>Wallet payment.</td></tr></table>
+<table><tr><th colspan="2">T5: Obinna isn't home, then hands over more</th></tr><tr><td style="width:62px">T5.07</td><td>QC rejection goes to S4's holds.</td></tr></table>
+<table><tr><th colspan="2">T6: Amaka brings fewer shirts</th></tr><tr><td style="width:62px">T6.01</td><td>Self drop off creates no rider job.</td></tr></table>
+<table><tr><th colspan="2">T7: Ifeoma walks in, Ready Today</th></tr><tr><td style="width:62px">T7.01</td><td>Walk-in Ready Today with the limit (launch item 3).</td></tr></table>
+<table><tr><th colspan="2">T8: Kene, transfer and wrong tag</th></tr><tr><td style="width:62px">T8.01</td><td>Walk-in transfer confirmed by S1, no admin step.</td></tr><tr><td style="width:62px">T8.02</td><td>Sent, untagged piece included (see T8.04).</td></tr><tr><td style="width:62px">T8.07</td><td>Admin resolves; names and times saved.</td></tr></table>
+<table><tr><th colspan="2">T10: Wallet money</th></tr><tr><td style="width:62px">T10.01</td><td>Paystack top-up is instant.</td></tr><tr><td style="width:62px">T10.02</td><td>Transfer top-up (upload proof) lands in admin's verification queue; S1 cannot approve it.</td></tr><tr><td style="width:62px">T10.03</td><td>Admin accepts, with name and time.</td></tr><tr><td style="width:62px">T10.04</td><td>Admin rejects with a reason; customer notified.</td></tr><tr><td style="width:62px">T10.06</td><td>Every credit row carries a note (B13 fix).</td></tr></table>
+<table><tr><th colspan="2">T12: Time rules</th></tr><tr><td style="width:62px">T12.06</td><td>Feature 21, live 14 Oct.</td></tr></table>
+
+
+<h3 id="p2-2" class="pb">2. New things the test plan asks for (not built yet)</h3>
+<p>Nothing exists for these today; each is new work.</p>
+<table><tr><th colspan="2">T1: Amaka's first order</th></tr><tr><td style="width:62px">T1.10</td><td>No recount cover (revised R17: both limits, 10% of the bill and a naira amount; launch 10% and N200, test 10% and N600). N600 more raises a payment hold plus a link SMS (with the N sign). The SMS always goes out. No mismatch record. The change saves only piece counts and totals, not the old and new items.</td></tr></table>
+<table><tr><th colspan="2">T2: Emeka, Quick Booking through the assistant</th></tr><tr><td style="width:62px">T2.20</td><td>No redelivery fee rule (first free, then charged).</td></tr></table>
+<table><tr><th colspan="2">T3: Obinna: missing piece, damaged piece</th></tr><tr><td style="width:62px">T3.10</td><td>No "Customer informed" step, so nothing makes admin release wait for it. The admin-only release itself now exists (14 Oct fix), so a "Damaged" hold type marked admin-only would cover "only admin releases". No partial delivery approval and no free second trip.</td></tr></table>
+<table><tr><th colspan="2">T4: Iron Only with a dirty shirt</th></tr><tr><td style="width:62px">T4.03 to T4.05</td><td>No "Looks dirty", no suggestion for S1, <b>no per-piece service</b> (the order has one service), no difference link.</td></tr><tr><td style="width:62px">T4.08</td><td>3-hour link expiry, "pressed as booked", note and message.</td></tr></table>
+<table><tr><th colspan="2">T5: Obinna isn't home, then hands over more</th></tr><tr><td style="width:62px">T5.03</td><td>No "2 failed pickups: call customer" task.</td></tr><tr><td style="width:62px">T5.08</td><td>Second rejection does not go to admin; no "Only admin can release this".</td></tr></table>
+<table><tr><th colspan="2">T6: Amaka brings fewer shirts</th></tr><tr><td style="width:62px">T6.03</td><td>No Ready SMS (with collection hours).</td></tr><tr><td style="width:62px">T6.04</td><td>No "Collected" status: it ends as Delivered.</td></tr></table>
+<table><tr><th colspan="2">T7: Ifeoma walks in, Ready Today</th></tr><tr><td style="width:62px">T7.03</td><td>No 3 PM check of orders due today that are not at QC (the admin "due today" count exists, with no alert).</td></tr><tr><td style="width:62px">T7.04</td><td>No Collected status.</td></tr></table>
+<table><tr><th colspan="2">T8: Kene, transfer and wrong tag</th></tr><tr><td style="width:62px">T8.03</td><td>Revised R7: S2 may correct S1's colour and stain tags. Today S2 cannot change the tag colour (it only has its own two colours, white or coloured, against R10). Keeping both versions is "after launch".</td></tr><tr><td style="width:62px">T8.06</td><td>Second rejection of the same piece does not go to admin.</td></tr></table>
+<table><tr><th colspan="2">T9: Amaka rejects her bill</th></tr><tr><td style="width:62px">T9.04</td><td>Nothing blocks the return before she pays.</td></tr><tr><td style="width:62px">T9.05</td><td>No "Returned unwashed" status.</td></tr></table>
+<table><tr><th colspan="2">T11: Plans</th></tr><tr><td style="width:62px">T11.04</td><td>Plan items first, then a link for the rest.</td></tr></table>
+<table><tr><th colspan="2">T12: Time rules</th></tr><tr><td style="width:62px">T12.01</td><td>No quiet hours for SMS.</td></tr><tr><td style="width:62px">T12.02</td><td>No pay-by time or ready-date recompute from the payment time.</td></tr><tr><td style="width:62px">T12.03</td><td>Ready date is <b>kept</b> on any count change (client ruling 12 Oct). The plan now wants a recompute when the count is more than 2× the booking.</td></tr><tr><td style="width:62px">T12.04</td><td>No cover, so no repeat-mismatch limit or alert.</td></tr><tr><td style="width:62px">T12.05</td><td>No 9 AM next-day reminder.</td></tr><tr><td style="width:62px">T12.07</td><td>Feedback is not held back during quiet hours.</td></tr></table>
+
+
+<h3 id="p2-3" class="pb">3. Built, but not the way the test plan says</h3>
+<p>The feature exists, but behaves differently from the Expected line. "Partly" means most of it works; "Different" means it does something else.</p>
+<table><tr><th colspan="3">T1: Amaka's first order</th></tr><tr><td style="width:62px">T1.01</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Signing up on a referral link links the account. No admin view per rep of who signed up, who paid and how much (not found).</td></tr><tr><td style="width:62px">T1.04</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Paystack and the order turning Paid work. <b>No "booking received" SMS</b> exists.</td></tr><tr><td style="width:62px">T1.06</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Change Items has no "pickup confirmed" check, so S1 can change items before pickup.</td></tr><tr><td style="width:62px">T1.07</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Start pickup <b>requires the customer's phone number</b> (as do picked up, delivered and failed).</td></tr><tr><td style="width:62px">T1.08</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Flag (no stop) and SMS work, but the rider must type a reason. The SMS text differs: "we collected 11 item(s) … (you booked 10)", with no phone number to call.</td></tr><tr><td style="width:62px">T1.18</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Press is one action, but the order status is still named "ironing".</td></tr><tr><td style="width:62px">T1.20</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Ready only at pack. <b>No Ready SMS.</b></td></tr><tr><td style="width:62px">T1.21</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Delivery works, but needs the customer's phone. <b>No Delivered SMS</b> (only the CRM delivery message, 1 hour later).</td></tr><tr><td style="width:62px">T1.23</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>The feedback delay is an admin setting (CRM post-delivery, default 1 day). Quiet hours are not enforced for it.</td></tr></table>
+<table><tr><th colspan="3">T2: Emeka, Quick Booking through the assistant</th></tr><tr><td style="width:62px">T2.02</td><td style="width:92px"><span class="r-fail">Different</span></td><td>The bot answers "how much" with a per-piece price. The plan wants no estimate.</td></tr><tr><td style="width:62px">T2.03</td><td style="width:92px"><span class="r-nb">To confirm in the run</span></td><td>Asking again on a "morning … 2 PM" clash: needs a bot run.</td></tr><tr><td style="width:62px">T2.04</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Display names, real prices and ready dates are built. Ready Today is <b>not</b> blocked for Quick Booking.</td></tr><tr><td style="width:62px">T2.05</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Booking is saved; <b>no "booking received" SMS</b>.</td></tr><tr><td style="width:62px">T2.06</td><td style="width:92px"><span class="r-fail">Different</span></td><td>"Talk to someone" hands the chat to a person; it does <b>not</b> open a complaint.</td></tr><tr><td style="width:62px">T2.07</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>As T1.08.</td></tr><tr><td style="width:62px">T2.11</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Bill SMS has <b>no pay-by time, no ready date and no expired-link note</b>, and uses N.</td></tr><tr><td style="width:62px">T2.12</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>The payment hold sits apart from the floor holds. Payment holds <b>do</b> turn Overdue after 48 h. A "check payment / resend link" action is not confirmed.</td></tr><tr><td style="width:62px">T2.13</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Reminders are hard-coded at 6 h and 24 h, and the admin alert at 48 h. <b>No officer task.</b> Not settings.</td></tr><tr><td style="width:62px">T2.14</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Pay in the app creates a new link. Reward credit is opt-in (asked), not on by default.</td></tr><tr><td style="width:62px">T2.17</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>A rejected piece goes to the sending station's holds. <b>No reason is required.</b></td></tr><tr><td style="width:62px">T2.19</td><td style="width:92px"><span class="r-fail">Different</span></td><td>"Delivery failed" goes back to <b>Ready</b>. No "Ready, waiting redelivery", <b>no SMS, no failure count</b>.</td></tr></table>
+<table><tr><th colspan="3">T3: Obinna: missing piece, damaged piece</th></tr><tr><td style="width:62px">T3.01</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Ready Today is not blocked on Quick Booking.</td></tr><tr><td style="width:62px">T3.03</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Hold raised and admin alerted, but the hold is named "Count differs from rider count" and there is <b>no "Possible missing item"</b> alert.</td></tr><tr><td style="width:62px">T3.07</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Routes are <b>not enforced by service</b>. Any forward move is allowed, so a front-end mistake could send T3 to S4.</td></tr><tr><td style="width:62px">T3.08</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Revised R6: damage now HOLDS the piece. S3 can hold one piece with a reason and the other pieces move on (item-level holds). There is no "Damaged" hold type and <b>no damage case</b> for customer experience with admin copied.</td></tr><tr><td style="width:62px">T3.11</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Customer experience can grant compensation on a case with a reason. It goes in as <b>recovery credit</b>, not a wallet refund, and the limit setting is N10,000, not N5,000.</td></tr><tr><td style="width:62px">T3.12</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Per-rider history exists. An admin filter by rider and date is not confirmed.</td></tr></table>
+<table><tr><th colspan="3">T4: Iron Only with a dirty shirt</th></tr><tr><td style="width:62px">T4.02</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Route not enforced (see T3.07).</td></tr><tr><td style="width:62px">T4.06</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Blocked, but the message is generic ("all items must be at …"). It does not name TAG 03 and where it is.</td></tr></table>
+<table><tr><th colspan="3">T5: Obinna isn't home, then hands over more</th></tr><tr><td style="width:62px">T5.02</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Pickup is set to "failed". It does not go back to Needs rider, and no failure is recorded against the customer.</td></tr><tr><td style="width:62px">T5.04</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>As T1.08.</td></tr><tr><td style="width:62px">T5.05</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Charged in full with link and payment hold (correct, as there is no cover yet). No mismatch record.</td></tr><tr><td style="width:62px">T5.10</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Counts match the lists (B33). Payment holds <b>do</b> become Overdue at 48 h.</td></tr></table>
+<table><tr><th colspan="3">T6: Amaka brings fewer shirts</th></tr><tr><td style="width:62px">T6.02</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>N600 goes back to the wallet automatically and an SMS is sent (with N). No mismatch record.</td></tr></table>
+<table><tr><th colspan="3">T7: Ifeoma walks in, Ready Today</th></tr><tr><td style="width:62px">T7.02</td><td style="width:92px"><span class="r-fail">Different</span></td><td><b>Cash is allowed and is the default</b> (earlier client ruling). The plan says no cash. A POS receipt number is not required.</td></tr></table>
+<table><tr><th colspan="3">T8: Kene, transfer and wrong tag</th></tr><tr><td style="width:62px">T8.04</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Revised R2: hold only the untagged piece at receipt and receive the rest. Today the S1 to S2 handoff is whole-order: "accept every item or reject every item", so S2 cannot receive TAG 01 and TAG 02 while holding TAG 03. A "Something is missing" reason is not required either.</td></tr><tr><td style="width:62px">T8.05</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Sending one fixed piece from S1 to S2 is refused by the same whole-order gate ("must include every item in the order").</td></tr></table>
+<table><tr><th colspan="3">T9: Amaka rejects her bill</th></tr><tr><td style="width:62px">T9.02</td><td style="width:92px"><span class="r-fail">Different</span></td><td><b>S1 can cancel</b> (before processing), and there is no "Escalate for cancellation" for S1. Customer cancellation requests are approved by customer experience, not admin.</td></tr><tr><td style="width:62px">T9.03</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Admin cancel works with a reason, and the pickup and delivery fee is worked out, but it is charged from the wallet, not sent as a payment link.</td></tr></table>
+<table><tr><th colspan="3">T10: Wallet money</th></tr><tr><td style="width:62px">T10.05</td><td style="width:92px"><span class="r-partial">Partly</span></td><td>Limits are per role and settable, but the seeded customer experience limit is N10,000 (needs 5,000). The case compensation route is separate from wallet adjust.</td></tr></table>
+<table><tr><th colspan="3">T11: Plans</th></tr><tr><td style="width:62px">T11.03</td><td style="width:92px"><span class="r-fail">Different</span></td><td>Change Items on a plan order prices it as money. It must return plan items, or be refused on plan orders (the client's fallback).</td></tr></table>
+
+
+<h3>Rules that reverse earlier decisions (please confirm)</h3>
+<ul>
+<li><b>No cash at the counter.</b> On 8 Oct cash was made the pre-selected method.</li>
+<li><b>Only admin cancels.</b> Today S1 may cancel before processing, and Customer Experience approves customer requests.</li>
+<li><b>New ready date when the count is more than twice the booking.</b> On 12 Oct: keep the date whatever the count.</li>
+</ul>
+
+<h3>Settings to correct before launch (no code needed)</h3>
+<ul>
+<li>Remove or end the test offer "Drffg" (active, free pickup above N5,000 for everyone).</li>
+<li>First Experience: one minimum, not two (N4,000 on its benefits, N5,000 on the offer).</li>
+<li>Express and Ready Today charges are N0; Urgent costs the same as a window (N1,000). Confirm these are intended.</li>
+<li>Customer Experience wallet limit N10,000 and recovery approval limit N10,000; the plan says N5,000.</li>
+</ul>
+
+<h3>Already fixed during this review</h3>
+<ul>
+<li>14 Oct: only admin can release an admin-only hold ("Only admin can release this."), at intake and every station; S1 can no longer release an unpaid payment hold (T3.04, R15).</li>
+</ul>
+
+<h3>Proposed order of work and time</h3>
+<table>
+<tr><th>#</th><th>Batch</th><th>Days</th></tr>
+<tr><td>1</td><td>Quick fixes: no Change Items before pickup; refuse Change Items on plan orders; no rider phone check; reason on every rejection; no Ready Today on Quick Booking; payment holds never Overdue; SMS cleanup (N, no dashes) at the one place SMS are sent</td><td>1</td></tr>
+<tr><td>2</td><td>Counts and riders (R22), Collected, Returned unwashed</td><td>2</td></tr>
+<tr><td>3</td><td>Money: recount cover and mismatch limit (R17), Change Items history, escalate and admin-only cancel with the N2,000 link (R12, R21), no cash and POS receipt (R16), limit 5,000 (R20)</td><td>2 to 3</td></tr>
+<tr><td>4</td><td>Timers and messages: reminders, officer tasks, admin flag as settings; pay-by time and ready-date rules (R21); missing SMS; quiet hours; 3 PM check; R24 settings</td><td>2</td></tr>
+<tr><td>5</td><td>Stations: per-piece hold at S2 receipt and colour correction (R2, R7), second rejection to admin (R5), routes by service and per-piece service (R4, R8), damage case flow (R6), R10 colours, missing-piece message</td><td>3</td></tr>
+<tr><td>6</td><td>Rep tracking report</td><td>0.5</td></tr>
+</table>
+<p>About 10 to 12 working days of back-end work, then the front end, then one full digital run. We suggest you mark which items must be in for launch, and we start with batch 1 now.</p>
+
+</body>
+</html>

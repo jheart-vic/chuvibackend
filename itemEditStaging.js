@@ -101,6 +101,8 @@ async function main() {
                 isDelivery: true,
                 amount: 0,
                 items,
+                // V1 batch 1: S1 edits only after the pickup is confirmed.
+                dispatchDetails: { pickup: { status: 'picked-up' } },
                 ...extra,
             })
             createdOrders.push(o._id)

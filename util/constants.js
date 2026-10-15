@@ -133,8 +133,9 @@ const PAYMENT_METHOD = {
 // What an intake/counter order may be settled with. `wallet` is the only one
 // that MOVES money inside the system; the other three are physically collected
 // at the counter, so they are recorded, not charged.
+// V1 launch batch 1 (client 15 Oct, R16): "No cash." Cash is no longer a
+// counter tender; POS (with the receipt number) is the default.
 const COUNTER_PAYMENT_METHODS = [
-    PAYMENT_METHOD.CASH,
     PAYMENT_METHOD.POS,
     PAYMENT_METHOD.BANK_TRANFER,
     PAYMENT_METHOD.WALLET,

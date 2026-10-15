@@ -4,8 +4,23 @@ const axios = require('axios')
 const TERMII_API_KEY = process.env.TERMII_API_KEY
 const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID
 
+// V1 launch batch 1 (client 15 Oct, R23): every SMS uses N instead of the naira
+// sign and has no dashes. Done here, where every SMS passes, so no message can
+// slip through. Hyphens inside a word or code (OSC-20261015-123456, a link) stay.
+function cleanSmsText(message) {
+    return String(message ?? '')
+        .replace(/₦\s*/g, 'N')
+        .replace(/(\d)\s*[–—]\s*(\d)/g, '$1 to $2')
+        .replace(/\s*[–—]+\s*/g, ', ')
+        .replace(/\s+-\s+/g, ', ')
+        .replace(/,\s*([.,!?])/g, '$1')
+        .replace(/ {2,}/g, ' ')
+        .trim()
+}
+
 const sendSms = async (phoneNumber, message) => {
     try {
+        message = cleanSmsText(message)
         const phoneNo = formatPhoneNumber(phoneNumber)
         const response = await axios.post(
             'https://api.ng.termii.com/api/sms/send',
@@ -33,3 +48,4 @@ function formatPhoneNumber(phoneNumber) {
 }
 
 module.exports = sendSms
+module.exports.cleanSmsText = cleanSmsText

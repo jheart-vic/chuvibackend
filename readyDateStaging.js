@@ -163,6 +163,7 @@ async function main() {
         const qb = await book(DELIVERY_SPEED.STANDARD, undefined, { items: undefined, itemCount: 2 })
         ok(qb.r.success && qb.order?.floorAllocation?.reduce((n, x) => n + x.pieces, 0) === 2, `Quick Booking of 2 holds 2 pieces (${JSON.stringify(qb.order?.floorAllocation)})`)
         const keptDate = qb.order && new Date(qb.order.deliveryDate).getTime()
+        await BookOrderModel.updateOne({ _id: qb.order._id }, { $set: { 'dispatchDetails.pickup.status': 'picked-up' } }) // V1 batch 1: S1 edits after pickup
         const edit = await new BookOrderService().applyItemEdit({ params: { id: String(qb.order._id) }, body: { items: [{ type: 'trousers', price: 700, quantity: 6 }], reason: 'Counted at Intake' }, user: { id: String(operator._id), userType: ROLE.INTAKE_AND_TAG } })
         const qbAfter = await BookOrderModel.findById(qb.order._id).lean()
         const lastBefore = qb.order.floorAllocation[qb.order.floorAllocation.length - 1]
@@ -174,7 +175,7 @@ async function main() {
         console.log('\n[8] A counter (S1) booking takes floor space')
         const counter = await new IntakeUserService().createBookOrder({
             user: { id: String(operator._id) },
-            body: { fullName: 'Walk In', phoneNumber: `0802${String(stamp).slice(-7)}`, serviceType: settings.serviceTypes[0].name, serviceTier: SERVICE_TIERS.CLASSIC, isPickUp: false, isDelivery: false, deliverySpeed: DELIVERY_SPEED.STANDARD, items: [{ type: 'shirt', price: 1, quantity: 3 }], paymentMethod: 'cash' },
+            body: { fullName: 'Walk In', phoneNumber: `0802${String(stamp).slice(-7)}`, serviceType: settings.serviceTypes[0].name, serviceTier: SERVICE_TIERS.CLASSIC, isPickUp: false, isDelivery: false, deliverySpeed: DELIVERY_SPEED.STANDARD, items: [{ type: 'shirt', price: 1, quantity: 3 }], paymentMethod: 'pos', paymentReference: 'RCPT-RD1' },
         })
         const co = unwrap(counter)
         if (co?._id) created.orderIds.push(co._id)

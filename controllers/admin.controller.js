@@ -2,6 +2,7 @@ const AdminService = require('../services/admin.service')
 const ProfileMergeService = require('../services/profileMerge.service')
 const BookingWindowService = require('../services/bookingWindow.service')
 const PaymentHoldService = require('../services/paymentHold.service')
+const RepReportService = require('../services/repReport.service')
 const BaseController = require('./base.controller')
 
 class AdminController extends BaseController {
@@ -219,6 +220,26 @@ class AdminController extends BaseController {
             actorId: req.user?.id,
         })
 
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // V1 launch batch 1: per rep link, who signed up, who paid and how much.
+    async getRepLinkReport(req, res) {
+        const result = await RepReportService.repLinks({
+            from: req.query?.from,
+            to: req.query?.to,
+            referrerId: req.query?.referrerId,
+        })
+        return result.success
+            ? BaseController.sendSuccessResponse(res, result.data)
+            : BaseController.sendFailedResponse(res, result.data)
+    }
+
+    // V1 launch batch 1: refused sign-ups (phone or email already in use).
+    async getSignupAttempts(req, res) {
+        const result = await RepReportService.signupAttempts({ page: req.query?.page, limit: req.query?.limit })
         return result.success
             ? BaseController.sendSuccessResponse(res, result.data)
             : BaseController.sendFailedResponse(res, result.data)

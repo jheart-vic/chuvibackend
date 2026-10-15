@@ -37,7 +37,6 @@ const createNotification = require('../util/createNotification')
 const { notifyOperator, notifyAffectedStation, notifyAdminEvent, ADMIN_EVENT } = require('../util/notifyPolicy')
 const {
     buildStageUpdate,
-    normalizePhone,
     getObjectId,
 } = require('../util/helper')
 const createAuditLog = require('../util/createAuditLog')
@@ -147,16 +146,11 @@ class RiderService extends BaseService {
     async markOrderAsDelivered(req) {
         try {
             const orderId = req.params.id
-            const { phoneNumber } = req.body
-            const userId = req.user.id
+                        const userId = req.user.id
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
-                })
-            if (!phoneNumber)
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number is required',
                 })
 
             const order = await BookOrderModel.findById(orderId).populate(
@@ -184,18 +178,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            const customerPhone = order.phoneNumber
-            if (!customerPhone) {
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number not found on order',
-                })
-            }
-
-            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
-                return BaseService.sendFailedResponse({
-                    error: "Provided phone number does not match customer's phone number",
-                })
-            }
+            // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
 
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED
             order.dispatchDetails.delivery.updatedAt = new Date()
@@ -227,6 +210,9 @@ class RiderService extends BaseService {
             offerOnOrderDelivered(order)
             referralOnOrderDelivered(order)
             recoveryOnOrderDelivered(order)
+
+            // V1 launch batch 1: "Delivered" SMS (once per order).
+            await require('../util/orderSms').delivered(order)
 
             if (order.userId?._id) {
                 await createNotification({
@@ -265,16 +251,12 @@ class RiderService extends BaseService {
     async markOrderDeliveryAsFailed(req) {
         try {
             const orderId = req.params.id
-            const { phoneNumber, note = '' } = req.body
+            const { note = '' } = req.body
             const userId = req.user.id
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
-                })
-            if (!phoneNumber)
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number is required',
                 })
 
             const order = await BookOrderModel.findById(orderId).populate(
@@ -302,18 +284,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            const customerPhone = order.phoneNumber
-            if (!customerPhone) {
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number not found on order',
-                })
-            }
-
-            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
-                return BaseService.sendFailedResponse({
-                    error: "Provided phone number does not match customer's phone number",
-                })
-            }
+            // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
 
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.FAILED
             order.dispatchDetails.delivery.updatedAt = new Date()
@@ -345,6 +316,9 @@ class RiderService extends BaseService {
             // Same as the pickup case: the rider was notifying themselves, and
             // the office heard nothing. (This one also had no `type` at all, so
             // every failed delivery was filed under the default `system`.)
+            // V1 launch batch 1: "Customer not available" SMS.
+            await require('../util/orderSms').notAvailable(order, 'delivery')
+
             await notifyRoles({
                 roles: [ROLE.INTAKE_AND_TAG, ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN],
                 title: 'Delivery Failed',
@@ -477,16 +451,11 @@ class RiderService extends BaseService {
     async startPickup(req) {
         try {
             const orderId = req.params.id
-            const { phoneNumber } = req.body
-            const userId = req.user.id
+                        const userId = req.user.id
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
-                })
-            if (!phoneNumber)
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number is required',
                 })
 
             const order = await BookOrderModel.findById(orderId).populate(
@@ -526,18 +495,7 @@ class RiderService extends BaseService {
                 })
             }
 
-            const customerPhone = order.phoneNumber
-            if (!customerPhone) {
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number not found on order',
-                })
-            }
-
-            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
-                return BaseService.sendFailedResponse({
-                    error: "Provided phone number does not match customer's phone number",
-                })
-            }
+            // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
 
             order.dispatchDetails.pickup.status =
                 PICKUP_STATUS.PICKUP_IN_PROGRESS
@@ -583,16 +541,11 @@ class RiderService extends BaseService {
     async markAsPickedUp(req) {
         try {
             const orderId = req.params.id
-            const { phoneNumber } = req.body
-            const userId = req.user.id
+                        const userId = req.user.id
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
-                })
-            if (!phoneNumber)
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number is required',
                 })
 
             const order = await BookOrderModel.findById(orderId).populate(
@@ -622,18 +575,7 @@ class RiderService extends BaseService {
                     error: 'Pickup must be in progress before it can be marked as picked up',
                 })
 
-            const customerPhone = order.phoneNumber
-            if (!customerPhone) {
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number not found on order',
-                })
-            }
-
-            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
-                return BaseService.sendFailedResponse({
-                    error: "Provided phone number does not match customer's phone number",
-                })
-            }
+            // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
             // ── N1 Phase 3: the rider records the TRUE count ────────────────
             //
             // Client spec: "No rider photo. The rider RECORDS the count; if it
@@ -713,10 +655,9 @@ class RiderService extends BaseService {
             // bill. Non-fatal: a message must never undo a recorded pickup.
             if (order.counts?.changedAtPickup) {
                 try {
-                    await sendSms(
-                        order.phoneNumber,
-                        `Chuvi: we collected ${order.counts.rider} item(s) for order ${order.oscNumber} (you booked ${order.counts.customer}). Your bill will be confirmed once we check them in.`,
-                    )
+                    // V1 launch batch 1: the client's exact text.
+                    const { TEXTS } = require('../util/orderSms')
+                    await sendSms(order.phoneNumber, TEXTS.riderCount(order, { pieces: order.counts.rider }))
                 } catch (err) {
                     console.error('pickup count SMS failed:', err?.message)
                 }
@@ -781,16 +722,12 @@ class RiderService extends BaseService {
     async markPickupAsFailed(req) {
         try {
             const orderId = req.params.id
-            const { phoneNumber, note = '' } = req.body
+            const { note = '' } = req.body
             const userId = req.user.id
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
                     error: 'Order ID is required',
-                })
-            if (!phoneNumber)
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number is required',
                 })
 
             const order = await BookOrderModel.findById(orderId).populate(
@@ -819,19 +756,7 @@ class RiderService extends BaseService {
                     error: 'Only scheduled or in-progress pickups can be marked as failed',
                 })
             }
-            const customerPhone = order.phoneNumber
-
-            if (!customerPhone) {
-                return BaseService.sendFailedResponse({
-                    error: 'Customer phone number not found on order',
-                })
-            }
-
-            if (normalizePhone(customerPhone) !== normalizePhone(phoneNumber)) {
-                return BaseService.sendFailedResponse({
-                    error: "Provided phone number does not match customer's phone number",
-                })
-            }
+            // V1 launch batch 1 (B17, T1.07): no customer phone check for riders.
 
             order.dispatchDetails.pickup.status = PICKUP_STATUS.FAILED
             order.dispatchDetails.pickup.updatedAt = new Date()
@@ -846,6 +771,9 @@ class RiderService extends BaseService {
             // keeps its stage and its rider, so the order looked like a healthy
             // assigned run: nothing on any screen said it had failed and nobody
             // was told. The staff who have to re-book it get the message now.
+            // V1 launch batch 1: "Customer not available" SMS.
+            await require('../util/orderSms').notAvailable(order, 'pickup')
+
             await notifyRoles({
                 roles: [ROLE.INTAKE_AND_TAG, ROLE.CUSTOMER_EXPERIENCE, ROLE.ADMIN],
                 title: 'Pickup Failed',

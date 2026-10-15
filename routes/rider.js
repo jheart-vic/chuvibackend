@@ -545,18 +545,16 @@ router.put(ROUTE_START_DELIVERY_ID, riderAuth, (req, res) => {
  *           type: string
  *           example: "64d3c9c0f1b2a8e9d0f12345"
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - phoneNumber
  *             properties:
  *               phoneNumber:
  *                 type: string
  *                 example: "08123456789"
- *                 description: Customer phone number for verification
+ *                 description: Not checked any more (V1, client 15 Oct); ignored if sent.
  *     responses:
  *       200:
  *         description: Order successfully marked as delivered
@@ -635,18 +633,16 @@ router.put(ROUTE_RIDER_MARK_DELIVERED_ID, riderAuth, (req, res) => {
  *           type: string
  *           example: "64d3c9c0f1b2a8e9d0f12345"
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - phoneNumber
  *             properties:
  *               phoneNumber:
  *                 type: string
  *                 example: "08123456789"
- *                 description: Customer phone number for verification
+ *                 description: Not checked any more (V1, client 15 Oct); ignored if sent.
  *               note:
  *                 type: string
  *                 example: "Customer was not available at the delivery address"
@@ -1179,18 +1175,16 @@ router.get(ROUTE_RIDER_ACTIVE_PICKUPS, [riderAuth], (req, res) => {
  *           example: "64d3c9c0f1b2a8e9d0f12345"
  *         description: The order ID
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - phoneNumber
  *             properties:
  *               phoneNumber:
  *                 type: string
  *                 example: "08123456789"
- *                 description: Customer phone number for verification
+ *                 description: Not checked any more (V1, client 15 Oct); ignored if sent.
  *     responses:
  *       200:
  *         description: Pickup started successfully
@@ -1275,18 +1269,16 @@ router.put(ROUTE_RIDER_START_PICKUP_ID, riderAuth, (req, res) => {
  *           example: "64d3c9c0f1b2a8e9d0f12345"
  *         description: The order ID
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - phoneNumber
  *             properties:
  *               phoneNumber:
  *                 type: string
  *                 example: "08123456789"
- *                 description: Customer phone number for verification
+ *                 description: Not checked any more (V1, client 15 Oct); ignored if sent.
  *               itemCount:
  *                 type: integer
  *                 description: Pieces actually collected. Optional.
@@ -1367,18 +1359,16 @@ router.put(ROUTE_RIDER_MARK_PICKUP_ID, riderAuth, (req, res) => {
  *           example: "64d3c9c0f1b2a8e9d0f12345"
  *         description: The order ID
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - phoneNumber
  *             properties:
  *               phoneNumber:
  *                 type: string
  *                 example: "08123456789"
- *                 description: Customer phone number for verification
+ *                 description: Not checked any more (V1, client 15 Oct); ignored if sent.
  *               note:
  *                 type: string
  *                 example: "Customer was not at the pickup address"

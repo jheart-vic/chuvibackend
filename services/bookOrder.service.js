@@ -1079,6 +1079,30 @@ class BookOrderService extends BaseService {
                 })
             }
 
+            // V1 launch batch 1 (client 15 Oct, R18 fallback): plan orders are
+            // not changed here. Re-pricing one turns plan items into money (a
+            // payment hold or a wallet refund), and plan items must never become
+            // cash. An admin settles a plan order's difference by hand.
+            if (order.billingType === BILLING_TYPE.PAY_FROM_SUBSCRIPTION) {
+                return BaseService.sendFailedResponse({
+                    error: 'This order is paid with a plan, so its items cannot be changed here. An admin settles plan orders by hand.',
+                    planOrder: true,
+                })
+            }
+
+            // R13: "S1 can use it only after pickup is confirmed." A walk-in or
+            // self drop-off has no pickup, so it is open as soon as it exists.
+            if (
+                actorRole !== ROLE.ADMIN &&
+                order.isPickUp &&
+                order.dispatchDetails?.pickup?.status !== PICKUP_STATUS.PICKED_UP
+            ) {
+                return BaseService.sendFailedResponse({
+                    error: 'Items can be changed only after the pickup is confirmed.',
+                    pickupNotConfirmed: true,
+                })
+            }
+
             // "After tagging only an ADMIN may edit." Read off the items, for
             // the same reason the cancellation rule is: a tag exists while the
             // order still sits in the tagging queue, so a stage check would let
@@ -1264,7 +1288,15 @@ class BookOrderService extends BaseService {
                         : difference > 0
                           ? `Chuvi: after checking your items, order ${order.oscNumber} comes to ₦${newTotal.toLocaleString('en-NG')} (was ₦${previousTotal.toLocaleString('en-NG')}).${outstanding > 0 ? ` ₦${outstanding.toLocaleString('en-NG')} is outstanding.` : ''}`
                           : `Chuvi: after checking your items, order ${order.oscNumber} comes to ₦${newTotal.toLocaleString('en-NG')} (was ₦${previousTotal.toLocaleString('en-NG')}).${refundDue > 0 ? ` ₦${refundDue.toLocaleString('en-NG')} has gone back to your wallet.` : ''}`
-                if (order.phoneNumber) await sendSms(order.phoneNumber, line)
+                // V1 launch batch 1 (client texts, 15 Oct): the SMS is sent only
+                // for a wallet refund. Money owed goes out with the payment
+                // link (PaymentHoldService.raise, "Payment link after recount" /
+                // the Quick Booking bill); no change means no SMS (T1.10).
+                // The in-app notice below still records every change.
+                if (order.phoneNumber && result.walletRefund === refundDue && refundDue > 0) {
+                    const { TEXTS } = require('../util/orderSms')
+                    await sendSms(order.phoneNumber, TEXTS.walletRefund(order, { amount: refundDue }))
+                }
                 if (order.userId) {
                     await createNotification({
                         userId: order.userId,
@@ -1780,6 +1812,7 @@ class BookOrderService extends BaseService {
                 const { speeds } = await BookingWindowService.speedOptionsFor({
                     pickup: { leg: scheduling?.pickup || null, pickupDate: post.pickupDate, pickupTime: post.pickupTime },
                     pieces,
+                    quickBooking: post.quickBooking === true,
                 })
                 const row = speeds.find((s) => s.speed === speed) || speeds[speeds.length - 1]
                 if (!row.available) {
@@ -2375,6 +2408,15 @@ class BookOrderService extends BaseService {
 
             crmOnOrderCreated(newOrder)
             referralOnOrderCreated(newOrder)
+
+            // V1 launch batch 1: "Booking received" SMS, now for an order that
+            // needs nothing more; a card order gets it when its payment lands.
+            {
+                const OrderSms = require('../util/orderSms')
+                if (OrderSms.bookingConfirmedAtCreation(newOrder)) {
+                    OrderSms.bookingReceived(newOrder).catch(() => {})
+                }
+            }
 
             // (The per-speed capacity decrement that stood here wrote to fields
             // commented out of AdminOrderDetails — a no-op. The order's

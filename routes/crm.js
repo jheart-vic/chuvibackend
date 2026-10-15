@@ -672,6 +672,8 @@ router.get(ROUTE_CRM_METRICS, [adminAuth], (req, res) => {
  *       no percentages and no computed rates; the founder does the math by hand.
  *       Months run on **Lagos time (WAT)**, not UTC, so an order placed at 00:30
  *       on the 1st belongs to the new month.
+ *       **Only leads entered by staff count (client 15 Oct)** — sign-ups and assistant
+ *       (WhatsApp) leads are left out; a staff lead is one created at the office.
  *       **"Leads entered" counts genuine leads only** — cards created by their own
  *       incoming order, and cards built by the CRM backfill script, are excluded
  *       because nobody generated them. Exact from 2026-09-24 (when leadSource

@@ -546,12 +546,12 @@ class UserService extends BaseService {
             }
             // Launch item 5: the same stored format as the email form (brief
             // 4.6), so this customer matches their orders and CRM profile.
-            // Shared numbers stay allowed, as on the email form.
-            const phone = normalizePhone(phoneNumber)
-            if (!/^0\d{10}$/.test(phone)) {
-                return BaseService.sendFailedResponse({
-                    error: 'Enter a valid phone number, e.g. 0803 123 4567.',
-                })
+            // V1 launch batch 1 (client 15 Oct): a real Nigerian mobile only,
+            // and one phone number is one account (no more shared numbers).
+            const { INVALID_PHONE, PHONE_IN_USE, nigerianMobile, accountWithPhone, logAttempt } = require('../util/signupGuard')
+            const phone = nigerianMobile(phoneNumber)
+            if (!phone) {
+                return BaseService.sendFailedResponse({ error: INVALID_PHONE, code: 'INVALID_PHONE' })
             }
 
             const user = await UserModel.findById(userId)
@@ -586,6 +586,21 @@ class UserService extends BaseService {
                         error: "That referral code doesn't exist. Check it, or leave it empty and add it later in Refer & Earn.",
                     })
                 }
+            }
+
+            const holder = await accountWithPhone(phone, { excludeUserId: user._id })
+            if (holder) {
+                await logAttempt({
+                    reason: 'phone-in-use',
+                    method: 'google',
+                    email: user.email,
+                    phoneNumber: phone,
+                    fullName: user.fullName,
+                    referralCode: code || undefined,
+                    existingUserId: holder._id,
+                    attemptUserId: user._id,
+                })
+                return BaseService.sendFailedResponse({ error: PHONE_IN_USE, code: 'PHONE_ALREADY_REGISTERED', action: 'login' })
             }
 
             // Terms are the app's tick box; the backend records them when sent

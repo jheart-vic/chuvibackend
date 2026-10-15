@@ -176,12 +176,14 @@ async function main() {
             billingType: BILLING_TYPE.PAY_PER_ITEM,
             ...extra,
         })
-        const intake = (orderId, items, reason) =>
-            book.applyItemEdit({
+        // V1 batch 1: S1 edits only after the pickup is confirmed, so the
+        // helper confirms it first, as the rider would.
+        const intake = async (orderId, items, reason) =>
+            (await BookOrderModel.updateOne({ _id: orderId }, { $set: { 'dispatchDetails.pickup.status': 'picked-up' } }), book.applyItemEdit({
                 params: { id: String(orderId) },
                 body: { items, reason },
                 user: { id: String(created.users[0]), userType: ROLE.INTAKE_AND_TAG },
-            })
+            }))
 
         // ── 1 booking pays nothing ───────────────────────────────────────────
         console.log('\n1 — a Quick Booking pays nothing at booking')

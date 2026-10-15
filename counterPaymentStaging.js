@@ -153,7 +153,7 @@ async function main() {
         const ordersNow = () => BookOrderModel.countDocuments({ intakeStaffId: operator._id })
 
         // ── 1 ── the tender is MANDATORY (client decision 2026-10-08) ───────
-        console.log('\n[1] paymentMethod is REQUIRED; cash is recorded properly')
+        console.log('\n[1] paymentMethod is REQUIRED; no cash (V1 batch 1); POS needs its receipt number')
         await setBalance(0)
         let { r } = await place({ paymentMethod: undefined })
         ok(r.success === false, 'creating a counter order without a tender is REFUSED')
@@ -162,27 +162,32 @@ async function main() {
             `and the refusal tells the operator what to pick (${JSON.stringify(r.data?.error)})`,
         )
         let order
-        ;({ r, order } = await place({ paymentMethod: 'cash' }))
+        ;({ r } = await place({ paymentMethod: 'cash' }))
+        ok(r.success === false && /Cash is not accepted/.test(r.data?.error || ''), `cash is refused (${r.data?.error})`)
+        ;({ r } = await place({ paymentMethod: 'pos' }))
+        ok(r.success === false && /POS receipt number/.test(r.data?.error || ''), `POS without a receipt number is refused (${r.data?.error})`)
+        ;({ r, order } = await place({ paymentMethod: 'pos', paymentReference: 'RCPT-1001' }))
         ok(r.success === true, `order created (${r.success ? 'ok' : r.data?.error})`)
         ok(order?.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS, 'it is marked paid')
-        ok(order?.paymentMethod === PAYMENT_METHOD.CASH,
-            `method recorded as cash (got ${order?.paymentMethod})`)
+        ok(order?.paymentMethod === PAYMENT_METHOD.POS,
+            `method recorded as POS (got ${order?.paymentMethod})`)
+        ok(order?.counterPayment?.tenders?.[0]?.reference === 'RCPT-1001', 'the receipt number is saved on the tender')
         let rows = await rowsFor(order._id)
         ok(rows.length === 1, `one Payment row (${rows.length})`)
-        ok(rows[0].paymentMethod === PAYMENT_METHOD.CASH,
-            `the row says cash, not the old default paystack (${rows[0].paymentMethod})`)
+        ok(rows[0].paymentMethod === PAYMENT_METHOD.POS,
+            `the row says POS, not the old default paystack (${rows[0].paymentMethod})`)
         ok(rows[0].amount === order.amount,
             `the row is the full bill ${naira(order.amount)}`)
         ok(String(rows[0].userId) === String(customer._id),
             'the Payment row belongs to the CUSTOMER, not the operator')
-        ok((await balance()) === 0, 'no wallet movement for a cash order')
+        ok((await balance()) === 0, 'no wallet movement for a POS order')
         const cashBill = order.amount
 
         // ── 2 ── the aliases the counter screen will send ───────────────────
         console.log('\n[2] "POS" and "transfer" → stored as pos / bank-transfer')
-        ;({ order } = await place({ paymentMethod: 'POS' }))
+        ;({ order } = await place({ paymentMethod: 'POS', paymentReference: 'RCPT-2001' }))
         ok(order?.paymentMethod === PAYMENT_METHOD.POS, `pos (got ${order?.paymentMethod})`)
-        ;({ order } = await place({ paymentMethod: 'transfer' }))
+        ;({ order } = await place({ paymentMethod: 'transfer', paymentReference: 'TRF-2002' }))
         ok(order?.paymentMethod === PAYMENT_METHOD.BANK_TRANFER,
             `bank-transfer (got ${order?.paymentMethod})`)
         ;({ r } = await place({ paymentMethod: 'bitcoin' }))
@@ -225,10 +230,11 @@ async function main() {
         ok((await balance()) === 500, 'nothing was debited')
 
         // ── 5 ── wallet short + a second tender ─────────────────────────────
-        console.log('\n[5] Wallet short + cash for the rest → both tenders recorded')
+        console.log('\n[5] Wallet short + POS for the rest → both tenders recorded')
         ;({ r, order } = await place({
             paymentMethod: 'wallet',
-            secondaryPaymentMethod: 'cash',
+            secondaryPaymentMethod: 'pos',
+            secondaryPaymentReference: 'RCPT-1002',
         }))
         ok(r.success === true, `accepted (${r.success ? 'ok' : r.data?.error})`)
         ok((await balance()) === 0, 'the wallet was drained, not overdrawn')
@@ -238,8 +244,8 @@ async function main() {
             'the two tenders sum to the bill exactly')
         ok(rows.some((p) => p.paymentMethod === PAYMENT_METHOD.WALLET && p.amount === 500),
             'the wallet leg is the ₦500 that was there')
-        ok(rows.some((p) => p.paymentMethod === PAYMENT_METHOD.CASH),
-            'the remainder is recorded as cash')
+        ok(rows.some((p) => p.paymentMethod === PAYMENT_METHOD.POS),
+            'the remainder is recorded as POS')
         ok(order?.billingType === BILLING_TYPE.PAY_PER_ITEM,
             'a SPLIT order is not billed as pay-from-wallet')
         ok(order?.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS, 'and it is paid')

@@ -121,25 +121,35 @@ const intakeUserAuth = require("../middlewares/intakeUserAuth");
  *                       description: "Optional per-piece care tier (brief 1.6). Omit it and the piece is priced at the order's serviceTier."
  *               paymentMethod:
  *                 type: string
- *                 enum: [cash, pos, bank-transfer, wallet]
- *                 example: wallet
+ *                 enum: [pos, bank-transfer, wallet]
+ *                 example: pos
  *                 description: >
  *                   How the counter order was paid (client item #8). **REQUIRED** since 2026-10-08 —
- *                   staff must state how the money arrived. Pre-select `cash` on the screen (that is a UI
- *                   default, not a server fallback: there is no fallback). "transfer" and
+ *                   staff must state how the money arrived. **No cash (client 15 Oct):** `cash` is refused
+ *                   with a message. Pre-select `pos` on the screen (a UI default, not a server fallback).
+ *                   `pos` needs `paymentReference` (the POS receipt number) and `bank-transfer` needs it too
+ *                   (the transfer reference); without it the request is refused with referenceRequired true. "transfer" and
  *                   "card" are accepted as aliases for `bank-transfer` and `pos`. `paystack` is NOT a
  *                   counter tender. With `wallet` the customer's balance is really debited and a
  *                   WalletTransaction ledger line is written; the customer must have an account
  *                   (resolved by phone number) or the request is refused.
  *               secondaryPaymentMethod:
  *                 type: string
- *                 enum: [cash, pos, bank-transfer]
- *                 example: cash
+ *                 enum: [pos, bank-transfer]
+ *                 example: pos
  *                 description: >
  *                   Only used with `paymentMethod: wallet`. If the wallet cannot cover the whole bill
  *                   the request is REFUSED with a message naming what the wallet covers and what is
  *                   left; resend with this field to settle the remainder. No order is created by the
  *                   refused call.
+ *               paymentReference:
+ *                 type: string
+ *                 example: "POS-004512"
+ *                 description: POS receipt number (paymentMethod pos) or transfer reference (bank-transfer). Required for both.
+ *               secondaryPaymentReference:
+ *                 type: string
+ *                 example: "POS-004513"
+ *                 description: The same, for secondaryPaymentMethod.
  *               useCredit:
  *                 type: boolean
  *                 example: false
