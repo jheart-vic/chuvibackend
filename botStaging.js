@@ -329,9 +329,11 @@ async function scenarioApplyPayment(pendingOrder) {
         'confirm-pay-credit': GRANT_CREDIT ? 'yes' : 'no',
     }
     await drive('Please use my wallet balance to pay', answers)
+    // V1 launch batch 2 (B16, T2.04): "No payments in chat." The order must
+    // stay unpaid; the bot points to Orders → Pay in the app.
     const order = await BookOrderModel.findById(pendingOrder._id).lean()
-    const paid = order?.paymentStatus === PAYMENT_ORDER_STATUS.SUCCESS
-    record('pay', paid, `order ${order?.oscNumber} paymentStatus=${order?.paymentStatus}`)
+    const unpaid = order?.paymentStatus !== PAYMENT_ORDER_STATUS.SUCCESS
+    record('pay', unpaid, `no payment in chat: order ${order?.oscNumber} paymentStatus=${order?.paymentStatus}`)
 }
 
 // 4) Complaint — needs a DELIVERED order. We mark the wallet-paid order

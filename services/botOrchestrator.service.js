@@ -439,9 +439,15 @@ class BotOrchestratorService {
             case BOT_INTENT.PAYMENT_STATUS:
                 return await this.paymentStatusReply(userId, slots)
             case BOT_INTENT.APPLY_PAYMENT:
-                return await this.applyPaymentFlow({
-                    convo, userId, text, slots, step: convo.botState?.step,
-                })
+                // V1 launch batch 2 (B16, T2.04): "No payments in chat." "Use my
+                // balance" is a payment too; the customer pays in the app, where
+                // Pay uses wallet and reward credit. (applyPaymentFlow is kept,
+                // unreachable, for when the client allows it again.)
+                return {
+                    replies: [
+                        "I can't take payments in chat. Open the CHUVI app, go to Orders and tap Pay: your wallet and reward credit are used there.",
+                    ],
+                }
             case BOT_INTENT.REWARD_STATUS:
                 return { replies: [await this.rewardStatusReply(userId)] }
             case BOT_INTENT.SUBMIT_FEEDBACK:

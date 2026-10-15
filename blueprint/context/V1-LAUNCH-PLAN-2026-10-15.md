@@ -1,4 +1,4 @@
-**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 16 Oct** (fix/v1-batch-2) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |**DONE 15 Oct** (fix/v1-batch-1) |# V1 launch plan — client reply of 15 Oct 2026 ("Everything by Saturday, in 3 batches")
+# V1 launch plan — client reply of 15 Oct 2026 ("Everything by Saturday, in 3 batches")
 
 Source: client PDF `CHUVI_V1_Everything_by_Saturday.pdf` (Downloads), their answer to our
 V1 System Report (`report/CHUVI-V1-System-Report-2026-10-14.pdf`). Binding.
@@ -38,29 +38,29 @@ hold type, admin only. Plans, windows, Always Free and prices from their configu
 | # | Item | BE/FE | Status |
 |---|---|---|---|
 | **Batch 1 — must be in** | | | |
-| 1a | Change Items refused before pickup is confirmed | BE+FE | |
-| 1b | Change Items refused on plan orders (admin settles them by hand) | BE+FE | |
-| 1c | No rider customer-phone check (start, picked up, delivered, failed) | BE+FE | |
-| 1d | A reason on every rejection and hold | BE+FE | |
-| 1e | No Ready Today on Quick Booking | BE+FE | |
-| 1f | Payment holds never Overdue | BE | |
-| 1g | SMS cleanup: N not ₦, no dashes (central, in util/sendSms.js) | BE | |
-| 2 | No cash at the counter; POS default; S1 enters the POS receipt number | BE+FE | |
-| 3 | Rep tracking report: per rep link, who signed up, who paid, how much | BE+FE | |
-| 4 | Lead report counts only leads entered by staff | BE | |
-| 5 | SMS texts below (4 new + rewordings) | BE | |
-| 6 | Sign-up phone check: real Nigerian mobile only | BE(+FE msg) | |
-| 7 | One phone one account; refuse used phone/email; admin sees attempts with the referral code | BE+FE | |
+| 1a | Change Items refused before pickup is confirmed | BE+FE | DONE 15 Oct (b1) |
+| 1b | Change Items refused on plan orders (admin settles them by hand) | BE+FE | DONE 15 Oct (b1) |
+| 1c | No rider customer-phone check (start, picked up, delivered, failed) | BE+FE | DONE 15 Oct (b1) |
+| 1d | A reason on every rejection and hold | BE+FE | DONE 15 Oct (b1) |
+| 1e | No Ready Today on Quick Booking | BE+FE | DONE 15 Oct (b1) |
+| 1f | Payment holds never Overdue | BE | DONE 15 Oct (b1) |
+| 1g | SMS cleanup: N not ₦, no dashes (central, in util/sendSms.js) | BE | DONE 15 Oct (b1) |
+| 2 | No cash at the counter; POS default; S1 enters the POS receipt number | BE+FE | DONE 15 Oct (b1) |
+| 3 | Rep tracking report: per rep link, who signed up, who paid, how much | BE+FE | DONE 15 Oct (b1) |
+| 4 | Lead report counts only leads entered by staff | BE | DONE 15 Oct (b1) |
+| 5 | SMS texts below (4 new + rewordings) | BE | DONE 15 Oct (b1) |
+| 6 | Sign-up phone check: real Nigerian mobile only | BE(+FE msg) | DONE 15 Oct (b1) |
+| 7 | One phone one account; refuse used phone/email; admin sees attempts with the referral code | BE+FE | DONE 15 Oct (b1) |
 | 8 | Google as main sign-up button; Quick Booking as main booking | FE only | — |
 | **Batch 2 — very important, by Saturday** | | | |
-| 9 | Recount cover (10% + naira amount, settings), mismatch record + limit (3 in 60 days, no cover after), Change Items keeps old and new items | BE+FE | |
-| 10 | Only admin cancels; S1 escalates; N2,000 trips by payment link; return only after paid; "Returned unwashed" | BE+FE | |
-| 11 | Quick Booking pay-by time, expired link note, new ready date when paid late or count > 2× booking | BE | |
-| 12 | Unpaid bills as settings: reminders 3 h + 9 AM next day; customer care tasks 24 h + 72 h; admin flag 7 days | BE+FE | |
-| 13 | Riders: failed pickup → Needs rider + failure count; 2 failures → call task; failed delivery → "Ready, waiting redelivery" + SMS, first redelivery free then a fee; "Collected"; "Possible missing item" alert | BE+FE | |
-| 14 | Quiet hours 9 PM–7 AM for SMS and feedback (queued to 7 AM) | BE+FE | |
-| 14a | Assistant: no price estimate (point to Book), no payment in chat; "talk to someone" opens a complaint | BE | |
-| 14b | Reward credit on by default at Pay, switch to turn it off | BE+FE | |
+| 9 | Recount cover (10% + naira amount, settings), mismatch record + limit (3 in 60 days, no cover after), Change Items keeps old and new items | BE+FE | DONE 16 Oct (b2) |
+| 10 | Only admin cancels; S1 escalates; N2,000 trips by payment link; return only after paid; "Returned unwashed" | BE+FE | DONE 16 Oct (b2) |
+| 11 | Quick Booking pay-by time, expired link note, new ready date when paid late or count > 2× booking | BE | DONE 16 Oct (b2) |
+| 12 | Unpaid bills as settings: reminders 3 h + 9 AM next day; customer care tasks 24 h + 72 h; admin flag 7 days | BE+FE | DONE 16 Oct (b2) |
+| 13 | Riders: failed pickup → Needs rider + failure count; 2 failures → call task; failed delivery → "Ready, waiting redelivery" + SMS, first redelivery free then a fee; "Collected"; "Possible missing item" alert | BE+FE | DONE 16 Oct (b2) |
+| 14 | Quiet hours 9 PM–7 AM for SMS and feedback (queued to 7 AM) | BE+FE | DONE 16 Oct (b2) |
+| 14a | Assistant: no price estimate (point to Book), no payment in chat; "talk to someone" opens a complaint | BE | DONE 16 Oct (b2) |
+| 14b | Reward credit on by default at Pay, switch to turn it off | BE+FE | DONE 16 Oct (b2) |
 | **Batch 3 — launch week, after 7 PM** | | | |
 | 15 | S2 receipt: hold one piece ("Something is missing"), receive the rest; S1 sends one fixed piece | BE+FE | |
 | 16 | S2 corrects S1's colour and stain tags (White, Light, Dark) | BE+FE | done b3a |
@@ -72,6 +72,19 @@ hold type, admin only. Plans, windows, Always Free and prices from their configu
 | X1 | Run T1–T12 digitally by Sun 10 AM | BE+FE | |
 | X2 | Data-clear script, dry run on testingdb, run Sun night | BE | |
 | X3 | 7 PM progress line daily | — | |
+
+## Client reply, 15 Oct night — Batch 3 part 2 switches + final-check report (BINDING)
+Agrees: final check now, then part 2 behind switches that stay off.
+1. **One switch per part, not one for all:** (a) S2 holds one piece at receipt, (b) routes by service,
+   (c) Iron Only per-piece upgrade, (d) damage case with "Customer informed". A part that fails stays off alone.
+2. Say what happens to an order **in the middle of the floor** when a switch is turned on or off. No order
+   may get stuck or lose a piece.
+3. Part 2 ready by **Sat 12 noon** → floor test Sun with the switches on. Passes are switched on for Tuesday;
+   fails stay off (paper way until fixed).
+Final-check report wanted: (a) one line per Batch 1, 2 and 3-part-1 item: tested how + result; (b) live
+read-only smoke test: what was checked, nothing changed; (c) Batch 2 "Change Items history" and "Possible
+missing item" alert: done or not; (d) written Sunday clear plan with admin Ijeomahikechukwup@gmail.com.
+**Code freeze: Saturday 9 PM.**
 
 ## SMS texts (client, verbatim — words in braces are placeholders; N, no dashes)
 
