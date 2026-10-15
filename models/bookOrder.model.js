@@ -62,6 +62,19 @@ const ItemSchema = new mongoose.Schema(
             enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE, null],
             default: null,
         },
+        // V1 batch 3 (R7, T8.03): S2 may correct S1's colour and stain tags. Each
+        // correction keeps the old value and who made it ("keep both versions").
+        tagCorrections: [
+            {
+                _id: false,
+                field: { type: String }, // 'tagColor' | 'stained'
+                from: { type: mongoose.Schema.Types.Mixed },
+                to: { type: mongoose.Schema.Types.Mixed },
+                by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+                byName: { type: String },
+                at: { type: Date },
+            },
+        ],
         tagStatus: {
             type: String,
             enum: ['complete', 'pending'],

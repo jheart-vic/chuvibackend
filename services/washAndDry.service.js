@@ -22,6 +22,7 @@ const {
     stampRelease,
     nothingToRelease,
     adminOnlyRefusal,
+    adminAssignedRefusal,
 } = require('../util/releaseItemHold')
 const BaseService = require('./base.service')
 const paginate = require('../util/paginate')
@@ -1013,6 +1014,11 @@ class WashAndDryService extends BaseService {
             // here — that is what this endpoint did before item holds existed,
             // and refusing it would strand every admin-raised hold.
             const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            // V1 batch 3 (R5): a piece rejected twice belongs to admin.
+            if (!mine.length) {
+                const adminOnly = adminAssignedRefusal({ order, itemId, role: req.user.userType || req.user.role })
+                if (adminOnly) return BaseService.sendFailedResponse(adminOnly)
+            }
             if (!mine.length && !(orderParked && !itemId))
                 return BaseService.sendFailedResponse({
                     error: nothingToRelease({

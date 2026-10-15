@@ -63,11 +63,11 @@ hold type, admin only. Plans, windows, Always Free and prices from their configu
 | 14b | Reward credit on by default at Pay, switch to turn it off | BE+FE | |
 | **Batch 3 — launch week, after 7 PM** | | | |
 | 15 | S2 receipt: hold one piece ("Something is missing"), receive the rest; S1 sends one fixed piece | BE+FE | |
-| 16 | S2 corrects S1's colour and stain tags (White, Light, Dark) | BE+FE | |
-| 17 | Routes enforced by service; second rejection of a piece → admin; missing-piece message names tag and place | BE | |
+| 16 | S2 corrects S1's colour and stain tags (White, Light, Dark) | BE+FE | done b3a |
+| 17 | Routes enforced by service; second rejection of a piece → admin; missing-piece message names tag and place | BE | b3a: 2nd rejection + message done; routes in core half |
 | 18 | Iron Only dirty piece: suggestion to S1, per-piece service change, payment link, cancelled after 3 h unpaid, pressed as booked | BE+FE | |
 | 19 | Damage: "Customer informed" before admin can release; partial delivery approval | BE+FE | |
-| 20 | Window prices per window + an Urgent price; 3 PM check of orders due today not at QC | BE+FE | |
+| 20 | Window prices per window + an Urgent price; 3 PM check of orders due today not at QC | BE+FE | done b3a |
 | **Also** | | | |
 | X1 | Run T1–T12 digitally by Sun 10 AM | BE+FE | |
 | X2 | Data-clear script, dry run on testingdb, run Sun night | BE | |
@@ -136,7 +136,7 @@ User 15 Oct: treat B1/B2 as the frontend described them.
    and dry-run on testingdb (keep staff, price list, settings, customers with zero balances; delete orders,
    holds, wallet balances, reward credit, test offers, chats, test plans/subscriptions, rep links on test
    sign-ups — B41). Run for real on Sunday night after the client's test, with the user's go-ahead.
-2. Batch 3 LOW-RISK half → build, test, push before tomorrow's general test:
+2. [DONE 15 Oct, fix/v1-batch-3a] Batch 3 LOW-RISK half → build, test, push before tomorrow's general test:
    item 20 per-window prices + Urgent price; item 20 3 PM due-today check; item 16 S2 corrects colour/stain
    tags (White, Light, Dark); item 17 second rejection of a piece → admin; item 17 missing-piece message
    names the tag and station.

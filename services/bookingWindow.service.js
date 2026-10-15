@@ -510,7 +510,9 @@ class BookingWindowService {
         bookedCounts = {},
         now = new Date(),
     }) {
-        const fee = W.legFee({ timing, leg, settings })
+        // V1 batch 3: the chosen window's own price, if it has one.
+        const chosenWindow = windowId ? (windows || []).find((w) => String(w._id || w.id) === String(windowId)) : null
+        const fee = W.legFee({ timing, leg, settings, window: chosenWindow })
 
         if (timing === BOOKING_TIMING.ANYTIME) {
             // THE ONE FACT THAT MUST BE STAMPED NOW: was any window for this
@@ -629,7 +631,7 @@ class BookingWindowService {
                     // D3: they pay the WINDOW price, and the offer is untouched
                     // because nothing about their eligibility changed — the
                     // move was ours, not theirs.
-                    fee: W.legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings }),
+                    fee: W.legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings, window: alternative.window }),
                     forcedMove: true,
                     forcedMoveFrom: `${window.name} on ${W.dateKey(day)}`,
                 },
@@ -738,6 +740,12 @@ class BookingWindowService {
                 errors.push('limit must be 0 or more, or blank for no limit')
             }
         }
+        for (const k of ['pickupFee', 'deliveryFee']) {
+            if (has(k) && payload[k] !== null && payload[k] !== '') {
+                const f = Number(payload[k])
+                if (!Number.isFinite(f) || f < 0) errors.push(`${k} must be 0 or more, or blank for the general window price`)
+            }
+        }
         return errors
     }
 
@@ -760,6 +768,12 @@ class BookingWindowService {
                 payload.limit === null || payload.limit === ''
                     ? null
                     : Number(payload.limit)
+        }
+        // V1 batch 3: a window's own price; blank = the general window price.
+        for (const k of ['pickupFee', 'deliveryFee']) {
+            if (payload[k] !== undefined) {
+                out[k] = payload[k] === null || payload[k] === '' ? null : Number(payload[k])
+            }
         }
         if (payload.isActive !== undefined) out.isActive = Boolean(payload.isActive)
         return out
@@ -1140,7 +1154,7 @@ class BookingWindowService {
             }
 
             const settings = await this.getSchedulingSettings()
-            const amount = W.anytimeRefundAmount({ leg, settings })
+            const amount = W.anytimeRefundAmount({ leg, settings, window })
             if (amount <= 0) return { ok: false, reason: 'no-difference' }
 
             // A Quick Booking whose bill does not exist yet has paid nothing

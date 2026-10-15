@@ -187,6 +187,17 @@ router.get(
  *           schema:
  *             type: object
  *             properties:
+ *               tagColor:
+ *                 type: string
+ *                 enum: [white, light, dark]
+ *                 example: dark
+ *                 description: >
+ *                   V1 batch 3 (R7): S2 corrects S1's colour tag. The old value, S2's name and the time are
+ *                   kept in items[].tagCorrections; colorGroup follows (white → white, light/dark → colored).
+ *               stained:
+ *                 type: boolean
+ *                 example: true
+ *                 description: S2 adds or removes S1's Stained tag (also kept in tagCorrections).
  *               colorGroup:
  *                 type: string
  *                 enum: [white, colored]

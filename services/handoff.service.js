@@ -87,6 +87,19 @@ const STATION_TO_ROLE = {
 
 // Hard gates: S1→S2 and S4→S5 move the WHOLE order; the stretch zone
 // (S2↔S3↔S4) allows partial pushes.
+// V1 batch 3 (T4.06, R3): when an order cannot move as a whole, say WHICH piece
+// is missing and WHERE: "TAG 03 is at Wash & Dry".
+function missingPieces(order, station) {
+    const { stationLabel } = require('../util/displayName')
+    const away = (order.items || []).filter((i) => (i.currentStation || SEQ[0]) !== station)
+    if (!away.length) return ''
+    const list = away
+        .slice(0, 5)
+        .map((i) => `${i.tagId || i.type || 'A piece'} is at ${stationLabel(i.currentStation || SEQ[0])}`)
+        .join('; ')
+    return away.length > 5 ? `${list}; and ${away.length - 5} more` : list
+}
+
 function isWholeOrderGate(fromIdx, toIdx) {
     return fromIdx === 0 || toIdx === SEQ.length - 1
 }
@@ -179,7 +192,8 @@ class HandoffService extends BaseService {
             if (isWholeOrderGate(fromIdx, toIdx)) {
                 if (!order.isWholeAt(fromStation)) {
                     return BaseService.sendFailedResponse({
-                        error: `${fromStation} → ${toStation} must move the whole order — all items must be at ${fromStation} first`,
+                        error: `The whole order must be here before it can move on. Missing: ${missingPieces(order, fromStation)}.`,
+                        missingPieces: missingPieces(order, fromStation),
                     })
                 }
                 if (targets.length !== order.items.length) {
@@ -397,7 +411,8 @@ class HandoffService extends BaseService {
                 }
                 if (!order.isWholeAt(handoff.fromStation)) {
                     return BaseService.sendFailedResponse({
-                        error: `${handoff.fromStation} → ${handoff.toStation} must move the whole order — all items must still be at ${handoff.fromStation}`,
+                        error: `The whole order must be here before it can move on. Missing: ${missingPieces(order, handoff.fromStation)}.`,
+                        missingPieces: missingPieces(order, handoff.fromStation),
                     })
                 }
             }
@@ -447,14 +462,19 @@ class HandoffService extends BaseService {
                 })
             }
             // Rejected items → Hold, assigned back to the source station.
+            const toAdmin = []
             for (const id of rejected) {
                 const item = order.items.id(id)
                 if (!item) continue
+                // V1 batch 3 (R2, R5, T5.08, T8.06): "A second rejection of the
+                // same piece goes to admin." Counted from the piece's own log.
+                const second = (item.actionLog || []).some((a) => a.action === 'handoff_rejected')
+                if (second) toAdmin.push(item.tagId || item.type || 'a piece')
                 item.flaggedForReview = true
                 item.holdDetails = {
-                    reason: 'handoff-rejected',
+                    reason: second ? 'second-rejection' : 'handoff-rejected',
                     note,
-                    assignTo: STATION_TO_ROLE[handoff.fromStation],
+                    assignTo: second ? ROLE.ADMIN : STATION_TO_ROLE[handoff.fromStation],
                     heldAt: now,
                     heldByOperatorId: getObjectId(userId),
                     heldByStation: handoff.toStation,
@@ -491,6 +511,21 @@ class HandoffService extends BaseService {
             }
 
             await order.save({ validateBeforeSave: false })
+
+            if (toAdmin.length) {
+                try {
+                    const { notifyRoles } = require('../util/notifyRoles')
+                    await notifyRoles({
+                        roles: [ROLE.ADMIN],
+                        title: 'Rejected twice: needs admin',
+                        body: `Order ${order.oscNumber}: ${toAdmin.join(', ')} was rejected a second time${note ? ` (${note})` : ''}. Only an admin can release it.`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    })
+                } catch (err) {
+                    console.error('second rejection alert failed:', err?.message)
+                }
+            }
 
             // Port the old advance-action customer notification (fire once, on entry).
             if (

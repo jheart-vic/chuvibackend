@@ -237,6 +237,18 @@ class AdminController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    // V1 launch batch 3 (B34): orders due today that have not reached QC.
+    async getDueTodayNotAtQc(req, res) {
+        try {
+            const { dueTodayNotAtQc } = require('../util/dueTodayCheck')
+            const rows = await dueTodayNotAtQc()
+            return BaseController.sendSuccessResponse(res, { message: { count: rows.length, data: rows } })
+        } catch (error) {
+            console.error('due today list failed:', error)
+            return BaseController.sendFailedResponse(res, { error: 'Could not load the due-today list.' })
+        }
+    }
+
     // V1 launch batch 1: refused sign-ups (phone or email already in use).
     async getSignupAttempts(req, res) {
         const result = await RepReportService.signupAttempts({ page: req.query?.page, limit: req.query?.limit })

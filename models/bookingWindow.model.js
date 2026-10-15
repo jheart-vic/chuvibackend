@@ -50,6 +50,11 @@ const bookingWindowSchema = new mongoose.Schema(
         // entirely: when a bike is added the admin raises this number. Do not
         // reintroduce a multiplication.
         limit: { type: Number, default: null, min: 0 },
+        // V1 batch 3 (client 15 Oct): a price per window. Empty = the general
+        // window price (AdminSetting pickupFee / deliveryFee). The Urgent price
+        // stays the anytimePickupFee / anytimeDeliveryFee settings.
+        pickupFee: { type: Number, default: null, min: 0 },
+        deliveryFee: { type: Number, default: null, min: 0 },
 
         isActive: { type: Boolean, default: true },
 

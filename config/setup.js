@@ -478,6 +478,7 @@ const backfillFailedDeliveryStage = async () => {
 // V1 launch batch 2 (R22): the count hold is called "Count dispute". Renames
 // only the old default name, so an admin's own wording is never overwritten.
 async function renameCountDisputeHold() {
+  const HoldTypeModel = require("../models/holdType.model");
   await HoldTypeModel.updateOne(
     { key: "count_differs_from_rider", name: "Count differs from rider count" },
     { $set: { name: "Count dispute" } }

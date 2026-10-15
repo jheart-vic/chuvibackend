@@ -112,7 +112,26 @@ async function adminOnlyRefusal({ order, items = [], role, orderLevel = false })
     return adminOnly ? { error: ADMIN_ONLY_MESSAGE, requiresAdmin: true } : null
 }
 
+/**
+ * V1 batch 3 (R5, T5.08): a piece rejected twice is assigned to ADMIN. When a
+ * station tries to release it, the answer is the client's sentence, not "no
+ * pieces on hold". Returns the refusal, or null.
+ */
+function adminAssignedRefusal({ order, itemId = null, role }) {
+    const { ROLE } = require('./constants')
+    const { isItemOnHold } = require('./itemHold')
+    if (role === ROLE.ADMIN) return null
+    const adminHeld = (order?.items || []).some(
+        (i) =>
+            isItemOnHold(i) &&
+            i.holdDetails?.assignTo === ROLE.ADMIN &&
+            (!itemId || String(i._id) === String(itemId)),
+    )
+    return adminHeld ? { error: ADMIN_ONLY_MESSAGE, requiresAdmin: true } : null
+}
+
 module.exports = {
+    adminAssignedRefusal,
     selectHeldItems,
     stampRelease,
     nothingToRelease,

@@ -7,6 +7,8 @@ const {
     ORDER_STATUS,
     ORDER_SERVICE_TYPE,
     COLOR_GROUP,
+    TAG_COLOR,
+    TAG_STATE,
     FABRIC_TYPE,
     PRETREATMENT_OPTIONS,
     DAMAGE_RISK_FLAGS,
@@ -26,6 +28,7 @@ const {
     stampRelease,
     nothingToRelease,
     adminOnlyRefusal,
+    adminAssignedRefusal,
 } = require('../util/releaseItemHold')
 const { buildStageUpdate, getObjectId } = require('../util/helper')
 const paginate = require('../util/paginate')
@@ -355,6 +358,35 @@ class SortAndPretreatService extends BaseService {
                     error: 'Item is not currently at the sort & pretreat station',
                 })
 
+            // V1 batch 3 (R7, R10, T8.03): S2 corrects S1's colour (White, Light,
+            // Dark) and stain tag. The colour group the wash uses follows the
+            // corrected colour (white stays white; light and dark wash coloured).
+            const corrections = []
+            if (post.tagColor !== undefined) {
+                if (!Object.values(TAG_COLOR).includes(post.tagColor)) {
+                    return BaseService.sendFailedResponse({
+                        error: 'tagColor must be White, Light or Dark (white, light, dark).',
+                    })
+                }
+                if (post.tagColor !== item.tagColor) {
+                    corrections.push({ field: 'tagColor', from: item.tagColor || null, to: post.tagColor })
+                    if (post.colorGroup === undefined) {
+                        post.colorGroup = post.tagColor === TAG_COLOR.WHITE ? COLOR_GROUP.WHITE : COLOR_GROUP.COLORED
+                    }
+                }
+            }
+            let newTagState = null
+            if (post.stained !== undefined) {
+                const want = post.stained === true || post.stained === 'true'
+                const has = (item.tagState || []).includes(TAG_STATE.STAINED)
+                if (want !== has) {
+                    newTagState = want
+                        ? [...(item.tagState || []), TAG_STATE.STAINED]
+                        : (item.tagState || []).filter((t) => t !== TAG_STATE.STAINED)
+                    corrections.push({ field: 'stained', from: has, to: want })
+                }
+            }
+
             const allowedColorGroups = Object.values(COLOR_GROUP)
             const allowedFabricTypes = Object.values(FABRIC_TYPE)
             const allowedPretreatments = Object.values(PRETREATMENT_OPTIONS)
@@ -435,8 +467,10 @@ class SortAndPretreatService extends BaseService {
                 setPayload['items.$.damageRiskFlags'] = post.damageRiskFlags
             if (post.itemNote !== undefined)
                 setPayload['items.$.itemNote'] = post.itemNote
+            if (post.tagColor !== undefined) setPayload['items.$.tagColor'] = post.tagColor
+            if (newTagState) setPayload['items.$.tagState'] = newTagState
 
-            if (Object.keys(setPayload).length === 0) {
+            if (Object.keys(setPayload).length === 0 && !corrections.length) {
                 return BaseService.sendFailedResponse({
                     error: 'No valid fields provided to update',
                 })
@@ -461,6 +495,7 @@ class SortAndPretreatService extends BaseService {
                 )
             if (post.itemNote !== undefined)
                 changeSummaryParts.push(`itemNote updated`)
+            for (const c of corrections) changeSummaryParts.push(`corrected ${c.field}: ${c.from} → ${c.to}`)
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -468,10 +503,15 @@ class SortAndPretreatService extends BaseService {
                     $set: setPayload,
                     $push: {
                         'items.$.actionLog': {
-                            action: 'sort_details_updated',
+                            action: corrections.length ? 'tag_corrected' : 'sort_details_updated',
                             note: changeSummaryParts.join(' | '),
                             timestamp: new Date(),
                         },
+                        ...(corrections.length && {
+                            'items.$.tagCorrections': {
+                                $each: corrections.map((c) => ({ ...c, by: userId, byName: user.fullName, at: new Date() })),
+                            },
+                        }),
                     },
                 },
             )
@@ -2425,6 +2465,11 @@ class SortAndPretreatService extends BaseService {
             // at a station and raises NO item hold) still has to be clearable
             // here — that is what this endpoint did before item holds existed.
             const orderParked = order.stage?.status === ORDER_STATUS.HOLD
+            // V1 batch 3 (R5): a piece rejected twice belongs to admin.
+            if (!mine.length) {
+                const adminOnly = adminAssignedRefusal({ order, itemId, role: req.user.userType || req.user.role })
+                if (adminOnly) return BaseService.sendFailedResponse(adminOnly)
+            }
             if (!mine.length && !(orderParked && !itemId))
                 return BaseService.sendFailedResponse({
                     error: nothingToRelease({

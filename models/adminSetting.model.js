@@ -135,6 +135,10 @@ const adminSettingSchema = new mongoose.Schema(
         // V1 batch 2 (R21, R24): a Quick Booking whose real count is more than
         // this many times the booked count gets a new ready date.
         quickBookingRecountTrigger: { type: Number, default: 2, min: 1 },
+        // V1 batch 3 (B34): the hour (Lagos) admin is alerted to orders due today
+        // that are not yet at QC. The last-run day is the once-a-day latch.
+        dueTodayCheckHour: { type: Number, default: 15, min: 0, max: 23 },
+        dueTodayCheckLastRun: { type: String },
         // V1 batch 2 (R23): no SMS (and no feedback request) in these hours,
         // Lagos time; held until endHour.
         quietHours: {

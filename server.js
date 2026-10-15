@@ -53,6 +53,8 @@ require('./crons/paymentHoldReminders.js')
 require('./crons/renewalFailedReminder.js')
 // V1 launch batch 2 (R23): SMS held by quiet hours go out when they end.
 require('./crons/queuedSmsFlush.js')
+// V1 launch batch 3 (B34): the 3 PM check of orders due today not at QC.
+require('./crons/dueTodayCheck.js')
 
 
 const port = process.env.PORT || 7001;

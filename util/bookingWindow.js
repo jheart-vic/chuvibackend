@@ -342,24 +342,28 @@ const qualifiesForAnytimeRefund = ({
  * window booking costs exactly what every booking costs today, so nobody pays
  * MORE unless they choose Anytime.
  */
-const legFee = ({ timing, leg, settings }) => {
+// V1 batch 3: a window may carry its own price (window.pickupFee /
+// window.deliveryFee); empty falls back to the general window price.
+const legFee = ({ timing, leg, settings, window = null }) => {
     const s = settings || {}
     if (timing === BOOKING_TIMING.ANYTIME) {
         return leg === DISPATCH_LEG.PICKUP
             ? Number(s.anytimePickupFee ?? 1000)
             : Number(s.anytimeDeliveryFee ?? 1000)
     }
+    const own = leg === DISPATCH_LEG.PICKUP ? window?.pickupFee : window?.deliveryFee
+    if (own !== null && own !== undefined && Number.isFinite(Number(own)) && Number(own) >= 0) return Number(own)
     return leg === DISPATCH_LEG.PICKUP
         ? Number(s.pickupFee ?? 500)
         : Number(s.deliveryFee ?? 500)
 }
 
 /** What D2(c) refunds: the premium the customer paid for speed they didn't get. */
-const anytimeRefundAmount = ({ leg, settings }) =>
+const anytimeRefundAmount = ({ leg, settings, window = null }) =>
     Math.max(
         0,
         legFee({ timing: BOOKING_TIMING.ANYTIME, leg, settings }) -
-            legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings }),
+            legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings, window }),
     )
 
 // ──────────────────────── the offered-slot list (+ deflections) ────────────────────────
@@ -435,7 +439,7 @@ const buildOfferedSlots = ({
                 endTime: window.endTime,
                 cutoffAt: cutoff,
                 timing: BOOKING_TIMING.WINDOW,
-                fee: legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings }),
+                fee: legFee({ timing: BOOKING_TIMING.WINDOW, leg, settings, window }),
                 available: Boolean(runs && bookable && !full),
                 remaining: windowRemaining(window, booked),
                 unavailableReason,
@@ -477,6 +481,7 @@ const sameDayLegPlan = ({ settings, morningWindow = null }) => {
                 timing: pickupTiming,
                 leg: DISPATCH_LEG.PICKUP,
                 settings,
+                window: morningWindow,
             }),
         },
         delivery: {

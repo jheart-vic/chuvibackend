@@ -56,6 +56,7 @@ const {
     ROUTE_GET_AUDIT_LOGS,
     ROUTE_ADMIN_REP_LINK_REPORT,
     ROUTE_ADMIN_SIGNUP_ATTEMPTS,
+    ROUTE_ADMIN_DUE_TODAY_NOT_AT_QC,
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -3826,6 +3827,54 @@ router.get(ROUTE_ADMIN_REP_LINK_REPORT, [adminAuth], (req, res) => {
  *                             limit: { type: integer, example: 20 }
  *                             pages: { type: integer, example: 1 }
  */
+/**
+ * @swagger
+ * /admin/due-today-not-at-qc:
+ *   get:
+ *     summary: Orders due today that have not reached QC (the 3 PM check)
+ *     description: >
+ *       V1 launch batch 3 (B34, T7.03). Every order whose ready date is today (Lagos) and that is not yet at
+ *       QC or further along. Admin is also alerted once a day at the setting dueTodayCheckHour (default 15,
+ *       i.e. 3 PM). piecesAt counts where the order's pieces are.
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: The list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         count: { type: integer, example: 1 }
+ *                         data:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               orderId: { type: string }
+ *                               oscNumber: { type: string, example: "OSC-20261020-007" }
+ *                               customerName: { type: string, example: "Ifeoma Nwosu" }
+ *                               phoneNumber: { type: string, example: "08031234567" }
+ *                               deliveryDate: { type: string, format: date-time }
+ *                               deliverySpeed: { type: string, example: same-day }
+ *                               status: { type: string, example: sort-and-pretreat }
+ *                               piecesAt:
+ *                                 type: object
+ *                                 additionalProperties: { type: integer }
+ *                                 example: { "Sort & Pretreat": 3 }
+ */
+router.get(ROUTE_ADMIN_DUE_TODAY_NOT_AT_QC, [adminAuth], (req, res) => {
+    const adminController = new AdminController()
+    return adminController.getDueTodayNotAtQc(req, res)
+})
+
 router.get(ROUTE_ADMIN_SIGNUP_ATTEMPTS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getSignupAttempts(req, res)
@@ -3888,6 +3937,8 @@ router.get(ROUTE_ADMIN_SIGNUP_ATTEMPTS, [adminAuth], (req, res) => {
  *                 items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
  *                 example: [tue, wed, thu, fri, sat, sun]
  *               cutoffMinutes: { type: integer, example: 60, description: "Minutes before startTime that bookings close" }
+ *               pickupFee: { type: number, nullable: true, example: 500, description: "V1 batch 3: this window's pickup price. Blank/null = the general window price (pickupFee setting). Urgent uses anytimePickupFee." }
+ *               deliveryFee: { type: number, nullable: true, example: 500, description: "This window's delivery price. Blank/null = the general window price (deliveryFee setting). Urgent uses anytimeDeliveryFee." }
  *               limit:
  *                 type: integer
  *                 nullable: true
@@ -3952,6 +4003,8 @@ router.post(ROUTE_ADMIN_BOOKING_WINDOWS, [adminAuth], (req, res) => {
  *                 type: array
  *                 items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
  *               cutoffMinutes: { type: integer, example: 60 }
+ *               pickupFee: { type: number, nullable: true, example: 500, description: "V1 batch 3: this window's pickup price. Blank/null = the general window price (pickupFee setting). Urgent uses anytimePickupFee." }
+ *               deliveryFee: { type: number, nullable: true, example: 500, description: "This window's delivery price. Blank/null = the general window price (deliveryFee setting). Urgent uses anytimeDeliveryFee." }
  *               limit: { type: integer, nullable: true, example: 12 }
  *               isActive: { type: boolean, example: true }
  *     responses:
