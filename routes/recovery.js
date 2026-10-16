@@ -949,7 +949,7 @@ router.get(ROUTE_RECOVERY_MONTHLY_REPORT, [adminAuth], (req, res) =>
  *         schema: { type: string, enum: [open, closed, all], default: open }
  *       - in: query
  *         name: type
- *         schema: { type: string, enum: [failed-pickups, unpaid-bill] }
+ *         schema: { type: string, enum: [failed-pickups, unpaid-bill, damage, looks-dirty], description: "damage = a damage case to call the customer about (V1 batch 3 part 2, R6)." }
  *       - in: query
  *         name: page
  *         schema: { type: integer, example: 1 }

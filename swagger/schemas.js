@@ -121,6 +121,37 @@
  *             heldByStation: { type: string, example: pressing-and-ironing-station }
  *             releasedAt: { type: string, format: date-time, nullable: true }
  *             releaseNote: { type: string, nullable: true, example: "Re-dried, now fully dry" }
+ *         serviceType: { type: string, nullable: true, example: wash-and-iron, description: "The piece's own service when it differs from the order's (an Iron Only piece changed to Wash and Iron, R8). Its route follows it (R4)." }
+ *         damageCase:
+ *           type: object
+ *           nullable: true
+ *           description: "V1 batch 3 part 2 (R6): set when the piece was reported Damaged."
+ *           properties:
+ *             status: { type: string, enum: [open, customer-informed, released] }
+ *             note: { type: string, example: "machine tore the hem" }
+ *             station: { type: string, example: wash-and-dry-station }
+ *             openedAt: { type: string, format: date-time }
+ *             openedByName: { type: string, example: "Wale" }
+ *             customerInformedAt: { type: string, format: date-time, nullable: true }
+ *             customerInformedByName: { type: string, nullable: true, example: "Chioma" }
+ *             customerInformedNote: { type: string, nullable: true }
+ *             releasedAt: { type: string, format: date-time, nullable: true }
+ *         dirtySuggestion:
+ *           type: object
+ *           nullable: true
+ *           description: "V1 batch 3 part 2 (R8): an Iron Only piece S2 suggested for washing."
+ *           properties:
+ *             status: { type: string, enum: [suggested, link-sent, paid, declined, expired] }
+ *             note: { type: string, example: "collar stain" }
+ *             suggestedAt: { type: string, format: date-time }
+ *             suggestedByName: { type: string, example: "Ada" }
+ *             difference: { type: number, nullable: true, example: 300 }
+ *             paymentUrl: { type: string, nullable: true }
+ *             linkSentAt: { type: string, format: date-time, nullable: true }
+ *             expiresAt: { type: string, format: date-time, nullable: true }
+ *             paidAt: { type: string, format: date-time, nullable: true }
+ *             closedAt: { type: string, format: date-time, nullable: true }
+ *             closeNote: { type: string, nullable: true, example: "customer did not pay for washing" }
  *         tagCorrections:
  *           type: array
  *           description: "S2's corrections of S1's colour and stain tags (V1 batch 3)."
@@ -203,6 +234,20 @@
  *             linkResentAt: { type: string, format: date-time, nullable: true }
  *             clearedAt: { type: string, format: date-time, nullable: true }
  *         pricing: { $ref: '#/components/schemas/OrderPricing' }
+ *         partialDelivery:
+ *           type: object
+ *           nullable: true
+ *           description: "V1 batch 3 part 2 (R6): partial delivery approved; the held piece(s) moved to the follow-on order."
+ *           properties:
+ *             approvedAt: { type: string, format: date-time }
+ *             approvedByName: { type: string, example: "Chioma" }
+ *             reason: { type: string, example: "Hem repair takes 3 days" }
+ *             ourFault: { type: boolean, example: true }
+ *             childOrderId: { type: string }
+ *             childOscNumber: { type: string, example: "OSC-20261020-014" }
+ *             tagIds: { type: array, items: { type: string }, example: ["TAG 02"] }
+ *         parentOrderId: { type: string, nullable: true, description: "On a follow-on order: the order its pieces came from." }
+ *         parentOscNumber: { type: string, nullable: true, example: "OSC-20261020-009" }
  *         items: { type: array, items: { $ref: '#/components/schemas/BookOrderItem' } }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
@@ -727,6 +772,7 @@
  *               type: { type: string, enum: [baseline, personal, promotion], description: "baseline = a standing policy the client calls a General offer, applied by rule with no selection.", example: baseline }
  *               discount: { type: number, example: 500, description: "This offer's own money off the items (0 when it only waived a fee). V1 batch 3b; absent on orders booked before." }
  *         creditApplied: { type: number, nullable: true, description: Wallet reward credit used, example: 1000 }
+ *         serviceChange: { type: number, nullable: true, description: "Iron Only pieces changed to Wash and Iron: the difference added (R8), its own line.", example: 300 }
  *         orderTotal: { type: number, description: Amount the order was billed after offers and credit (== order.amount), example: 5700 }
  *         youSaved: { type: number, nullable: true, description: offerDiscount + waived fees + creditApplied, example: 2300 }
  *         coveredBySubscription: { type: boolean, example: false }

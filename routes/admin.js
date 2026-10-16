@@ -1912,7 +1912,7 @@ router.patch(ROUTE_ADMIN_RESOLVE_ORDER_HOLD, adminAuth, (req, res) => {
  *                           example: ["66f1a2b3c4d5e6f708192a3b"]
  *                         itemsStillOnHold: { type: integer, example: 2 }
  *       400:
- *         description: No matching piece is on hold, or the order id is missing
+ *         description: "No matching piece is on hold, or the order id is missing. V1 batch 3 part 2 (R6): a damaged piece is refused until customer care marks Customer informed (error: Customer care must mark Customer informed before TAG 02 can be released., customerInformedRequired: true)."
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }

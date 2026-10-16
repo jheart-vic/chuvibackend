@@ -131,7 +131,13 @@ router.get(ROUTE_HANDOFFS_PENDING, [stationAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     error: { type: string, example: "The whole order must be here before it can move on. Missing: TAG 03 is at Wash & Dry." }
- *                     missingPieces: { type: string, example: "TAG 03 is at Wash & Dry", description: "Only on the whole-order refusal: each missing piece and its station (up to 5, then and N more)." }
+ *                     missingPieces: { type: string, example: "TAG 03 is at Wash and Dry", description: "On a whole-order refusal: the pieces missing or left out (each with its station or 'on hold')." }
+ *                     offRoute: { type: boolean, example: true, description: "Switch routesByService on: a piece was sent off its service's route (R4), e.g. 'TAG 01 is Wash Only: it goes to Quality Check and Pack next, not Press.'" }
+ *                     pieces:
+ *                       type: array
+ *                       description: "With offRoute: each piece and its correct next station."
+ *                       items: { type: object, properties: { itemId: { type: string }, tagId: { type: string }, nextStation: { type: string, example: qc-station } } }
+ *                     waitingForCustomer: { type: boolean, example: true, description: "A piece waiting for the customer's answer on washing (R8 looks dirty) cannot be sent." }
  */
 router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
     const controller = new HandoffController()
@@ -144,7 +150,7 @@ router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
  *   post:
  *     summary: Confirm a received handoff
  *     tags: [Split-Flow]
- *     description: "The receiving station confirms a pending handoff. Accepted items advance to the toStation; any rejectedItems[] are placed on Hold (assigned back to the source station) and stay put. The order's stage.status is recomputed as the least-advanced station any item now sits at. HARD GATES: on the whole-order transitions (S1 intake→sort and S4 press→QC) a PARTIAL confirm is refused — rejectedItems must be empty (accept every item) or list every item in the handoff (send the whole order back). Nothing partial may reach QC. Partial confirms are allowed only in the stretch zone (S2↔S3↔S4)."
+ *     description: "V1 batch 3 part 2 (R2, switch s2PartialReceipt): at Sort and Pretreat's receipt from Intake and Tag, rejectedItems may be SOME of the pieces (with the note, e.g. 'Something is missing: no tag'); those go to S1's Holds and the rest are received. Switch off: accept every item or reject every item. Out of Intake and Tag the rule is 'every piece still at Intake and Tag comes together', so a fixed piece is sent alone. The receiving station confirms a pending handoff. Accepted items advance to the toStation; any rejectedItems[] are placed on Hold (assigned back to the source station) and stay put. The order's stage.status is recomputed as the least-advanced station any item now sits at. HARD GATES: on the whole-order transitions (S1 intake→sort and S4 press→QC) a PARTIAL confirm is refused — rejectedItems must be empty (accept every item) or list every item in the handoff (send the whole order back). Nothing partial may reach QC. Partial confirms are allowed only in the stretch zone (S2↔S3↔S4)."
  *     parameters:
  *       - in: path
  *         name: id
@@ -201,7 +207,13 @@ router.post(ROUTE_ORDER_HANDOFF, [stationAuth], (req, res) => {
  *                   type: object
  *                   properties:
  *                     error: { type: string, example: "The whole order must be here before it can move on. Missing: TAG 03 is at Wash & Dry." }
- *                     missingPieces: { type: string, example: "TAG 03 is at Wash & Dry", description: "Only on the whole-order refusal: each missing piece and its station (up to 5, then and N more)." }
+ *                     missingPieces: { type: string, example: "TAG 03 is at Wash and Dry", description: "On a whole-order refusal: the pieces missing or left out (each with its station or 'on hold')." }
+ *                     offRoute: { type: boolean, example: true, description: "Switch routesByService on: a piece was sent off its service's route (R4), e.g. 'TAG 01 is Wash Only: it goes to Quality Check and Pack next, not Press.'" }
+ *                     pieces:
+ *                       type: array
+ *                       description: "With offRoute: each piece and its correct next station."
+ *                       items: { type: object, properties: { itemId: { type: string }, tagId: { type: string }, nextStation: { type: string, example: qc-station } } }
+ *                     waitingForCustomer: { type: boolean, example: true, description: "A piece waiting for the customer's answer on washing (R8 looks dirty) cannot be sent." }
  */
 router.post(ROUTE_ORDER_HANDOFF_CONFIRM, [stationAuth], (req, res) => {
     const controller = new HandoffController()
