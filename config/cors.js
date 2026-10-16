@@ -10,6 +10,12 @@ const corsOptions = {
         'https://chuvilaundry.com',
         'https://www.chuvilaundry.com',
         'https://chuvi-v1.vercel.app',
+        // Test site only (set on the test server, never on live), comma separated,
+        // e.g. EXTRA_CORS_ORIGINS=https://test.chuvilaundry.com,https://chuvi-test.vercel.app
+        ...String(process.env.EXTRA_CORS_ORIGINS || '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
