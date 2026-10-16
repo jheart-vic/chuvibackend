@@ -153,12 +153,16 @@ module.exports.roundToNearestHundred = (amount, strategy = 'round')=> {
 }
 
 const isProduction = process.env.NODE_ENV === 'production';
+// Test site (TEST_SITE=1): the login cookie is NOT shared with chuvilaundry.com,
+// so logging in on the test site can never replace or clear the real site's
+// cookie in the same browser (FE 16 Oct). It belongs to the test server only.
+const isTestSiteServer = process.env.TEST_SITE === '1' || process.env.TEST_SITE === 'true';
 
 const cookieOptions = {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    ...(isProduction && { domain: ".chuvilaundry.com"}),
+    ...(isProduction && !isTestSiteServer && { domain: ".chuvilaundry.com"}),
     path: '/',
 }
 

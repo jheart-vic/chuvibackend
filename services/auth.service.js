@@ -1267,11 +1267,14 @@ class AuthService extends BaseService {
     }
 
     async logout(req, res) {
+        // Same domain rule as login (util/helper.js): the test site never
+        // touches the chuvilaundry.com cookie.
+        const isTestSiteServer = process.env.TEST_SITE === '1' || process.env.TEST_SITE === 'true'
         const cookieOptions = {
             httpOnly: true,
             secure: true,
             sameSite: 'none',
-            domain: '.chuvilaundry.com',
+            ...(isTestSiteServer ? {} : { domain: '.chuvilaundry.com' }),
             path: '/',
         }
 
