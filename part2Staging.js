@@ -261,7 +261,7 @@ async function main() {
             ok(res.expired >= 1 && ex.dirtySuggestion.status === 'expired', 'not paid in 10 minutes (test value) → link cancelled')
             ok(f.amount === 4000 && f.paymentStatus === 'success' && !f.balanceDue, 'the difference comes off the order')
             ok(ex.actionLog.some((l) => l.action === 'pressed_as_booked' && l.note === 'customer did not pay for washing'), 'note "customer did not pay for washing" saved')
-            ok(SMS.some((m) => /press it as booked/.test(m.body)), 'customer messaged')
+            ok(SMS.some((m) => m.body.includes('we pressed your shirt (TAG 01) as you booked, without washing. The rest of your order carries on.')), "customer messaged in the client's words")
             r = await handoff.push(req(s2, o2._id, { fromStation: S.SORT_AND_PRETREAT_STATION, toStation: S.PRESSING_AND_IRONING_STATION }))
             ok(r.success, 'pressed as booked: all 4 go to Press')
 

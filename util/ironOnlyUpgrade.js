@@ -29,6 +29,28 @@ const tagOf = (item) => item?.tagId || item?.type || 'A piece'
 const nameOf = async (id) => (id ? (await UserModel.findById(id).select('fullName').lean())?.fullName || null : null)
 const firstName = (order) => String(order?.fullName || '').trim().split(/\s+/)[0] || 'Hello'
 const isOpen = (item) => OPEN.includes(item?.dirtySuggestion?.status)
+// The client's texts (16 Oct) name the piece as "{item}": e.g. "shirt (TAG 03)".
+const itemWords = (item) => {
+    const name = String(item?.type || 'item').replace(/[-_]+/g, ' ').trim().toLowerCase()
+    return item?.tagId ? `${name} (${item.tagId})` : name
+}
+// "{time}": the clock in Lagos, with the day when it is not today.
+const timeWords = (d, now = new Date()) => {
+    const t = new Date(d)
+    let h = t.getHours()
+    const m = String(t.getMinutes()).padStart(2, '0')
+    const ap = h >= 12 ? 'PM' : 'AM'
+    h = h % 12 || 12
+    const clock = `${h}:${m} ${ap}`
+    return t.toDateString() === now.toDateString() ? clock : `${clock} ${t.toLocaleDateString('en-GB', { weekday: 'short' })}`
+}
+const SMS_TEXT = {
+    // Client 16 Oct, verbatim.
+    paymentLink: (order, item, amount, link, until) =>
+        `${firstName(order)}, your ${itemWords(item)} looks dirty, and pressing it without washing will not look good. Pay N${Number(amount).toLocaleString('en-NG')} to wash and iron it: ${link || 'open the CHUVI app, go to Orders and tap Pay.'} If it is not paid by ${timeWords(until)}, we will press it as you booked.`,
+    pressedAsBooked: (order, items) =>
+        `${firstName(order)}, we pressed your ${items.map(itemWords).join(', ')} as you booked, without washing. The rest of your order carries on. Questions? Call or WhatsApp 07073254943.`,
+}
 
 /** Refusal for pushing a piece that is waiting for the customer's answer. */
 function waitingRefusal(items) {
@@ -189,8 +211,7 @@ async function upgradeService({ orderId, itemId, user }) {
         if (link) {
             await BookOrderModel.updateOne({ _id: order._id, 'items._id': item._id }, { $set: { 'items.$.dirtySuggestion.paymentUrl': link } })
         }
-        const hours = answerMinutes % 60 === 0 ? `${answerMinutes / 60} hour${answerMinutes === 60 ? '' : 's'}` : `${answerMinutes} minutes`
-        const text = `${firstName(order)}, washing ${tagOf(item)} before ironing costs N${difference.toLocaleString('en-NG')} more. Pay within ${hours} to have it washed: ${link || 'open the CHUVI app, go to Orders and tap Pay.'} If it is not paid, we press it as booked.`
+        const text = SMS_TEXT.paymentLink(order, item, difference, link, item.dirtySuggestion.expiresAt)
         try {
             const sendSms = require('./sendSms')
             if (order.phoneNumber) await sendSms(order.phoneNumber, text)
@@ -311,7 +332,7 @@ async function expireDue(now = new Date()) {
         try {
             const sendSms = require('./sendSms')
             if (order.phoneNumber) {
-                await sendSms(order.phoneNumber, `${firstName(order)}, we did not receive the payment for washing ${due.map(tagOf).join(', ')}, so we will press it as booked. Questions? Call or WhatsApp 07073254943.`)
+                await sendSms(order.phoneNumber, SMS_TEXT.pressedAsBooked(order, due))
             }
         } catch (e) {
             console.error('upgrade expiry SMS failed:', e?.message)
@@ -321,4 +342,4 @@ async function expireDue(now = new Date()) {
     return { expired }
 }
 
-module.exports = { markLooksDirty, listSuggestions, upgradeService, declineSuggestion, settleIfPaid, expireDue, waitingRefusal, differenceFor }
+module.exports = { SMS_TEXT, markLooksDirty, listSuggestions, upgradeService, declineSuggestion, settleIfPaid, expireDue, waitingRefusal, differenceFor }

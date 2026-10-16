@@ -121,6 +121,32 @@ comes back, so it keeps the final word. When a station holds a piece for its own
 second rejection of the same piece goes to admin only. Admin only: count disputes, 'Possible missing item', and damage
 (after customer care taps 'Customer informed'). Admin can release any hold."
 
+## Client, 16 Oct — part 2 next steps + how the after-launch brief is built (BINDING)
+1. All four switches stay OFF until Sunday; turned on for the 12:30 floor test. Anything that fails stays off for
+   Tuesday and moves into the after-launch brief as a fix.
+2. "A few small checks from today" coming later today: finish before the code freeze, Saturday 9 PM.
+3. FE builds part 2 screens + the Switches page by Saturday 12 noon.
+4. After-launch brief tonight: quote EACH part with price and number of days.
+5. Nothing in the brief touches live before launch. Launch Tue, watch Tue + Wed, client gives the go Wed night.
+6. Asked: do we have a TEST SITE? If yes, build the brief there from Thu 22, test data only (Paystack test keys, no
+   SMS to real customers).
+7. When it passes on the test site, plan the move to live together: after 7 PM or on a Monday, never wiping data,
+   behind a switch where possible.
+
+## Client, 16 Oct — launch checks (DONE fix/v1-launch-checks) + TEST SITE: YES (BINDING)
+Checks: (1) Iron Only SMS now the client's verbatim texts (payment link, pressed as booked); no other new SMS in
+part 2. (2) Photos of damaged/dirty pieces: nothing before launch (WhatsApp from the office phone; after-launch brief).
+(3a) Google sign-up keeps the rep's referral code (googleSignup + completeProfile) — confirmed. (3b) Rep report now
+lists each paid order (osc, paid date, amount), `week=` one week at a time — BUILT. (3c) Serial: Sunday clear → 0;
+Monday's N100 test takes 001; after it is cancelled run `resetOrderSerial.js` (RESET_LIVE="RESET CHUVI SERIAL",
+refuses while any order is not cancelled) → Tuesday's first order OSC-20261020-001.
+TEST SITE (client yes): set up WEDNESDAY 21, ready Thursday 22; until Sat 9 PM all time goes to launch. Nothing on
+live changes. Tell the client the MONTHLY PRICE before paying; need not be always on (pay for always-on only if it
+slows work). Own address (e.g. test.chuvilaundry.com), "TEST SITE" banner on every page, hidden from Google, staff
+login only. Copy settings from live AFTER Monday's configuration (items, prices, offers, plans, windows), dummy
+customers only, no real customer data. Paystack test keys; webhooks to the test server only. Same CHUVI hosting
+account as live. Sunday floor test on live as planned; data clear Sunday night after the client's go.
+
 ## SMS texts (client, verbatim — words in braces are placeholders; N, no dashes)
 
 - **Booking received:** Hi {firstName}, we have your CHUVI booking {orderCode}. Our rider comes {window}. Questions? Call or WhatsApp 07073254943.

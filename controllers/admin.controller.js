@@ -230,6 +230,7 @@ class AdminController extends BaseController {
         const result = await RepReportService.repLinks({
             from: req.query?.from,
             to: req.query?.to,
+            week: req.query?.week,
             referrerId: req.query?.referrerId,
         })
         return result.success

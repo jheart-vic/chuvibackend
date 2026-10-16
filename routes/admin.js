@@ -3721,16 +3721,25 @@ router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
  *       signed up on that link. A customer counts as paid when they have at least one order with
  *       paymentStatus success that is not cancelled; totalPaid is the sum of those orders. A waived
  *       order is not money and is not counted. Sorted by sign-ups, most first.
+ *       Client 16 Oct: "lists each paid order with its date and amount, one week at a time". Each rep has
+ *       orders[] (every paid order: osc number, paid date, amount, customer). With a period (week, or
+ *       from/to) the paid figures and orders are the orders PAID in that period (by payment date, whenever
+ *       the customer signed up), signups counts sign-ups in it, and customers lists those who signed up or
+ *       paid in it. No period = all time.
  *     tags: [Admin]
  *     parameters:
  *       - in: query
+ *         name: week
+ *         schema: { type: string, format: date, example: "2026-10-20" }
+ *         description: "The first day of the week (Lagos). The period is that day and the next 6. Takes precedence over from/to."
+ *       - in: query
  *         name: from
  *         schema: { type: string, format: date, example: "2026-10-01" }
- *         description: Sign-ups on or after this date.
+ *         description: Period start (paid orders and sign-ups on or after this date).
  *       - in: query
  *         name: to
  *         schema: { type: string, format: date, example: "2026-11-01" }
- *         description: Sign-ups before this date (exclusive).
+ *         description: Period end (exclusive).
  *       - in: query
  *         name: referrerId
  *         schema: { type: string }
@@ -3750,8 +3759,9 @@ router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
  *                     message:
  *                       type: object
  *                       properties:
- *                         from: { type: string, nullable: true, example: "2026-10-01" }
- *                         to: { type: string, nullable: true, example: null }
+ *                         from: { type: string, format: date-time, nullable: true }
+ *                         to: { type: string, format: date-time, nullable: true }
+ *                         week: { type: string, nullable: true, example: "2026-10-20" }
  *                         totals:
  *                           type: object
  *                           properties:
@@ -3776,6 +3786,18 @@ router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
  *                               paidCustomers: { type: integer, example: 4 }
  *                               paidOrders: { type: integer, example: 5 }
  *                               totalPaid: { type: number, example: 28600 }
+ *                               orders:
+ *                                 type: array
+ *                                 description: "Each paid order, oldest first."
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     orderId: { type: string }
+ *                                     oscNumber: { type: string, example: "OSC-20261021-004" }
+ *                                     paidAt: { type: string, format: date-time }
+ *                                     amount: { type: number, example: 6600 }
+ *                                     customerId: { type: string }
+ *                                     customerName: { type: string, example: "Amaka Obi" }
  *                               customers:
  *                                 type: array
  *                                 items:
@@ -3789,6 +3811,16 @@ router.get(ROUTE_ADMIN_BANK_CHECK_LIST, [adminAuth], (req, res) => {
  *                                     paidOrders: { type: integer, example: 1 }
  *                                     totalPaid: { type: number, example: 6000 }
  *                                     firstPaidAt: { type: string, format: date-time, nullable: true }
+ *                                     orders:
+ *                                       type: array
+ *                                       description: "Each paid order, oldest first."
+ *                                       items:
+ *                                         type: object
+ *                                         properties:
+ *                                           orderId: { type: string }
+ *                                           oscNumber: { type: string, example: "OSC-20261021-004" }
+ *                                           paidAt: { type: string, format: date-time }
+ *                                           amount: { type: number, example: 6600 }
  *       400:
  *         description: Bad date or referrerId
  *         content:
