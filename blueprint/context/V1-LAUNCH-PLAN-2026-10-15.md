@@ -145,7 +145,13 @@ live changes. Tell the client the MONTHLY PRICE before paying; need not be alway
 slows work). Own address (e.g. test.chuvilaundry.com), "TEST SITE" banner on every page, hidden from Google, staff
 login only. Copy settings from live AFTER Monday's configuration (items, prices, offers, plans, windows), dummy
 customers only, no real customer data. Paystack test keys; webhooks to the test server only. Same CHUVI hosting
-account as live. Sunday floor test on live as planned; data clear Sunday night after the client's go.
+account as live.
+PAYSTACK ORDER (do not break live): live runs on TEST keys until the switch after Sunday's clear, so the TEST webhook field
+currently points at the LIVE server. Order: (1) Sun night after the clear: live gets sk_live + live webhook → live server;
+(2) Mon: N100 test confirms via the live webhook; (3) Wed: only then point the TEST webhook at the test server
+(https://<test-service>.onrender.com/webhook), test server gets sk_test + test PAYSTACK_CALLBACK_URL. No separate Paystack
+URL: same API, the key decides the mode. Test server: new Render Web Service on a `test` branch, Free instance, own
+JWT secrets, NO Termii/Brevo/SMTP/chatbot keys, TEST_SITE=1. Sunday floor test on live as planned; data clear Sunday night after the client's go.
 
 ## SMS texts (client, verbatim — words in braces are placeholders; N, no dashes)
 

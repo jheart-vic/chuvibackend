@@ -208,7 +208,7 @@ class RiderService extends BaseService {
             order.dispatchDetails.delivery.status = DELIVERY_STATUS.DELIVERED
             order.dispatchDetails.delivery.updatedAt = new Date()
             order.markModified('dispatchDetails.delivery')
-            await order.save()
+            await order.save({ validateBeforeSave: false })
 
             // V1 launch batch 2 (R21, T9.05): the bag of a cancelled order went
             // back unwashed. Not a delivery: no delivered hooks, no delivered SMS.
@@ -368,7 +368,7 @@ class RiderService extends BaseService {
                     updatedAt: failedAt,
                 })
             }
-            await order.save()
+            await order.save({ validateBeforeSave: false })
             await UserModel.updateOne({ _id: order.userId?._id || order.userId }, { $inc: { notAvailableCount: 1 } }).catch(() => {})
             // "The first redelivery is free, later ones are charged": from the
             // second failure on, the next redelivery carries the fee.
@@ -569,7 +569,7 @@ class RiderService extends BaseService {
                 PICKUP_STATUS.PICKUP_IN_PROGRESS
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
-            await order.save()
+            await order.save({ validateBeforeSave: false })
 
             if (order.userId?._id) {
                 await createNotification({
@@ -702,7 +702,7 @@ class RiderService extends BaseService {
             order.dispatchDetails.pickup.updatedAt = new Date()
             order.dispatchDetails.pickup.isVerified = true
             order.markModified('dispatchDetails.pickup')
-            await order.save()
+            await order.save({ validateBeforeSave: false })
 
             // D2(c): the pickup has just been SERVED, so settle the Anytime
             // refund if one is owed — paid for speed, served inside a window.
@@ -842,7 +842,7 @@ class RiderService extends BaseService {
                 { at: new Date(), note, rider: userId },
             ]
             order.markModified('dispatchDetails.pickup')
-            await order.save()
+            await order.save({ validateBeforeSave: false })
             await UserModel.updateOne({ _id: order.userId?._id || order.userId }, { $inc: { notAvailableCount: 1 } }).catch(() => {})
             // "After 2 failures a task goes to the customer experience officer."
             if (order.dispatchDetails.pickup.failedAttempts >= 2) {
@@ -923,7 +923,7 @@ class RiderService extends BaseService {
                 DELIVERY_STATUS.OUT_FOR_DELIVERY
             order.dispatchDetails.delivery.updatedAt = new Date()
             order.dispatchDetails.delivery.startedAt = new Date()
-            await order.save()
+            await order.save({ validateBeforeSave: false })
 
             // V1 launch batch 2: a return of a cancelled order stays cancelled
             // while the rider is out; it becomes "Returned unwashed" on handover.

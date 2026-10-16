@@ -159,6 +159,12 @@ async function main() {
             ok(child && child.items.length === 1 && child.items[0].tagId === 'TAG 02' && child.items[0].damageCase.status === 'open' && child.amount === 0 && child.paymentStatus === 'success' && String(child.parentOrderId) === String(o._id), 'follow-on order: TAG 02 with its hold and case, N0, linked back')
             r = await handoff.push(req(s3, o._id, { fromStation: S.WASH_AND_DRY_STATION, toStation: S.QC_STATION }))
             ok(r.success && r.data.message.count === 3, 'the 3 ready pieces go to QC on the original order')
+            // FE 16 Oct: the damage task must follow TAG 02 to the follow-on order.
+            const moved = child ? await CareTaskModel.findOne({ type: 'damage', orderId: child._id }).lean() : null
+            ok(moved && moved.status === 'open' && moved.oscNumber === child.oscNumber && !(await CareTaskModel.findOne({ type: 'damage', orderId: o._id, status: 'open' })), 'the damage task moves with TAG 02 to the follow-on order')
+            if (child) created.orders.push(child._id)
+            r = child ? await D.customerInformed({ orderId: child._id, itemId: String(child.items[0]._id), note: 'Called', user: as(cx) }) : { success: false }
+            ok(r.success && (await CareTaskModel.findById(moved?._id).lean())?.status === 'closed', 'Customer informed on the follow-on order closes that task')
             const o2 = await order(['TAG 01', 'TAG 02'].map((t) => piece(t, S.WASH_AND_DRY_STATION, { washStatus: 'complete' })), { serviceType: 'washing-only', stage: { status: 'washing' } })
             await D.reportDamage({ orderId: o2._id, itemId: String(o2.items[0]._id), note: 'customer brought it torn', user: as(s3) })
             r = await D.approvePartialDelivery({ orderId: o2._id, reason: 'Waiting for the customer', ourFault: false, user: as(cx) })

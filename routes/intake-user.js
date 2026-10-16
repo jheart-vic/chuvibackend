@@ -756,12 +756,16 @@ router.post(ROUTE_PROCEED_TO_TAG_ID, [intakeUserAuth], (req, res) => {
  *             properties:
  *               tagState:
  *                 type: array
+ *                 description: "Marks on the tag. Allowed: damaged, stained, pretreat, delicate (case is forgiven: STAINED is saved as stained). Anything else is refused."
  *                 items:
  *                   type: string
- *                   example: ["STAINED", "DELICATE", "PRETREAT", "DAMAGED"]
+ *                   enum: [damaged, stained, pretreat, delicate]
+ *                 example: ["stained", "delicate"]
  *               tagColor:
  *                 type: string
- *                 example: "blue"
+ *                 enum: [white, light, dark]
+ *                 description: "R10: White, Light or Dark only (case is forgiven). Anything else is refused: Tag colour must be White, Light or Dark."
+ *                 example: "dark"
  *               tagStatus:
  *                 type: string
  *                 example: "complete"
@@ -784,7 +788,7 @@ router.post(ROUTE_PROCEED_TO_TAG_ID, [intakeUserAuth], (req, res) => {
  *                       type: string
  *                       example: "Tag successfully confirmed"
  *       400:
- *         description: Validation error or missing parameters
+ *         description: "Validation error or missing parameters; a colour other than White, Light or Dark (Tag colour must be White, Light or Dark.); an unknown tag mark."
  *         content:
  *           application/json:
  *             schema:

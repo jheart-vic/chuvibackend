@@ -956,7 +956,31 @@ class IntakeUserService extends BaseService {
                 })
             }
 
-            const { tagState, tagColor, tagStatus, tagId } = post
+            const { tagStatus, tagId } = post
+            // FE 16 Oct: "blue" and "STAINED" were stored here (updateOne skips the
+            // model's allowed values), and a later rider save then failed on them.
+            // Colours are White, Light, Dark (R10); states are the TAG_STATE words.
+            // Case is forgiven ("STAINED" → "stained"); anything else is refused.
+            const { TAG_COLOR, TAG_STATE } = require('../util/constants')
+            let tagColor = post.tagColor
+            if (tagColor !== undefined && tagColor !== null && tagColor !== '') {
+                tagColor = String(tagColor).trim().toLowerCase()
+                if (!Object.values(TAG_COLOR).includes(tagColor)) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Tag colour must be White, Light or Dark.',
+                    })
+                }
+            }
+            let tagState = post.tagState
+            if (Array.isArray(tagState)) {
+                tagState = tagState.map((t) => String(t).trim().toLowerCase())
+                const bad = tagState.filter((t) => !Object.values(TAG_STATE).includes(t))
+                if (bad.length) {
+                    return BaseService.sendFailedResponse({
+                        error: `Unknown tag mark: ${bad.join(', ')}. Use ${Object.values(TAG_STATE).join(', ')}.`,
+                    })
+                }
+            }
 
             await BookOrderModel.updateOne(
                 { 'items._id': itemId },

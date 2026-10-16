@@ -788,6 +788,11 @@ class PaymentHoldService {
             if (!res?.success) return null
             const d = res.data || {}
             return (
+                // initializePayment replies { message: <Paystack's body> } and
+                // Paystack's body is { status, message, data: { authorization_url } }.
+                // This path was missing (FE 16 Oct), so every staff-raised link came
+                // back null and the SMS fell back to "open the CHUVI app".
+                d.message?.data?.authorization_url ||
                 d.authorization_url ||
                 d.message?.authorization_url ||
                 d.data?.authorization_url ||

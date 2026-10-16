@@ -8,6 +8,20 @@
  */
 process.env.TZ = process.env.TZ_OVERRIDE || 'Africa/Lagos'
 require('dotenv').config()
+const SMS = []
+const smsPath = require.resolve('./util/sendSms')
+require.cache[smsPath] = { id: smsPath, filename: smsPath, loaded: true, exports: Object.assign(async (to, body) => { SMS.push({ to, body }); return { stubbed: true } }, { cleanSmsText: (t) => t }) }
+const emailPath = require.resolve('./util/emailService')
+require.cache[emailPath] = { id: emailPath, filename: emailPath, loaded: true, exports: async () => ({ stubbed: true }) }
+// Paystack answers exactly as the real API does: { status, message, data: { authorization_url, ... } }.
+const clientPath = require.resolve('./services/paystack.client.service')
+require.cache[clientPath] = {
+    id: clientPath, filename: clientPath, loaded: true,
+    exports: {
+        post: async () => ({ data: { status: true, message: 'Authorization URL created', data: { authorization_url: 'https://checkout.paystack.com/real-shape', access_code: 'x', reference: 'r1' } } }),
+        get: async () => ({ data: { status: true, data: { status: 'abandoned' } } }),
+    },
+}
 const mongoose = require('mongoose')
 
 let PASS = 0,
@@ -71,6 +85,41 @@ async function main() {
         r = await RepReportService.repLinks({ referrerId: String(rep._id) })
         row = r.data?.message?.reps?.[0]
         ok(row && row.orders.length === 2 && row.totalPaid === 10600 && row.customers[0].orders.length === 2, 'no week: all time, both paid orders listed per rep and per customer')
+
+        console.log('\n3. Staff-raised payment links carry the Paystack link (FE 16 Oct: paymentUrl was null)')
+        {
+            const PaymentHoldService = require('./services/paymentHold.service')
+            const o = await mkOrder(null, 7900, { paymentStatus: 'pending', paymentDate: undefined, oscNumber: `LC-PAY-${stamp}` })
+            SMS.length = 0
+            const r = await PaymentHoldService.raise({ orderId: o._id, actorId: rep._id })
+            ok(r.success && r.data.message.paymentUrl === 'https://checkout.paystack.com/real-shape', `payment hold: paymentUrl is the Paystack link (${r.data?.message?.paymentUrl})`)
+            ok(SMS.some((m) => m.body.includes('https://checkout.paystack.com/real-shape')), 'and the SMS carries it')
+            await new Promise((res) => setTimeout(res, 50))
+            await require('./models/bookOrder.model').updateOne({ _id: o._id }, { $unset: { 'paymentHold.linkResentAt': 1 } })
+            const rs = await PaymentHoldService.resendLink({ orderId: o._id, actorId: rep._id })
+            ok(rs.success && rs.data.message.paymentUrl === 'https://checkout.paystack.com/real-shape', 'resend: paymentUrl is the Paystack link')
+        }
+
+        console.log('\n4. Bad tag values (FE 16 Oct: start delivery failed on "blue" / "STAINED")')
+        {
+            const IntakeService = require('./services/intake-user.service')
+            const RiderService = require('./services/rider.service')
+            const BookOrderModel = require('./models/bookOrder.model')
+            const s1 = await UserModel.create({ email: `lc_s1_${stamp}@example.com`, fullName: 'Ifeanyi Intake', userType: 'intake-and-tag' })
+            const riderU = await UserModel.create({ email: `lc_r_${stamp}@example.com`, fullName: 'Tochuku Rider', userType: 'rider' })
+            created.users.push(s1._id, riderU._id)
+            const t = await mkOrder(new Date(), 3000, { oscNumber: `LC-TAG-${stamp}`, items: [{ type: 'shirt', price: 1, quantity: 1 }] })
+            const tReq = (body) => ({ params: { id: String(t._id), itemId: String(t.items[0]._id) }, user: { id: String(s1._id), userType: 'intake-and-tag' }, body })
+            let r = await new IntakeService().confirmTagItem(tReq({ tagColor: 'blue', tagState: [], tagStatus: 'complete', tagId: 'TAG 01' }))
+            ok(!r.success && /White, Light or Dark/.test(r.data?.error || ''), `"blue" refused: "${r.data?.error}"`)
+            r = await new IntakeService().confirmTagItem(tReq({ tagColor: 'Dark', tagState: ['STAINED'], tagStatus: 'complete', tagId: 'TAG 01' }))
+            const it = (await BookOrderModel.findById(t._id).lean()).items[0]
+            ok(r.success && it.tagColor === 'dark' && it.tagState[0] === 'stained', `"Dark" / "STAINED" saved as dark / stained (${it.tagColor}, ${it.tagState})`)
+            const bad = await mkOrder(new Date(), 3000, { oscNumber: `LC-BAD-${stamp}`, stage: { status: 'ready' }, items: [{ type: 'shirt', price: 1, quantity: 1 }] })
+            await BookOrderModel.collection.updateOne({ _id: bad._id }, { $set: { 'items.0.tagColor': 'blue', 'items.0.tagState': ['STAINED'], 'dispatchDetails.delivery': { rider: riderU._id, status: 'ready' } } })
+            r = await new RiderService().startDelivery({ params: { id: String(bad._id) }, user: { id: String(riderU._id), userType: 'rider' }, body: {} })
+            ok(r.success, `start delivery works on an order that already holds old bad tag values ${r.success ? '' : r.data?.error}`)
+        }
 
         console.log('\n2. Iron Only texts (client 16 Oct)')
         const until = new Date()

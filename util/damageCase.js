@@ -25,6 +25,15 @@ const DAMAGE_STATIONS = {
     [STATION_STATUS.PRESSING_AND_IRONING_STATION]: ROLE.PRESS,
 }
 const taskKey = (order, item) => `damage-${order._id}-${item._id}`
+// A piece's open damage task, wherever the piece now lives (partial delivery
+// moves it to a follow-on order; FE 16 Oct found the task left behind).
+const pieceTaskFilter = (item) => ({ type: 'damage', status: 'open', key: new RegExp(`-${item._id}$`) })
+async function closePieceTask(item, { userId = null, reason }) {
+    const CareTaskModel = require('../models/careTask.model')
+    return CareTaskModel.updateMany(pieceTaskFilter(item), {
+        $set: { status: 'closed', closedAt: new Date(), closedBy: userId, closeReason: reason },
+    })
+}
 const tagOf = (item) => item.tagId || item.type || 'A piece'
 const nameOf = async (id) => (id ? (await UserModel.findById(id).select('fullName').lean())?.fullName || null : null)
 
@@ -111,11 +120,7 @@ async function customerInformed({ orderId, itemId, note, user }) {
         order.markModified('items')
         await order.save({ validateBeforeSave: false })
 
-        const CareTaskModel = require('../models/careTask.model')
-        await CareTaskModel.updateOne(
-            { key: taskKey(order, item), status: 'open' },
-            { $set: { status: 'closed', closedAt: now, closedBy: user.id, closeReason: 'Customer informed' } },
-        )
+        await closePieceTask(item, { userId: user.id, reason: 'Customer informed' })
         try {
             const { notifyRoles } = require('./notifyRoles')
             await notifyRoles({
@@ -158,6 +163,8 @@ function markDamageReleased(item, now = new Date()) {
     if (item?.damageCase?.status && item.damageCase.status !== 'released') {
         item.damageCase.status = 'released'
         item.damageCase.releasedAt = now
+        // A released piece leaves no open task behind (fire and forget).
+        closePieceTask(item, { reason: 'Piece released' }).catch(() => {})
     }
 }
 
@@ -238,6 +245,14 @@ async function approvePartialDelivery({ orderId, reason, ourFault, user }) {
             h.itemIds = (h.itemIds || []).filter((id) => !heldIds.has(String(id)))
             h.count = h.itemIds.length
             if (!h.count) h.status = 'superseded'
+        }
+        // The damage tasks follow their pieces to the follow-on order.
+        const CareTaskModel = require('../models/careTask.model')
+        for (const it of held) {
+            await CareTaskModel.updateMany(
+                { key: taskKey(order, it) },
+                { $set: { key: taskKey(child, it), orderId: child._id, oscNumber: child.oscNumber } },
+            )
         }
         order.partialDelivery = {
             approvedAt: now,
