@@ -153,6 +153,23 @@ currently points at the LIVE server. Order: (1) Sun night after the clear: live 
 URL: same API, the key decides the mode. Test server: new Render Web Service on a `test` branch, Free instance, own
 JWT secrets, NO Termii/Brevo/SMTP/chatbot keys, TEST_SITE=1. Sunday floor test on live as planned; data clear Sunday night after the client's go.
 
+## FE T1–T12 run on live, 16 Oct afternoon — findings (branch fix/t1-t12-findings)
+1. S2 partial receipt: order stays "queue" (held piece at S1) → S2 sort / tag correction refused ("order is recorded as queue").
+2. QC → Press rejection: spec says assignTo "press-and-iron", server takes "press"; after Press releases, piece stays at QC,
+   order back to "ironing" with nothing at Press; can't resend; second rejection from QC unreachable (T5.07–T5.08).
+3. Admin Holds: second-rejection row has empty note and no flagged pieces; S1 hold card holdTypeKey null.
+4. Station DETAIL screens (GET /press-iron/order/queue/{id}, GET /sort-pretreat/order/{id}) lack deliveryPromise / speedLabel.
+5. Ready by wording: client wants "Ready by Wed 4 PM" (day + time), not "Estimated delivery on Tue Oct 20 2026".
+6. Bank-transfer top-ups: approve needs the reference; reject needs a reason, stored and shown to the customer.
+7. T9 cancellation after rejected bill: feeAmount 2000 → feeApplied 0, returnFeeDue 2000; no payment link/hold for the
+   trips; status Cancelled not Returned unwashed.
+8. History lines: "Order moved to tag and queue" twice; titles not the client's words (Received, Tagged, Sorted…).
+9. Admin settings missing (read/save): recount cover (₦ and %), repeat-mismatch limit/days, unpaid-bill timers, quiet
+   hours, redelivery fee.
+10. Which setting limits Give credit (walletAdjustmentLimits["customer-experience"] vs recoveryApprovalThreshold)?
+11. Test-site cookie separation — DONE 9e874cb.
+12. GET /intake-user/orders/hold and get-pending-orders hung >60 s once, recovered.
+
 ## SMS texts (client, verbatim — words in braces are placeholders; N, no dashes)
 
 - **Booking received:** Hi {firstName}, we have your CHUVI booking {orderCode}. Our rider comes {window}. Questions? Call or WhatsApp 07073254943.

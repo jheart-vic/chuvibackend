@@ -291,6 +291,9 @@ class QCService extends BaseService {
                 (i) => i.qcStatus === 'passed',
             )
 
+            // FE 16 Oct: Ready by, speed name and status word on the station detail screen.
+            await require('../util/orderView').decorateStationOrder(order)
+
             return BaseService.sendSuccessResponse({
                 message: {
                     order: {
@@ -858,7 +861,9 @@ class QCService extends BaseService {
             const orderId = req.params.id
             const itemId = req.params.itemId
             const userId = req.user.id
-            const { reason, assignTo, note = '' } = req.body // ← add note
+            const { reason, note = '' } = req.body // ← add note
+            // FE 16 Oct: the docs said "press-and-iron"; the role is "press". Both work.
+            const assignTo = req.body?.assignTo === 'press-and-iron' ? ROLE.PRESS : req.body?.assignTo
 
             if (!orderId)
                 return BaseService.sendFailedResponse({
@@ -926,6 +931,76 @@ class QCService extends BaseService {
 
             // build the hold note — reason label + operator's custom note if provided
             const holdNote = note ? `${reason}: ${note}` : reason
+
+            // V1 (R5, T5.07–T5.08; FE 16 Oct): QC rejecting a piece to a production
+            // station sends it BACK there — to that station's Holds, its work there
+            // reset — so the station fixes it with a note and sends it again. A second
+            // rejection of the same piece goes to admin. (A hold for admin stays at QC.)
+            const BACK_TO = {
+                [ROLE.PRESS]: { station: STATION_STATUS.PRESSING_AND_IRONING_STATION, reset: { pressStatus: 'pending' } },
+                [ROLE.WASH_AND_DRY]: { station: STATION_STATUS.WASH_AND_DRY_STATION, reset: { washStatus: 'pending' } },
+                [ROLE.SORT_AND_PRETREAT]: { station: STATION_STATUS.SORT_AND_PRETREAT_STATION, reset: { sortStatus: 'pending', pretreatStatus: 'pending' } },
+            }
+            if (BACK_TO[assignTo]) {
+                const now = new Date()
+                const second = (item.actionLog || []).some((a) => a.action === 'handoff_rejected')
+                const back = BACK_TO[assignTo]
+                item.currentStation = back.station
+                for (const [k, v] of Object.entries(back.reset)) item[k] = v
+                item.qcStatus = 'pending'
+                item.flaggedForReview = true
+                item.flagNote = holdNote
+                item.holdDetails = {
+                    reason: second ? 'second-rejection' : reason,
+                    note: note || reason,
+                    assignTo: second ? ROLE.ADMIN : assignTo,
+                    heldAt: now,
+                    heldByOperatorId: userId,
+                    heldByStation: STATION_STATUS.QC_STATION,
+                }
+                item.actionLog.push({ action: 'handoff_rejected', note: holdNote, timestamp: now })
+                // The order-level station follows its least-advanced piece, as a handoff
+                // sets it, so the station the piece went back to finds the order.
+                order.stationStatus = new (require('./handoff.service'))()._minStation(order)
+                const summary = order.summaryStatus()
+                if (summary && summary !== order.stage.status) {
+                    order.stage.status = summary
+                    order.stage.updatedAt = now
+                    order.stageHistory.push({ status: summary, note: `QC sent ${item.tagId || item.type} back: ${holdNote}`, updatedAt: now })
+                }
+                order.markModified('items')
+                await order.save({ validateBeforeSave: false })
+                try {
+                    const { notifyRoles } = require('../util/notifyRoles')
+                    await notifyRoles({
+                        roles: second ? [ROLE.ADMIN] : [assignTo],
+                        title: second ? 'Rejected twice: needs admin' : 'Sent back by QC',
+                        body: `${item.tagId || item.type} on order ${order.oscNumber}: ${holdNote}`,
+                        subBody: `Order ID: ${order.oscNumber}`,
+                        type: NOTIFICATION_TYPE.ORDER_UPDATED,
+                    })
+                } catch (e) {
+                    console.error('QC send-back notify failed:', e?.message)
+                }
+                await ActivityModel.create({
+                    title: second ? 'Rejected twice: needs admin' : 'Sent back by QC',
+                    description: `${item.tagId || item.type} on order ${order.oscNumber} sent back by ${user.fullName}: ${holdNote}`,
+                    type: ACTIVITY_TYPE.ORDER_UPDATED,
+                    orderId: order._id,
+                    userId,
+                    reference: order.oscNumber,
+                })
+                return BaseService.sendSuccessResponse({
+                    message: {
+                        sentBack: true,
+                        toStation: back.station,
+                        assignTo: second ? ROLE.ADMIN : assignTo,
+                        secondRejection: second,
+                        itemId: item._id,
+                        tagId: item.tagId || null,
+                    },
+                })
+            }
 
             await BookOrderModel.updateOne(
                 { _id: orderId, 'items._id': itemId },
@@ -1092,6 +1167,7 @@ class QCService extends BaseService {
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
                         rejectionCount: rejectionCount(i),
+                        note: i.holdDetails?.note || i.flagNote || '',
                     }))
 
                 return {
@@ -1104,11 +1180,11 @@ class QCService extends BaseService {
                     stage: order.stage,
                     stationStatus: order.stationStatus,
                     holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
-                    holdReason: order.stage.note || '',
+                    holdReason: order.stage.note || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
                     // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
-                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    holdTypeKey: order.orderHold?.holdTypeKey || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.reason || null,
                     counts: holdCounts(order),
                 }
             })

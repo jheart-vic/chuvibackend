@@ -2569,6 +2569,7 @@ class IntakeUserService extends BaseService {
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
                         rejectionCount: rejectionCount(i),
+                        note: i.holdDetails?.note || i.flagNote || '',
                     }))
 
                 const assignedToUs = (order.items || []).some(
@@ -2598,11 +2599,11 @@ class IntakeUserService extends BaseService {
                         : raisedByUs
                           ? 'raised_by_us'
                           : 'unknown',
-                    holdReason: order.stage.note || '',
+                    holdReason: order.stage.note || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
                     // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
-                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    holdTypeKey: order.orderHold?.holdTypeKey || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.reason || null,
                     counts: holdCounts(order),
                 }
             })

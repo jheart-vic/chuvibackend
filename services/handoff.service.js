@@ -223,16 +223,22 @@ class HandoffService extends BaseService {
                     })
                 }
             } else if (isWholeOrderGate(fromIdx, toIdx)) {
-                if (!order.isWholeAt(fromStation)) {
+                // Into QC: every piece NOT already at QC must be here and in this
+                // send. Normally that is the whole order; after QC sent one piece
+                // back (R5) it is that piece alone (FE 16 Oct).
+                const atQc = (i) => (i.currentStation || SEQ[0]) === SEQ[SEQ.length - 1]
+                const rest = order.items.filter((i) => !atQc(i))
+                const sentIds = new Set(targets.map((i) => String(i._id)))
+                if (rest.some((i) => (i.currentStation || SEQ[0]) !== fromStation)) {
                     return BaseService.sendFailedResponse({
-                        error: `The whole order must be here before it can move on. Missing: ${missingPieces(order, fromStation)}.`,
-                        missingPieces: missingPieces(order, fromStation),
+                        error: `The whole order must be here before it can move on. Missing: ${missingPieces({ items: rest }, fromStation)}.`,
+                        missingPieces: missingPieces({ items: rest }, fromStation),
                     })
                 }
-                if (targets.length !== order.items.length) {
+                if (!rest.every((i) => sentIds.has(String(i._id)))) {
                     // Name what is left out, and why, in plain words.
                     const sent = new Set(targets.map((i) => String(i._id)))
-                    const left = order.items.filter((i) => !sent.has(String(i._id)))
+                    const left = rest.filter((i) => !sent.has(String(i._id)))
                     const why = (i) => (i.flaggedForReview && i.holdDetails?.heldAt && !i.holdDetails?.releasedAt ? ' (on hold)' : '')
                     const { stationLabel } = require('../util/displayName')
                     return BaseService.sendFailedResponse({
@@ -470,7 +476,8 @@ class HandoffService extends BaseService {
                         error: `${handoff.fromStation} → ${handoff.toStation} moves the whole order — accept every item or reject every item`,
                     })
                 }
-                if (!order.isWholeAt(handoff.fromStation)) {
+                const notAtQc = order.items.filter((i) => (i.currentStation || SEQ[0]) !== SEQ[SEQ.length - 1])
+                if (notAtQc.some((i) => (i.currentStation || SEQ[0]) !== handoff.fromStation)) {
                     return BaseService.sendFailedResponse({
                         error: `The whole order must be here before it can move on. Missing: ${missingPieces(order, handoff.fromStation)}.`,
                         missingPieces: missingPieces(order, handoff.fromStation),

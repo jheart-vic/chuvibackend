@@ -1837,7 +1837,7 @@ const run = (async () => {
             // EARLIER `$set: updateData` in a different settings function, so
             // the naive comparison fails against correct code.
             const start = adminSrcTz.indexOf('async updateAdminSettings(req)')
-            const body = adminSrcTz.slice(start, start + 9000)
+            const body = adminSrcTz.slice(start, start + 16000)
             return (
                 start > -1 &&
                 body.indexOf('blockedServiceTypes') > -1 &&

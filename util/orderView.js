@@ -115,6 +115,37 @@ function addPayBy(order) {
     return order
 }
 
+// V1 (FE 16 Oct): station screens show "Ready by Wed 4 PM" — the order's ready
+// time (deliveryDate, Lagos) with day and time — not the customer's delivery
+// promise sentence. Null when there is no ready date.
+function readyByOf(order) {
+    if (!order?.deliveryDate) return null
+    const d = new Date(order.deliveryDate)
+    if (isNaN(d)) return null
+    const day = d.toLocaleDateString('en-GB', { weekday: 'short' })
+    let h = d.getHours()
+    const m = d.getMinutes()
+    const ap = h >= 12 ? 'PM' : 'AM'
+    h = h % 12 || 12
+    const clock = m ? `${h}:${String(m).padStart(2, '0')} ${ap}` : `${h} ${ap}`
+    return { text: `Ready by ${day} ${clock}`, at: d }
+}
+
+/** Everything a station screen shows about timing and words, on one lean order. */
+async function decorateStationOrder(order, displayNames) {
+    if (!order) return order
+    if (displayNames === undefined) {
+        const AdminSettingModel = require('../models/adminSetting.model')
+        displayNames = (await AdminSettingModel.findOne().select('displayNames').lean())?.displayNames
+    }
+    const { resolveLabel } = require('./displayName')
+    addDeliveryPromise(order)
+    order.readyBy = readyByOf(order)
+    order.speedLabel = order.deliverySpeed ? resolveLabel('deliverySpeeds', order.deliverySpeed, displayNames).label : null
+    if (order.stage) order.statusLabel = require('./statusLabel').orderStatusLabel(order)
+    return order
+}
+
 function presentOrders(orders) {
     return (orders || []).map(presentOrder)
 }
@@ -124,6 +155,8 @@ module.exports = {
     normalizeOrderAddresses,
     addDeliveryPromise,
     addPayBy,
+    readyByOf,
+    decorateStationOrder,
     presentOrder,
     presentOrders,
 }

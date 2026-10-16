@@ -1381,7 +1381,12 @@ class AdminService extends BaseService {
 
     async getAdminSetting(req, res) {
         try {
-            const adminSetting = await AdminSettingModel.findOne().lean()
+            // FE 16 Oct: read through the model so every setting added after the
+            // record was first saved shows with its default (recount cover, unpaid
+            // bill timers, quiet hours, switches, …). A lean read returned only
+            // what was stored, so those settings were invisible to the screen.
+            const doc = await AdminSettingModel.findOne()
+            const adminSetting = doc ? doc.toObject({ minimize: false }) : null
 
             return BaseService.sendSuccessResponse({
                 message: adminSetting,
@@ -1542,6 +1547,44 @@ class AdminService extends BaseService {
                 updateData.halfDays = days
             }
 
+            // V1 (FE 16 Oct, R24): the client edits these on the settings screen.
+            // This endpoint saves with validators off, so check them here.
+            const bad = (field, error) => BaseService.sendFailedResponse({ error, field })
+            const isInt = (v, min, max) => Number.isInteger(Number(v)) && Number(v) >= min && (max === undefined || Number(v) <= max) && v !== '' && v !== null
+            if (updateData?.recountCover !== undefined) {
+                const merged = { ...(adminSetting.toObject().recountCover || {}), ...(updateData.recountCover || {}) }
+                if (!(Number(merged.maxAmount) >= 0)) return bad('recountCover.maxAmount', 'Recount cover in naira must be 0 or more (0 means no cover).')
+                if (!(Number(merged.percent) >= 0 && Number(merged.percent) <= 100)) return bad('recountCover.percent', 'Recount cover percent must be between 0 and 100 (0 means no cover).')
+                if (!isInt(merged.repeatLimit, 0)) return bad('recountCover.repeatLimit', 'Repeat-mismatch limit must be a whole number, 0 or more.')
+                if (!isInt(merged.repeatDays, 1)) return bad('recountCover.repeatDays', 'Repeat-mismatch days must be a whole number, 1 or more.')
+                for (const k of ['maxAmount', 'percent', 'repeatLimit', 'repeatDays']) merged[k] = Number(merged[k])
+                updateData.recountCover = merged
+            }
+            if (updateData?.unpaidBillTimers !== undefined) {
+                const merged = { ...(adminSetting.toObject().unpaidBillTimers || {}), ...(updateData.unpaidBillTimers || {}) }
+                if (!isInt(merged.firstReminderMinutes, 1)) return bad('unpaidBillTimers.firstReminderMinutes', 'First reminder must be a whole number of minutes, 1 or more.')
+                if (!isInt(merged.nextDayReminderHour, 0, 23)) return bad('unpaidBillTimers.nextDayReminderHour', 'Next-day reminder hour must be 0 to 23.')
+                if (!Array.isArray(merged.taskMinutes) || !merged.taskMinutes.length || !merged.taskMinutes.every((m) => isInt(m, 1))) return bad('unpaidBillTimers.taskMinutes', 'Customer care task times must be a list of minutes, e.g. [1440, 4320] for 24 and 72 hours.')
+                if (!isInt(merged.adminFlagMinutes, 1)) return bad('unpaidBillTimers.adminFlagMinutes', 'Admin flag must be a whole number of minutes, 1 or more.')
+                merged.firstReminderMinutes = Number(merged.firstReminderMinutes)
+                merged.nextDayReminderHour = Number(merged.nextDayReminderHour)
+                merged.taskMinutes = merged.taskMinutes.map(Number).sort((a, b) => a - b)
+                merged.adminFlagMinutes = Number(merged.adminFlagMinutes)
+                updateData.unpaidBillTimers = merged
+            }
+            if (updateData?.quietHours !== undefined) {
+                const merged = { ...(adminSetting.toObject().quietHours || {}), ...(updateData.quietHours || {}) }
+                if (!isInt(merged.startHour, 0, 23) || !isInt(merged.endHour, 0, 23)) return bad('quietHours', 'Quiet hours start and end must be hours 0 to 23 (e.g. 21 and 7).')
+                updateData.quietHours = { startHour: Number(merged.startHour), endHour: Number(merged.endHour) }
+            }
+            if (updateData?.redeliveryFee !== undefined && updateData.redeliveryFee !== null && updateData.redeliveryFee !== '') {
+                if (!(Number(updateData.redeliveryFee) >= 0)) return bad('redeliveryFee', 'Redelivery fee must be 0 or more (empty = the delivery fee).')
+                updateData.redeliveryFee = Number(updateData.redeliveryFee)
+            }
+            for (const [k, min, max] of [['dueTodayCheckHour', 0, 23], ['ironOnlyAnswerMinutes', 1], ['quickBookingRecountTrigger', 1]]) {
+                if (updateData?.[k] !== undefined && !isInt(updateData[k], min, max)) return bad(k, `${k} must be a whole number${max !== undefined ? ` from ${min} to ${max}` : `, ${min} or more`}.`)
+            }
+
             const updated = await AdminSettingModel.findOneAndUpdate(
                 { _id: adminSetting._id },
                 { $set: updateData },
@@ -1668,9 +1711,18 @@ class AdminService extends BaseService {
                     error: 'Payment already resolved as successful',
                 })
 
+            // R16 (T10.03): "Admin approves with the reference" seen in the bank.
+            const reference = String(req.body?.reference || '').trim()
+            if (!reference)
+                return BaseService.sendFailedResponse({
+                    error: 'Enter the bank reference you saw for this transfer.',
+                    referenceRequired: true,
+                })
+
             payment.status = PAYMENT_ORDER_STATUS.SUCCESS
             payment.verifiedBy = adminId
             payment.verifiedAt = new Date()
+            payment.verificationReference = reference
             await payment.save()
 
             if (payment.type === 'wallet-top-up') {
@@ -1753,9 +1805,19 @@ class AdminService extends BaseService {
                 })
             }
 
+            // R16 (T10.04): "Admin rejects a second request with a reason …
+            // Customer told." The reason is stored and goes to the customer.
+            const reason = String(req.body?.reason || '').trim()
+            if (!reason)
+                return BaseService.sendFailedResponse({
+                    error: 'Give a reason; the customer will see it.',
+                    reasonRequired: true,
+                })
+
             payment.status = PAYMENT_ORDER_STATUS.FAILED
             payment.verifiedBy = adminId
             payment.verifiedAt = new Date()
+            payment.rejectionReason = reason
             await payment.save()
 
             // If it's an order payment, update the order's payment status
@@ -1768,7 +1830,7 @@ class AdminService extends BaseService {
             await createNotification({
                 userId: payment.userId,
                 title: 'Payment Rejected',
-                body: `Your payment of ${payment.amount} has been rejected. Please contact support for more details.`,
+                body: `Your payment of ₦${Number(payment.amount || 0).toLocaleString('en-NG')} was not approved: ${reason}`,
                 type: NOTIFICATION_TYPE.PAYMENT_UPDATE,
             })
             return BaseService.sendSuccessResponse({
@@ -2112,7 +2174,10 @@ class AdminService extends BaseService {
                         heldMinutes,
                         slaThresholdMinutes,
                         slaBreached,
-                        holdTypeKey: order.orderHold?.holdTypeKey || null,
+                        // FE 16 Oct: a piece hold has no order-level type or note, so
+                        // fall back to the held piece's own reason and note.
+                        holdTypeKey: order.orderHold?.holdTypeKey || heldPieces[0]?.holdDetails?.reason || null,
+                        note: order.stage?.note || heldPieces[0]?.holdDetails?.note || heldPieces[0]?.flagNote || '',
                         holdTypeName: limit.typeName,
                         // V1 batch 3b (FE F28): a count dispute's booked, rider
                         // and Intake counts.
@@ -2133,6 +2198,7 @@ class AdminService extends BaseService {
                             tagId: i.tagId || null,
                             type: i.type,
                             reason: i.holdDetails?.reason || null,
+                            note: i.holdDetails?.note || i.flagNote || '',
                             heldAt: i.holdDetails?.heldAt || null,
                             heldByStation: i.holdDetails?.heldByStation || null,
                             assignTo: i.holdDetails?.assignTo || null,

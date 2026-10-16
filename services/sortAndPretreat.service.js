@@ -45,6 +45,17 @@ const {
 const HandoffServiceClass = require('./handoff.service')
 const HandoffService = new HandoffServiceClass()
 
+// FE 16 Oct (T8.04): Sort and Pretreat has work on an order when the ORDER is at
+// sorting OR any PIECE is at S2. After S2 held one piece back to Intake and Tag
+// (switch s2PartialReceipt) the order's status follows its least-advanced piece
+// ("queue"), and every S2 action used to refuse the pieces S2 did receive.
+const AT_S2 = {
+    $or: [
+        { 'stage.status': ORDER_STATUS.SORT_AND_PRETREAT },
+        { 'items.currentStation': STATION_STATUS.SORT_AND_PRETREAT_STATION },
+    ],
+}
+
 // S2 hands finished pieces on by itself. Today that is always Wash and Dry. With
 // the routes switch on (V1 batch 3 part 2, R4) each piece goes to the next stop on
 // its own service's route (Iron Only → Press), one handoff per destination.
@@ -163,9 +174,7 @@ class SortAndPretreatService extends BaseService {
                     },
                 }),
                 // ← orders currently waiting to be sorted (reduces as orders move)
-                BookOrderModel.countDocuments({
-                    'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
-                }),
+                BookOrderModel.countDocuments(AT_S2),
                 // ← flagged items in orders currently at sort & pretreat
                 BookOrderModel.countDocuments({
                     'items.flaggedForReview': true,
@@ -177,9 +186,7 @@ class SortAndPretreatService extends BaseService {
                     },
                 }),
                 (() => {
-                    const query = {
-                        'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
-                    }
+                    const query = { $and: [AT_S2] }
                     if (search) {
                         query.$or = [
                             { oscNumber: { $regex: search, $options: 'i' } },
@@ -264,7 +271,7 @@ class SortAndPretreatService extends BaseService {
 
             const { page = 1, limit = 20, search = '' } = req.query
 
-            const query = { 'stage.status': ORDER_STATUS.SORT_AND_PRETREAT }
+            const query = { $and: [AT_S2] }
 
             if (search) {
                 query.$or = [
@@ -316,7 +323,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             }).lean()
 
             if (!order)
@@ -337,6 +344,9 @@ class SortAndPretreatService extends BaseService {
                 (i) => i.pretreatStatus === 'complete',
             )
             const readyToSend = allItemsSorted && allItemsPretreated
+
+            // FE 16 Oct: Ready by, speed name and status word on the station detail screen.
+            await require('../util/orderView').decorateStationOrder(order)
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -379,7 +389,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -644,7 +654,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -949,7 +959,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1046,7 +1056,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1136,7 +1146,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1231,7 +1241,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1365,7 +1375,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -1459,7 +1469,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -2226,7 +2236,7 @@ class SortAndPretreatService extends BaseService {
 
             const order = await BookOrderModel.findOne({
                 _id: orderId,
-                'stage.status': ORDER_STATUS.SORT_AND_PRETREAT,
+                ...AT_S2,
             })
             if (!order)
                 return BaseService.sendFailedResponse({
@@ -2412,6 +2422,7 @@ class SortAndPretreatService extends BaseService {
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
                         rejectionCount: rejectionCount(i),
+                        note: i.holdDetails?.note || i.flagNote || '',
                     }))
 
                 return {
@@ -2424,11 +2435,11 @@ class SortAndPretreatService extends BaseService {
                     stage: order.stage,
                     stationStatus: order.stationStatus,
                     holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
-                    holdReason: order.stage.note || '',
+                    holdReason: order.stage.note || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
                     // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
-                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    holdTypeKey: order.orderHold?.holdTypeKey || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.reason || null,
                     counts: holdCounts(order),
                 }
             })

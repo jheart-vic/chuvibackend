@@ -243,6 +243,9 @@ class WashAndDryService extends BaseService {
                 (i) => i.washStatus === 'complete',
             )
 
+            // FE 16 Oct: Ready by, speed name and status word on the station detail screen.
+            await require('../util/orderView').decorateStationOrder(order)
+
             return BaseService.sendSuccessResponse({
                 message: {
                     order: scopeOrderToStation(order, HERE),
@@ -938,6 +941,7 @@ class WashAndDryService extends BaseService {
                         heldByStation: i.holdDetails?.heldByStation,
                         heldAt: i.holdDetails?.heldAt,
                         rejectionCount: rejectionCount(i),
+                        note: i.holdDetails?.note || i.flagNote || '',
                     }))
 
                 return {
@@ -951,11 +955,11 @@ class WashAndDryService extends BaseService {
                     stage: order.stage,
                     stationStatus: order.stationStatus,
                     holdType: assignedToUs ? 'assigned_to_us' : 'raised_by_us',
-                    holdReason: order.stage.note || '',
+                    holdReason: order.stage.note || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.note || '',
                     holdTime: order.stage.updatedAt,
                     flaggedItems,
                     // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
-                    holdTypeKey: order.orderHold?.holdTypeKey || null,
+                    holdTypeKey: order.orderHold?.holdTypeKey || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.reason || null,
                     counts: holdCounts(order),
                 }
             })

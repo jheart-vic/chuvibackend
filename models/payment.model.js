@@ -34,6 +34,10 @@ const PaymentSchema = new mongoose.Schema(
     },
     proofOfPayment: { type: String },
     adminNote: { type: String },
+    // V1 (R16, FE 16 Oct): admin approves a bank-transfer top-up WITH the
+    // reference it saw in the bank, and rejects WITH a reason the customer sees.
+    verificationReference: { type: String },
+    rejectionReason: { type: String },
     verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     verifiedAt: { type: Date, default: Date.now },
   },

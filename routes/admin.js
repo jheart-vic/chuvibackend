@@ -452,41 +452,79 @@ router.get(ROUTE_ADMIN_ORDER_DETAILS, [auth], (req, res) => {
  *                 data:
  *                   type: object
  *                   properties:
- *                     _id:
- *                       type: string
- *                       example: 64fa12b8a4b7c91234567890
- *                     washAndIronPerKg:
- *                       type: number
- *                       example: 400
- *                     washOnlyPerKg:
- *                       type: number
- *                       example: 400
- *                     ironOnlyPerPiece:
- *                       type: number
- *                       example: 400
- *                     dryCleanPerPiece:
- *                       type: number
- *                       example: 400
- *                     sameDayCharge:
- *                       type: number
- *                       example: 400
- *                     expressCharge:
- *                       type: number
- *                       example: 400
- *                     premiumServiceTierCharge:
- *                       type: number
- *                       example: 1.5
- *                     vipServiceTierCharge:
- *                       type: number
- *                       example: 2
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       example: 2026-01-12T10:00:00.000Z
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       example: 2026-01-12T10:00:00.000Z
+ *                     message:
+ *                       type: object
+ *                       description: "Every setting, with its default when not saved yet."
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                           example: 64fa12b8a4b7c91234567890
+ *                         washAndIronPerKg:
+ *                           type: number
+ *                           example: 400
+ *                         washOnlyPerKg:
+ *                           type: number
+ *                           example: 400
+ *                         ironOnlyPerPiece:
+ *                           type: number
+ *                           example: 400
+ *                         dryCleanPerPiece:
+ *                           type: number
+ *                           example: 400
+ *                         sameDayCharge:
+ *                           type: number
+ *                           example: 400
+ *                         expressCharge:
+ *                           type: number
+ *                           example: 400
+ *                         premiumServiceTierCharge:
+ *                           type: number
+ *                           example: 1.5
+ *                         vipServiceTierCharge:
+ *                           type: number
+ *                           example: 2
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2026-01-12T10:00:00.000Z
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2026-01-12T10:00:00.000Z
+ *                         recountCover:
+ *                           type: object
+ *                           description: "R17/R24: recount cover. 0 in either limit means no cover."
+ *                           properties:
+ *                             maxAmount: { type: number, example: 200, description: "Cover up to N[ ]" }
+ *                             percent: { type: number, example: 10, description: "No more than [ ]% of the bill" }
+ *                             repeatLimit: { type: integer, example: 3, description: "Repeat-mismatch limit (no cover after it)" }
+ *                             repeatDays: { type: integer, example: 60, description: "…within this many days" }
+ *                         unpaidBillTimers:
+ *                           type: object
+ *                           description: "R24: unpaid bills."
+ *                           properties:
+ *                             firstReminderMinutes: { type: integer, example: 180, description: "First reminder SMS (3 hours)" }
+ *                             nextDayReminderHour: { type: integer, example: 9, description: "Second reminder the next day at this hour" }
+ *                             taskMinutes: { type: array, items: { type: integer }, example: [1440, 4320], description: "Customer care tasks (24 and 72 hours)" }
+ *                             adminFlagMinutes: { type: integer, example: 10080, description: "Admin flag (7 days)" }
+ *                         quietHours:
+ *                           type: object
+ *                           description: "R23: no SMS between these hours (queued to the end)."
+ *                           properties:
+ *                             startHour: { type: integer, example: 21 }
+ *                             endHour: { type: integer, example: 7 }
+ *                         redeliveryFee: { type: number, nullable: true, example: 1000, description: "R22: the charged redelivery (from the 2nd failure). Empty = the delivery fee. Collected by the order's normal payment link." }
+ *                         dueTodayCheckHour: { type: integer, example: 15, description: "Hour of the due-today-not-at-QC alert" }
+ *                         ironOnlyAnswerMinutes: { type: integer, example: 180, description: "R8: time to pay for a looks-dirty wash upgrade" }
+ *                         quickBookingRecountTrigger: { type: integer, example: 2, description: "R21: a count this many times the booking works out the ready date again" }
+ *                         v1Switches:
+ *                           type: object
+ *                           description: "Read-only here; change with PATCH /admin/switches."
+ *                           properties:
+ *                             s2PartialReceipt: { type: boolean }
+ *                             routesByService: { type: boolean }
+ *                             ironOnlyUpgrade: { type: boolean }
+ *                             damageCase: { type: boolean }
  *       404:
  *         description: Admin order details not found
  *       500:
@@ -654,6 +692,32 @@ router.put(ROUTE_UPDATE_ORDER_DETAILS, adminAuth, (req, res)=>{
  *           schema:
  *             type: object
  *             properties:
+ *               recountCover:
+ *                 type: object
+ *                 description: "R17/R24: recount cover. 0 in either limit means no cover."
+ *                 properties:
+ *                   maxAmount: { type: number, example: 200, description: "Cover up to N[ ]" }
+ *                   percent: { type: number, example: 10, description: "No more than [ ]% of the bill" }
+ *                   repeatLimit: { type: integer, example: 3, description: "Repeat-mismatch limit (no cover after it)" }
+ *                   repeatDays: { type: integer, example: 60, description: "…within this many days" }
+ *               unpaidBillTimers:
+ *                 type: object
+ *                 description: "R24: unpaid bills."
+ *                 properties:
+ *                   firstReminderMinutes: { type: integer, example: 180, description: "First reminder SMS (3 hours)" }
+ *                   nextDayReminderHour: { type: integer, example: 9, description: "Second reminder the next day at this hour" }
+ *                   taskMinutes: { type: array, items: { type: integer }, example: [1440, 4320], description: "Customer care tasks (24 and 72 hours)" }
+ *                   adminFlagMinutes: { type: integer, example: 10080, description: "Admin flag (7 days)" }
+ *               quietHours:
+ *                 type: object
+ *                 description: "R23: no SMS between these hours (queued to the end)."
+ *                 properties:
+ *                   startHour: { type: integer, example: 21 }
+ *                   endHour: { type: integer, example: 7 }
+ *               redeliveryFee: { type: number, nullable: true, example: 1000, description: "R22: the charged redelivery (from the 2nd failure). Empty = the delivery fee. Collected by the order's normal payment link." }
+ *               dueTodayCheckHour: { type: integer, example: 15, description: "Hour of the due-today-not-at-QC alert" }
+ *               ironOnlyAnswerMinutes: { type: integer, example: 180, description: "R8: time to pay for a looks-dirty wash upgrade" }
+ *               quickBookingRecountTrigger: { type: integer, example: 2, description: "R21: a count this many times the booking works out the ready date again" }
  *               washAndIronPerKg:
  *                 type: number
  *                 example: 1200
@@ -1218,7 +1282,16 @@ router.post(ROUTE_ADMIN_WALLET_ADJUSTMENT_REJECT, adminAuth, (req, res)=>{
  *     summary: Accept and verify a payment
  *     tags:
  *       - Admin
- *     description: Marks a payment as successful after admin verification and updates related order payment status if applicable.
+ *     description: "Marks a payment as successful after admin verification and updates related order payment status if applicable. V1 (R16, T10.03): the bank reference is REQUIRED and saved on the payment (verificationReference)."
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reference]
+ *             properties:
+ *               reference: { type: string, example: "NIP/2026/10/16/123456", description: "The reference seen on the bank statement." }
  *     parameters:
  *       - in: path
  *         name: paymentId
@@ -1242,7 +1315,10 @@ router.post(ROUTE_ADMIN_WALLET_ADJUSTMENT_REJECT, adminAuth, (req, res)=>{
  *                       type: string
  *                       example: "Payment verified successfully"
  *       400:
- *         description: Payment ID is required
+ *         description: "Payment ID is required, or no reference (referenceRequired true)"
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       404:
  *         description: Payment not found
  *       409:
@@ -1262,7 +1338,16 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT, adminAuth, (req, res)=>{
  *     summary: Reject a payment verification
  *     tags:
  *       - Admin
- *     description: Marks a payment as failed after admin review and updates related order payment status if applicable.
+ *     description: "Marks a payment as failed after admin review and updates related order payment status if applicable. V1 (R16, T10.04): a reason is REQUIRED; it is saved on the payment (rejectionReason) and sent to the customer in their notification."
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string, example: "No transfer of this amount reached the account", description: "Shown to the customer." }
  *     parameters:
  *       - in: path
  *         name: paymentId
@@ -1286,7 +1371,10 @@ router.put(ROUTE_ADMIN_PAYMENT_PAYMENTID_ACCEPT, adminAuth, (req, res)=>{
  *                       type: string
  *                       example: "Payment rejected successfully"
  *       400:
- *         description: Payment ID is required
+ *         description: "Payment ID is required, or no reason (reasonRequired true)"
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  *       404:
  *         description: Payment not found
  *       409:

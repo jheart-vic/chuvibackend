@@ -20,11 +20,10 @@ const paginate = async (model, query = {}, options = {}) => {
     ]);
     if (withPromise && lean) {
       const { addDeliveryPromise } = require("./orderView");
-      const { orderStatusLabel } = require("./statusLabel");
-      for (const row of data) {
-        addDeliveryPromise(row);
-        if (row.stage) row.statusLabel = orderStatusLabel(row);
-      }
+      const { decorateStationOrder } = require("./orderView");
+      const AdminSettingModel = require("../models/adminSetting.model");
+      const displayNames = (await AdminSettingModel.findOne().select("displayNames").lean())?.displayNames;
+      for (const row of data) await decorateStationOrder(row, displayNames || null);
     }
 
     return {

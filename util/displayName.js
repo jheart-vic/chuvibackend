@@ -71,6 +71,7 @@ const STATION_LABELS = {
     rider: 'Rider',
     'customer-experience': 'Customer Care',
     admin: 'Admin',
+    user: 'Customer',
 }
 
 function stationLabel(raw) {
