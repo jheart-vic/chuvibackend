@@ -2083,7 +2083,12 @@
  *         itemId: { type: string, example: 64d1f9a2e3c3b4a1d2f1c1b7 }
  *         tagId: { type: string, example: "TAG-03" }
  *         name: { type: string, example: Shirt }
+ *         rawType: { type: string, example: shirt }
  *         quantity: { type: number, example: 1 }
+ *         serviceTier: { type: string, nullable: true, example: classic }
+ *         tagColor: { type: string, nullable: true, enum: [white, light, dark], example: dark, description: "The tag's colour, so S2 can check it at receipt (R2)." }
+ *         tagState: { type: array, items: { type: string, enum: [damaged, stained, pretreat, delicate] }, example: [stained] }
+ *         serviceType: { type: string, nullable: true, example: wash-and-iron, description: "The piece's own service when it differs from the order's (R8)." }
  *
  *     Handoff:
  *       type: object

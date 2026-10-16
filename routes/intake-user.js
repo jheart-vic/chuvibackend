@@ -2708,7 +2708,8 @@ router.post(ROUTE_ORDER_PAYMENT_HOLD_RESEND, [intakeUserAuth], (req, res) => {
  *                         amount: { type: integer, example: 8500 }
  *                         reference: { type: string, example: FT24100912345 }
  *                         approvedAt: { type: string, format: date-time }
- *                         onBankCheckList: { type: boolean, example: true }
+ *                         method: { type: string, enum: [transfer, pos], example: pos }
+ *                         onBankCheckList: { type: boolean, example: false, description: "true for a transfer; false for a POS payment (not on the bank-check list)." }
  *                         note: { type: string, example: An admin has been notified and this is on today’s bank-check list. }
  *       400:
  *         description: Missing reference, already paid, or order not found

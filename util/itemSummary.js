@@ -24,6 +24,12 @@ function itemBrief(items, id) {
         // item's tag and on its card at every station (6 Oct 2026, item 1.6).
         // null means the piece follows the order's tier.
         serviceTier: it.serviceTier || null,
+        // FE 16 Oct (R2): S2 checks tag, item and colour for every piece at
+        // receipt, so the handoff items carry the tag's colour and marks.
+        tagColor: it.tagColor || null,
+        tagState: it.tagState || [],
+        // The piece's own service when it differs from the order's (R8).
+        serviceType: it.serviceType || null,
     }
 }
 
@@ -40,6 +46,9 @@ function briefsForAll(items) {
         rawType: it.type,
         quantity: it.quantity || 1,
         serviceTier: it.serviceTier || null,
+        tagColor: it.tagColor || null,
+        tagState: it.tagState || [],
+        serviceType: it.serviceType || null,
     }))
 }
 

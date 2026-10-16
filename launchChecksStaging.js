@@ -133,7 +133,7 @@ async function main() {
             const f = await BookOrderModel.findById(o._id).lean()
             ok(r.success && f.paymentStatus === 'success' && f.paymentMethod === 'pos' && f.posPaymentApproval?.receiptNumber === 'POS-778812' && !f.bankTransferApproval?.approvedAt, 'method pos: paid by POS with its receipt, not as a transfer')
             const bc = await PaymentHoldService.bankCheckList({})
-            ok(bc.success && !JSON.stringify(bc.data).includes(`LC-POS-${stamp}`), 'not on the bank-check list')
+            ok(bc.success && !JSON.stringify(bc.data).includes(`LC-POS-${stamp}`) && r.data.message.onBankCheckList === false && r.data.message.method === 'pos', 'not on the bank-check list, and the reply says so')
             const sr = await new SearchService().searchOrders({ query: { q: `TG${stamp}` } })
             const hit = (sr.data?.message?.data || []).find((x) => String(x._id) === String(o._id))
             ok(hit && hit.matchedPieces?.[0]?.tagId === `TG${stamp}`, 'a tag number finds the order, with the matching piece')

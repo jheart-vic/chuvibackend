@@ -661,8 +661,11 @@ class PaymentHoldService {
                     amount,
                     reference: cleanRef,
                     approvedAt: now,
-                    onBankCheckList: true,
-                    note: 'An admin has been notified and this is on today’s bank-check list.',
+                    method: isPos ? 'pos' : 'transfer',
+                    onBankCheckList: !isPos,
+                    note: isPos
+                        ? 'Recorded as paid on the office POS. An admin has been notified.'
+                        : 'An admin has been notified and this is on today’s bank-check list.',
                 },
             })
         } catch (error) {
