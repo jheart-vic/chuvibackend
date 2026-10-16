@@ -2547,7 +2547,7 @@ const run = (async () => {
             riderSrc.indexOf('async getRiderAssignedPickups('),
         )
         ok('marking a delivery failed sets the stage back to READY in the same save',
-            /order\.stage\.status = ORDER_STATUS\.READY[\s\S]{0,400}await order\.save\(\)/.test(
+            /order\.stage\.status = ORDER_STATUS\.READY[\s\S]{0,400}await order\.save\(/.test(
                 failFn,
             ))
         ok('but only from OUT_FOR_DELIVERY, so a cancelled order stays cancelled (F-04)',
