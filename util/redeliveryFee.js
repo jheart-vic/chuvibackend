@@ -36,7 +36,7 @@ async function chargeRedelivery(orderId) {
             await createNotification({
                 userId: order.userId,
                 title: 'Redelivery fee',
-                body: `We could not reach you twice for order ${order.oscNumber}. The next delivery costs N${fee.toLocaleString('en-NG')}. Open Orders and tap Pay to book it.`,
+                body: `We could not reach you twice for order ${order.oscNumber}. The next delivery costs ₦${fee.toLocaleString('en-NG')}. Open Orders and tap Pay to book it.`,
                 subBody: `Order ID: ${order.oscNumber}`,
                 type: 'order-updated',
             })

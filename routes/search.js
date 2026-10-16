@@ -22,7 +22,9 @@ const { ROLE } = require('../util/constants')
  *     summary: Search orders by OSC number, phone number, or customer name
  *     description: |
  *       Searches book orders using a free-text term matched against oscNumber,
- *       phoneNumber, and fullName fields. Results can additionally be filtered
+ *       phoneNumber, fullName and piece tag numbers (items.tagId, V1 16 Oct). When the term
+ *       matches tags, each order carries matchedPieces: [{ itemId, tagId, type, currentStation,
+ *       stationLabel }], so global search can open the piece. Results can additionally be filtered
  *       to a date range (last 7 days, 30 days, 90 days, this year, or a custom
  *       start/end date window). Requires admin authentication.
  *     tags:
@@ -35,8 +37,8 @@ const { ROLE } = require('../util/constants')
  *         schema:
  *           type: string
  *         description: >
- *           Search term matched against Order ID (oscNumber), phone number, or
- *           customer name. Leave empty to return all orders within the chosen
+ *           Search term matched against Order ID (oscNumber), phone number,
+ *           customer name, or a piece's tag number (e.g. TAG 03). Leave empty to return all orders within the chosen
  *           date range.
  *         example: OSC-2024-001
  *       - in: query

@@ -78,6 +78,7 @@ class SearchService extends BaseService {
 
             // ── 2. Build text / identifier filter ────────────────────────────
             let searchFilter = {}
+            let tagRegex = null
 
             if (q && q.trim() !== '') {
                 const term = q.trim()
@@ -86,11 +87,14 @@ class SearchService extends BaseService {
                 const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
                 const regex   = new RegExp(escaped, 'i')
 
+                // FE 16 Oct: a tag number finds the piece's order too.
+                tagRegex = regex
                 searchFilter = {
                     $or: [
                         { oscNumber:   regex },
                         { phoneNumber: regex },
                         { fullName:    regex },
+                        { 'items.tagId': regex },
                     ],
                 }
             }
@@ -110,6 +114,16 @@ class SearchService extends BaseService {
                     .lean(),
                 BookOrderModel.countDocuments(filter),
             ])
+
+            // Which pieces matched a tag search, and where each one is.
+            if (tagRegex) {
+                const { stationLabel } = require('../util/displayName')
+                for (const o of orders) {
+                    o.matchedPieces = (o.items || [])
+                        .filter((i) => i.tagId && tagRegex.test(i.tagId))
+                        .map((i) => ({ itemId: i._id, tagId: i.tagId, type: i.type, currentStation: i.currentStation || null, stationLabel: stationLabel(i.currentStation || 'intake-and-tag-station') }))
+                }
+            }
 
             // ── 5. Return response ───────────────────────────────────────────
             return BaseService.sendSuccessResponse({

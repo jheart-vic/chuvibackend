@@ -285,6 +285,7 @@ class IntakeUserController extends BaseController {
             orderId: req.params.id,
             reference: req.body?.reference,
             note: req.body?.note,
+            method: req.body?.method,
             actor: req.user,
         })
         return result.success

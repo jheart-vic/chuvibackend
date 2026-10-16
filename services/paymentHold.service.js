@@ -18,6 +18,7 @@ const {
     PAYMENT_ORDER_STATUS,
     AUDIT_LOG_CATEGORIES,
     ROLE,
+    PAYMENT_METHOD,
 } = require('../util/constants')
 
 /**
@@ -480,7 +481,7 @@ class PaymentHoldService {
                             await notifyRoles({
                                 roles: [ROLE.ADMIN],
                                 title: 'Unpaid bill flagged',
-                                body: `Order ${order.oscNumber} is still waiting for payment of N${amount.toLocaleString('en-NG')}.`,
+                                body: `Order ${order.oscNumber} is still waiting for payment of ₦${amount.toLocaleString('en-NG')}.`,
                                 subBody: 'Decide whether to waive it, chase the customer, or cancel.',
                                 type: NOTIFICATION_TYPE.ORDER_UPDATED,
                             })
@@ -489,7 +490,7 @@ class PaymentHoldService {
                                 key: `unpaid-bill:${order._id}:${step.n}`,
                                 type: 'unpaid-bill',
                                 title: 'Call: unpaid bill',
-                                detail: `Order ${order.oscNumber}: N${amount.toLocaleString('en-NG')} is still unpaid. Call ${order.fullName || 'the customer'}.`,
+                                detail: `Order ${order.oscNumber}: ₦${amount.toLocaleString('en-NG')} is still unpaid. Call ${order.fullName || 'the customer'}.`,
                                 order,
                             })
                         } else {
@@ -538,12 +539,20 @@ class PaymentHoldService {
      * reference, the daily check has nothing to match against the statement and
      * the list is unusable.
      */
-    static async approveTransfer({ orderId, reference, note, actor }) {
+    static async approveTransfer({ orderId, reference, note, actor, method = 'transfer' }) {
         try {
+            // FE 16 Oct: POS had to go through as a transfer and landed on the
+            // bank-check list. method 'pos' records it as POS with its receipt.
+            const isPos = String(method || 'transfer').toLowerCase() === 'pos'
+            if (!['transfer', 'pos'].includes(String(method || 'transfer').toLowerCase())) {
+                return BaseService.sendFailedResponse({ error: 'method must be transfer or pos.' })
+            }
             const cleanRef = String(reference || '').trim()
             if (!cleanRef) {
                 return BaseService.sendFailedResponse({
-                    error: 'A transfer reference or the sender’s name is required, so this can be matched against the bank statement.',
+                    error: isPos
+                        ? 'The POS receipt number is required.'
+                        : 'A transfer reference or the sender’s name is required, so this can be matched against the bank statement.',
                 })
             }
 
@@ -574,17 +583,30 @@ class PaymentHoldService {
                 {
                     $set: {
                         paymentStatus: PAYMENT_ORDER_STATUS.SUCCESS,
-                        paymentMethod: 'bank-transfer',
+                        paymentMethod: isPos ? PAYMENT_METHOD.POS : 'bank-transfer',
                         paymentDate: now,
                         reference: cleanRef,
-                        bankTransferApproval: {
-                            approvedAt: now,
-                            approvedBy: actor?.id,
-                            approvedByRole: actor?.userType,
-                            reference: cleanRef,
-                            note: String(note || '').trim() || undefined,
-                            amount,
-                        },
+                        ...(isPos
+                            ? {
+                                  posPaymentApproval: {
+                                      approvedAt: now,
+                                      approvedBy: actor?.id,
+                                      approvedByRole: actor?.userType,
+                                      receiptNumber: cleanRef,
+                                      note: String(note || '').trim() || undefined,
+                                      amount,
+                                  },
+                              }
+                            : {
+                                  bankTransferApproval: {
+                                      approvedAt: now,
+                                      approvedBy: actor?.id,
+                                      approvedByRole: actor?.userType,
+                                      reference: cleanRef,
+                                      note: String(note || '').trim() || undefined,
+                                      amount,
+                                  },
+                              }),
                     },
                     // The outstanding balance is settled (F-30).
                     $unset: { balanceDue: '' },
@@ -600,7 +622,7 @@ class PaymentHoldService {
 
             await this.clear({
                 orderId: order._id,
-                source: 'bank-transfer',
+                source: isPos ? 'counter' : 'bank-transfer',
                 actorId: actor?.id,
             })
 
@@ -610,11 +632,15 @@ class PaymentHoldService {
             try {
                 await notifyRoles({
                     roles: [ROLE.ADMIN],
-                    title: byIntake
-                        ? 'Bank transfer approved by Intake and Tag'
-                        : 'Bank transfer approved',
-                    body: `Order ${order.oscNumber}: ₦${amount.toLocaleString('en-NG')} marked paid by transfer (ref ${cleanRef}).`,
-                    subBody: byIntake
+                    title: isPos
+                        ? 'POS payment recorded'
+                        : byIntake
+                          ? 'Bank transfer approved by Intake and Tag'
+                          : 'Bank transfer approved',
+                    body: isPos
+                        ? `Order ${order.oscNumber}: ₦${amount.toLocaleString('en-NG')} paid on the office POS (receipt ${cleanRef}).`
+                        : `Order ${order.oscNumber}: ₦${amount.toLocaleString('en-NG')} marked paid by transfer (ref ${cleanRef}).`,
+                    subBody: !isPos && byIntake
                         ? 'On today’s bank-check list for confirmation against the statement.'
                         : undefined,
                     type: NOTIFICATION_TYPE.ORDER_UPDATED,

@@ -121,6 +121,24 @@ async function main() {
             ok(r.success, `start delivery works on an order that already holds old bad tag values ${r.success ? '' : r.data?.error}`)
         }
 
+        console.log('\n5. POS option and tag search (FE 16 Oct)')
+        {
+            const PaymentHoldService = require('./services/paymentHold.service')
+            const BookOrderModel = require('./models/bookOrder.model')
+            const SearchService = require('./services/search.service')
+            const o = await mkOrder(null, 4700, { paymentStatus: 'pending', paymentDate: undefined, oscNumber: `LC-POS-${stamp}`, items: [{ type: 'shirt', price: 1, quantity: 1, tagId: `TG${stamp}` }] })
+            let r = await PaymentHoldService.approveTransfer({ orderId: o._id, reference: '', method: 'pos', actor: { id: String(rep._id), userType: 'intake-and-tag' } })
+            ok(!r.success && /POS receipt number/.test(r.data?.error || ''), 'POS needs the receipt number')
+            r = await PaymentHoldService.approveTransfer({ orderId: o._id, reference: 'POS-778812', method: 'pos', actor: { id: String(rep._id), userType: 'intake-and-tag' } })
+            const f = await BookOrderModel.findById(o._id).lean()
+            ok(r.success && f.paymentStatus === 'success' && f.paymentMethod === 'pos' && f.posPaymentApproval?.receiptNumber === 'POS-778812' && !f.bankTransferApproval?.approvedAt, 'method pos: paid by POS with its receipt, not as a transfer')
+            const bc = await PaymentHoldService.bankCheckList({})
+            ok(bc.success && !JSON.stringify(bc.data).includes(`LC-POS-${stamp}`), 'not on the bank-check list')
+            const sr = await new SearchService().searchOrders({ query: { q: `TG${stamp}` } })
+            const hit = (sr.data?.message?.data || []).find((x) => String(x._id) === String(o._id))
+            ok(hit && hit.matchedPieces?.[0]?.tagId === `TG${stamp}`, 'a tag number finds the order, with the matching piece')
+        }
+
         console.log('\n2. Iron Only texts (client 16 Oct)')
         const until = new Date()
         until.setHours(15, 15, 0, 0)

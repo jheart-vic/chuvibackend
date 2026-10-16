@@ -603,6 +603,17 @@ const bookOrderSchema = new mongoose.Schema(
         // lands on a daily bank-check list to be matched against the statement.
         // `approvedByRole` is stored rather than looked up later, because a
         // staff member's role can change after the fact.
+        // V1 (FE 16 Oct): S1 marks an unpaid order paid on the office POS
+        // machine, with the receipt number (R16). Kept apart from transfers so it
+        // never lands on the bank-check list.
+        posPaymentApproval: {
+            approvedAt: { type: Date },
+            approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            approvedByRole: { type: String },
+            receiptNumber: { type: String },
+            note: { type: String },
+            amount: { type: Number },
+        },
         bankTransferApproval: {
             type: {
                 approvedAt: { type: Date },

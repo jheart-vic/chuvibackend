@@ -2684,6 +2684,11 @@ router.post(ROUTE_ORDER_PAYMENT_HOLD_RESEND, [intakeUserAuth], (req, res) => {
  *                 example: Chinedu Okeke / FT24100912345
  *                 description: The sender's name or the transfer reference.
  *               note: { type: string, example: Paid from a different account }
+ *               method:
+ *                 type: string
+ *                 enum: [transfer, pos]
+ *                 default: transfer
+ *                 description: "V1 (FE 16 Oct): pos = paid on the office POS machine; reference is then the POS receipt number (required). Recorded as paymentMethod pos with posPaymentApproval, and NOT on the bank-check list. transfer (default) behaves as before."
  *     responses:
  *       200:
  *         description: The transfer was accepted and the hold released
