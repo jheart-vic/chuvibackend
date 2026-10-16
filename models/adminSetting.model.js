@@ -138,6 +138,17 @@ const adminSettingSchema = new mongoose.Schema(
         // V1 batch 3 (B34): the hour (Lagos) admin is alerted to orders due today
         // that are not yet at QC. The last-run day is the once-a-day latch.
         dueTodayCheckHour: { type: Number, default: 15, min: 0, max: 23 },
+        // V1 batch 3 part 2 (client 15 Oct): one switch per part, all OFF. See
+        // util/switches.js for what each gates and the mid-floor rule.
+        v1Switches: {
+            s2PartialReceipt: { type: Boolean, default: false },
+            routesByService: { type: Boolean, default: false },
+            ironOnlyUpgrade: { type: Boolean, default: false },
+            damageCase: { type: Boolean, default: false },
+        },
+        // R8 / R24: minutes the customer has to pay for a "looks dirty" wash
+        // upgrade before the link is cancelled and the piece is pressed as booked.
+        ironOnlyAnswerMinutes: { type: Number, default: 180, min: 1 },
         dueTodayCheckLastRun: { type: String },
         // V1 batch 2 (R23): no SMS (and no feedback request) in these hours,
         // Lagos time; held until endHour.

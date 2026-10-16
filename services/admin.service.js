@@ -2471,6 +2471,11 @@ class AdminService extends BaseService {
                     }),
                 })
 
+            // V1 batch 3 part 2 (R6): a damaged piece is released only after
+            // customer care marks "Customer informed".
+            const damageRefusal = require('../util/damageCase').damageReleaseRefusal(targets)
+            if (damageRefusal) return BaseService.sendFailedResponse(damageRefusal)
+
             const now = new Date()
             const releaseIds = new Set(targets.map((i) => String(i._id)))
             // Who was supposed to deal with each piece, captured BEFORE the
@@ -2489,6 +2494,7 @@ class AdminService extends BaseService {
                 // Each station's own release owns the redo semantics.
                 item.flaggedForReview = false
                 if (note) item.holdDetails.releaseNote = String(note).trim()
+                require('../util/damageCase').markDamageReleased(item, now)
             })
             order.markModified('items')
             await order.save({ validateBeforeSave: false })

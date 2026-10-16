@@ -62,11 +62,11 @@ hold type, admin only. Plans, windows, Always Free and prices from their configu
 | 14a | Assistant: no price estimate (point to Book), no payment in chat; "talk to someone" opens a complaint | BE | DONE 16 Oct (b2) |
 | 14b | Reward credit on by default at Pay, switch to turn it off | BE+FE | DONE 16 Oct (b2) |
 | **Batch 3 — launch week, after 7 PM** | | | |
-| 15 | S2 receipt: hold one piece ("Something is missing"), receive the rest; S1 sends one fixed piece | BE+FE | |
+| 15 | S2 receipt: hold one piece ("Something is missing"), receive the rest; S1 sends one fixed piece | BE+FE | built, switch s2PartialReceipt (off) |
 | 16 | S2 corrects S1's colour and stain tags (White, Light, Dark) | BE+FE | done b3a |
-| 17 | Routes enforced by service; second rejection of a piece → admin; missing-piece message names tag and place | BE | b3a: 2nd rejection + message done; routes in core half |
-| 18 | Iron Only dirty piece: suggestion to S1, per-piece service change, payment link, cancelled after 3 h unpaid, pressed as booked | BE+FE | |
-| 19 | Damage: "Customer informed" before admin can release; partial delivery approval | BE+FE | |
+| 17 | Routes enforced by service; second rejection of a piece → admin; missing-piece message names tag and place | BE |  b3a: 2nd rejection + message; routes built, switch routesByService (off) |
+| 18 | Iron Only dirty piece: suggestion to S1, per-piece service change, payment link, cancelled after 3 h unpaid, pressed as booked | BE+FE | built, switch ironOnlyUpgrade (off) |
+| 19 | Damage: "Customer informed" before admin can release; partial delivery approval | BE+FE | built, switch damageCase (off) |
 | 20 | Window prices per window + an Urgent price; 3 PM check of orders due today not at QC | BE+FE | done b3a |
 | **Also** | | | |
 | X1 | Run T1–T12 digitally by Sun 10 AM | BE+FE | |
@@ -191,7 +191,7 @@ User 15 Oct: treat B1/B2 as the frontend described them.
 3. Fix the review findings → test main → push.
 4. Final check: briefCheck + all staging suites on main + a live smoke test (read-only; staging scripts
    refuse laundrydb by design). The client's general test tomorrow is the real live check.
-5. Batch 3 CORE half behind an admin switch, OFF by default (turn on only after it passes): item 17 routes
+5. [BUILT 16 Oct, fix/v1-batch-3-part2, four switches all off] Batch 3 CORE half behind an admin switch, OFF by default (turn on only after it passes): item 17 routes
    enforced per piece + item 18 per-piece service change / Iron Only "looks dirty"; item 15 S2 holds one
    piece and receives the rest; item 19 damage "Customer informed" gate + partial delivery.
 6. Tomorrow: fix whatever the frontend/client general test finds.

@@ -9,7 +9,7 @@ const careTaskSchema = new mongoose.Schema(
         key: { type: String, required: true, unique: true },
         type: {
             type: String,
-            enum: ['failed-pickups', 'unpaid-bill'],
+            enum: ['failed-pickups', 'unpaid-bill', 'damage', 'looks-dirty'],
             required: true,
         },
         title: { type: String, required: true },

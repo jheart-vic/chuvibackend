@@ -104,6 +104,20 @@ function isWholeOrderGate(fromIdx, toIdx) {
     return fromIdx === 0 || toIdx === SEQ.length - 1
 }
 
+// V1 batch 3 part 2 (R2, T8.04–T8.05): out of Intake and Tag the rule is "send
+// every piece S1 still has". Normally that is the whole order; after S2 held one
+// piece at receipt (switch s2PartialReceipt) it is that one fixed piece, because
+// the rest are already at S2. Independent of the switch, so a piece held while it
+// was on can always be sent once it is off.
+function piecesStillAt(order, station) {
+    return (order.items || []).filter((i) => (i.currentStation || SEQ[0]) === station)
+}
+function intakeSendsAll(order, ids) {
+    const want = new Set((ids || []).map(String))
+    const atS1 = piecesStillAt(order, SEQ[0])
+    return atS1.length > 0 && atS1.every((i) => want.has(String(i._id)))
+}
+
 class HandoffService extends BaseService {
     // Push items from one station to the next (creates a pending handoff record).
     async push(req) {
@@ -188,8 +202,27 @@ class HandoffService extends BaseService {
                 return BaseService.sendFailedResponse({ error: heldMessage })
             }
 
+            // V1 batch 3 part 2 (R8): a piece waiting for the customer's answer
+            // on washing stays where it is (switch-independent: S1 can always
+            // answer for it, and the link expires by itself).
+            const waiting = require('../util/ironOnlyUpgrade').waitingRefusal(targets)
+            if (waiting) return BaseService.sendFailedResponse(waiting)
+
+            // V1 batch 3 part 2 (R4, switch routesByService): each piece goes only
+            // to the next station on its service's route.
+            if (await require('../util/switches').isOn('routesByService')) {
+                const offRoute = require('../util/routes').offRouteRefusal({ order, targets, fromStation, toStation })
+                if (offRoute) return BaseService.sendFailedResponse(offRoute)
+            }
+
             // Whole-order gate for S1→S2 and S4→S5.
-            if (isWholeOrderGate(fromIdx, toIdx)) {
+            if (fromIdx === 0 && toIdx !== SEQ.length - 1) {
+                if (!intakeSendsAll(order, targets.map((i) => i._id))) {
+                    return BaseService.sendFailedResponse({
+                        error: 'Send every piece that is still at Intake and Tag together.',
+                    })
+                }
+            } else if (isWholeOrderGate(fromIdx, toIdx)) {
                 if (!order.isWholeAt(fromStation)) {
                     return BaseService.sendFailedResponse({
                         error: `The whole order must be here before it can move on. Missing: ${missingPieces(order, fromStation)}.`,
@@ -197,8 +230,14 @@ class HandoffService extends BaseService {
                     })
                 }
                 if (targets.length !== order.items.length) {
+                    // Name what is left out, and why, in plain words.
+                    const sent = new Set(targets.map((i) => String(i._id)))
+                    const left = order.items.filter((i) => !sent.has(String(i._id)))
+                    const why = (i) => (i.flaggedForReview && i.holdDetails?.heldAt && !i.holdDetails?.releasedAt ? ' (on hold)' : '')
+                    const { stationLabel } = require('../util/displayName')
                     return BaseService.sendFailedResponse({
-                        error: `${fromStation} → ${toStation} must include every item in the order`,
+                        error: `The whole order goes to ${stationLabel(toStation)} together. Not included: ${left.slice(0, 5).map((i) => (i.tagId || i.type) + why(i)).join(', ')}.`,
+                        missingPieces: left.map((i) => i.tagId || i.type).join(', '),
                     })
                 }
             }
@@ -403,7 +442,29 @@ class HandoffService extends BaseService {
             // exactly what "nothing partial reaches S5" forbids.
             const fromIdx = SEQ.indexOf(handoff.fromStation)
             const toIdx = SEQ.indexOf(handoff.toStation)
-            if (isWholeOrderGate(fromIdx, toIdx)) {
+            // V1 batch 3 part 2 (R2, T8.04): at S2's receipt, with the switch on,
+            // a piece that is missing, untagged or wrongly tagged is held on its
+            // own (back to S1's Holds) and the rest are received.
+            const s2Receipt = fromIdx === 0 && toIdx === 1
+            const partialReceiptOn =
+                s2Receipt && rejected.length && accepted.length
+                    ? await require('../util/switches').isOn('s2PartialReceipt')
+                    : false
+            if (s2Receipt) {
+                if (rejected.length && accepted.length && !partialReceiptOn) {
+                    return BaseService.sendFailedResponse({
+                        error: `${handoff.fromStation} → ${handoff.toStation} moves the whole order — accept every item or reject every item`,
+                    })
+                }
+                if (!intakeSendsAll(order, handoff.itemIds)) {
+                    const inH = new Set(handoff.itemIds.map(String))
+                    const notSent = piecesStillAt(order, SEQ[0]).filter((i) => !inH.has(String(i._id))).map((i) => i.tagId || i.type).join(", ")
+                    return BaseService.sendFailedResponse({
+                        error: `Every piece still at Intake and Tag must come together. Not in this handoff: ${notSent}.`,
+                        missingPieces: notSent,
+                    })
+                }
+            } else if (isWholeOrderGate(fromIdx, toIdx)) {
                 if (rejected.length && accepted.length) {
                     return BaseService.sendFailedResponse({
                         error: `${handoff.fromStation} → ${handoff.toStation} moves the whole order — accept every item or reject every item`,

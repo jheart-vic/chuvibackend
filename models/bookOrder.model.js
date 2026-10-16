@@ -62,6 +62,44 @@ const ItemSchema = new mongoose.Schema(
             enum: [TAG_COLOR.DARK, TAG_COLOR.LIGHT, TAG_COLOR.WHITE, null],
             default: null,
         },
+        // V1 batch 3 part 2 (R4, R8): the piece's own service. Empty = the
+        // order's serviceType. Set when an Iron Only piece is changed to Wash and
+        // Iron (looks dirty); the route follows it (util/routes.js).
+        serviceType: { type: String },
+        // V1 batch 3 part 2 (R6): "Report problem: Damaged" holds the piece and
+        // opens a damage case. Admin releases it only after customer care marks
+        // "Customer informed".
+        damageCase: {
+            status: { type: String, enum: ['open', 'customer-informed', 'released'] },
+            note: { type: String },
+            station: { type: String },
+            openedAt: { type: Date },
+            openedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            openedByName: { type: String },
+            customerInformedAt: { type: Date },
+            customerInformedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            customerInformedByName: { type: String },
+            customerInformedNote: { type: String },
+            releasedAt: { type: Date },
+        },
+        // V1 batch 3 part 2 (R8): an Iron Only piece S2 thinks looks dirty.
+        // suggested → (S1 changes it) link-sent → paid | expired; or declined.
+        dirtySuggestion: {
+            status: { type: String, enum: ['suggested', 'link-sent', 'paid', 'declined', 'expired'] },
+            note: { type: String },
+            suggestedAt: { type: Date },
+            suggestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            suggestedByName: { type: String },
+            difference: { type: Number },
+            paymentUrl: { type: String },
+            reference: { type: String },
+            linkSentAt: { type: Date },
+            linkSentBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            expiresAt: { type: Date },
+            paidAt: { type: Date },
+            closedAt: { type: Date },
+            closeNote: { type: String },
+        },
         // V1 batch 3 (R7, T8.03): S2 may correct S1's colour and stain tags. Each
         // correction keeps the old value and who made it ("keep both versions").
         tagCorrections: [
@@ -466,6 +504,9 @@ const bookOrderSchema = new mongoose.Schema(
                 // V1 batch 2 (R17): "Covered by CHUVI" — a small recount increase
                 // CHUVI pays, its own line so the rows still add up.
                 recountCover: Number,
+                // V1 batch 3 part 2 (R8): Iron Only pieces changed to Wash and
+                // Iron — the difference, its own line (R19).
+                serviceChange: Number,
                 orderTotal: Number, // == amount (billed after offers/credit)
                 youSaved: Number, // offerDiscount + waived fees + creditApplied
                 coveredBySubscription: Boolean,
@@ -787,6 +828,22 @@ const bookOrderSchema = new mongoose.Schema(
         },
         isPickUp: { type: Boolean, default: false },
         isDelivery: { type: Boolean, default: false },
+        // V1 batch 3 part 2 (R6): partial delivery. The held piece(s) moved to a
+        // follow-on order so the ready pieces can go out; the second trip is free
+        // when the hold was our fault.
+        partialDelivery: {
+            approvedAt: { type: Date },
+            approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            approvedByName: { type: String },
+            reason: { type: String },
+            ourFault: { type: Boolean },
+            childOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
+            childOscNumber: { type: String },
+            tagIds: [{ type: String }],
+        },
+        // On the follow-on order: where its pieces came from.
+        parentOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookOrder' },
+        parentOscNumber: { type: String },
         reference: { type: String },
         paymentDate: { type: Date },
         adjustWallet: {

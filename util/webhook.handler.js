@@ -1086,6 +1086,8 @@ async function handleOrderPayment(metadata, reference, paidNaira = null) {
         await require('./orderSms').bookingReceived(order)
         // V1 batch 2: a redelivery fee in this balance is now paid.
         await require('./redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
+        // V1 batch 3 part 2 (R8): paying is the approval of a wash upgrade.
+        await require('./ironOnlyUpgrade').settleIfPaid(order._id)
         // V1 batch 2 (R21): paid after the pay-by time → a new ready date.
         if (order.stage?.status !== 'cancelled') await require('./readyDateRecalc').afterQuickBookingPaid(order._id)
 

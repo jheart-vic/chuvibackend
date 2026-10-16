@@ -124,6 +124,7 @@ class PaystackService extends BaseService {
                 await require('../util/urgentPickup').markUrgentPickupIfReady(fresh)
                 await require('../util/orderSms').bookingReceived(fresh)
                 await require('../util/redeliveryFee').markRedeliveryFeesPaid(order._id).catch(() => {})
+                await require('../util/ironOnlyUpgrade').settleIfPaid(order._id)
                 await require('../util/readyDateRecalc').afterQuickBookingPaid(order._id)
               } catch (e) {
                 console.error('credit-paid order follow-up failed:', e?.message)

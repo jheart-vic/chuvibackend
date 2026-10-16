@@ -45,6 +45,42 @@ const {
 const HandoffServiceClass = require('./handoff.service')
 const HandoffService = new HandoffServiceClass()
 
+// S2 hands finished pieces on by itself. Today that is always Wash and Dry. With
+// the routes switch on (V1 batch 3 part 2, R4) each piece goes to the next stop on
+// its own service's route (Iron Only → Press), one handoff per destination.
+async function autoSend({ orderId, order, userId, itemIds, note }) {
+    const { isOn } = require('../util/switches')
+    // A piece waiting for the customer's answer on washing (R8) stays at S2.
+    itemIds = itemIds.filter((id) => {
+        const it = (order.items || []).find((i) => String(i._id) === String(id))
+        return !['suggested', 'link-sent'].includes(it?.dirtySuggestion?.status)
+    })
+    if (!itemIds.length) return null
+    const groups = new Map()
+    if (await isOn('routesByService')) {
+        const { nextStationFor } = require('../util/routes')
+        for (const id of itemIds) {
+            const item = (order.items || []).find((i) => String(i._id) === String(id))
+            const to = (item && nextStationFor(item, order, STATION_STATUS.SORT_AND_PRETREAT_STATION)) || STATION_STATUS.WASH_AND_DRY_STATION
+            if (!groups.has(to)) groups.set(to, [])
+            groups.get(to).push(String(id))
+        }
+    } else {
+        groups.set(STATION_STATUS.WASH_AND_DRY_STATION, itemIds.map(String))
+    }
+    let first = null
+    for (const [toStation, ids] of groups) {
+        const pushed = await HandoffService.push({
+            params: { id: orderId },
+            user: { id: userId },
+            body: { fromStation: STATION_STATUS.SORT_AND_PRETREAT_STATION, toStation, itemIds: ids, note },
+        })
+        const r = pushed.success ? pushed.data?.message : { error: pushed.data?.error, toStation }
+        if (!first || (first && !first.error && r.error)) first = r
+    }
+    return first
+}
+
 // Split-flow: this station only ever sees/acts on the items sitting at it.
 // The ORDER-level query stays on stage.status (decision D3): sort is the
 // earliest stretch station and summaryStatus is the least-advanced station, so
@@ -837,22 +873,10 @@ class SortAndPretreatService extends BaseService {
             let handoff = null
             const sendToWash = post.sendToWash !== false
             if (sendToWash && readyIds.length) {
-                const pushed = await HandoffService.push({
-                    params: { id: orderId },
-                    user: { id: userId },
-                    body: {
-                        fromStation: HERE,
-                        toStation: STATION_STATUS.WASH_AND_DRY_STATION,
-                        itemIds: readyIds,
-                        note: 'Sorted at sort & pretreat',
-                    },
-                })
                 // A failed handover must not undo the sorting the operator just
                 // did — report it instead, so the work is kept and the reason
                 // is visible rather than the button appearing to do nothing.
-                handoff = pushed.success
-                    ? pushed.data?.message
-                    : { error: pushed.data?.error }
+                handoff = await autoSend({ orderId, order: fresh, userId, itemIds: readyIds, note: 'Sorted at sort & pretreat' })
             }
 
             await ActivityModel.create({
@@ -1276,19 +1300,7 @@ class SortAndPretreatService extends BaseService {
                 // A held piece waits for its release, not for its pretreatment.
                 !isItemOnHold(freshItem)
             ) {
-                const pushed = await HandoffService.push({
-                    params: { id: orderId },
-                    user: { id: userId },
-                    body: {
-                        fromStation: HERE,
-                        toStation: STATION_STATUS.WASH_AND_DRY_STATION,
-                        itemIds: [String(itemId)],
-                        note: 'Pretreatment complete',
-                    },
-                })
-                handoff = pushed.success
-                    ? pushed.data?.message
-                    : { error: pushed.data?.error }
+                handoff = await autoSend({ orderId, order: updatedOrder, userId, itemIds: [String(itemId)], note: 'Pretreatment complete' })
             }
 
             await ActivityModel.create({

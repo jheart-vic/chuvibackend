@@ -58,6 +58,7 @@ const {
     ROUTE_ADMIN_SIGNUP_ATTEMPTS,
     ROUTE_ADMIN_DUE_TODAY_NOT_AT_QC,
     ROUTE_ADMIN_ALERTS,
+    ROUTE_ADMIN_SWITCHES,
 } = require("../util/page-route");
 const router = require("express").Router();
 
@@ -3983,6 +3984,85 @@ router.get(ROUTE_ADMIN_REP_LINK_REPORT, [adminAuth], (req, res) => {
  *                               lastAt: { type: string, format: date-time }
  *                               coverStopped: { type: boolean, example: true }
  */
+/**
+ * @swagger
+ * /admin/switches:
+ *   get:
+ *     summary: The four Batch 3 part 2 switches (all off by default)
+ *     description: >
+ *       V1 launch batch 3 part 2 (client 15 Oct): one switch per part. A switch only decides whether a NEW action of
+ *       its kind may start; anything it already started can always be finished with it off, so no order gets stuck.
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: The switches
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         switches:
+ *                           type: object
+ *                           properties:
+ *                             s2PartialReceipt: { type: boolean, example: false, description: "S2 holds one piece at receipt and receives the rest (R2)." }
+ *                             routesByService: { type: boolean, example: false, description: "Each piece follows its service's route (R4)." }
+ *                             ironOnlyUpgrade: { type: boolean, example: false, description: "Iron Only looks dirty: per-piece service change with a payment link (R8)." }
+ *                             damageCase: { type: boolean, example: false, description: "Damage holds the piece; admin releases after Customer informed; partial delivery (R6)." }
+ *                         ironOnlyAnswerMinutes: { type: integer, example: 180 }
+ *   patch:
+ *     summary: Turn part 2 switches on or off (audited)
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               s2PartialReceipt: { type: boolean }
+ *               routesByService: { type: boolean }
+ *               ironOnlyUpgrade: { type: boolean }
+ *               damageCase: { type: boolean }
+ *               ironOnlyAnswerMinutes: { type: integer, example: 180, description: "R24: time the customer has to pay for a looks-dirty wash upgrade." }
+ *     responses:
+ *       200:
+ *         description: Saved; returns all switches
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: object
+ *                       properties:
+ *                         switches:
+ *                           type: object
+ *                           properties:
+ *                             s2PartialReceipt: { type: boolean, example: false, description: "S2 holds one piece at receipt and receives the rest (R2)." }
+ *                             routesByService: { type: boolean, example: false, description: "Each piece follows its service's route (R4)." }
+ *                             ironOnlyUpgrade: { type: boolean, example: false, description: "Iron Only looks dirty: per-piece service change with a payment link (R8)." }
+ *                             damageCase: { type: boolean, example: false, description: "Damage holds the piece; admin releases after Customer informed; partial delivery (R6)." }
+ *                         ironOnlyAnswerMinutes: { type: integer, example: 180 }
+ *       400:
+ *         description: A value is not true/false, or nothing to change
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ */
+router.get(ROUTE_ADMIN_SWITCHES, [adminAuth], (req, res) => new AdminController().getSwitches(req, res))
+router.patch(ROUTE_ADMIN_SWITCHES, [adminAuth], (req, res) => new AdminController().updateSwitches(req, res))
+
 router.get(ROUTE_ADMIN_ALERTS, [adminAuth], (req, res) => {
     const adminController = new AdminController()
     return adminController.getAdminAlerts(req, res)

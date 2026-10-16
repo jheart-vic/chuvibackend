@@ -225,6 +225,7 @@ class WalletService extends BaseService {
       await require("../util/urgentPickup").markUrgentPickupIfReady(bookOrder);
       // V1 batch 2: a redelivery fee in this balance is now paid.
       await require("../util/redeliveryFee").markRedeliveryFeesPaid(bookOrder._id).catch(() => {});
+      await require("../util/ironOnlyUpgrade").settleIfPaid(bookOrder._id);
       // V1 batch 2 (R21): paid after the pay-by time → a new ready date.
       await require("../util/readyDateRecalc").afterQuickBookingPaid(bookOrder._id);
 

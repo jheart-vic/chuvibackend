@@ -55,6 +55,8 @@ require('./crons/renewalFailedReminder.js')
 require('./crons/queuedSmsFlush.js')
 // V1 launch batch 3 (B34): the 3 PM check of orders due today not at QC.
 require('./crons/dueTodayCheck.js')
+// V1 launch batch 3 part 2 (R8): unpaid "looks dirty" wash links expire.
+require('./crons/ironOnlyExpiry.js')
 
 
 const port = process.env.PORT || 7001;

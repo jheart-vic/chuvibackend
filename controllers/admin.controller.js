@@ -237,6 +237,59 @@ class AdminController extends BaseController {
             : BaseController.sendFailedResponse(res, result.data)
     }
 
+    // V1 batch 3 part 2: the four part switches (all off by default).
+    async getSwitches(req, res) {
+        const { getSwitches } = require('../util/switches')
+        const AdminSettingModel = require('../models/adminSetting.model')
+        const s = await AdminSettingModel.findOne().select('ironOnlyAnswerMinutes').lean()
+        return BaseController.sendSuccessResponse(res, {
+            message: { switches: await getSwitches(), ironOnlyAnswerMinutes: s?.ironOnlyAnswerMinutes ?? 180 },
+        })
+    }
+
+    async updateSwitches(req, res) {
+        try {
+            const { SWITCH_KEYS, getSwitches } = require('../util/switches')
+            const AdminSettingModel = require('../models/adminSetting.model')
+            const createAuditLog = require('../util/createAuditLog')
+            const body = req.body || {}
+            const set = {}
+            const changes = []
+            for (const k of SWITCH_KEYS) {
+                if (body[k] === undefined) continue
+                if (typeof body[k] !== 'boolean') {
+                    return BaseController.sendFailedResponse(res, { error: `${k} must be true or false.` })
+                }
+                set[`v1Switches.${k}`] = body[k]
+                changes.push(`${k} ${body[k] ? 'ON' : 'OFF'}`)
+            }
+            if (body.ironOnlyAnswerMinutes !== undefined) {
+                const m = Number(body.ironOnlyAnswerMinutes)
+                if (!Number.isInteger(m) || m < 1) {
+                    return BaseController.sendFailedResponse(res, { error: 'ironOnlyAnswerMinutes must be a whole number of minutes, 1 or more.' })
+                }
+                set.ironOnlyAnswerMinutes = m
+                changes.push(`ironOnlyAnswerMinutes ${m}`)
+            }
+            if (!changes.length) {
+                return BaseController.sendFailedResponse(res, { error: 'Nothing to change.' })
+            }
+            await AdminSettingModel.updateOne({}, { $set: set })
+            await createAuditLog({
+                userId: req.user?.id,
+                category: 'system',
+                action: `Switches: ${changes.join(', ')}`,
+            })
+            const s = await AdminSettingModel.findOne().select('ironOnlyAnswerMinutes').lean()
+            return BaseController.sendSuccessResponse(res, {
+                message: { switches: await getSwitches(), ironOnlyAnswerMinutes: s?.ironOnlyAnswerMinutes ?? 180 },
+            })
+        } catch (error) {
+            console.error('update switches failed:', error)
+            return BaseController.sendFailedResponse(res, { error: 'Could not save the switches.' })
+        }
+    }
+
     // V1 launch batch 3b (FE F40/F41): count disputes, possible missing
     // items and repeat-mismatch customers, as lists.
     async getAdminAlerts(req, res) {
