@@ -20,6 +20,8 @@ async function notifyBot(payload) {
     const url = process.env.CHATBOT_NOTIFY_URL
     const secret = process.env.CHATBOT_NOTIFY_SECRET
     if (!url || !secret) return // feature not configured — silently skip
+    // Test site (TEST_SITE=1): no WhatsApp message ever leaves the server.
+    if (require('./testSite').isTestSite()) return
 
     try {
         await axios.post(url, payload, {

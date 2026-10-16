@@ -73,6 +73,9 @@ class AuthService extends BaseService {
                     error: 'Invalid user type',
                 })
             }
+            // Test site only (TEST_SITE=1): no real customer sign-ups.
+            const testRefusal = require('../util/testSite').testSiteRefusal({ email: post.email, userType: post.userType })
+            if (testRefusal) return BaseService.sendFailedResponse(testRefusal)
 
             const userExists = await UserModel.findOne({
                 email: post.email,
@@ -330,6 +333,11 @@ class AuthService extends BaseService {
 
             // Check if user exists
             const userWithSub = await UserModel.findOne({ email })
+            // Test site only (TEST_SITE=1): a new Google account would be a customer.
+            if (!userWithSub) {
+                const testRefusal = require('../util/testSite').testSiteRefusal({ email, userType: 'user' })
+                if (testRefusal) return BaseService.sendFailedResponse(testRefusal)
+            }
 
             if (userWithSub) {
                 // Collision: the email already belongs to a password account that
@@ -547,6 +555,11 @@ class AuthService extends BaseService {
             const userWithAppleId = await UserModel.findOne({
                 $or: [{ appleId }, { email }],
             })
+            // Test site only (TEST_SITE=1): a new Apple account would be a customer.
+            if (!userWithAppleId) {
+                const testRefusal = require('../util/testSite').testSiteRefusal({ email, userType: 'user' })
+                if (testRefusal) return BaseService.sendFailedResponse(testRefusal)
+            }
 
             if (userWithAppleId) {
                 // If the user already exists, generate JWT tokens
@@ -1178,6 +1191,10 @@ class AuthService extends BaseService {
                 error: 'User not found. Please register as a new user',
             }
         }
+
+        // Test site only (TEST_SITE=1): staff and test customer accounts.
+        const testRefusal = require('../util/testSite').testSiteRefusal({ email: user.email, userType: user.userType })
+        if (testRefusal) return { success: false, error: testRefusal.error }
 
         if (!user.isVerified) {
             return {

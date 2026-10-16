@@ -50,6 +50,11 @@
 const axios = require("axios");
 
 const sendEmail = async ({ to, subject = "New Mail", html }) => {
+  // Test site (TEST_SITE=1): no email ever leaves the server.
+  if (require("./testSite").isTestSite()) {
+    console.log(`[TEST SITE] email not sent: ${subject}`);
+    return { testSite: true, sent: false };
+  }
   try {
     if (!to || !subject || !html) {
       console.error("❌ Missing email fields");

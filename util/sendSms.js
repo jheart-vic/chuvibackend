@@ -20,6 +20,11 @@ function cleanSmsText(message) {
 
 // `opts.immediate` skips quiet hours (the flush job, which runs after them).
 const sendSms = async (phoneNumber, message, opts = {}) => {
+    // Test site (TEST_SITE=1): no SMS ever leaves the server.
+    if (require('./testSite').isTestSite()) {
+        console.log(`[TEST SITE] SMS not sent to ${String(phoneNumber || '').slice(-4).padStart(4, '*')}: ${String(message || '').slice(0, 60)}`)
+        return { testSite: true, sent: false }
+    }
     try {
         message = cleanSmsText(message)
         // V1 launch batch 2 (R23): no SMS between 9 PM and 7 AM (settings);

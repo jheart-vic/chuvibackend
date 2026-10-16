@@ -70,6 +70,8 @@ initSocket(httpServer);
 
 // Use CORS with the specified options
 app.use(corsMiddleware);
+// Test site only (TEST_SITE=1): hidden from search engines (header + robots.txt).
+app.use(require('./util/testSite').noIndex);
 
 app.post("/webhook", express.raw({ type: "application/json" }), webhookFunction);
 

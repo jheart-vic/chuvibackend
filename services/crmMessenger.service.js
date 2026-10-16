@@ -80,6 +80,8 @@ const sendViaBot = async (profile, messageType, message) => {
     const url = process.env.CHATBOT_NOTIFY_URL
     const secret = process.env.CHATBOT_NOTIFY_SECRET
     if (!url || !secret || !profile.phoneNumber) return false
+    // Test site (TEST_SITE=1): no WhatsApp message ever leaves the server.
+    if (require('../util/testSite').isTestSite()) return false
 
     try {
         await axios.post(
