@@ -2893,15 +2893,17 @@ class BookOrderService extends BaseService {
                 // Semantic bucket for the customer app:
                 //   active    → every real order except cancelled (delivered stays)
                 //   completed → delivered
-                //   cancelled → cancelled only
+                //   cancelled → cancelled, and cancelled orders whose clothes went back
+                //               ("Returned unwashed" — FE 17 Oct: it showed under Active)
                 //   all       → no stage filter (default)
                 const view = req.query.view
+                const CANCELLED_VIEW = [ORDER_STATUS.CANCELLED, ORDER_STATUS.RETURNED_UNWASHED]
                 if (view === 'active') {
-                    filter['stage.status'] = { $ne: ORDER_STATUS.CANCELLED }
+                    filter['stage.status'] = { $nin: CANCELLED_VIEW }
                 } else if (view === 'completed') {
                     filter['stage.status'] = { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COLLECTED] }
                 } else if (view === 'cancelled') {
-                    filter['stage.status'] = ORDER_STATUS.CANCELLED
+                    filter['stage.status'] = { $in: CANCELLED_VIEW }
                 }
             }
             if (req.query.paymentStatus) {

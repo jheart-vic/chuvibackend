@@ -525,10 +525,12 @@ router.put(ROUTE_UPDATE_BOOK_ORDER_STAGE+"/:id", [adminAuth], (req, res) => {
  *           enum: [all, active, completed, cancelled]
  *           default: all
  *         description: >
- *           Semantic bucket. `active` = every order except cancelled (delivered
- *           still shows) — use this for the "my orders / track" screen;
- *           `completed` = delivered; `cancelled` = cancelled only; `all` = every
- *           order (default). Ignored when an explicit `status` is provided.
+ *           Semantic bucket. `active` = every order except cancelled and
+ *           returned-unwashed (delivered still shows) — use this for the "my
+ *           orders / track" screen; `completed` = delivered or collected;
+ *           `cancelled` = cancelled AND returned-unwashed (a cancelled order whose
+ *           clothes went back); `all` = every order (default). Ignored when an
+ *           explicit `status` is provided.
  *       - in: query
  *         name: status
  *         schema:
