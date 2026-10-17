@@ -1489,6 +1489,7 @@ class IntakeUserService extends BaseService {
                 select: 'fullName phoneNumber',
             },
             lean: true,
+            withPromise: true, // FE 17 Oct: readyBy + speedLabel
         })
 
         // On the DELIVERY leg a rider can't be assigned until the dispatch tag is
@@ -2228,11 +2229,12 @@ class IntakeUserService extends BaseService {
                     .skip(skip)
                     .limit(Number(limit))
                     .select(
-                        'oscNumber fullName phoneNumber serviceType serviceTier items amount balanceDue paymentStatus paymentHold channel stage dispatchDetails createdAt',
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount balanceDue paymentStatus paymentHold channel stage dispatchDetails createdAt deliveryDate deliverySpeed scheduling quickBooking',
                     )
                     .lean(),
                 BookOrderModel.countDocuments(query),
             ])
+            await require('../util/orderView').decorateStationOrders(orders) // FE 17 Oct: readyBy + speedLabel
 
             // An unpaid bag can now be on this list (it is physically here). The
             // screen shows "Unpaid — raise payment hold"; tagging stays gated on
@@ -2402,11 +2404,12 @@ class IntakeUserService extends BaseService {
                     .skip(skip)
                     .limit(Number(limit))
                     .select(
-                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt',
+                        'oscNumber fullName phoneNumber serviceType serviceTier items amount channel stage createdAt deliveryDate deliverySpeed scheduling quickBooking',
                     )
                     .lean(),
                 BookOrderModel.countDocuments(query),
             ])
+            await require('../util/orderView').decorateStationOrders(orders) // FE 17 Oct: readyBy + speedLabel
 
             return BaseService.sendSuccessResponse({
                 message: {
@@ -2463,6 +2466,7 @@ class IntakeUserService extends BaseService {
                 sort: QUEUE_SORT, // A5: delivery deadline, earliest first
                 select: 'oscNumber fullName phoneNumber serviceType serviceTier deliverySpeed amount deliveryAmount paymentStatus counts items stage stationStatus pickupAddress deliveryAddress isPickUp isDelivery deliveryDate scheduling quickBooking itemsPending createdAt',
                 lean: true,
+                withPromise: true, // FE 17 Oct: readyBy + speedLabel
             })
 
             const rows = data.map((order) => {
@@ -2549,6 +2553,7 @@ class IntakeUserService extends BaseService {
                         select: 'fullName',
                     },
                     lean: true,
+                    withPromise: true, // FE 17 Oct: readyBy + speedLabel
                 },
             )
 
@@ -2605,6 +2610,8 @@ class IntakeUserService extends BaseService {
                     // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
                     holdTypeKey: order.orderHold?.holdTypeKey || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.reason || null,
                     counts: holdCounts(order),
+                    readyBy: order.readyBy || null,
+                    speedLabel: order.speedLabel || null,
                 }
             })
 

@@ -961,6 +961,8 @@ class WashAndDryService extends BaseService {
                     // V1 batch 3b (FE F28): hold type and, for a count dispute, the counts.
                     holdTypeKey: order.orderHold?.holdTypeKey || (order.items || []).find((i) => i.holdDetails?.heldAt && !i.holdDetails?.releasedAt)?.holdDetails?.reason || null,
                     counts: holdCounts(order),
+                    readyBy: order.readyBy || null, // FE 17 Oct
+                    speedLabel: order.speedLabel || null,
                 }
             })
 

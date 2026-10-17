@@ -137,6 +137,8 @@ router.get(
  *                     message:
  *                       type: object
  *                       properties:
+ *                         readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                         speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                         order: { $ref: '#/components/schemas/StationScopedOrder' }
  *                         allItemsSorted: { type: boolean, example: false }
  *                         allItemsPretreated: { type: boolean, example: false }
@@ -708,6 +710,8 @@ router.patch(
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               _id:
  *                                 type: string
  *                                 example: "64d3c9c0f1b2a8e9d0f12345"
@@ -865,7 +869,7 @@ router.get(
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -961,7 +965,7 @@ router.get(
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -1060,7 +1064,7 @@ router.get(
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -1382,6 +1386,8 @@ router.patch(
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               orderId:       { type: string }
  *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
  *                               fullName:      { type: string, example: "Temitope Balogun" }

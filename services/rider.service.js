@@ -90,6 +90,7 @@ class RiderService extends BaseService {
                 limit,
                 select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed quickBooking itemsPending amount paymentStatus items stage dispatchDetails dispatchTag createdAt ${PROMISE_FIELDS}`,
                 lean: true,
+                withPromise: true, // FE 17 Oct: readyBy + speedLabel
             })
             const rows = data.map((order) => {
                 normalizeOrderAddresses(order)
@@ -128,6 +129,7 @@ class RiderService extends BaseService {
                 limit,
                 select: `oscNumber fullName phoneNumber deliveryAddress serviceType serviceTier deliverySpeed quickBooking itemsPending items._id stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
+                withPromise: true, // FE 17 Oct: readyBy + speedLabel
             })
 
             const ordersWithMeta = data.map((order) => {
@@ -436,6 +438,7 @@ class RiderService extends BaseService {
                 sort: { urgentPickup: -1, createdAt: 1 },
                 select: `oscNumber fullName phoneNumber pickupAddress deliveryAddress serviceType serviceTier deliverySpeed quickBooking itemsPending amount paymentStatus items stage dispatchDetails urgentPickup createdAt ${PROMISE_FIELDS}`,
                 lean: true,
+                withPromise: true, // FE 17 Oct: readyBy + speedLabel
             })
             const rows = data.map((order) => {
                 normalizeOrderAddresses(order)
@@ -477,6 +480,7 @@ class RiderService extends BaseService {
                 limit,
                 select: `oscNumber fullName phoneNumber pickupAddress serviceType serviceTier deliverySpeed quickBooking itemsPending items._id stage dispatchDetails createdAt ${PROMISE_FIELDS}`,
                 lean: true,
+                withPromise: true, // FE 17 Oct: readyBy + speedLabel
             })
 
             const ordersWithMeta = data.map((order) => {
@@ -1096,8 +1100,10 @@ class RiderService extends BaseService {
                     error: 'Order not found',
                 })
 
+            presentOrder(order)
+            await require('../util/orderView').decorateStationOrder(order) // FE 17 Oct: readyBy + speedLabel
             return BaseService.sendSuccessResponse({
-                message: presentOrder(order),
+                message: order,
             })
         } catch (error) {
             console.log('Error in getOrderDetails:', error)

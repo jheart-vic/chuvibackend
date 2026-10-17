@@ -164,6 +164,33 @@ serial reset, Tuesday live. 3. I will send the Sunday test fixes on Sunday night
   needless risk. The separate Render test service and the test Atlas project can be suspended or deleted (user).
 - Sunday-list fixes to launch features are still free; anything new is quoted per item.
 
+## Client, 17 Oct — answers to our four FE-round questions (BINDING)
+Verbatim:
+"1. CARE ACTIONS a) Wallet refund: as you recommend. Money back into the wallet as normal wallet money that never
+expires. Two rules: it can only refund money the customer actually paid on that order, and a reason is required.
+Customer care up to N5,000, admin above. The "Wallet refund" SMS goes as it does today. b) Discount on next order: the
+recovery credit we have today (90 days, same limits, same SMS). No % discounts.
+2. REASON LISTS Yes: admin can edit them, and "Other" always needs a note. Free text until it is built. This was in the
+launch brief, so please build it in the first fixes window. Each station sees only the hold reasons that fit it, as
+agreed on 8 October. Starting lists:
+Hold: Piece missing, Tag missing or wrong, Still dirty or stained, Damaged, Not dry, Wrong route, Other.
+Rejection: Count does not match, Tag missing or wrong, Still dirty or stained, Not dry, Badly pressed, Not for this
+station, Other.
+Cancel: Customer changed their mind before pickup, Customer rejected the bill, Duplicate booking, Customer not
+reachable, Outside our area, Item we do not handle, Other.
+Refund: Fewer pieces than paid for, Price error, Paid twice, Service not done, Damaged piece, Other.
+3. CLOSING TASKS Agreed: no message when a task is closed. When the close adds credit or a refund, the credit or refund
+SMS that already exists still goes, inside quiet hours rules. No "Send message" box for now.
+4. ORDER HISTORY FOR THE CUSTOMER Yes, after launch, with your rules: main steps with date and time, never staff names,
+holds or notes. These are the steps the customer should see: Booked, Rider on the way, Picked up, Waiting for payment,
+Being cleaned, Ready, Out for delivery, Delivered or Collected, Cancelled. "Waiting for payment" stays visible because
+the customer needs it to pay. If this costs extra, please tell me first and we keep it for V2."
+- Work from this: (1a) a care WALLET REFUND action (cash, never expires, capped at what was paid on the order, reason
+  required, CX ≤ N5,000 else admin approval, existing wallet-refund SMS); (1b) no change — Discount = recovery credit;
+  (2) admin-editable reason lists per action (hold per station), "Other" needs a note — FIRST FIXES WINDOW;
+  (3) task close sends nothing new — check the credit/refund SMS respects quiet hours; (4) customer history — tell
+  the client the price first, else V2.
+
 ## FE T1–T12 run on live, 16 Oct afternoon — findings (branch fix/t1-t12-findings)
 1. S2 partial receipt: order stays "queue" (held piece at S1) → S2 sort / tag correction refused ("order is recorded as queue").
 2. QC → Press rejection: spec says assignTo "press-and-iron", server takes "press"; after Press releases, piece stays at QC,

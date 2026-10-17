@@ -2,6 +2,22 @@
  * @swagger
  * components:
  *   schemas:
+ *     StationOrder:
+ *       description: "An order row on a station list (FE 16-17 Oct): the order plus its Ready by time, speed name and status word."
+ *       allOf:
+ *         - $ref: '#/components/schemas/BookOrder'
+ *         - type: object
+ *           properties:
+ *             readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *             speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
+ *             statusLabel: { type: string, example: "Being cleaned", description: "The client's status word for the order." }
+ *     ReadyBy:
+ *       type: object
+ *       nullable: true
+ *       description: "FE 16-17 Oct: the order's ready time with day and time, for staff and rider screens. Null when the order has no ready date yet."
+ *       properties:
+ *         text: { type: string, example: "Ready by Wed 4 PM" }
+ *         at: { type: string, format: date-time, example: "2026-10-21T15:00:00.000Z" }
  *     Plan:
  *       type: object
  *       properties:
@@ -2168,6 +2184,8 @@
  *         - $ref: '#/components/schemas/BookOrder'
  *         - type: object
  *           properties:
+ *             readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *             speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *             urgent:
  *               type: boolean
  *               example: true
@@ -2324,6 +2342,8 @@
  *         - $ref: '#/components/schemas/BookOrder'
  *         - type: object
  *           properties:
+ *             readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *             speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *             itemsAtStationCount:
  *               type: integer
  *               description: "How many pieces this station currently holds (equals items.length)."

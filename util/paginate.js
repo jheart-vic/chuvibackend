@@ -8,7 +8,8 @@ const paginate = async (model, query = {}, options = {}) => {
 
     // V1 batch 3b (FE "Ready by"): station lists also carry the delivery date
     // and the customer's promise text (lean order rows only).
-    if (withPromise && select) select = `${select} deliveryDate scheduling quickBooking`;
+    // FE 17 Oct: and the speed and stage, so every list can say "Ready by" and the speed.
+    if (withPromise && select && !/(^|s)-/.test(select)) select = `${select} deliveryDate scheduling quickBooking deliverySpeed stage`;
 
     let queryBuilder = model.find(query).sort(sort).skip(skip).limit(limit).populate(populate);
     if (select) queryBuilder = queryBuilder.select(select);

@@ -104,7 +104,7 @@ router.get(ROUTE_QC_DASHBOARD, [qcAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -149,7 +149,7 @@ router.get(ROUTE_QC_QUEUE, [qcAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -187,6 +187,8 @@ router.get(ROUTE_ACTIVE_QC_QUEUE, [qcAuth], (req, res) => {
  *                     message:
  *                       type: object
  *                       properties:
+ *                         readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                         speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                         order: { $ref: '#/components/schemas/BookOrder' }
  *                         allItemsPassed: { type: boolean, example: false }
  *       404:
@@ -402,7 +404,7 @@ router.patch(ROUTE_QC_PASS_ORDER, [qcAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -541,7 +543,7 @@ router.patch(ROUTE_QC_PACK_AND_SEAL_COMPLETE, [qcAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:
@@ -665,6 +667,8 @@ router.patch(ROUTE_QC_HOLD, [qcAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               orderId:       { type: string }
  *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
  *                               fullName:      { type: string, example: "Jude Victor" }
@@ -821,7 +825,7 @@ router.patch(ROUTE_QC_RELEASE, [qcAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:

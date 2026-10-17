@@ -2134,6 +2134,7 @@ class AdminService extends BaseService {
                 sort: { 'stage.updatedAt': 1 },
                 populate: [{ path: 'userId' }],
                 lean: true,
+                withPromise: true, // FE 17 Oct: readyBy + speedLabel on hold rows
             })
 
             // One read for the whole page — the rows must be judged by exactly

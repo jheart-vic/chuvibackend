@@ -128,6 +128,8 @@ router.get(ROUTE_PRESS_IRON_QUEUE, [pressAndIronAuth], (req, res) => {
  *                     message:
  *                       type: object
  *                       properties:
+ *                         readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                         speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                         order: { $ref: '#/components/schemas/StationScopedOrder' }
  *                         allItemsConfirmed: { type: boolean, example: false }
  *       404:
@@ -424,6 +426,8 @@ router.get(ROUTE_PRESS_IRON_GET_ACTIVE_PRESS, [pressAndIronAuth], (req, res) => 
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               orderId:       { type: string }
  *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
  *                               fullName:      { type: string, example: "Jude Victor" }
@@ -578,7 +582,7 @@ router.patch(ROUTE_PRESS_IRON_RELEASE, [pressAndIronAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:

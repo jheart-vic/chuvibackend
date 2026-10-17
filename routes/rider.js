@@ -62,6 +62,7 @@ const router = require('express').Router()
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
  *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
  *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               quickBooking: { type: boolean, example: false, description: "Booked by number of items; the bill comes after the count." }
@@ -194,6 +195,8 @@ router.get(ROUTE_RIDER_ASSIGNED_DELIVERIES, riderAuth, (req, res) => {
  *                     message:
  *                       type: object
  *                       properties:
+ *                         readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                         speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                         _id:
  *                           type: string
  *                           example: "64d3c9c0f1b2a8e9d0f12345"
@@ -399,6 +402,7 @@ router.get(ROUTE_RIDER_ORDER_ID, riderAuth, (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
  *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
  *                               deliverySpeed: { type: string, example: standard }
  *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
@@ -974,6 +978,7 @@ router.get(ROUTE_RIDER_HISTORY_TIMELINE, [riderAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
  *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
  *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               quickBooking: { type: boolean, example: false, description: "Booked by number of items; the bill comes after the count." }
@@ -1121,6 +1126,7 @@ router.get(ROUTE_RIDER_ASSIGNED_PICKUPS, [riderAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
  *                               itemCount: { type: integer, example: 12, description: "Pieces on the order (V1 batch 3b)." }
  *                               deliverySpeed: { type: string, example: standard }
  *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }

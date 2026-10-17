@@ -146,6 +146,15 @@ async function decorateStationOrder(order, displayNames) {
     return order
 }
 
+/** decorateStationOrder for a list of lean rows, reading the display names once (FE 17 Oct). */
+async function decorateStationOrders(rows) {
+    if (!rows?.length) return rows
+    const AdminSettingModel = require('../models/adminSetting.model')
+    const displayNames = (await AdminSettingModel.findOne().select('displayNames').lean())?.displayNames || null
+    for (const row of rows) await decorateStationOrder(row, displayNames)
+    return rows
+}
+
 function presentOrders(orders) {
     return (orders || []).map(presentOrder)
 }
@@ -157,6 +166,7 @@ module.exports = {
     addPayBy,
     readyByOf,
     decorateStationOrder,
+    decorateStationOrders,
     presentOrder,
     presentOrders,
 }

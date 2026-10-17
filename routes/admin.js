@@ -1621,6 +1621,8 @@ router.get(ROUTE_ADMIN_DISPATCH_DATA_COUNT, adminAuth, (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               holdMeta:
  *                                 type: object
  *                                 properties:

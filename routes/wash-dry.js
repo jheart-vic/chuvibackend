@@ -136,6 +136,8 @@ router.get(ROUTE_WASH_AND_DRY_QUEUE, [washAndDryAuth], (req, res) => {
  *                     message:
  *                       type: object
  *                       properties:
+ *                         readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                         speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                         order: { $ref: '#/components/schemas/StationScopedOrder' }
  *       404:
  *         description: Order not found or not in washing stage
@@ -523,6 +525,8 @@ router.get(ROUTE_WASH_AND_ACTIVE_DRYING, [washAndDryAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               orderId:       { type: string }
  *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
  *                               fullName:      { type: string, example: "Jude Victor" }
@@ -668,7 +672,7 @@ router.patch(ROUTE_WASH_AND_DRY_RELEASE, [washAndDryAuth], (req, res) => {
  *                       properties:
  *                         data:
  *                           type: array
- *                           items: { $ref: '#/components/schemas/BookOrder' }
+ *                           items: { $ref: '#/components/schemas/StationOrder' }
  *                         pagination:
  *                           $ref: '#/components/schemas/Pagination'
  *       500:

@@ -356,6 +356,8 @@ router.post(ROUTE_CREATE_BOOK_ORDER, [intakeUserAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               awaitingPayment: { type: boolean, example: true, description: "Unpaid — tagging stays locked until it is paid" }
  *                               paymentHoldRaised: { type: boolean, example: false, description: "A payment hold (and link) is already open" }
  *                               balanceDue: { type: number, nullable: true, example: null, description: "Set only when a paid order's bill went up" }
@@ -1808,6 +1810,8 @@ router.get(ROUTE_INTAKE_GET_DRAFTS, [intakeUserAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               oscNumber:
  *                                 type: string
  *                                 example: "ORD-2024-001"
@@ -1915,6 +1919,8 @@ const controller = new IntakeUserController()
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               _id: { type: string, example: "66e0b1c2d3e4f5a6b7c8d9e0" }
  *                               oscNumber: { type: string, example: "OSC-20261009-442410" }
  *                               fullName: { type: string, example: "Ada Obi" }
@@ -1996,6 +2002,8 @@ router.get(ROUTE_INTAKE_QUICK_BOOKINGS, [intakeUserAuth], (req, res) => {
  *                           items:
  *                             type: object
  *                             properties:
+ *                               readyBy: { $ref: '#/components/schemas/ReadyBy' }
+ *                               speedLabel: { type: string, nullable: true, example: "Ready in 24 hours", description: "The speed by its admin display name (client 15 Oct: never the word Express)." }
  *                               orderId:       { type: string }
  *                               oscNumber:     { type: string, example: "OSC-20260428-321782" }
  *                               fullName:      { type: string, example: "Jude Victor" }

@@ -1934,7 +1934,9 @@ const run = (async () => {
             /const PROMISE_FIELDS = 'deliveryDate scheduling'/.test(riderSrc))
     ok('  …order details is lean, or Mongoose drops the undeclared promise',
         /\.lean\(\)\s*\n\s*if \(!order\)/.test(riderSrc) &&
-            /message: presentOrder\(order\)/.test(riderSrc))
+            // FE 17 Oct: presented, then decorated with readyBy + speedLabel, then sent.
+            (/message: presentOrder\(order\)/.test(riderSrc) ||
+                /presentOrder\(order\)\s*\n\s*await require\('\.\.\/util\/orderView'\)\.decorateStationOrder\(order\)[^\n]*\n\s*return BaseService\.sendSuccessResponse\(\{\s*\n\s*message: order,/.test(riderSrc)))
 
     // (4) hasComplaint is DERIVED — the back-reference had five blind doors.
     const reportSrc = fs.readFileSync(path.join(ROOT, 'services/recoveryReport.service.js'), 'utf8')
