@@ -5,7 +5,7 @@ const createNotification = require('../util/createNotification')
 const { getObjectId } = require('../util/helper')
 // Readable item helpers (per-piece briefs + "5 Shirts, 3 Trousers" summaries).
 const { briefsForIds, summarize } = require('../util/itemSummary')
-const { describeHeld } = require('../util/itemHold')
+const { describeHeld, isItemOnHold } = require('../util/itemHold')
 const {
     STATION_STATUS,
     ORDER_STATUS,
@@ -761,7 +761,7 @@ class HandoffService extends BaseService {
                         tagId: i.tagId || '',
                         name: i.type,
                         quantity: i.quantity || 1,
-                        onHold: !!i.flaggedForReview,
+                        onHold: isItemOnHold(i), // the real hold state, not the review flag (FE 17 Oct)
                     }))
                 return {
                     station,

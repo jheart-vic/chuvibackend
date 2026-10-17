@@ -163,6 +163,25 @@ async function main() {
         ok(r6.success, `QC releases an ordinary piece hold (${r6.data?.error || 'ok'})`)
         const freed = (await BookOrderModel.findById(o6).lean()).items[0].holdDetails
         ok(!!freed?.releasedAt, 'the piece is released')
+
+        console.log('\n6. FE 17 Oct: a piece Intake releases no longer shows as held')
+        const o7 = await mkOrder(
+            { stationStatus: C.STATION_STATUS.WASH_AND_DRY_STATION, stage: { status: C.ORDER_STATUS.WASHING, note: '', updatedAt: new Date() } },
+            {
+                currentStation: C.STATION_STATUS.WASH_AND_DRY_STATION,
+                flaggedForReview: true,
+                holdDetails: { reason: 'quality_not_met', note: 'stg', assignTo: C.ROLE.INTAKE_AND_TAG, heldAt: new Date(), heldByStation: C.STATION_STATUS.WASH_AND_DRY_STATION },
+            },
+        )
+        const it7 = (await BookOrderModel.findById(o7).lean()).items[0]
+        const r7 = await release(intake, o7, s1, C.ROLE.INTAKE_AND_TAG, { itemId: String(it7._id) })
+        ok(r7.success, `Intake releases the piece (${r7.data?.error || 'ok'})`)
+        const after7 = (await BookOrderModel.findById(o7).lean()).items[0]
+        ok(!!after7.holdDetails?.releasedAt && after7.flaggedForReview === false, 'released AND the held flag is cleared')
+        const HandoffService = require('./services/handoff.service')
+        const pos = await new HandoffService().splitState({ params: { id: String(o7) } })
+        const all = (pos.data?.message?.stations || []).flatMap((s) => s.items)
+        ok(pos.success && all.length === 2 && all.every((i) => i.onHold === false), 'piece positions show it as not on hold')
     } finally {
         const ActivityModel = require('./models/activity.model')
         const NotificationModel = require('./models/notification.model')

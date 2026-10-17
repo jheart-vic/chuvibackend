@@ -2738,6 +2738,10 @@ class IntakeUserService extends BaseService {
                 if (!releaseIds.has(String(item._id))) return item
                 const wasOurs = raisedHere(item)
                 stampRelease(item, { userId, now, note: req.body?.note })
+                // FE 17 Oct: the other five release paths clear the flag; Intake
+                // did not, so a piece it released still showed as held at the
+                // next station.
+                item.flaggedForReview = false
                 if (wasOurs) {
                     item.tagStatus = 'pending'
                     item.tagId = ''

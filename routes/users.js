@@ -602,8 +602,16 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  * @swagger
  * /users/initialize-payment:
  *   post:
- *     summary: Initialize payment with Paystack
- *     description: Initializes a Paystack transaction.
+ *     summary: Start a card payment (Paystack) for an order or a plan
+ *     description: >
+ *       For an ORDER (including a cancelled order's return fee, or a balance after a recount):
+ *       the customer's reward credit is used FIRST by default (client B13, "applied by default
+ *       unless he switches it off"), oldest expiry first, and the card is asked only for the rest.
+ *       Send `useCredit: false` to keep the credit and pay the whole amount by card. Credit is
+ *       applied once per order. If the credit covers everything, no checkout is made: the reply
+ *       is `{ coveredByCredit: true, creditApplied, amountToPay: 0, orderId }` and the order is
+ *       paid. Otherwise the reply is Paystack's checkout (`message.data.authorization_url`).
+ *       The customer's own account email is used; `email` in the body is ignored.
  *     tags:
  *       - Users
  *     security:
@@ -615,81 +623,63 @@ router.put(ROUTE_UPDATE_ADDRESS, [auth], (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - email
+ *               - transactionType
  *             properties:
- *               email:
- *                 type: string
- *                 example: "chiemelapromise30@gmail.com"
- *                 description: The user's email address
  *               transactionType:
  *                 type: string
- *                 example: "order|subscription"
- *                 description: The user's email address
+ *                 enum: [order, subscription]
+ *                 example: order
  *               orderId:
  *                 type: string
  *                 example: "696537bdf4cd2de9186cb729"
- *                 description: The order Id
+ *                 description: Required for an order.
  *               planId:
  *                 type: string
  *                 example: "696537bdf4cd2de9186cb729"
- *                 description: The plan Id
+ *                 description: Required for a subscription.
+ *               useCredit:
+ *                 type: boolean
+ *                 default: true
+ *                 example: false
+ *                 description: Orders only. false keeps the reward credit; the card pays the whole amount.
  *     responses:
  *       200:
- *         description: Payment initialized successfully
+ *         description: >
+ *           Either Paystack's checkout, or (order fully covered by reward credit) the credit result.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
+ *                 success: { type: boolean, example: true }
  *                 data:
  *                   type: object
  *                   properties:
  *                     message:
- *                       type: string
- *                       example: Payment initialized successfully
- *                     data:
- *                       type: object
- *                       properties:
- *                         authorization_url:
- *                           type: string
- *                           example: "https://checkout.paystack.com/2v4t6w4s8s"
- *                         access_code:
- *                           type: string
- *                           example: "ACCESS_23s5z3m0ha"
- *                         reference:
- *                           type: string
- *                           example: "T513406671019712"
+ *                       oneOf:
+ *                         - type: object
+ *                           description: Paystack checkout
+ *                           properties:
+ *                             status: { type: boolean, example: true }
+ *                             message: { type: string, example: Authorization URL created }
+ *                             data:
+ *                               type: object
+ *                               properties:
+ *                                 authorization_url: { type: string, example: "https://checkout.paystack.com/2v4t6w4s8s" }
+ *                                 access_code: { type: string, example: "ACCESS_23s5z3m0ha" }
+ *                                 reference: { type: string, example: "T513406671019712" }
+ *                         - type: object
+ *                           description: Fully covered by reward credit (no checkout)
+ *                           properties:
+ *                             coveredByCredit: { type: boolean, example: true }
+ *                             creditApplied: { type: number, example: 2000 }
+ *                             amountToPay: { type: number, example: 0 }
+ *                             orderId: { type: string, example: "696537bdf4cd2de9186cb729" }
  *       400:
- *         description: Validation error — missing or invalid fields
+ *         description: Missing transactionType/orderId/planId, order not found, already paid, no bill yet, or already subscribed
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 error:
- *                   type: object
- *                   example:
- *                     email: ["email is required"]
- *                     amount: ["amount is required"]
- *       500:
- *         description: Server error during payment initialization
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 error:
- *                   type: string
- *                   example: "An internal server error occurred. Please try again later."
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 /**
  * @swagger

@@ -153,6 +153,17 @@ currently points at the LIVE server. Order: (1) Sun night after the clear: live 
 URL: same API, the key decides the mode. Test server: new Render Web Service on a `test` branch, Free instance, own
 JWT secrets, NO Termii/Brevo/SMTP/chatbot keys, TEST_SITE=1. Sunday floor test on live as planned; data clear Sunday night after the client's go.
 
+## Client, 17 Oct — AFTER-LAUNCH BRIEF MOVED TO V2; TEST SITE DROPPED (BINDING, supersedes the TEST SITE section above)
+Verbatim: "The after launch brief is more than we can afford right now, so we are not taking it on at this stage. We
+will pack it into V2 and come back to it then. 1. Please leave out the test site. It was only for the after launch
+brief, so we do not need it now. 2. Launch stays as planned: Sunday floor test, the clear, Monday's N100 test and
+serial reset, Tuesday live. 3. I will send the Sunday test fixes on Sunday night."
+- The brief and our quote are kept on the LOCAL branch `docs/after-launch-quote` (prices; never pushed).
+- No Wednesday test-site setup: no settings copy, no test logins, the Paystack TEST webhook is never repointed.
+- The TEST_SITE code on main stays: it does nothing unless TEST_SITE=1 is set, and removing it before the freeze is
+  needless risk. The separate Render test service and the test Atlas project can be suspended or deleted (user).
+- Sunday-list fixes to launch features are still free; anything new is quoted per item.
+
 ## FE T1–T12 run on live, 16 Oct afternoon — findings (branch fix/t1-t12-findings)
 1. S2 partial receipt: order stays "queue" (held piece at S1) → S2 sort / tag correction refused ("order is recorded as queue").
 2. QC → Press rejection: spec says assignTo "press-and-iron", server takes "press"; after Press releases, piece stays at QC,

@@ -2817,7 +2817,9 @@ const run = (async () => {
                 const plain = BotParsers._resolvePickupDate('saturday')
                 const later = BotParsers._resolvePickupDate(dp('saturday next week'))
                 return ord?.toDateString() === d10.toDateString() &&
-                    !!later && (new Date().getDay() === 0 ? later >= plain : later > plain) &&
+                    // On a Saturday (today excluded) or a Sunday, "saturday" is already
+                    // next week's Saturday, so the two can be the same day.
+                    !!later && ([0, 6].includes(new Date().getDay()) ? later >= plain : later > plain) &&
                     dp('book for saturday 24th please') === 'saturday 24th'
             })())
         // Round 10: a bare day right after the weekday counts; a house number or a slash pair doesn't;
